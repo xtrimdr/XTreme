@@ -103,7 +103,7 @@ public partial class MainWindow
             try
             {
                 if (!File.Exists(path) && !Directory.Exists(path)) throw new FileNotFoundException(Loc.T("vst.missing", path));
-                var bridge = VstBridge.Start(path, cid, name, PlaybackEngine.SampleRate, offline: false);
+                var bridge = VstBridge.Start(path, cid, name, PlaybackEngine.SampleRate, offline: false, VstInsert.LiveBlock);
                 if (state != null && !bridge.SetState(state))
                     Dispatcher.UIThread.Post(() => Toast(Loc.T("vst.stateFailed", name)));
                 return (Bridge: bridge, Error: (string?)null);
@@ -260,7 +260,10 @@ public partial class MainWindow
     void OpenEffectWindow(string owner, string slotId)
     {
         if (effects.TryGetValue(EffectKey(owner, slotId), out var loaded))
+        {
+            DressPluginWindow(loaded.Bridge, loaded.Bridge.Name);
             loaded.Bridge.OpenEditor(TryGetPlatformHandle()?.Handle ?? 0);
+        }
         else if (EffectSlot(owner, slotId)?.Vst?.Plugin is { } plugin)
             Toast(Loc.T(EffectStateOf(owner, slotId) == EffectState.Loading ? "vst.stillLoading" : "vst.fx.notLoaded", plugin.Name));
     }

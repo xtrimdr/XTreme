@@ -193,6 +193,7 @@ Spanish by default; the language is chosen in Settings.
 | C / Shift+C / T | click / count-in / tap tempo |
 | A | tuner |
 | M / S | mute / solo the track |
+| Ctrl+K | virtual keyboard: while on, the A row is the white keys, the row above the black ones, Z / X the octave, C / V the velocity and Shift the sustain |
 | F | fit all |
 | X | timeline / mixer |
 | Alt+X / D | split the clip at the playhead / duplicate it |

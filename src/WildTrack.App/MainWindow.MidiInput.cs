@@ -8,9 +8,11 @@ using WildTrack.Projects;
 namespace WildTrack.App;
 
 /// <summary>
-/// The MIDI keyboard in the window (stage 4 of the MIDI editor, decided with the user): it plays the selected MIDI
-/// track (like Logic and Studio One, nothing to arm) and every armed one, with its instrument and its chain, from the
-/// input each track picks (<see cref="Track.MidiInput"/>, all of them at first). An armed MIDI track records what it
+/// The MIDI keyboard in the window (stage 4 of the MIDI editor, decided with the user): it plays one track, the selected
+/// MIDI track (like Logic and Studio One, nothing to arm) or, with none selected, the first armed one, with its
+/// instrument and its chain, from the input each track picks (<see cref="Track.MidiInput"/>, all of them at first).
+/// Two instruments never get the same keys by accident (asked by the user): only a recording plays on every armed
+/// track, the ones with a take, and nothing else then. An armed MIDI track records what it
 /// hears into a new clip when the take ends (<see cref="MidiEditing.AddRecorded"/>), next to the audio takes and the
 /// camera, quantized to the piano roll's magnet when Configuración → MIDI says so. The inputs themselves are
 /// <see cref="MidiSetup"/>'s.
@@ -40,11 +42,12 @@ public partial class MainWindow
     List<Track> MidiRecordTargets() => store == null || armedIds == null ? [] : store.Project.Tracks.Where(MidiArmed).ToList();
 
     /// <summary>
-    /// Hands the engine the tracks that hear the keyboard (the selected MIDI track and the armed ones, each with its
-    /// input and, while recording, its take). Every tick: nothing is made unless something changed.
+    /// Hands the engine the tracks that hear the keyboard (<see cref="Hears"/>, each with its input and, while recording,
+    /// its take). Every tick: nothing is made unless something changed.
     /// </summary>
     void ShowMidiListeners()
     {
+        keyTrack = KeyTrack();
         var h = new HashCode();
         h.Add(MidiSetup.Version);
         h.Add(midiTakes.Count);
@@ -64,9 +67,23 @@ public partial class MainWindow
             if (Hears(t))
                 list.Add(new MidiListener(t, MidiSetup.PortOf(t.Track.MidiInput), t.Track.MidiChannel, midiTakes.GetValueOrDefault(t.Track.Id)));
         engine.SetMidiListeners([.. list]);
+        ShowVirtualTarget();
     }
 
-    bool Hears(LiveTrack t) => t.Track.IsMidi && (t == sel || MidiArmed(t.Track));
+    /// <summary>The one track the keys play on now, by id (<see cref="KeyTrack"/>), kept up to date every tick.</summary>
+    string? keyTrack;
+
+    /// <summary>With the virtual keyboard on, the track of the instrument window that is open; else the selected MIDI track; else the first armed one.</summary>
+    string? KeyTrack()
+    {
+        if (keyTarget != null) return keyTarget;
+        if (sel is { Track.IsMidi: true } selected) return selected.Track.Id;
+        foreach (var t in tracks)
+            if (MidiArmed(t.Track)) return t.Track.Id;
+        return null;
+    }
+
+    bool Hears(LiveTrack t) => midiTakes.Count > 0 ? midiTakes.ContainsKey(t.Track.Id) : t.Track.Id == keyTrack;
 
     // --- the track's input --------------------------------------------------------------------------
 
@@ -96,7 +113,7 @@ public partial class MainWindow
         var list = new List<object>
         {
             new MenuItem { Header = Loc.T("midi.in.from"), IsEnabled = false, FontSize = 10.5 },
-            MenuCheck(Loc.T("midi.in.all"), () => t.Track.MidiInput == null, () => SetMidiInput(t, null, t.Track.MidiChannel), refresh, Loc.T("midi.in.all.hint")),
+            MenuCheck(Loc.T("midi.in.all"), () => t.Track.MidiInput == null, () => SetMidiInput(t, null, t.Track.MidiChannel), refresh),
         };
         var ports = MidiSetup.Inputs.Ports;
         var names = ports.Select(p => p.Device.Name).ToList();
@@ -104,7 +121,7 @@ public partial class MainWindow
             if (!names.Contains(s.Name)) names.Add(s.Name);
         if (t.Track.MidiInput is { } mine && !names.Contains(mine)) names.Add(mine);
         if (names.Count > 0) list.Add(new Separator());
-        else list.Add(new MenuItem { Header = Loc.T("midi.in.none"), IsEnabled = false, FontSize = 12 });
+        else list.Add(MenuAction(Loc.T("midi.in.none"), () => Task.CompletedTask, enabled: false, icon: " "));
         foreach (var name in names)
         {
             var port = ports.FirstOrDefault(p => p.Device.Name == name);
@@ -112,7 +129,7 @@ public partial class MainWindow
             list.Add(MenuCheck(MidiSetup.Shown(name), () => t.Track.MidiInput == name, () => SetMidiInput(t, name, t.Track.MidiChannel), refresh, hint));
         }
         list.Add(new Separator());
-        var channels = new MenuItem { Header = Loc.T("midi.in.channel", t.Track.MidiChannel == 0 ? Loc.T("midi.in.channel.all") : t.Track.MidiChannel.ToString()), FontSize = 12 };
+        var channels = MenuAction(Loc.T("midi.in.channel", t.Track.MidiChannel == 0 ? Loc.T("midi.in.channel.all") : t.Track.MidiChannel.ToString()), () => Task.CompletedTask, icon: " ");
         var items = new List<object>
         {
             MenuCheck(Loc.T("midi.in.channel.all"), () => t.Track.MidiChannel == 0, () => SetMidiInput(t, t.Track.MidiInput, 0), refresh),

@@ -577,18 +577,21 @@ public partial class MainWindow
     static MenuItem MenuAction(string label, Func<Task> action, string? hint = null, bool enabled = true, bool danger = false, string? icon = null, string? tip = null)
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        var text = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        // a grid, not a stack: a long label trims before the hint instead of running under it
+        var text = new Grid { ColumnDefinitions = new ColumnDefinitions(icon != null ? "20,*" : "*") };
         if (icon == "empty") text.Children.Add(new Avalonia.Controls.Shapes.Rectangle
         {
-            Width = 12, Height = 12, Stroke = Palette.Dim, StrokeThickness = 1,
+            Width = 12, Height = 12, Stroke = Palette.Dim, StrokeThickness = 1, HorizontalAlignment = HorizontalAlignment.Left,
             StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 2, 2 }, VerticalAlignment = VerticalAlignment.Center,
         });
         else if (icon != null) text.Children.Add(new TextBlock { Text = icon, Classes = { "icon" }, FontSize = 12 });
-        text.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = danger ? Palette.Rec : Palette.Fg, VerticalAlignment = VerticalAlignment.Center });
+        var name = new TextBlock { Text = label, FontSize = 12, Foreground = danger ? Palette.Rec : Palette.Fg, VerticalAlignment = VerticalAlignment.Center, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
+        if (icon != null) Grid.SetColumn(name, 1);
+        text.Children.Add(name);
         header.Children.Add(text);
         if (hint != null)
         {
-            var value = new TextBlock { Text = hint, Classes = { "mono" }, FontSize = 10.5, Foreground = Palette.Faint, Margin = new Thickness(12, 0, 0, 0) };
+            var value = new TextBlock { Text = hint, Classes = { "mono" }, FontSize = 10.5, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
             Grid.SetColumn(value, 1);
             header.Children.Add(value);
         }
@@ -616,7 +619,7 @@ public partial class MainWindow
         var (label, icon) = look();
         var item = MenuAction(label, () => { apply(); return Task.CompletedTask; }, hint, enabled, icon: icon, tip: tip);
         // MenuAction puts the icon and the label in the header's first row
-        var row = (StackPanel)((Grid)item.Header!).Children[0];
+        var row = (Grid)((Grid)item.Header!).Children[0];
         var (glyph, text) = ((TextBlock)row.Children[0], (TextBlock)row.Children[1]);
         refresh.Add(() => (text.Text, glyph.Text) = look());
         // the menu only clicks with the left button: the right one is left to us, even when something handled it

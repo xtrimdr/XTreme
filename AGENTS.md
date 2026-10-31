@@ -74,7 +74,10 @@ tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba
   que se cuelga no tira abajo la grabación). Hablan por memoria compartida (`shared.h` ↔ `VstBridge`, los offsets tienen
   que coincidir) y líneas de texto por stdin/stdout. En vivo el hilo de audio nunca espera al plugin: lo oye un bloque
   tarde y le manda las notas ese bloque (más su latencia) antes (`InstrumentPlayer`); la exportación espera cada bloque
-  (`InstrumentRender`, dentro de `MixRenderer`). Un **efecto** es un slot más (`VstInsert`, tipo `vst`): en vivo manda
+  (`InstrumentRender`, dentro de `MixRenderer`). En vivo se le anuncia el bloque real del driver (`--block`,
+  `VstInsert.LiveBlock`), no el máximo: los plugins dimensionan su trabajo por ese número y pagan por lo que no usan
+  (Splice INSTRUMENT, el doble); un bloque mayor igual funciona, el host lo parte en pedazos. Un instrumento que recién abre puede seguir cargando sus samples y
+perder las notas: antes de ponerlo en la pista y antes de exportar se prueba una nota hasta que suena (`InstrumentWarmup`). El host avisa dónde está la ventana del plugin (`editor-rect`, `editor-active`) para que el teclado virtual sepa dónde tocar, y la ventana se viste y se llena desde la app (`look`, `title`, `toolbar`, `keys-panel`: el panel del teclado es una ventana de la app hija de la del host). Un **efecto** es un slot más (`VstInsert`, tipo `vst`): en vivo manda
   cada bloque y toma el anterior, así que se oye un bloque del driver (`VstInsert.LiveBlock`) más su latencia tarde; en
   la exportación abre su propia copia y espera cada bloque. La ventana de la app maneja procesos y estados
   (`MainWindow.Vst.cs` los instrumentos, `MainWindow.VstFx.cs` los efectos, que el motor encuentra por `LiveVst`).
@@ -117,7 +120,7 @@ tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba
 - **Entradas MIDI** (teclados, controladores): son de la máquina, no del proyecto (`MidiSettings`, `config.json` "midi",
   por nombre de aparato; `MidiSetup` en la ventana). `MidiInputs` (winmm vía NAudio) filtra canal y velocidad en su
   hilo y deja las notas en un anillo sin locks; el hilo de audio las reparte al empezar cada bloque
-  (`PlaybackEngine.DispatchMidi`) a las pistas que escuchan (la MIDI elegida y las armadas), cada una con su
+  (`PlaybackEngine.DispatchMidi`) a las pistas que escuchan (una sola: la MIDI elegida o, sin ninguna, la primera armada; grabando, las armadas), cada una con su
   `LiveNotes` (pedal de sustain, voces del tono de prueba) que suena por su instrumento y su cadena; grabando, cada
   nota va a su `MidiTake` con el cuadro que se oía y al parar se arma el clip (`MidiEditing.AddRecorded`).
 
@@ -209,7 +212,7 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
    "NO SE PUEDE PROBAR", contale por qué y no abras nada. Nunca abras el exe de `bin\` ni lo mandes a probar desde
    ahí: bloquea los DLL y el próximo build falla. Si hay un WildTrack abierto, el script le pregunta al usuario en un
    cuadro si lo cierra (guarda antes); nunca lo cierres ni lo mates por otro lado. Si eligió cancelar (código 2), no
-   insistas. La copia muestra en la barra de título "PRUEBA" + el commit (+ cambios), así el usuario sabe qué
+   insistas; si nadie contestó en 100 s (código 3), avisale y que te diga cuándo. La copia muestra en la barra de título "PRUEBA" + el commit (+ cambios), así el usuario sabe qué
    está probando.
 3. Para probar de verdad hacen falta una interfaz ASIO y un proyecto con tomas: si no los tenés, decí qué no probaste.
 4. En capturas de GDI los píxeles negros tienen alfa 0 y algunos visores los pintan blancos: mirá el RGB.

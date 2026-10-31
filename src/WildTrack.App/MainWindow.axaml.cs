@@ -107,6 +107,7 @@ public partial class MainWindow : Window
         SizeChanged += (_, e) => Live.Width = e.NewSize.Width >= 1280 ? 256 : 224;
         InitRecording();
         InitMidiInput();
+        InitVirtualKeys();
         PlayButton.Click += (_, _) => TogglePlay();
         ToStartButton.Click += (_, _) => engine.Seek(0);
         FitButton.Click += (_, _) => Timeline.FitAll();
@@ -572,7 +573,7 @@ public partial class MainWindow : Window
     {
         shortcutTips.AddRange(
         [
-            (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"),
+            (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"), (VirtualKeysButton, Loc.T("sc.virtualKeys"), "virtualKeys"),
             (ToStartButton, Loc.T("transport.start.tip"), "toStart"), (LoopToggle, Loc.T("transport.loop.tip"), "loop"),(CountInToggle, Loc.T("transport.countin.tip"), "countIn"),
             (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (FitButton, Loc.T("transport.fit.tip"), "fit"),
         ]);
@@ -620,6 +621,7 @@ public partial class MainWindow : Window
             return;
         }
         if (e.Source is Control source && source.FindAncestorOfType<TextBox>(true) != null) return;
+        if (VirtualKeyDown(e)) { e.Handled = true; return; }
         if (restoring) { e.Handled = true; return; }
         if (RecordingBusy && await RecordingKey(e)) return;
         if (PianoShown && pianoRoll.HandleKey(e)) { e.Handled = true; return; }
@@ -671,6 +673,9 @@ public partial class MainWindow : Window
                 break;
             case "quantize":
                 await Quantize();
+                break;
+            case "virtualKeys":
+                VirtualKeysButton.IsChecked = !VirtualKeysOn;
                 break;
             case "toStart":
                 engine.Seek(0);

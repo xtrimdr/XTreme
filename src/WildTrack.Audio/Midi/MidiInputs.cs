@@ -59,6 +59,9 @@ public sealed class MidiInputs : IDisposable
         }
     }
 
+    /// <summary>The port of <see cref="VirtualKeyboard"/>'s notes: every track that listens hears them, whatever input and channel it picked.</summary>
+    public const int VirtualPort = -2;
+
     /// <summary>Room for 4096 messages between two blocks: a block is a few ms, a keyboard sends hundreds a second at most.</summary>
     const int RingSize = 4096;
     readonly MidiEvent[] ring = new MidiEvent[RingSize];

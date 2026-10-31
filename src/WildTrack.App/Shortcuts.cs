@@ -37,6 +37,7 @@ static class Shortcuts
         new("solo", Loc.T("sc.group.tracks"), Loc.T("sc.solo"), [G(Key.S)]),
         new("arm", Loc.T("sc.group.tracks"), Loc.T("sc.arm"), [G(Key.R)]),
         new("newTrack", Loc.T("sc.group.tracks"), Loc.T("sc.newTrack"), [G(Key.N, KeyModifiers.Control | KeyModifiers.Shift)]),
+        new("virtualKeys", Loc.T("sc.group.tracks"), Loc.T("sc.virtualKeys"), [G(Key.K, KeyModifiers.Control)]),
         new("delete", Loc.T("sc.group.editing"), Loc.T("sc.delete"), [G(Key.Delete)]),
         new("split", Loc.T("sc.group.editing"), Loc.T("sc.split"), [G(Key.X, KeyModifiers.Alt)]),
         new("duplicate", Loc.T("sc.group.editing"), Loc.T("sc.duplicate"), [G(Key.D)]),

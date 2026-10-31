@@ -839,14 +839,37 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
 - **Sonido**: sin instrumento, un tono de prueba (`NoteSynth`, sin estado: igual en la reproducción, la
   exportación y wtlab). Las notas que suenan al tocar el teclado del piano roll o escribir van directo a la salida
   (`PlaybackEngine.PreviewNote`), sin la cadena de la pista.
-- **Teclado MIDI** (`MainWindow.MidiInput.cs`, etapa 4, decidido con el usuario): suena en la **pista MIDI elegida**
-  (como Logic y Studio One, sin armar nada) y en las **armadas**, con su instrumento (o el tono de prueba, que suena
+- **Teclado MIDI** (`MainWindow.MidiInput.cs`, etapa 4, decidido con el usuario): suena en **una sola pista**, la
+  **MIDI elegida** (como Logic y Studio One, sin armar nada) o, sin ninguna elegida, la primera **armada**; solo
+  grabando suena en todas las armadas, y únicamente en ellas (pedido del usuario: nunca dos instrumentos sin querer). Con su instrumento (o el tono de prueba, que suena
   igual que la nota escrita) y su cadena, parado o reproduciendo, también durante la cuenta. El pedal de sustain
   sostiene lo que se suelta (`LiveNotes`; el puente VST3 solo lleva notas). Cada pista elige de dónde toca
   (`Track.MidiInput` / `MidiChannel`): armada, en el chip a la izquierda del ● ("MIDI" = todas, o las primeras letras
   del nombre del aparato), en el chip de la tira del mixer o con clic derecho → "Entrada MIDI: …"; el menú tiene
   "Todas las entradas", cada aparato (enchufado o recordado), el canal y "Configurar las entradas MIDI…". En el
-  encabezado el instrumento queda a la izquierda del ● (y del chip, armada).
+  encabezado el instrumento queda a la izquierda del ● (y del chip, armada); si no entra su nombre, se pliega a su
+  flecha, que abre la lista (la ventana del plugin se abre desde el inspector).
+- **Teclado virtual** (`MainWindow.VirtualKeys.cs`, `VirtualKeyboard`, `Controls/VirtualKeyboardView.cs`; pedido del
+  usuario, para tocar sin aparato): Ctrl+K (o el botón junto a Ver todo, en el transporte) lo prende. Casi todas las
+  letras son atajos, por eso es un modo: prendido, la fila de A son las blancas (sigue después de la L: Ñ, { en un
+  teclado latino), la de arriba las negras (W E T Y U O P y el +), Z / X la octava, C / V la velocidad y cualquier Shift
+  el sustain (con Shift las notas tocan y Z, X, C, V vuelven a ser atajos); los demás atajos y estas letras con Ctrl o
+  Alt siguen andando. Estas teclas son fijas y físicas: no salen de `Shortcuts`. Las notas no pasan por la UI: las lee
+  `RawKeys` (Raw Input, en su hilo) mientras el modo está prendido y el programa al frente; el `OnKey` de la ventana solo
+  frena el atajo y mide cuánto tarda en llegarle (`sesiones.log`, al apagar el modo). Una tira bajo el transporte
+  muestra de 1 a 7 octavas (Rango), dónde toca, la octava, la velocidad (guardados en `config.json`) y el Sustain, un botón On/Off con la tecla Shift a la vista: Shift lo prende mientras se aprieta y un clic lo deja prendido, y se
+  toca con clic y arrastrando. La tira muestra las notas que suenan: al transponer, las letras (cada una en su recuadro) se corren a donde caen sin mover la vista, y lo mismo con la octava;
+  y un clic toca la nota que está debajo. Clic derecho y arrastrar la desplaza por todo el teclado, la ruedita lo escala de forma continua y suave (de
+  1 a 7 octavas, alrededor del mouse). Transponer,
+  Velocidad y Rango son barras (`ValueBar`): clic o arrastrar las pone donde está el mouse, la ruedita las corre y el
+  clic derecho las vuelve a su valor (0, 100 y 2). Con una ventana de instrumento
+  abierta, la ventana crece y lleva el mismo panel abajo, integrado (`EmbedPanel`: una ventana nuestra hija de la del
+  host, solo las teclas si es angosta); el host avisa si está abierta, y mientras esté abierta (aunque el foco esté en la
+  ventana principal) las teclas tocan en la pista de ese plugin (`keyTarget`, `Hears`), no en la elegida; con varias,
+  en la última que tuvo el foco. La ventana del host usa los colores y el ícono de la app, con una barra arriba:
+  la pista (con su color) y el plugin a la izquierda; Teclado, M, S y Detener notas a la derecha, solo con íconos si no
+  entran (`ShowPluginBars`, `PluginBarClicked`; las de efectos, sin barra). Suena y graba como un teclado real, en las mismas pistas, sin importar la entrada ni el
+  canal que eligieron (`MidiInputs.VirtualPort`). Al apagarlo o al perder la ventana el foco, las notas se sueltan.
 - **Grabar notas**: una pista MIDI armada graba lo que toca su entrada junto con las tomas de audio y la cámara (o
   sola, sin tomas). Al parar, las notas son un clip nuevo en esa pista, del compás donde empezó la toma al compás
   después del final (las de la cuenta entran desde ahí), arriba de lo que había (no reemplaza: los dos suenan) y en el

@@ -611,8 +611,8 @@ public sealed class LiveTrack
     }
 
     /// <summary>
-    /// While stopped: an instrument plugin keeps running (its tails, the piano roll's keys and the keyboard through it)
-    /// and, while it has something to play, its sound goes through the chain to its output like when it plays. Without
+    /// While stopped: an instrument plugin keeps running (its tails, the piano roll's keys, the keyboard through it and
+    /// the keys in its own window) and, while it has something to play, its sound goes through the chain to its output like when it plays. Without
     /// one, the keyboard's test tone does the same while it sounds (and a little after, for a reverb slot's tail).
     /// Zero allocations.
     /// </summary>

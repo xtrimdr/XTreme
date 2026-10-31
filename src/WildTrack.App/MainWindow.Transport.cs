@@ -182,6 +182,7 @@ public partial class MainWindow
         Tempo.IsEnabled = store != null && !store.ReadOnly && !restoring && !RecordingBusy;
         ShowArm();
         ShowMidiListeners();
+        UpdateVirtualLive();
         var targets = RecordTargets();
         // armed MIDI tracks record the keyboard's notes; a MIDI clip already there stays (the new one goes on top)
         targets.AddRange(MidiRecordTargets());

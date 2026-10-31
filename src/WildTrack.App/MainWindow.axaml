@@ -112,7 +112,7 @@
 
   <!-- maximized, Windows pushes a window with our own title bar 8 px past each screen edge: OffScreenMargin
        says how much, so the content stays on screen -->
-  <Grid x:Name="Root" RowDefinitions="Auto,*,0,280,Auto" ColumnDefinitions="*,Auto" Margin="{Binding $parent[Window].OffScreenMargin}">
+  <Grid x:Name="Root" RowDefinitions="Auto,*,0,280,Auto,Auto" ColumnDefinitions="*,Auto" Margin="{Binding $parent[Window].OffScreenMargin}">
 
     <!-- top bar: two rows so everything fits in a window that is not maximized. The first is the window's title
          bar (the system buttons sit on its right); the second holds the project's tools, Exportar on the right -->
@@ -520,6 +520,9 @@
               <Button x:Name="MasteringViewButton" Classes="seg" Height="32" Padding="12,0" Content="{loc:T transport.view.mastering}" />
             </StackPanel>
           </Border>
+          <ToggleButton x:Name="VirtualKeysButton" Classes="tbtn" Focusable="False">
+            <TextBlock Classes="icon" Text="&#xE765;" FontSize="15" />
+          </ToggleButton>
           <Button x:Name="FitButton" Classes="tbtn" ToolTip.Tip="{loc:T transport.fit.tip}">
             <TextBlock Classes="icon" Text="&#xE9A6;" FontSize="15" />
           </Button>
@@ -528,13 +531,16 @@
     </Border>
 
     <!-- the "Proyectos" manager covers the whole window, like in the web app -->
-    <c:ProjectsDialog Grid.RowSpan="5" Grid.ColumnSpan="2" x:Name="Projects" IsVisible="False" />
-    <d:ExportDialog Grid.RowSpan="5" Grid.ColumnSpan="2" x:Name="Export" IsVisible="False" AutomationProperties.Name="{loc:T export.name}" />
-    <d:SettingsDialog Grid.RowSpan="5" Grid.ColumnSpan="2" x:Name="Settings" IsVisible="False" />
-    <d:AboutDialog Grid.RowSpan="5" Grid.ColumnSpan="2" x:Name="About" IsVisible="False" />
-    <d:FfmpegDialog Grid.RowSpan="5" Grid.ColumnSpan="2" x:Name="FfmpegHelp" IsVisible="False" />
-    <d:UnsavedDialog Grid.RowSpan="5" Grid.ColumnSpan="2" x:Name="Unsaved" IsVisible="False" />
+    <!-- the virtual keyboard (Ctrl+K), under the transport -->
+    <Border Grid.Row="5" Grid.ColumnSpan="2" x:Name="VirtualKeysHost" IsVisible="False" Height="84" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="14,6" />
+
+    <c:ProjectsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Projects" IsVisible="False" />
+    <d:ExportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Export" IsVisible="False" AutomationProperties.Name="{loc:T export.name}" />
+    <d:SettingsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Settings" IsVisible="False" />
+    <d:AboutDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="About" IsVisible="False" />
+    <d:FfmpegDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="FfmpegHelp" IsVisible="False" />
+    <d:UnsavedDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Unsaved" IsVisible="False" />
     <!-- toasts float over everything (the manager and the dialogs too), above the transport bar -->
-    <c:ToastHost Grid.RowSpan="5" Grid.ColumnSpan="2" x:Name="Toasts" Margin="0,0,16,68" />
+    <c:ToastHost Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Toasts" Margin="0,0,16,68" />
   </Grid>
 </Window>
