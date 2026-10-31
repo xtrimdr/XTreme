@@ -24,7 +24,7 @@ public partial class MainWindow
         ShowLook(() => t.Track.Color, () => t.Track.Icon, hex => SetTrackLook(t, x => x.Color = hex, "color"), id => SetTrackLook(t, x => x.Icon = id, "icon"),
             Loc.T("look.icon.none.tip"), anchor, at);
 
-    /// <summary>A bus's color and icon: the same picker as a track's; without an icon it shows its reverb's or delay's.</summary>
+    /// <summary>A bus's color and icon: the same picker as a track's; without an icon it shows the one every bus shares.</summary>
     void ShowBusLook(string id, Control anchor, Point? at = null) =>
         ShowLook(() => BusById(id)?.Color, () => BusById(id)?.Icon, hex => BusEdit(id, b => b.Color = hex, "color"), icon => BusEdit(id, b => b.Icon = icon, "icon"),
             Loc.T("look.icon.none.bus.tip"), anchor, at);

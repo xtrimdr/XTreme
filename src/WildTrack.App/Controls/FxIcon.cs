@@ -16,6 +16,8 @@ public sealed class FxIcon : Control
     public const string Sat = "sat", Comp = "comp", Eq = "eq", Reverb = "reverb", Delay = "delay", Gate = "gate", Transpose = "transpose", Vst = "vst";
     /// <summary>Not an effect: the timeline's Mano tool (its button and pointer), because Segoe has no open hand.</summary>
     public const string Hand = "hand";
+    /// <summary>Not an effect: a bus, whatever its slots hold, and the badge of one without an icon of its own.</summary>
+    public const string Bus = "bus";
 
     // lucide-react 1.59 paths; a relative "m" that starts a subpath is written absolute ("M… l…") so it doesn't
     // depend on where the previous subpath ended
@@ -34,6 +36,8 @@ public sealed class FxIcon : Control
         [Transpose] = Geometry.Parse("M9 18V5l12-2v13 M3 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M15 16a3 3 0 1 0 6 0a3 3 0 1 0-6 0"),
         // lucide "hand"
         [Hand] = Geometry.Parse("M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2 M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2 M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8 M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"),
+        // lucide "audio-lines"
+        [Bus] = Geometry.Parse("M2 10v3 M6 6v11 M10 3v18 M14 8v7 M18 5v13 M22 10v3"),
     };
 
     /// <summary>The same property as TextBlock.Foreground, so <see cref="SetColor"/> paints either kind of icon.</summary>

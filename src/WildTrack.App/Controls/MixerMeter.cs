@@ -185,7 +185,7 @@ public sealed class MixerMeter : Control
         for (int k = 0; k < nMarks && scale; k++)
         {
             int db = ScaleMarks[marks[k]];
-            var m = Palette.Text(MarkTexts[marks[k]], 8, db == 0 ? Palette.Dim : Palette.Faint, Palette.Mono);
+            var m = Palette.Text(MarkTexts[marks[k]], 8, db == 0 ? Palette.Fg : Palette.Dim, Palette.Mono);
             ctx.DrawText(m, new Point(pairW + 2, Y(db) - m.Height / 2));
         }
     }
@@ -193,12 +193,13 @@ public sealed class MixerMeter : Control
     /// <summary>One bar at <paramref name="x"/>: its clip light, the RMS solid, the stretch up to the peak dimmed, the marks.</summary>
     void Bar(DrawingContext ctx, double x, double w, double h, double peak, double rms, bool clip, ReadOnlySpan<int> marks)
     {
-        ctx.DrawRectangle(clip ? Palette.Rec : Palette.Raised, null, new Rect(x, ReadoutH + 1, w, LightH), 2, 2);
+        ctx.DrawRectangle(clip ? Palette.Rec : Palette.Hover, null, new Rect(x, ReadoutH + 1, w, LightH), 2, 2);
         var bar = new Rect(x, BarTop, w, h);
         double peakPct = Pct(peak), rmsPct = Math.Min(Pct(rms), peakPct);
         using (ctx.PushClip(new RoundedRect(bar, 2)))
         {
-            ctx.FillRectangle(Palette.Raised, bar);
+            // Hover, a step above both a strip's card and a selected one (Raised), in every surface palette
+            ctx.FillRectangle(Palette.Hover, bar);
             // the gradient is laid over the whole bar and clipped to each stretch, so its colors stay where the dB are
             double yPeak = BarTop + h * (1 - peakPct), yRms = BarTop + h * (1 - rmsPct);
             if (peakPct > rmsPct)

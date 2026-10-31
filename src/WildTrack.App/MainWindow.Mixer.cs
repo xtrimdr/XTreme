@@ -71,7 +71,7 @@ public partial class MainWindow
     /// <summary>The strips with what the window updates on them (and an effect's window, <see cref="ShowSlotWindow"/>, its own).</summary>
     sealed class MixerLayout
     {
-        public readonly Grid Strips = new() { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto") };
+        public readonly Grid Strips = new() { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         /// <summary>The order and sides of its strips, for dragging them (MainWindow.MixerOrder.cs).</summary>
         public readonly MixerOrder Order = new();
         public readonly List<Action> Refresh = [];
@@ -126,6 +126,8 @@ public partial class MainWindow
     bool mixerView;
     /// <summary>The mixer's head row (title, width…): hidden while the Mastering view uses the mixer's place.</summary>
     Control? mixerHeader;
+    /// <summary>The master strip, pinned to the right of the scrolled strips (asked by the user: always in sight).</summary>
+    readonly Border masterPin = PinnedColumn();
 
     /// <summary>Preset names and hints come from the engine in Spanish: they are looked up by id (or by name for the buses) and fall back to that text.</summary>
     static string CompPresetName(CompPresetDef p) => Loc.Or("insp.comp." + p.Id, p.Label);
@@ -210,8 +212,16 @@ public partial class MainWindow
         DockPanel.SetDock(header, Dock.Top);
         MixerDock.Children.Add(miniRow);
         MixerDock.Children.Add(header);
-        // the DockPanel fills only its last child: the mixer and the Mastering view share it, so both fill the place
-        MixerDock.Children.Add(new Panel { Children = { mixerScroll, masteringScroll, pianoHost } });
+        // the DockPanel fills only its last child: the mixer and the Mastering view share it, so both fill the place;
+        // each keeps the master's output pinned at its right, outside what scrolls
+        var area = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        area.Children.Add(new Panel { Children = { mixerScroll, masteringScroll, pianoHost } });
+        var pins = new Panel { Children = { masterPin, masteringPin } };
+        Grid.SetColumn(pins, 1);
+        area.Children.Add(pins);
+        MixerDock.Children.Add(area);
+        AlignPin(mixerScroll, masterPin, 0);
+        AlignPin(masteringScroll, masteringPin, MasteringPad.Bottom);
         InitMastering();
         InitPiano();
         InitInstruments();
@@ -468,7 +478,7 @@ public partial class MainWindow
         try
         {
             bool editable = store != null && !store.ReadOnly && !restoring;
-            mixerStrips.IsEnabled = editable;
+            mixerStrips.IsEnabled = masterPin.IsEnabled = editable;
             if (panButton != null) panButton.IsEnabled = editable && tracks.Any(t => t.Track.HasContent);
             foreach (var r in headerRefresh) r();
             foreach (var r in mx.Refresh) r();
@@ -549,7 +559,13 @@ public partial class MainWindow
         // the mini timeline sits over the Mastering view too
         miniTimeline.Bpm = Timeline.Bpm;
         miniTimeline.SetPlayhead(pos, tracks.Count == 0 ? 0 : tracks.Max(t => t.EndSec), RecordingBusy);
-        if (masteringView) return;
+        masterShowL = Math.Max(outL, masterShowL * 0.82f); masterShowR = Math.Max(outR, masterShowR * 0.82f);
+        double rmsL = Math.Sqrt(engine.OutRms.MeanSqL), rmsR = Math.Sqrt(engine.OutRms.MeanSqR);
+        if (masteringView)
+        {
+            masteringMeter?.Set(masterShowL, masterShowR, rmsL, rmsR);
+            return;
+        }
         foreach (var t in tracks)
             if (mx.Meters.TryGetValue(t.Track.Id, out var m))
             {
@@ -557,11 +573,10 @@ public partial class MainWindow
                 m.Meter.Set(t.ShowL, t.ShowR, Math.Sqrt(t.Chain.Rms.MeanSqL), Math.Sqrt(t.Chain.Rms.MeanSqR));
                 m.Gr(t.GrShow);
             }
-        masterShowL = Math.Max(outL, masterShowL * 0.82f); masterShowR = Math.Max(outR, masterShowR * 0.82f);
-        mx.Master?.Set(masterShowL, masterShowR, Math.Sqrt(engine.OutRms.MeanSqL), Math.Sqrt(engine.OutRms.MeanSqR));
+        mx.Master?.Set(masterShowL, masterShowR, rmsL, rmsR);
         TickNodes();
         ShowMasterLufs();
-        ShowMasterCorrelation();
+        ShowCorrelation(mx.Cor, ref mx.CorHundredths);
         if (mx.Lim != null) mx.Lim.Opacity = lim < -0.5 ? 1 : 0.25;
     }
 
@@ -617,15 +632,16 @@ public partial class MainWindow
     /// </summary>
     static readonly IBrush CorWide = new Avalonia.Media.Immutable.ImmutableSolidColorBrush(Palette.MeterYellow);
 
-    void ShowMasterCorrelation()
+    /// <summary>Writes the output's correlation in <paramref name="text"/> (the master strip's or the Mastering meter's).</summary>
+    void ShowCorrelation(TextBlock? text, ref int shown)
     {
-        if (mx.Cor == null) return;
+        if (text == null) return;
         double c = engine.Correlation.Value;
         int h = double.IsNaN(c) ? int.MinValue : (int)Math.Round(c * 10) * 10;
-        if (h == mx.CorHundredths) return;
-        mx.CorHundredths = h;
-        mx.Cor.Text = h == int.MinValue ? "—" : h == 0 ? "0.0" : $"{h / 100.0:+0.0;-0.0}";
-        mx.Cor.Foreground = h == int.MinValue ? Palette.Faint : h < 0 ? Palette.Rec : h < 30 ? CorWide : Palette.Dim;
+        if (h == shown) return;
+        shown = h;
+        text.Text = h == int.MinValue ? "—" : h == 0 ? "0.0" : $"{h / 100.0:+0.0;-0.0}";
+        text.Foreground = h == int.MinValue ? Palette.Faint : h < 0 ? Palette.Rec : h < 30 ? CorWide : Palette.Dim;
     }
 
     // --- strips ----------------------------------------------------------------------------------------
@@ -708,7 +724,24 @@ public partial class MainWindow
                 if (order.Top.Find(x => x.Column == column).Item is Folder { Separator: false })
                     column.Margin = new Thickness(i > 0 ? FolderGap : 0, 0, right || i < side.Children.Count - 1 ? FolderGap : 0, 0);
             }
-        var master = Column(Master()); Grid.SetColumn(master, 3); mixerStrips.Children.Add(master);
+        masterPin.Child = Column(Master());
+    }
+
+    /// <summary>The column a view pins at its right: a line apart from what scrolls beside it.</summary>
+    static Border PinnedColumn() => new()
+    {
+        BorderBrush = Palette.Line, BorderThickness = new Thickness(1, 0, 0, 0), Padding = new Thickness(StripGap / 2, 0, 0, 0), IsVisible = false,
+    };
+
+    /// <summary>
+    /// Keeps a pinned column's foot level with the scrolled content beside it: when the horizontal scroll bar shows,
+    /// the content loses its height and the column has to lose it too, or its meter would end lower than the others.
+    /// </summary>
+    static void AlignPin(ScrollViewer scroll, Control pin, double bottom)
+    {
+        void Align() => pin.Margin = new Thickness(0, 0, 0, bottom + Math.Max(0, scroll.Bounds.Height - scroll.Viewport.Height));
+        scroll.ScrollChanged += (_, _) => Align();
+        scroll.SizeChanged += (_, _) => Align();
     }
 
     /// <summary>A strip as a card on the mixer's background, so each channel reads apart from its neighbours.</summary>
@@ -759,9 +792,19 @@ public partial class MainWindow
 
         bool empty = !t.Track.HasContent;
         bool Silent() => empty || t.Silenced || (tracks.Any(x => x.Track.HasContent && x.Soloed) && !t.Soloed);
-        var name = new TextBlock { Text = t.Track.Name, FontSize = 11.5, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis };
+        var name = new TextBlock { Text = t.Track.Name, FontSize = 11.5, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent };
         mx.Refresh.Add(() => { name.Text = t.Track.Name; name.Foreground = Silent() ? Palette.Faint : Palette.Fg; ToolTip.SetTip(name, Loc.T("mix.name.tip", t.Track.Name)); });
-        name.DoubleTapped += (_, _) => RenameTrackIn(t, name);
+        RenameOnDoubleClick(name, () => RenameTrackIn(t, name));
+        box.PointerReleased += (_, e) =>
+        {
+            if (e.Handled || e.InitialPressMouseButton != MouseButton.Right || store == null || restoring) return;
+            e.Handled = true;
+            int i = tracks.IndexOf(t);
+            if (i >= 0 && sel != t) Timeline.Select(i);
+            var items = new List<object> { new MenuItem { Header = t.Track.Name, IsEnabled = false, FontSize = 11 } };
+            items.AddRange(TrackMenuItems(t, box, null, () => RenameTrackIn(t, name), look: true));
+            OpenAnchoredMenu(Popup(items, 240), box);
+        };
         var emptyHint = new TextBlock { Text = Loc.T("mixer.emptyTag"), FontSize = 9, LetterSpacing = 0.8, Foreground = Palette.Faint, IsVisible = empty, VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(emptyHint, Loc.T("mixer.emptyTag.tip"));
         // armed, the strip shows where it records from in the place of "VACÍA" (native only)
@@ -846,7 +889,7 @@ public partial class MainWindow
 
     /// <summary>
     /// A strip's card look, the same for every channel (asked by the user: a bus selects like a track): hover, selected
-    /// (raised, accent border and top edge), armed (tinted red), and its color along the top edge. A press selects it.
+    /// (raised, accent border), armed (tinted red), and its color along the top edge. A press selects it.
     /// Returns the top edge, which the strip lays over its content.
     /// </summary>
     Border StripCardLook(Border box, Func<bool> selected, Func<bool> armed, Func<Color?> color, Action select)
@@ -863,13 +906,22 @@ public partial class MainWindow
             // the armed strip (where R records) is tinted red, like its lane in the timeline
             box.Background = rec && !on ? Palette.Alpha(Palette.RecColor, 0.08)
                 : on ? Palette.Raised : hover ? Palette.Alpha(Palette.RaisedColor, 0.6) : Palette.Panel;
-            box.BorderBrush = rec ? Palette.Alpha(Palette.RecColor, 0.5) : on ? Palette.Alpha(Palette.AccentColor, 0.4) : Palette.Line;
-            // a channel with a color shows it along the card's top edge; selected, the accent takes its place
-            top.Background = on ? Palette.Accent : color() is { } c ? Palette.Alpha(c, 1) : Brushes.Transparent;
+            box.BorderBrush = rec ? Palette.Alpha(Palette.RecColor, 0.5) : on ? Palette.Accent : Palette.Line;
+            // a channel with a color shows it along the card's top edge, selected or not
+            top.Background = color() is { } c ? Palette.Alpha(c, 1) : Brushes.Transparent;
         }
         mx.Refresh.Add(Paint);
         return top;
     }
+
+    /// <summary>A title in the mixer: a double click renames. Caught on its way down, because the press also lands on a
+    /// card that captures the pointer to drag and the gesture's double tap can miss it.</summary>
+    static void RenameOnDoubleClick(Control title, Action rename) => title.AddHandler(PointerPressedEvent, (object? _, PointerPressedEventArgs e) =>
+    {
+        if (e.ClickCount != 2 || !e.GetCurrentPoint(title).Properties.IsLeftButtonPressed) return;
+        e.Handled = true;
+        rename();
+    }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
     /// <summary>A track's name from the mixer: a double click on it asks for the new one (one undo step).</summary>
     void RenameTrackIn(LiveTrack t, Control anchor)
@@ -1743,14 +1795,14 @@ public partial class MainWindow
 
     /// <summary>Port of ToggleBtn: M lights in the accent, S in white. Like every strip button it takes no keyboard
     /// focus, so Space and Enter stay shortcuts after a click in the mixer.</summary>
-    Button StripToggle(string text, string tip, double size, Func<bool> on, bool solo, Action click)
+    Button StripToggle(string text, string tip, double size, Func<bool> on, bool solo, Action click, List<Action>? refresh = null)
     {
         var b = new Button { Classes = { "chip" }, Focusable = false, Width = size, Height = size, MinHeight = size, Padding = new Thickness(0), CornerRadius = new CornerRadius(4),
             HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
             Content = new TextBlock { Text = text, Classes = { "mono" }, FontSize = 10, FontWeight = FontWeight.Bold } };
         ToolTip.SetTip(b, tip);
         b.Click += (_, _) => click();
-        mx.Refresh.Add(() =>
+        (refresh ?? mx.Refresh).Add(() =>
         {
             bool lit = on();
             b.Classes.Set("lit", lit);

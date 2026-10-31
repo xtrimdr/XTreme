@@ -2482,7 +2482,7 @@ public sealed partial class TimelineView : Control
         // a narrow cell keeps only the icon
         bool withText = 16 + label.Width <= lr.Width - 4;
         double lx = lr.Center.X - (withText ? 16 + label.Width : 12) / 2;
-        FxIcon.Draw(ctx, s.Icon, new Rect(lx, lr.Center.Y - 6, 12, 12), brush);
+        FxIcon.Draw(ctx, FxIcon.Bus, new Rect(lx, lr.Center.Y - 6, 12, 12), brush);
         if (withText) ctx.DrawText(label, new Point(lx + 16, lr.Center.Y - label.Height / 2));
     }
 
@@ -3376,4 +3376,4 @@ public sealed partial class TimelineView : Control
 }
 
 /// <summary>A send shown as a knob in a track's header: the bus, its name (the knob's label) and its <see cref="FxIcon"/> icon.</summary>
-public readonly record struct SendKnob(string BusId, string Name, string Icon);
+public readonly record struct SendKnob(string BusId, string Name);

@@ -5,6 +5,19 @@ qué se hizo y dónde. Es historial: no hace falta leerlo para trabajar, salvo p
 Hasta 2026-10-29 la app se llamó GuitarCam Studio Native: los ítems de antes usan los nombres de entonces
 (`GuitarCam.*`, `gclab`, `gcvsthost`).
 
+- 2026-10-31: **Un solo ícono para los buses sin ícono** (`FxIcon.Bus`; antes dependía de su primera reverb o delay),
+  también en los envíos. La tira seleccionada del mixer se marca con el borde en acento y conserva el color del canal
+  en el filo de arriba (`StripCardLook`).
+- 2026-10-31: **Menú de canal en el mixer**: el clic derecho en una tira de pista abre sus acciones, las mismas del
+  encabezado del timeline más Color e ícono (`TrackMenuItems`). Doble clic en todo el título de pista, bus o carpeta
+  para renombrar, también con la tira sin seleccionar (`RenameOnDoubleClick`).
+- 2026-10-31: **Escala de los medidores legible con cualquier tema**: números en `Dim` (el 0 en `Fg`) y fondo de las
+  barras en `Hover`, que además no se pierde sobre una tira seleccionada (`MixerMeter`).
+- 2026-10-29: **Master y medidor fijos a la derecha**: en el mixer la tira del master queda fuera de lo que se
+  desplaza (`masterPin`, `AlignPin`); en Mastering, el Medidor de la salida en vivo (`LiveMeter`: medidor L/R, LUFS,
+  pico real, COR y MONO), con las lecturas que antes estaban en Volumen. Etapas con ícono, filo y borde de acento
+  cuando están prendidas, títulos de caja con presencia, reducción desde la derecha y sin los textos que explicaban
+  la cadena (`MainWindow.Master.cs`).
 - 2026-10-29: **Versión 0.9.9 publicada**, la primera como WildTrack (instalador `WildTrack-Setup.exe` en el release
   `v0.9.9`).
 - 2026-10-29: **La ventana recuerda dónde quedó**: posición, tamaño y si estaba maximizada, en `config.json` "window"

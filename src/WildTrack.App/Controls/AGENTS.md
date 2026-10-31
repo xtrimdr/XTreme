@@ -30,3 +30,5 @@ el lado más fuerte. La ventana le pasa `Set(picoL, picoR, rmsL, rmsR)` (picos c
 máximo y las luces; RMS como amplitud ya integrada); cualquier tira puede alimentarlo así. El RMS lo suma el hilo de audio en un `RmsTap`
 (`WildTrack.Audio.Dsp`: suma de cuadrados por bloque en totales que solo crecen, sin reset desde la UI) y la UI lo
 toma una vez por tick (`TakeMixerRms`) y suaviza cada lado ~300 ms (`MeanSqL` / `MeanSqR`). El texto del máximo se rearma solo cuando cambia su décima.
+La escala va en `Dim` (el 0 en `Fg`) y el fondo de las barras en `Hover`: se leen con cualquier tema y también sobre una
+tira seleccionada (`Raised`).
