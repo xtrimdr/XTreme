@@ -5,6 +5,7 @@ qué se hizo y dónde. Es historial: no hace falta leerlo para trabajar, salvo p
 Hasta 2026-10-29 la app se llamó GuitarCam Studio Native: los ítems de antes usan los nombres de entonces
 (`GuitarCam.*`, `gclab`, `gcvsthost`).
 
+- 2026-11-01: **Versión 0.9.10 publicada** (instalador `WildTrack-Setup.exe` en el release `v0.9.10`).
 - 2026-10-31: **Los plugins en vivo saben el bloque real del driver**: se les anunciaba 8192 y Splice INSTRUMENT
   gastaba el doble (445 → 230 µs por bloque a 192 muestras, peor caso 1,2 → 0,7 ms); el DSP dejó de dispararse con sus
   cuerdas (lo probó el usuario). `wtvsthost --block`, `VstBridge.Start(maxBlock)`; el host parte en pedazos un bloque
