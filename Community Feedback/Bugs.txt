@@ -1,1 +1,0 @@
-Al activar la funcion de teclado en un plugin, la escala se rompe
