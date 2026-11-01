@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/wildtrack-icon.png" alt="Ícono de WildTrack: un diafragma de acero hecho de instrumentos" width="220">
+  <img src="docs/xtreme-icon.png" alt="Ícono de XTreme: un vinilo con una X negra en la etiqueta naranja" width="220">
 </p>
 
-<h1 align="center">WildTrack</h1>
+<h1 align="center">XTreme</h1>
 
 <p align="center">
   <b>Un DAW para grabar, mezclar, masterizar y exportar música en Windows.</b><br>
@@ -14,18 +14,18 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/xtrimdr/WildTrack/releases/latest/download/WildTrack-Setup.exe">
-    <img src="https://img.shields.io/github/v/release/xtrimdr/WildTrack?style=for-the-badge&label=Descargar%20para%20Windows&color=22d3ee&labelColor=18181b" alt="Descargar para Windows" height="56">
+  <a href="https://github.com/xtrimdr/XTreme/releases/latest/download/XTreme-Setup.exe">
+    <img src="https://img.shields.io/github/v/release/xtrimdr/XTreme?style=for-the-badge&label=Descargar%20para%20Windows&color=22d3ee&labelColor=18181b" alt="Descargar para Windows" height="56">
   </a>
   <br>
   <sub>Windows 10/11 de 64 bits · instalador autocontenido, sin instalar .NET</sub>
 </p>
 
-**WildTrack** es un DAW para cualquier instrumento y cualquier estilo: guitarra, bajo, voz, teclados, batería, una
+**XTreme** es un DAW para cualquier instrumento y cualquier estilo: guitarra, bajo, voz, teclados, batería, una
 banda entera o una producción armada en la compu. Grabás, editás, mezclás, masterizás y exportás con pistas de audio
 y MIDI, piano roll, instrumentos y efectos VST3, buses y una cadena de master completa.
 
-Además hace **videos**: si grabás con cámara, cada toma guarda su imagen y WildTrack arma un video con un panel por
+Además hace **videos**: si grabás con cámara, cada toma guarda su imagen y XTreme arma un video con un panel por
 toma, con color y formatos para redes. Es un extra para cuando lo necesitás; sin cámara, funciona como cualquier DAW.
 
 Antes se llamaba **GuitarCam Studio Native**: al actualizar, tus ajustes y proyectos siguen ahí.
@@ -33,7 +33,7 @@ Antes se llamaba **GuitarCam Studio Native**: al actualizar, tus ajustes y proye
 <details>
 <summary><b>Antes de instalar</b></summary>
 
-- **FFmpeg** y **ffprobe** en el `PATH`, para la cámara, el video y la exportación. Si no están, WildTrack te avisa
+- **FFmpeg** y **ffprobe** en el `PATH`, para la cámara, el video y la exportación. Si no están, XTreme te avisa
   al abrir y lo instala con un clic (winget), o te lleva a la página para bajarlo.
 - Una interfaz de audio con driver **ASIO**, para grabar.
 - El instalador no está firmado: si Windows SmartScreen avisa, elegí **Más información → Ejecutar de todas formas**.
@@ -146,7 +146,7 @@ Más detalles en [Requisitos](#requisitos).
 
 ## Hacia dónde va
 
-WildTrack está **en desarrollo constante**. La idea es llevarla a un nivel que sirva tanto
+XTreme está **en desarrollo constante**. La idea es llevarla a un nivel que sirva tanto
 para quien recién empieza y quiere hacer música rápido y sin complicaciones, como para profesionales que
 quieren hacer música en serio.
 
@@ -167,7 +167,7 @@ planeado y lo que falta está en [PENDIENTES.md](PENDIENTES.md).
 - [.NET 10 SDK](https://dotnet.microsoft.com/) para compilar.
 - Para los plugins VST3 (opcional): Visual Studio con **Desarrollo para el escritorio con C++** y el **Windows 11 SDK**,
   y el SDK de VST3 de Steinberg (licencia MIT) en `lib\vst3sdk`, que baja `tools\get-vst3sdk.ps1` (unos 21 MB, fuera de
-  git). Con eso, `dotnet build` también compila `wtvsthost.exe` (`src\WildTrack.VstHost`, C++) y lo copia junto al exe;
+  git). Con eso, `dotnet build` también compila `wtvsthost.exe` (`src\XtremeDaw.VstHost`, C++) y lo copia junto al exe;
   sin eso la app compila igual y las pistas MIDI suenan con el tono de prueba.
 - Para **Extraer MIDI**: el modelo de Basic Pitch (Spotify, Apache 2.0, ~230 KB) en `lib\basic-pitch`, que baja
   `tools\get-basic-pitch.ps1` (fuera de git). El build lo copia a `basic-pitch\` junto al exe; sin él, "Extraer MIDI"
@@ -182,14 +182,14 @@ tools\probar.ps1 "qué probar"
 Compila, corre `wtlab comprobar-dsp`, copia la app a `pruebas\<fecha>-<commit>` (fuera de git; quedan las
 últimas 5) y la abre desde ahí, con la marca "PRUEBA <commit>" en la barra de título. Como nunca corre desde `bin\`,
 la app abierta no traba la próxima compilación. `-Abrir` abre la última copia sin compilar, `-NoAbrir` solo compila y
-copia, `-SinComprobar` salta `wtlab`, `-Proyecto carpeta` abre ese proyecto. Si ya hay un WildTrack abierto, antes de abrir
+copia, `-SinComprobar` salta `wtlab`, `-Proyecto carpeta` abre ese proyecto. Si ya hay un XTreme abierto, antes de abrir
 pregunta en un cuadro si lo cierra (guarda el proyecto antes), así la copia nueva no abre el mismo proyecto en solo
 lectura. Si algo falla, dice "NO SE PUEDE PROBAR" y no abre nada (desde el acceso directo, que no muestra la consola, queda
-anotado en `%APPDATA%\WildTrack\sesiones.log`, junto con cada inicio y cierre de la app y sus errores). `dotnet build` solo sigue sirviendo para compilar.
+anotado en `%APPDATA%\XTreme\sesiones.log`, junto con cada inicio y cierre de la app y sus errores). `dotnet build` solo sigue sirviendo para compilar.
 
 La app arranca en el gestor de **Proyectos** (lista, buscador, plantillas, renombrar, duplicar, Papelera).
 Con una carpeta de proyecto como argumento, la abre directo. Con `--probar "texto"` muestra ese texto en un aviso fijo ("Para probar") al abrir. `tools\make-shortcut.ps1` crea un acceso
-directo en el escritorio que abre la última copia de prueba (`probar.ps1 -Abrir`). Los ajustes se guardan en `%APPDATA%\WildTrack`.
+directo en el escritorio que abre la última copia de prueba (`probar.ps1 -Abrir`). Los ajustes se guardan en `%APPDATA%\XTreme`.
 
 ## Atajos principales
 
@@ -251,11 +251,11 @@ envío a bus debajo del nombre, como las pistas.
 
 ```
 src/
-  WildTrack.Audio      motor de audio: DSP, ASIO dúplex, click, grabación a disco, exportación
-  WildTrack.Projects   modelo del proyecto, guardado atómico, historial, gestor de proyectos
-  WildTrack.App        la ventana (Avalonia 11.3)
-  WildTrack.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana
-  WildTrack.VstHost    wtvsthost.exe (C++): abre un plugin VST3 en su propio proceso
+  XtremeDaw.Audio      motor de audio: DSP, ASIO dúplex, click, grabación a disco, exportación
+  XtremeDaw.Projects   modelo del proyecto, guardado atómico, historial, gestor de proyectos
+  XtremeDaw.App        la ventana (Avalonia 11.3)
+  XtremeDaw.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana
+  XtremeDaw.VstHost    wtvsthost.exe (C++): abre un plugin VST3 en su propio proceso
 tools/                 ícono, acceso directo y utilidades de verificación
 ```
 
@@ -273,7 +273,7 @@ exports/              videos y audios exportados
 
 ## Contribuir y licencia
 
-WildTrack es **gratis y sin fines de lucro**: se hace para la comunidad, para que cualquiera
+XTreme es **gratis y sin fines de lucro**: se hace para la comunidad, para que cualquiera
 pueda grabar y hacer música sin pagar un peso. Las contribuciones son bienvenidas y **todas pasan por la
 aprobación del mantenedor**: abrí un issue o un Pull Request siguiendo [CONTRIBUTING.md](CONTRIBUTING.md).
 Antes de tocar código, leé [AGENTS.md](AGENTS.md) (la guía del proyecto) y mirá [PENDIENTES.md](PENDIENTES.md)
@@ -297,7 +297,7 @@ configures.
 
 ## wtlab
 
-`wtlab.exe` (`src\WildTrack.Lab\bin\Debug\net10.0-windows\wtlab.exe`) prueba el motor y los proyectos desde
+`wtlab.exe` (`src\XtremeDaw.Lab\bin\Debug\net10.0-windows\wtlab.exe`) prueba el motor y los proyectos desde
 la consola, sin abrir la ventana.
 
 | Comando | Qué hace |

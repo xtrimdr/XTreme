@@ -2,7 +2,7 @@
 
 Referencia para agentes: qué hay en cada parte de la ventana, cómo se comporta y en qué archivo vive. No hace falta
 leerla entera: buscá el apartado de lo que vas a tocar. Las reglas generales de diseño (tokens, tipografía, clases,
-atajos) están en [src/WildTrack.App/AGENTS.md](../src/WildTrack.App/AGENTS.md). Si cambiás cómo funciona algo de
+atajos) están en [src/XtremeDaw.App/AGENTS.md](../src/XtremeDaw.App/AGENTS.md). Si cambiás cómo funciona algo de
 acá, actualizá su apartado en el mismo cambio.
 
 La captura de referencia es [captura.png](captura.png).
@@ -12,7 +12,7 @@ Todo lo que se describe acá lo decidió el usuario: no lo cambies sin preguntar
 
 ## Splash (`SplashWindow`)
 
-Al abrir la app, mientras se arma la ventana principal: ícono grande, nombre, frase, versión con el commit
+Al abrir la app, mientras se arma la ventana principal: ícono grande, el bloque de título (`Controls/BrandTitle`, compartido con "Acerca de": "XTREME" en Bahnschrift Bold con la X en el acento, una tira estática de barras como una onda y la frase en mayúsculas espaciadas; Bahnschrift viene con Windows 10 en adelante, sin ella cae a Segoe UI), versión con el commit
 ("PRUEBA" en una copia de prueba) y una franja del acento que corre por el borde de abajo (animación de composición:
 sigue moviéndose aunque el hilo de la UI esté ocupado). Toma los colores del tema, dura al menos 3 s (pedido del usuario), queda
 encima de la ventana principal mientras esta carga detrás y se va con un fundido. Excepción a "sin gradientes": el brillo del acento detrás del ícono y la franja
@@ -73,7 +73,7 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 - El logo es el ícono de la app y abre "Acerca de" (`Dialogs/AboutDialog`), con el mismo encabezado que el splash
   (`BrandArt`: logo grande, brillo y línea del acento del tema, versión en la esquina).
   Ahí dice si hay una versión nueva: 5 s después de abrir, `MainWindow.Updates.cs` le pregunta a GitHub por la última
-  release (`UpdateCheck`, en `WildTrack.Projects`; sin cuenta ni datos del usuario, y si falla no avisa nada). Una
+  release (`UpdateCheck`, en `XtremeDaw.Projects`; sin cuenta ni datos del usuario, y si falla no avisa nada). Una
   versión nueva sale en un toast con "Descargar" solo la primera vez (`config.json` "updateNotified"); después, solo
   en la campanita. La casilla "Avisarme cuando salga una versión nueva" lo apaga (`config.json` "checkUpdates": "off").
 - FFmpeg solo aparece en la barra si falta ("FFmpeg no encontrado", `MainWindow.TopBar.cs`). Al abrir sin FFmpeg, y
@@ -262,7 +262,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   cuenta que usa la exportación**: lo que se ve tiene que ser lo que se exporta. Encuadre: cover-fit + zoom/paneo/espejo
   del clip. Etiqueta con el nombre de la pista abajo a la izquierda.
 - **Video de la preview**: cada clip tiene su `Video/VideoDecoder` (un hilo que va unos cuadros adelante). Lee con
-  FFmpeg dentro del proceso (`NativeVideoSource`, en `WildTrack.Audio`: los DLL de `lib\ffmpeg`, en el procesador hasta
+  FFmpeg dentro del proceso (`NativeVideoSource`, en `XtremeDaw.Audio`: los DLL de `lib\ffmpeg`, en el procesador hasta
   1080p y en la placa de video arriba de eso); si no están los DLL o el archivo no abre, con ffmpeg.exe por pipe
   (`PipeVideoSource`, un proceso por salto). Un clip arranca su decodificador 1 s antes de empezar (`LiveClip.PreRollSec`),
   así los cortes no congelan la imagen, y un panel no muestra un cuadro hasta tener uno de ese momento (`LiveClip.Fresh`).
@@ -382,7 +382,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   o del marcador (nombres de la lista `MarkerNames`, "Repetir hasta el siguiente", borrar); los dos terminan con "Copiar capítulos para YouTube" (`CopyChapters`, `ProjectMarkers.Chapters`: "0:00 Inicio" si el primero no está en 0, y avisa si YouTube los ignoraría). Los marcadores van en
   `Project.Markers` y se deshacen; el rango va en `ProjectSettings.LoopStartSec/LoopEndSec`, fuera del deshacer como el
   tempo (`ProjectMarkers`). Atajos: L loop, I / O ponen A / B en el cabezal, K marcador, `,` / `.` saltan.
-- **Marcas de duración por red** (`Controls/TimelineView.Social.cs`, `SocialLengths` en `WildTrack.Audio`, pedido del
+- **Marcas de duración por red** (`Controls/TimelineView.Social.cs`, `SocialLengths` en `XtremeDaw.Audio`, pedido del
   usuario): el clic derecho en la regla, debajo de la grilla, prende o apaga cada una (varias a la vez; ninguna de
   entrada; `socialMarks` en config.json, de la app y no del proyecto, como la grilla). En ese menú (pedido del usuario)
   el clic izquierdo elige y cierra, y el **clic derecho elige y lo deja abierto**, para cambiar varias seguidas
@@ -533,7 +533,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   ellas) y el selector de salida donde ellas tienen el paneo y M S ● (`CompactFolderControls`). Cada edición es un
   `FolderEdit` con su deshacer. Para procesar un grupo, se manda la carpeta a un bus y los efectos van en el bus.
 
-## Plantillas de pista (`TrackPresets`, `%APPDATA%\WildTrack\pistas.json`)
+## Plantillas de pista (`TrackPresets`, `%APPDATA%\XTreme\pistas.json`)
 
 Clic derecho en una pista → "Guardar como plantilla" guarda su canal (sin mute ni solo), color, ícono, entrada y si
 va en el video; "Nueva pista → Plantilla" crea una pista con eso. En el menú de nueva pista las explicaciones son

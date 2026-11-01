@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="XtremeDaw.App.Controls.BrandTitle">
+
+  <!-- the name in Bahnschrift (ships with Windows 10 and up) with the X in the accent, a strip of bars like a
+       waveform and the tagline in capitals; shared by the splash and "Acerca de" -->
+  <StackPanel VerticalAlignment="Center" Spacing="12">
+    <TextBlock x:Name="NameText" FontFamily="Bahnschrift, Segoe UI" FontWeight="Bold" FontSize="46" LetterSpacing="7"
+               Foreground="{StaticResource Fg}">
+      <Run Text="X" Foreground="{StaticResource Accent}" /><Run Text="TREME" />
+    </TextBlock>
+    <Canvas x:Name="Beat" Height="22" Width="186" HorizontalAlignment="Left" IsHitTestVisible="False" />
+    <TextBlock x:Name="TaglineText" FontFamily="Bahnschrift, Segoe UI" FontWeight="SemiBold" FontSize="12" LetterSpacing="3.4"
+               Foreground="{StaticResource Dim}" />
+  </StackPanel>
+</UserControl>

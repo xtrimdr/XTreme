@@ -46,9 +46,9 @@ jobs:
       - name: Comprobar el DSP (wtlab comprobar-dsp)
         shell: pwsh
         run: |
-          dotnet build src/WildTrack.Lab -c Release -nologo -v:minimal
+          dotnet build src/XtremeDaw.Lab -c Release -nologo -v:minimal
           if ($LASTEXITCODE -ne 0) { throw 'wtlab no compiló' }
-          & src/WildTrack.Lab/bin/Release/net10.0-windows/wtlab.exe comprobar-dsp
+          & src/XtremeDaw.Lab/bin/Release/net10.0-windows/wtlab.exe comprobar-dsp
           if ($LASTEXITCODE -ne 0) { throw "wtlab comprobar-dsp falló ($LASTEXITCODE)" }
 
       - name: Instalador
@@ -62,7 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: instalador-sin-firmar
-          path: artifacts/WildTrack-Setup.exe
+          path: artifacts/XTreme-Setup.exe
           if-no-files-found: error
 
       - name: Firmar con SignPath
@@ -71,7 +71,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'WildTrack' }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'XTreme' }}
           signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
@@ -80,17 +80,17 @@ jobs:
       - name: Elegir el instalador final
         shell: pwsh
         run: |
-          $signed = 'artifacts/signed/WildTrack-Setup.exe'
-          $exe = if (Test-Path $signed) { $signed } else { 'artifacts/WildTrack-Setup.exe' }
+          $signed = 'artifacts/signed/XTreme-Setup.exe'
+          $exe = if (Test-Path $signed) { $signed } else { 'artifacts/XTreme-Setup.exe' }
           New-Item -ItemType Directory -Force artifacts/final | Out-Null
           Copy-Item $exe artifacts/final/
-          $sig = Get-AuthenticodeSignature artifacts/final/WildTrack-Setup.exe
+          $sig = Get-AuthenticodeSignature artifacts/final/XTreme-Setup.exe
           Write-Host "Firma: $($sig.Status) $($sig.SignerCertificate.Subject)"
 
       - uses: actions/upload-artifact@v4
         with:
           name: instalador
-          path: artifacts/final/WildTrack-Setup.exe
+          path: artifacts/final/XTreme-Setup.exe
 
       - name: Release en borrador
         if: startsWith(github.ref, 'refs/tags/')
@@ -102,6 +102,6 @@ jobs:
           # a release made by hand for this tag stays as it is; the build is still in the run's artifacts
           gh release view $env:GITHUB_REF_NAME *> $null
           if ($LASTEXITCODE -eq 0) { Write-Host "El release $env:GITHUB_REF_NAME ya existe: no lo toco."; exit 0 }
-          gh release create $env:GITHUB_REF_NAME artifacts/final/WildTrack-Setup.exe --draft --verify-tag `
-            --title "WildTrack $v" --notes "Borrador armado por GitHub Actions: escribí las notas y publicalo."
+          gh release create $env:GITHUB_REF_NAME artifacts/final/XTreme-Setup.exe --draft --verify-tag `
+            --title "XTreme $v" --notes "Borrador armado por GitHub Actions: escribí las notas y publicalo."
           if ($LASTEXITCODE -ne 0) { throw 'No pude crear el release' }

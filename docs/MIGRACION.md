@@ -152,7 +152,7 @@ Arpegio + Punteo", "Rítmica + Punteo vertical", "Toma única". Las del usuario 
 proyecto); guardar con el mismo nombre reemplaza; se borran desde el formulario de nuevo proyecto
 ("mía"). "Guardar como plantilla" toma cada pista con mute/solo limpios y el nombre sin "Toma N — ".
 
-### 2.3 Historial (pestaña derecha, `HistoryPanel`) ✅ (`MainWindow.History.cs`, `WildTrack.Projects/ProjectHistory.cs`)
+### 2.3 Historial (pestaña derecha, `HistoryPanel`) ✅ (`MainWindow.History.cs`, `XtremeDaw.Projects/ProjectHistory.cs`)
 - **Tomas**: todas las grabadas, filtro Todas / En uso / Sin usar, buscador, agrupadas por día ("Hoy",
   "Ayer", fecha). Por toma: escuchar el WAV crudo (sin efectos), mostrar en el Explorador, quitar del
   timeline (el archivo queda) o volver a agregarla; "No usada"; reintentar si no se pudo guardar.

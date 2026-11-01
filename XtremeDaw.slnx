@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/XtremeDaw.App/XtremeDaw.App.csproj" />
+    <Project Path="src/XtremeDaw.Audio/XtremeDaw.Audio.csproj" />
+    <Project Path="src/XtremeDaw.Lab/XtremeDaw.Lab.csproj" />
+    <Project Path="src/XtremeDaw.Projects/XtremeDaw.Projects.csproj" />
+  </Folder>
+</Solution>

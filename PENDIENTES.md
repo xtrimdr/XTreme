@@ -1,4 +1,4 @@
-# Pendientes — WildTrack
+# Pendientes — XTreme
 
 Ideas y cosas para implementar en la versión nativa. Cada ítem: qué es, por qué, y notas si hay.
 Al terminar uno, pasarlo a [HECHO.md](HECHO.md) con la fecha (y sacarlo de acá).
@@ -226,11 +226,11 @@ de video y normalización ya están anotados arriba; el análisis amplía su alc
   de Claude va por esa ruta: moverla también; no crear nunca otro repo `GuitarCamNative` en GitHub, rompe la
   redirección) y el archivo `guitarcam.json` de cada proyecto (renombrarlo pide migrar al abrir y
   que las versiones viejas no lo vean). Antes de publicar con el nombre nuevo, buscarlo en las oficinas de marcas
-  (USPTO, INPI). El botón de descarga del README apunta a `WildTrack-Setup.exe`: anda recién con el próximo release.
+  (USPTO, INPI). El botón de descarga del README apunta a `XTreme-Setup.exe`: anda recién con el próximo release.
 - Firma del instalador: falta pedirla a SignPath Foundation (gratis para código abierto; el README ya tiene la
   política de firma que piden). Hasta entonces el workflow arma el instalador sin firmar y Windows SmartScreen avisa
-  al instalarlo. Con la cuenta: proyecto `WildTrack` (el slug por defecto del workflow) con el repo
-  `xtrimdr/WildTrack`, política `release-signing`, el secreto `SIGNPATH_API_TOKEN` y la variable
+  al instalarlo. Con la cuenta: proyecto `XTreme` (el slug por defecto del workflow) con el repo
+  `xtrimdr/XTreme`, política `release-signing`, el secreto `SIGNPATH_API_TOKEN` y la variable
   `SIGNPATH_ORGANIZATION_ID` en GitHub; la firma se prende sola.
 - `AudioGapLog` es un diagnóstico provisorio: sacarlo (o dejarlo detrás de una opción) cuando el audio esté confirmado.
 

@@ -1,4 +1,4 @@
-# Opcional — ideas del manual de Fender Studio Pro para WildTrack Native
+# Opcional — ideas del manual de Fender Studio Pro para XTreme Native
 
 Relevamiento: **2026-10-24**. Las propuestas nuevas de este informe son opcionales, sin compromiso de
 implementación ni cambios en el funcionamiento de la app. Las funciones ya pedidas conservan su estado
@@ -29,7 +29,7 @@ documentación y el código; no se probó la app ni el hardware durante este rel
 
 ## Primero: mejoras con efecto directo sobre el trabajo diario
 
-| Propuesta | Para qué nos sirve | Situación en WildTrack | Dificultad estimada |
+| Propuesta | Para qué nos sirve | Situación en XTreme | Dificultad estimada |
 |---|---|---|---|
 | Repetir un rango A–B | Practicar o mezclar ocho compases sin volver al principio | Hay loop de la duración completa, falta rango | Media |
 | Marcadores con nombre | Saltar a Intro, Estribillo o Solo | No se encontró un modelo de marcadores | Baja–media |
@@ -96,7 +96,7 @@ automáticamente cada vez que se corrige una nota.
 ### 5. Colas de efectos y exportación de un fragmento
 
 El manual ofrece tiempo adicional para la caída de efectos y selección del tramo exportado.
-En WildTrack, `MixRenderer.MixDurationSec` calcula el final del último clip y los exportadores usan
+En XTreme, `MixRenderer.MixDurationSec` calcula el final del último clip y los exportadores usan
 esa duración: una cola que siga sonando después puede quedar cortada. Propongo **“Conservar colas”**,
 con duración máxima, y exportar un rango para sacar un adelanto del tema.
 [Fuente: Mixing Down, Export Range](https://fenderstudiopromanual.fender.com/en/Content/Mixing_Topics/Mixing_Down.htm).
@@ -139,7 +139,7 @@ conservando el estado anterior, como hace el almacenamiento actual.
 
 ## Después: desarrollar ideas que ya están en nuestros pendientes
 
-| Idea existente | Qué aporta el manual | Alcance recomendado para WildTrack |
+| Idea existente | Qué aporta el manual | Alcance recomendado para XTreme |
 |---|---|---|
 | Grabación en loop y comping | Pasadas separadas, escucha de alternativas y elección por fragmentos | Primero elegir una pasada completa; luego combinar frases. Mantener juntos audio, video y corrección de sincronía. [Comping](https://fenderstudiopromanual.fender.com/en/Content/Editing_Topics/Comping.htm) |
 | Pedalera MIDI y MIDI learn | Vincular un control físico con una acción o parámetro | Priorizar grabar/parar, play y marcadores; después aprender perillas. No exige esperar a pistas MIDI con instrumentos. [Control Linking](https://fenderstudiopromanual.fender.com/en/Content/Control_Link_Topics/Control_Linking.htm) |
@@ -170,7 +170,7 @@ sus offsets de cámara y su recuperación si se interrumpe la grabación.
   tomas descartadas e historial; no confundir “para compartir” con “respaldo completo”.
   [Zip Export and Import](https://fenderstudiopromanual.fender.com/en/Content/Saving%2C%20Import%20and%20Export/Zip_export_and_import.htm).
 - **Rescatar lo que acabo de tocar:** adaptación propia inspirada en Retrospective Recording. El tema
-  del manual habla de **MIDI**, no de un búfer de audio o cámara. Para WildTrack se podría investigar un
+  del manual habla de **MIDI**, no de un búfer de audio o cámara. Para XTreme se podría investigar un
   anillo preasignado de audio, opcional y con duración acotada; recuperar video requeriría otro diseño.
   [Retrospective Recording](https://fenderstudiopromanual.fender.com/en/Content/Fundamentals_Topics/Retrospective_Record.htm).
 - **Congelar pistas cuando lleguen VST:** renderizar temporalmente pistas costosas conservando originales

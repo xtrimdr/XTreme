@@ -1,10 +1,10 @@
-# Guía para agentes — WildTrack
+# Guía para agentes — XTreme
 
 Instrucciones para cualquier agente de IA (Claude, Codex, Copilot, Cursor…) que siga con este proyecto. Acá van las
 reglas que valen siempre. Las demás se cargan según dónde trabajes:
 
-- [src/WildTrack.App/AGENTS.md](src/WildTrack.App/AGENTS.md): diseño de la ventana (tokens, tipografía, clases, atajos, mensajes).
-- [src/WildTrack.App/Controls/AGENTS.md](src/WildTrack.App/Controls/AGENTS.md): controles dibujados a mano y medidores.
+- [src/XtremeDaw.App/AGENTS.md](src/XtremeDaw.App/AGENTS.md): diseño de la ventana (tokens, tipografía, clases, atajos, mensajes).
+- [src/XtremeDaw.App/Controls/AGENTS.md](src/XtremeDaw.App/Controls/AGENTS.md): controles dibujados a mano y medidores.
 - [docs/interfaz.md](docs/interfaz.md): cómo es y dónde vive cada parte de la ventana. Leé solo el apartado de lo que vas a tocar.
 
 Si algo de estas guías deja de ser cierto, actualizalo en el mismo cambio. Contexto general en [README.md](README.md),
@@ -12,10 +12,10 @@ lo que falta en [PENDIENTES.md](PENDIENTES.md); [HECHO.md](HECHO.md) es historia
 
 ## 1. Qué es
 
-- **WildTrack** (hasta 2026-10-29, "GuitarCam Studio Native") es un **DAW** para grabar, mezclar y exportar que
+- **XTreme** (internamente "Xtreme DAW"; hasta 2026-11-01 "WildTrack" y antes "GuitarCam Studio Native") es un **DAW** para grabar, mezclar y exportar que
   también hace **videos de guitarra**: tomas con cámara y audio, y un video con un panel por toma. El exe es
-  `WildTrack.exe` y los ajustes van en `%APPDATA%\WildTrack` (`AppFolder`, que la primera vez copia lo que había en
-  `%APPDATA%\GuitarCam Studio`). Dentro de cada proyecto el archivo sigue llamándose `guitarcam.json` a propósito.
+  `XTreme.exe` y los ajustes van en `%APPDATA%\XTreme` (`AppFolder`, que la primera vez copia lo que había en
+  `%APPDATA%\WildTrack` y `%APPDATA%\GuitarCam Studio`). Dentro de cada proyecto el archivo sigue llamándose `guitarcam.json` a propósito.
 - **El foco manda.** Las funciones de DAW tienen que servir para el video y no complicar el camino de **"grabo,
   mezclo y exporto"**. Si algo nuevo agrega pasos o pantallas a ese camino, replantealo o preguntá.
 - **Las decisiones son del usuario.** Lo que describen estas guías lo eligió el usuario: no lo cambies sin preguntar,
@@ -35,7 +35,7 @@ lo que falta en [PENDIENTES.md](PENDIENTES.md); [HECHO.md](HECHO.md) es historia
 
 - La app es multilenguaje (`Assets/Lang/<código>.json`, **es.json es la referencia**): texto nuevo → clave nueva en
   todos los idiomas. Detalles en la guía de la ventana.
-- `Audio` y `Projects` no conocen `Loc`: sus mensajes pasan por `Texts.T(clave, español, args...)` (en `WildTrack.Audio`,
+- `Audio` y `Projects` no conocen `Loc`: sus mensajes pasan por `Texts.T(clave, español, args...)` (en `XtremeDaw.Audio`,
   prefijos `err.`, `store.`, `camera.`…), que `Loc.Load` conecta; sin esa conexión (wtlab) sale el español.
 - Siguen en español a propósito las plantillas que el usuario ya guardó y los nombres que se crean ("Canal 1").
 - Vocabulario de músico, no de programador: **canal**, **pista**, **click**, **Vida** (saturación; niveles Apenas /
@@ -49,12 +49,12 @@ lo que falta en [PENDIENTES.md](PENDIENTES.md); [HECHO.md](HECHO.md) es historia
 
 ```
 src/
-  WildTrack.Audio      motor de audio: DSP, ASIO dúplex, click, grabación a disco. Sin UI.
-  WildTrack.Projects   modelo del proyecto, guardado atómico, historial. Sin UI.
-  WildTrack.App        la ventana (Avalonia 11.3). Depende de Audio y Projects.
-  WildTrack.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana.
-  WildTrack.VstHost    wtvsthost.exe (C++, SDK de VST3): abre un plugin en su propio proceso. Lo compila el build de Audio.
-tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: lo renderiza Blender con tools/icon/, necesita Blender, Inkscape y Python con OpenCV), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
+  XtremeDaw.Audio      motor de audio: DSP, ASIO dúplex, click, grabación a disco. Sin UI.
+  XtremeDaw.Projects   modelo del proyecto, guardado atómico, historial. Sin UI.
+  XtremeDaw.App        la ventana (Avalonia 11.3). Depende de Audio y Projects.
+  XtremeDaw.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana.
+  XtremeDaw.VstHost    wtvsthost.exe (C++, SDK de VST3): abre un plugin en su propio proceso. Lo compila el build de Audio.
+tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que renderiza Blender con tools/icon/vinilo.py; necesita solo Blender), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
 .github/workflows/instalador.yml   arma el instalador en GitHub Actions (un tag vX.Y.Z → release en borrador; firma con SignPath)
 ```
 
@@ -70,7 +70,7 @@ tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba
   (para Extraer MIDI; con el modelo de Basic Pitch de Spotify, Apache 2.0, `lib\basic-pitch`,
   `tools\get-basic-pitch.ps1`: decisión del usuario). Fuera de NuGet, el
   SDK de VST3 de Steinberg (MIT, `lib\vst3sdk`, `tools\get-vst3sdk.ps1`) para `wtvsthost.exe` (decisión del usuario).
-- **Plugins VST3** (`WildTrack.Audio/Vst`): cada instancia corre en su `wtvsthost.exe` (decisión del usuario: un plugin
+- **Plugins VST3** (`XtremeDaw.Audio/Vst`): cada instancia corre en su `wtvsthost.exe` (decisión del usuario: un plugin
   que se cuelga no tira abajo la grabación). Hablan por memoria compartida (`shared.h` ↔ `VstBridge`, los offsets tienen
   que coincidir) y líneas de texto por stdin/stdout. En vivo el hilo de audio nunca espera al plugin: lo oye un bloque
   tarde y le manda las notas ese bloque (más su latencia) antes (`InstrumentPlayer`); la exportación espera cada bloque
@@ -89,7 +89,7 @@ perder las notas: antes de ponerlo en la pista y antes de exportar se prueba una
   La lista de plugins (`PluginCatalog`, `plugins.json`; carpetas extra y ocultos en `config.json`) se administra en
   Configuración → Plugins; en la ventana pasa siempre por `PluginScan` (una sola lista y una sola búsqueda a la vez).
 
-### Modelo del proyecto (`WildTrack.Projects`)
+### Modelo del proyecto (`XtremeDaw.Projects`)
 
 - **Media**: grabaciones e importados. **Nunca se reescriben.**
 - **Track**: el canal (volumen, paneo, mute/solo, efectos…), si lleva panel de video, `Color` ("#rrggbb") e `Icon`
@@ -166,7 +166,7 @@ El callback de ASIO (`AsioDuplex.ProcessBlock`, `PlaybackEngine.Process`) corre 
   disco sale por otro hilo (`RecordingWriter`).
 - **La basura de la UI también corta el audio**: un GC gen1 deja huecos de 10–15 ms. En cada `Tick` o `Render` no se
   asigna (ni se reconstruyen controles, ni pinceles o textos por cuadro).
-- `AudioWarmUp` precompila al arrancar `WildTrack.Audio`, `WildTrack.App.Audio` y `WildTrack.App.Model`: el código de
+- `AudioWarmUp` precompila al arrancar `XtremeDaw.Audio`, `XtremeDaw.App.Audio` y `XtremeDaw.App.Model`: el código de
   tiempo real nuevo va en esos namespaces (o se suma a la lista).
 - Motor a 48 kHz (`PlaybackEngine.SampleRate`); los medios se remuestrean con `AudioLoader`. Si un cambio sube mucho la
   carga "DSP x %" de la barra de título, decilo.
@@ -180,11 +180,11 @@ igual los callan) hacia los buses. Carpetas y buses son nodos (`BusDspChain`: su
 fader/mute → su salida y sus envíos) que corren en orden, cada uno después de todo lo que lo alimenta
 (`ChannelDsp.Nodes`: primero las carpetas, después `ProjectBuses.Order`) → master → limitador. El click va por fuera
 del limitador, atrasado la misma latencia. `TrackDspChain` (con `TrackSend`), `InsertRack` (los slots, de pista o
-bus), `BusDspChain` y `MixGraphBus` (`WildTrack.Audio/Dsp/MixRenderer.cs`) los usan igual la reproducción y la
+bus), `BusDspChain` y `MixGraphBus` (`XtremeDaw.Audio/Dsp/MixRenderer.cs`) los usan igual la reproducción y la
 exportación: no los dupliques. La conversión proyecto → motor es una sola, `ChannelDsp` (`Track`, `Bus`, `Nodes`).
 `wtlab comprobar-dsp` corre las comprobaciones del DSP.
 
-Slots: cada efecto es un `ITrackInsert` (`WildTrack.Audio/Dsp/TrackInserts.cs`); un VST3 es un tipo de slot
+Slots: cada efecto es un `ITrackInsert` (`XtremeDaw.Audio/Dsp/TrackInserts.cs`); un VST3 es un tipo de slot
 más. `TrackDspChain.SetInserts` reusa el efecto de cada slot por su id (no pierde el estado al editar) y, si cambia la
 lista, el hilo de audio funde 5 ms de salida y 5 ms de entrada. La conversión canal → motor es una sola,
 `ChannelDsp.Specs` (en vivo, exportación y wtlab); las ediciones de la lista, `ChannelInserts`. La pestaña Canal y la
@@ -201,7 +201,7 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
 
 ## 6. Cómo trabajar
 
-1. `dotnet build` de `WildTrack.slnx` compila sin warnings nuevos.
+1. `dotnet build` de `XtremeDaw.slnx` compila sin warnings nuevos.
 2. **Se trabaja en esta carpeta, en `master`, sin ramas ni worktrees** (lo pidió el usuario): así hay un solo build y
    lo que se prueba es lo que está acá. Probá el motor y el proyecto con `wtlab`. **Al terminar cada cambio corré
    `tools\probar.ps1 -NoAbrir`** (compila, corre `wtlab comprobar-dsp` y deja una copia en
@@ -210,7 +210,7 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
    tiene) **si quiere probarlo**. Si dice que sí, `tools\probar.ps1 -Abrir "texto"` abre esa copia con qué probar,
    corto y concreto (sale como toast fijo; `-Proyecto carpeta` la abre en ese proyecto). Si el script dice
    "NO SE PUEDE PROBAR", contale por qué y no abras nada. Nunca abras el exe de `bin\` ni lo mandes a probar desde
-   ahí: bloquea los DLL y el próximo build falla. Si hay un WildTrack abierto, el script le pregunta al usuario en un
+   ahí: bloquea los DLL y el próximo build falla. Si hay un XTreme abierto, el script le pregunta al usuario en un
    cuadro si lo cierra (guarda antes); nunca lo cierres ni lo mates por otro lado. Si eligió cancelar (código 2), no
    insistas; si nadie contestó en 100 s (código 3), avisale y que te diga cuándo. La copia muestra en la barra de título "PRUEBA" + el commit (+ cambios), así el usuario sabe qué
    está probando.

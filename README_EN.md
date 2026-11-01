@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/wildtrack-icon.png" alt="WildTrack icon: a steel iris made of instruments" width="220">
+  <img src="docs/xtreme-icon.png" alt="XTreme icon: a vinyl record with a black X on its orange label" width="220">
 </p>
 
-<h1 align="center">WildTrack</h1>
+<h1 align="center">XTreme</h1>
 
 <p align="center">
   <b>A DAW to record, mix, master and export music on Windows.</b><br>
@@ -14,18 +14,18 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/xtrimdr/WildTrack/releases/latest/download/WildTrack-Setup.exe">
-    <img src="https://img.shields.io/github/v/release/xtrimdr/WildTrack?style=for-the-badge&label=Download%20for%20Windows&color=22d3ee&labelColor=18181b" alt="Download for Windows" height="56">
+  <a href="https://github.com/xtrimdr/XTreme/releases/latest/download/XTreme-Setup.exe">
+    <img src="https://img.shields.io/github/v/release/xtrimdr/XTreme?style=for-the-badge&label=Download%20for%20Windows&color=22d3ee&labelColor=18181b" alt="Download for Windows" height="56">
   </a>
   <br>
   <sub>Windows 10/11, 64-bit · self-contained installer, no .NET install needed</sub>
 </p>
 
-**WildTrack** is a DAW for any instrument and any style: guitar, bass, vocals, keys, drums, a whole band or a
+**XTreme** is a DAW for any instrument and any style: guitar, bass, vocals, keys, drums, a whole band or a
 production built in the computer. You record, edit, mix, master and export with audio and MIDI tracks, a piano roll,
 VST3 instruments and effects, buses and a full master chain.
 
-It also makes **videos**: if you record with a camera, every take keeps its picture and WildTrack builds a video with
+It also makes **videos**: if you record with a camera, every take keeps its picture and XTreme builds a video with
 one panel per take, with color grading and formats for social media. It is an extra for when you need it; without a
 camera, it works like any other DAW.
 
@@ -145,7 +145,7 @@ More details in [Requirements](#requirements).
 
 ## Where it is going
 
-WildTrack is **under constant development**. The goal is to take it to a level that works both
+XTreme is **under constant development**. The goal is to take it to a level that works both
 for people just starting out who want to make music quickly and without complications, and for professionals
 who want to make music seriously.
 
@@ -169,12 +169,12 @@ tools\probar.ps1 "what to try"
 It builds, runs `wtlab comprobar-dsp`, copies the app to `pruebas\<date>-<commit>` (ignored by git; the last
 5 are kept) and opens it from there, marked "TEST <commit>" in the title bar. Since it never runs from `bin\`, an open
 app does not block the next build. `-Abrir` opens the newest copy without building, `-NoAbrir` only builds and copies,
-`-SinComprobar` skips `wtlab`, `-Proyecto folder` opens that project. If a WildTrack is already open, a dialog asks first whether to close it
+`-SinComprobar` skips `wtlab`, `-Proyecto folder` opens that project. If a XTreme is already open, a dialog asks first whether to close it
 (it saves the project before closing), so the new copy does not open the same project read-only. Plain `dotnet build` still works for building.
 
 The app starts in the **Projects** manager (list, search, templates, rename, duplicate, Recycle Bin). With a
 project folder as an argument, it opens it directly. `tools\make-shortcut.ps1` creates a desktop shortcut that opens the newest test copy (`probar.ps1 -Abrir`).
-Settings are stored in `%APPDATA%\WildTrack`.
+Settings are stored in `%APPDATA%\XTreme`.
 
 ## Main shortcuts
 
@@ -227,10 +227,10 @@ and recording won't replace it; volume, fades and framing still change.
 
 ```
 src/
-  WildTrack.Audio      audio engine: DSP, duplex ASIO, click, recording to disk, export
-  WildTrack.Projects   project model, atomic saving, history, project manager
-  WildTrack.App        the window (Avalonia 11.3)
-  WildTrack.Lab        wtlab.exe: console to test audio, DSP and projects without the window
+  XtremeDaw.Audio      audio engine: DSP, duplex ASIO, click, recording to disk, export
+  XtremeDaw.Projects   project model, atomic saving, history, project manager
+  XtremeDaw.App        the window (Avalonia 11.3)
+  XtremeDaw.Lab        wtlab.exe: console to test audio, DSP and projects without the window
 tools/                 icon, shortcut and verification utilities
 ```
 
@@ -247,7 +247,7 @@ exports/              exported videos and audio
 
 ## Contributing and license
 
-WildTrack is **free and non-profit**: it is made for the community, so anyone can record and
+XTreme is **free and non-profit**: it is made for the community, so anyone can record and
 make music without paying a cent. Contributions are welcome and **all of them go through the maintainer's
 approval**: open an issue or a Pull Request following [CONTRIBUTING.md](CONTRIBUTING.md). Before touching code,
 read [AGENTS.md](AGENTS.md) (the project guide, in Spanish) and see [PENDIENTES.md](PENDIENTES.md) for what is
@@ -271,7 +271,7 @@ requested by the user or the person installing or operating it: it checks GitHub
 
 ## wtlab
 
-`wtlab.exe` (`src\WildTrack.Lab\bin\Debug\net10.0-windows\wtlab.exe`) tests the engine and projects from the
+`wtlab.exe` (`src\XtremeDaw.Lab\bin\Debug\net10.0-windows\wtlab.exe`) tests the engine and projects from the
 console without opening the window. Its commands and options are in Spanish (for example `grabar`, `mezclar`,
 `exportar`, `proyecto`, `proyectos`); run it without arguments to see the help, or see the command table in
 the [Spanish README](README.md#wtlab).

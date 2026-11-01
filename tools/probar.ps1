@@ -1,13 +1,13 @@
 ﻿# The one way to try a change: builds the solution, runs wtlab's DSP checks, copies the app to its own folder
-# and opens that copy. The app never runs from bin\, so an open WildTrack never blocks the next build, and every
+# and opens that copy. The app never runs from bin\, so an open XTreme never blocks the next build, and every
 # copy carries a prueba.txt mark (commit, uncommitted changes, time) that the app shows in its title bar.
 #   tools\probar.ps1 "qué probar"            -> build, check, copy and open with that test note
 #   tools\probar.ps1 "qué probar" -Proyecto D:\...\MiTema   -> same, opening that project directly
 #   tools\probar.ps1 -Abrir                  -> open the newest copy without building (the desktop shortcut)
 #   tools\probar.ps1 -SinComprobar           -> skip wtlab comprobar-dsp (UI-only changes in a hurry)
 #   tools\probar.ps1 -NoAbrir                -> build, check and copy only (what the agent runs after each change)
-# Before opening, if a WildTrack is already open, a window offers to close it and open the new one (it saves first);
-# one open from bin\ is asked about before building, since it blocks it. A WildTrack with no window left is not asked
+# Before opening, if a XTreme is already open, a window offers to close it and open the new one (it saves first);
+# one open from bin\ is asked about before building, since it blocks it. A XTreme with no window left is not asked
 # about: it already saved and closed, and it would hold the audio interface and the project.
 # Exit codes: 0 opened (or built, with -NoAbrir), 1 it failed, 2 the user cancelled, 3 nobody answered the question.
 param(
@@ -19,7 +19,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$bin = Join-Path $root 'src\WildTrack.App\bin\Debug\net10.0-windows'
+$bin = Join-Path $root 'src\XtremeDaw.App\bin\Debug\net10.0-windows'
 # Not under AppData: run from an MSIX-packaged tool (the Claude desktop app), Windows redirects AppData writes into
 # the package's own LocalCache and the desktop shortcut would never find the copies
 $copies = Join-Path $root 'pruebas'
@@ -36,7 +36,7 @@ function Fail([string]$text) {
 # The app's own sesiones.log: a window this script closes looks like one closed by hand, so it says so there
 function SessionLog([string]$text) {
     try {
-        $dir = Join-Path $env:APPDATA 'WildTrack'
+        $dir = Join-Path $env:APPDATA 'XTreme'
         New-Item -ItemType Directory -Force $dir | Out-Null
         Add-Content -Path (Join-Path $dir 'sesiones.log') -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff')  $text" -Encoding UTF8
     } catch { }
@@ -44,7 +44,7 @@ function SessionLog([string]$text) {
 # From the desktop shortcut the console is hidden: an error would vanish without a trace
 trap { SessionLog "probar.ps1 falló: $_ $($_.InvocationInfo.PositionMessage)"; break }
 
-# How long a WildTrack with its window gone gets to end on its own
+# How long a XTreme with its window gone gets to end on its own
 $GhostWaitSec = 3
 # How long the question stays up: less than the two minutes an agent's command gets, so it hears back
 $AskWaitSec = 100
@@ -53,9 +53,9 @@ $StartWaitSec = 15
 $AliveWaitSec = 8
 
 # The app's process, and its name before the rename (a test copy from then may still be open)
-$AppProcesses = 'WildTrack', 'GuitarCam'
+$AppProcesses = 'XTreme', 'GuitarCam'
 
-# Closes one WildTrack through its window, so the project is saved and a take in progress is kept. The window may stay
+# Closes one XTreme through its window, so the project is saved and a take in progress is kept. The window may stay
 # up asking something (changes it could not save, an export running): it gets time and is never forced. Once the window
 # is gone, a process that doesn't end has nothing left to lose and is ended.
 function CloseApp($p) {
@@ -75,28 +75,28 @@ function CloseApp($p) {
         }
         Start-Sleep -Milliseconds 200
     }
-    if (-not $p.HasExited) { Fail 'WildTrack sigue abierto: está pidiendo algo en su ventana. Contestale y volvé a correr esto.' }
+    if (-not $p.HasExited) { Fail 'XTreme sigue abierto: está pidiendo algo en su ventana. Contestale y volvé a correr esto.' }
 }
 
-# Offers in a window of its own (the agent's console cannot be answered) to close the WildTrack windows that are open.
+# Offers in a window of its own (the agent's console cannot be answered) to close the XTreme windows that are open.
 # It is always on top and in the taskbar, whoever has the focus: a message box with a hidden owner opened behind
-# everything and the script waited forever. It stops asking when there is nothing left to ask: WildTrack was closed by
+# everything and the script waited forever. It stops asking when there is nothing left to ask: XTreme was closed by
 # hand, or nobody answered in $AskWaitSec s. Returns 'closed', 'cancel' or 'timeout'.
 function AskClose($procs) {
     Add-Type -AssemblyName System.Windows.Forms, System.Drawing
     [System.Windows.Forms.Application]::EnableVisualStyles()
-    $names = ($procs | ForEach-Object { if ($_.MainWindowTitle) { $_.MainWindowTitle } else { 'WildTrack' } }) -join "`n"
+    $names = ($procs | ForEach-Object { if ($_.MainWindowTitle) { $_.MainWindowTitle } else { 'XTreme' } }) -join "`n"
     $script:askAnswer = 'cancel'
     $script:askProcs = $procs
     $script:askStart = Get-Date
     $form = New-Object System.Windows.Forms.Form -Property @{
-        Text = 'WildTrack · Probar'; TopMost = $true; StartPosition = 'CenterScreen'; FormBorderStyle = 'FixedDialog'
+        Text = 'XTreme · Probar'; TopMost = $true; StartPosition = 'CenterScreen'; FormBorderStyle = 'FixedDialog'
         MaximizeBox = $false; MinimizeBox = $false; ShowInTaskbar = $true; AutoSize = $true; AutoSizeMode = 'GrowAndShrink'
         Font = New-Object System.Drawing.Font('Segoe UI', 10)
     }
     $script:askForm = $form
     $body = New-Object System.Windows.Forms.FlowLayoutPanel -Property @{ FlowDirection = 'TopDown'; AutoSize = $true; Padding = New-Object System.Windows.Forms.Padding(14) }
-    $body.Controls.Add((New-Object System.Windows.Forms.Label -Property @{ Text = "WildTrack está abierto:`n$names"; AutoSize = $true; MaximumSize = New-Object System.Drawing.Size(460, 0) }))
+    $body.Controls.Add((New-Object System.Windows.Forms.Label -Property @{ Text = "XTreme está abierto:`n$names"; AutoSize = $true; MaximumSize = New-Object System.Drawing.Size(460, 0) }))
     $row = New-Object System.Windows.Forms.FlowLayoutPanel -Property @{ FlowDirection = 'LeftToRight'; AutoSize = $true; Margin = New-Object System.Windows.Forms.Padding(0, 14, 0, 0) }
     foreach ($c in @(@('Cerrar y volver a abrir', 'close'), @('Cancelar', 'cancel'))) {
         $b = New-Object System.Windows.Forms.Button -Property @{ Text = $c[0]; Tag = $c[1]; AutoSize = $true; Padding = New-Object System.Windows.Forms.Padding(8, 3, 8, 3) }
@@ -121,7 +121,7 @@ function AskClose($procs) {
     if ($script:askAnswer -ne 'close') { return $script:askAnswer }
     SessionLog "probar.ps1 cierra pid $(($procs | ForEach-Object Id) -join ', ')"
     foreach ($p in $procs) { CloseApp $p }
-    Write-Host 'WildTrack cerrado.' -ForegroundColor DarkGray
+    Write-Host 'XTreme cerrado.' -ForegroundColor DarkGray
     return 'closed'
 }
 
@@ -136,16 +136,16 @@ function Launch([string]$dir) {
     }
     if ($asked -eq 'timeout') {
         Write-Host "No abrí nada: nadie contestó en $AskWaitSec s." -ForegroundColor Yellow
-        SessionLog 'probar.ps1: nadie contestó si cerraba WildTrack'
+        SessionLog 'probar.ps1: nadie contestó si cerraba XTreme'
         exit 3
     }
     $a = @()
     if ($Proyecto) { $a += $Proyecto }
     if ($Que) { $a += '--probar'; $a += $Que }
-    $exe = Join-Path $dir 'WildTrack.exe'
+    $exe = Join-Path $dir 'XTreme.exe'
     SessionLog "probar.ps1 abre $exe"
     # Opened through Explorer, so it runs as the user's own app even when this script runs inside a packaged tool
-    # (otherwise it would read and write a redirected copy of %APPDATA%\WildTrack, not the user's settings)
+    # (otherwise it would read and write a redirected copy of %APPDATA%\XTreme, not the user's settings)
     $lnk = Join-Path $dir 'abrir.lnk'
     $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
     $s.TargetPath = $exe
@@ -158,15 +158,15 @@ function Launch([string]$dir) {
     $until = $opened.AddSeconds($StartWaitSec)
     $app = $null
     while (-not $app -and (Get-Date) -lt $until) {
-        $app = Get-Process WildTrack -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Select-Object -First 1
+        $app = Get-Process XTreme -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Select-Object -First 1
         if (-not $app) { Start-Sleep -Milliseconds 250 }
     }
     if (-not $app) { Fail "pedí abrir $exe y no arrancó en $StartWaitSec s." }
     # having started proves little: a crash in the first frames comes seconds later, and the reason is in the event log
     if ($app.WaitForExit($AliveWaitSec * 1000)) {
         $crash = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = '.NET Runtime'; StartTime = $opened } -MaxEvents 1 -ErrorAction SilentlyContinue
-        $why = if ($crash) { (($crash.Message -split "`r?`n" | Where-Object { $_ -match 'Exception Info|^\s+at WildTrack' } | Select-Object -First 3) -join ' ').Trim() } else { 'sin error registrado' }
-        Fail "WildTrack abrió y se cerró enseguida: $why"
+        $why = if ($crash) { (($crash.Message -split "`r?`n" | Where-Object { $_ -match 'Exception Info|^\s+at XTreme' } | Select-Object -First 3) -join ' ').Trim() } else { 'sin error registrado' }
+        Fail "XTreme abrió y se cerró enseguida: $why"
     }
     Write-Host "Abierto: $exe" -ForegroundColor Green
 }
@@ -181,7 +181,7 @@ if ($Abrir) {
 # An app opened straight from bin\ (an old shortcut, or by hand) locks the DLLs and the build fails
 $fromBin = @(Get-Process $AppProcesses -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($bin, 'OrdinalIgnoreCase') })
 if ($fromBin.Count -and (AskClose $fromBin) -ne 'closed') {
-    Fail 'hay un WildTrack abierto desde bin\ y no lo cerré. Cerralo y volvé a correr esto.'
+    Fail 'hay un XTreme abierto desde bin\ y no lo cerré. Cerralo y volvé a correr esto.'
 }
 
 Push-Location $root
@@ -194,12 +194,12 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $mark = "$commit$(if ($dirty) { ' + cambios sin commit' })"
 
 Write-Host "Compilando ($mark)..." -ForegroundColor Cyan
-dotnet build (Join-Path $root 'WildTrack.slnx') -c Debug -nologo -v:minimal -clp:ErrorsOnly
+dotnet build (Join-Path $root 'XtremeDaw.slnx') -c Debug -nologo -v:minimal -clp:ErrorsOnly
 if ($LASTEXITCODE -ne 0) { Fail 'la compilación falló (arriba están los errores).' }
 
 if (-not $SinComprobar) {
     Write-Host 'Comprobando el DSP (wtlab comprobar-dsp)...' -ForegroundColor Cyan
-    $out = & (Join-Path $root 'src\WildTrack.Lab\bin\Debug\net10.0-windows\wtlab.exe') comprobar-dsp 2>&1
+    $out = & (Join-Path $root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows\wtlab.exe') comprobar-dsp 2>&1
     if ($LASTEXITCODE -ne 0) { $out | Write-Host; Fail "wtlab comprobar-dsp falló (código $LASTEXITCODE)." }
     Write-Host '  todo bien' -ForegroundColor DarkGray
 }
