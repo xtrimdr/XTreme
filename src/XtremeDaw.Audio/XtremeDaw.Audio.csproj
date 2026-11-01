@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <!-- FFmpeg 9 shared DLLs for the in-process preview decoder (NativeVideoSource): lib/ffmpeg is kept out of git
-       (see README). Without them the preview falls back to ffmpeg.exe through a pipe. -->
+       (see DETALLES.md). Without them the preview falls back to ffmpeg.exe through a pipe. -->
   <ItemGroup>
     <None Include="..\..\lib\ffmpeg\*.dll;..\..\lib\ffmpeg\*.txt" Link="ffmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -137,7 +137,7 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 ## Atajos
 
 - Son configurables: la tabla de acciones y sus teclas por defecto es `Shortcuts.cs` (la lista para el usuario está en
-  el README); Configuración → "Atajos de teclado" las cambia y se guardan en `config.json` ("shortcuts").
+  DETALLES.md); Configuración → "Atajos de teclado" las cambia y se guardan en `config.json` ("shortcuts").
 - Un atajo nuevo se agrega a `Shortcuts.All` y se atiende en el `switch` de `MainWindow.OnKey` (evento en túnel, vía
   `Shortcuts.Find`) por su id, nunca comparando `Key` a mano. Esc no se configura: siempre cancela.
 - Los modificadores de la ruedita en el timeline (zoom, costados, altura) también son configurables: `Shortcuts.Wheel`,

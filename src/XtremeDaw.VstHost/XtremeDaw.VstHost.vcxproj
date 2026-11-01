@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- wtvsthost.exe: the VST3 plugin host process (main.cpp). Built by XtremeDaw.App's build with Visual Studio's MSBuild
-     when the C++ tools, the Windows SDK and lib\vst3sdk are there (tools\get-vst3sdk.ps1); see the README. Static runtime,
+     when the C++ tools, the Windows SDK and lib\vst3sdk are there (tools\get-vst3sdk.ps1); see DETALLES.md. Static runtime,
      so the exe needs no Visual C++ redistributable. -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">

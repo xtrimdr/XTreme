@@ -7,7 +7,7 @@ reglas que valen siempre. Las demás se cargan según dónde trabajes:
 - [src/XtremeDaw.App/Controls/AGENTS.md](src/XtremeDaw.App/Controls/AGENTS.md): controles dibujados a mano y medidores.
 - [docs/interfaz.md](docs/interfaz.md): cómo es y dónde vive cada parte de la ventana. Leé solo el apartado de lo que vas a tocar.
 
-Si algo de estas guías deja de ser cierto, actualizalo en el mismo cambio. Contexto general en [README.md](README.md),
+Si algo de estas guías deja de ser cierto, actualizalo en el mismo cambio. Contexto general en [README.md](README.md), requisitos, compilación, atajos y `wtlab` en [DETALLES.md](DETALLES.md),
 lo que falta en [PENDIENTES.md](PENDIENTES.md); [HECHO.md](HECHO.md) es historial y no hace falta leerlo de entrada.
 
 ## 1. Qué es
@@ -28,7 +28,7 @@ lo que falta en [PENDIENTES.md](PENDIENTES.md); [HECHO.md](HECHO.md) es historia
 |---|---|
 | Textos de la interfaz, mensajes, tooltips | **Español rioplatense, con voseo** ("Abrí", "Elegí", "probalo"), vía `Loc` |
 | Comandos, opciones y textos de `wtlab` | Español (`grabar --segundos 15 --vida 0.3`) |
-| README, PENDIENTES, HECHO, guías | Español |
+| README, DETALLES, PENDIENTES, HECHO, guías | Español |
 | Identificadores, comentarios y `<summary>` | Inglés |
 | Mensajes de commit | Inglés, imperativo, una línea descriptiva ("Decode real video in the preview with FFmpeg") |
 | Valores guardados en el JSON | Inglés (`"tube"`, `"tape"`, `"side-by-side"`…) |
@@ -54,7 +54,7 @@ src/
   XtremeDaw.App        la ventana (Avalonia 11.3). Depende de Audio y Projects.
   XtremeDaw.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana.
   XtremeDaw.VstHost    wtvsthost.exe (C++, SDK de VST3): abre un plugin en su propio proceso. Lo compila el build de Audio.
-tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que renderiza Blender con tools/icon/vinilo.py; necesita solo Blender), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
+tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que renderiza Blender con tools/icon/vinilo.py; necesita solo Blender; hasta 96 px, una versión plana dibujada en el script; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
 .github/workflows/instalador.yml   arma el instalador en GitHub Actions (un tag vX.Y.Z → release en borrador; firma con SignPath)
 ```
 
@@ -64,7 +64,7 @@ tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba
   ayuda actualizada). `wtlab` usa cultura invariante (punto decimal) a propósito.
 - `net10.0-windows`, x64, `Nullable`. Audio por **ASIO** (NAudio), video con **FFmpeg/ffprobe** por proceso y pipe (en el PATH),
   salvo la preview: la decodifica FFmpeg dentro del proceso (`NativeVideoSource`, FFmpeg.AutoGen con los DLL de FFmpeg 9
-  en `lib\ffmpeg`, fuera de git; ver el README).
+  en `lib\ffmpeg`, fuera de git; ver DETALLES.md).
 - Sin MVVM ni bindings: code-behind con controles con nombre. No metas un framework sin que el usuario lo pida.
 - Sin dependencias nuevas de NuGet sin preguntar. Hoy: Avalonia 11.3, NAudio 2.2, FFmpeg.AutoGen 9.0 y ONNX Runtime
   (para Extraer MIDI; con el modelo de Basic Pitch de Spotify, Apache 2.0, `lib\basic-pitch`,
@@ -218,5 +218,5 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
 4. En capturas de GDI los píxeles negros tienen alfa 0 y algunos visores los pintan blancos: mirá el RGB.
 5. Al terminar un ítem de PENDIENTES, sacalo de ahí y agregalo arriba de todo en HECHO con la fecha (AAAA-MM-DD) y una
    línea de qué se hizo y dónde. Ideas nuevas van en PENDIENTES, en su sección.
-6. Si cambiás atajos, comandos de `wtlab` o la estructura, actualizá el README.
+6. Si cambiás atajos, comandos de `wtlab` o la estructura, actualizá DETALLES.md y DETALLES_EN.md.
 7. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.

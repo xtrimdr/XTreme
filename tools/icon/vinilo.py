@@ -1,9 +1,7 @@
 """Renders the icon's record in Blender (tools/make-icon.ps1 runs it): a black vinyl with a giant label of spun
 orange metal and a dark polished metal X on it. Transparent outside the disc.
 
-    blender -b --factory-startup -P vinilo.py -- <output.png> <size> [--plano]
-
---plano leaves the grooves smooth, for the small sizes where they'd be noise.
+    blender -b --factory-startup -P vinilo.py -- <output.png> <size>
 
 The grooves are a procedural bump (concentric sine, with a few smooth gaps between "tracks"), and the surface is
 anisotropic along them, which is what makes a real record catch light in bright wedges: four lights on the diagonals
@@ -18,7 +16,6 @@ from mathutils import Vector
 
 args = sys.argv[sys.argv.index("--") + 1:]
 OUT, SIZE = args[0], int(args[1])
-FLAT = "--plano" in args
 
 # Geometry, in record radii
 DISC_THICK = 0.06
@@ -112,26 +109,25 @@ def vinyl_material():
     link(nt, gap, rough.inputs["Value"])
     link(nt, rough.outputs["Result"], bsdf.inputs["Roughness"])
 
-    if not FLAT:
-        ang = node(nt, "ShaderNodeMath", -1000, -300, operation="MULTIPLY")
-        link(nt, r, ang.inputs[0])
-        ang.inputs[1].default_value = 2 * math.pi * GROOVES
-        wave = node(nt, "ShaderNodeMath", -850, -300, operation="SINE")
-        link(nt, ang.outputs["Value"], wave.inputs[0])
-        lift = node(nt, "ShaderNodeMath", -700, -300, operation="MULTIPLY_ADD")
-        link(nt, wave.outputs["Value"], lift.inputs[0])
-        lift.inputs[1].default_value = 0.5
-        lift.inputs[2].default_value = 0.5
-        keep = node(nt, "ShaderNodeMath", -550, -100, operation="SUBTRACT")
-        keep.inputs[0].default_value = 1.0
-        link(nt, gap, keep.inputs[1])
-        height = node(nt, "ShaderNodeMath", -400, -300, operation="MULTIPLY")
-        link(nt, lift.outputs["Value"], height.inputs[0])
-        link(nt, keep.outputs["Value"], height.inputs[1])
-        bump = node(nt, "ShaderNodeBump", 700, -100)
-        bump.inputs["Distance"].default_value = GROOVE_DEPTH
-        link(nt, height.outputs["Value"], bump.inputs["Height"])
-        link(nt, bump.outputs["Normal"], bsdf.inputs["Normal"])
+    ang = node(nt, "ShaderNodeMath", -1000, -300, operation="MULTIPLY")
+    link(nt, r, ang.inputs[0])
+    ang.inputs[1].default_value = 2 * math.pi * GROOVES
+    wave = node(nt, "ShaderNodeMath", -850, -300, operation="SINE")
+    link(nt, ang.outputs["Value"], wave.inputs[0])
+    lift = node(nt, "ShaderNodeMath", -700, -300, operation="MULTIPLY_ADD")
+    link(nt, wave.outputs["Value"], lift.inputs[0])
+    lift.inputs[1].default_value = 0.5
+    lift.inputs[2].default_value = 0.5
+    keep = node(nt, "ShaderNodeMath", -550, -100, operation="SUBTRACT")
+    keep.inputs[0].default_value = 1.0
+    link(nt, gap, keep.inputs[1])
+    height = node(nt, "ShaderNodeMath", -400, -300, operation="MULTIPLY")
+    link(nt, lift.outputs["Value"], height.inputs[0])
+    link(nt, keep.outputs["Value"], height.inputs[1])
+    bump = node(nt, "ShaderNodeBump", 700, -100)
+    bump.inputs["Distance"].default_value = GROOVE_DEPTH
+    link(nt, height.outputs["Value"], bump.inputs["Height"])
+    link(nt, bump.outputs["Normal"], bsdf.inputs["Normal"])
     return m
 
 
@@ -148,19 +144,18 @@ def turned_metal(name, color, rough, aniso, freq):
     set_input(bsdf, ("Anisotropic",), aniso)
     tan = node(nt, "ShaderNodeTangent", -200, -300, direction_type="RADIAL", axis="Z")
     link(nt, tan.outputs["Tangent"], bsdf.inputs["Tangent"])
-    if not FLAT:
-        tc = node(nt, "ShaderNodeTexCoord", -900, -100)
-        length = node(nt, "ShaderNodeVectorMath", -700, -100, operation="LENGTH")
-        link(nt, tc.outputs["Object"], length.inputs[0])
-        ang = node(nt, "ShaderNodeMath", -500, -100, operation="MULTIPLY")
-        link(nt, length.outputs["Value"], ang.inputs[0])
-        ang.inputs[1].default_value = 2 * math.pi * freq
-        wave = node(nt, "ShaderNodeMath", -350, -100, operation="SINE")
-        link(nt, ang.outputs["Value"], wave.inputs[0])
-        bump = node(nt, "ShaderNodeBump", -150, -100)
-        bump.inputs["Distance"].default_value = 0.0004
-        link(nt, wave.outputs["Value"], bump.inputs["Height"])
-        link(nt, bump.outputs["Normal"], bsdf.inputs["Normal"])
+    tc = node(nt, "ShaderNodeTexCoord", -900, -100)
+    length = node(nt, "ShaderNodeVectorMath", -700, -100, operation="LENGTH")
+    link(nt, tc.outputs["Object"], length.inputs[0])
+    ang = node(nt, "ShaderNodeMath", -500, -100, operation="MULTIPLY")
+    link(nt, length.outputs["Value"], ang.inputs[0])
+    ang.inputs[1].default_value = 2 * math.pi * freq
+    wave = node(nt, "ShaderNodeMath", -350, -100, operation="SINE")
+    link(nt, ang.outputs["Value"], wave.inputs[0])
+    bump = node(nt, "ShaderNodeBump", -150, -100)
+    bump.inputs["Distance"].default_value = 0.0004
+    link(nt, wave.outputs["Value"], bump.inputs["Height"])
+    link(nt, bump.outputs["Normal"], bsdf.inputs["Normal"])
     return m
 
 

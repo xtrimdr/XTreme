@@ -1,10 +1,10 @@
 ﻿# Makes the XTreme icon and writes a multi-size .ico, the title bar's 64 px logo and the PNGs in docs\.
-# A black vinyl with a giant orange label and a black X printed on it. The record is rendered in Blender
-# (tools\icon\vinilo.py: top view, anisotropic grooves, four lights on the diagonals) and laid on a dark rounded
-# square here: big with the grooves, and with a smooth surface for the small sizes.
+# A black vinyl with a giant orange label and a black X printed on it, round at every size, transparent around it.
+# Big, the record is rendered in Blender (tools\icon\vinilo.py: top view, anisotropic grooves, four lights on the
+# diagonals). Small (taskbar, shortcuts, title bar), the same idea is drawn flat here.
 # Everything in between goes to artifacts\icon (not in git).
 #   tools\make-icon.ps1               -> renders and writes the icon (under a minute)
-#   tools\make-icon.ps1 -SinRender    -> only lays the last renders out again (to tweak the background or sizes)
+#   tools\make-icon.ps1 -SinRender    -> only writes the icon again from the last render (to tweak the sizes)
 param([switch]$SinRender)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -12,12 +12,18 @@ $root = Split-Path -Parent $PSScriptRoot
 $assets = Join-Path $root 'src\XtremeDaw.App\Assets'
 $work = Join-Path $root 'artifacts\icon'
 $big = Join-Path $work 'disco.png'
-$bare = Join-Path $work 'disco-plano.png'
-# The grooved record is used from this size up; below it the smooth one, where grooves would be noise
-$GroovedFrom = 128
-# Render sizes of the two records
+# The rendered record is used from this size up; below it the flat mark, which still reads at 16 px
+$RenderedFrom = 128
 $BigRender = 1024
-$BareRender = 256
+# The flat mark, in fractions of the icon's side: the vinyl left around the label (at least 1 px), and the X
+$MarkVinyl = 0.07
+$MarkXHalf = 0.22
+$MarkXWidth = 0.15
+# Drawn this many times bigger and reduced: GDI+'s own antialiasing leaves a 16 px circle lopsided
+$MarkOversample = 8
+# Brighter than the render's copper: at this size the label is a flat color and has to carry the contrast
+$MarkOrange = '#FF7A1A'
+$MarkBlack = '#0B0B0D'
 
 # Runs an outside program and returns its output: Windows PowerShell turns anything it writes to stderr (Blender's
 # harmless warnings) into an error under 'Stop', so its result is checked by the caller instead
@@ -37,50 +43,59 @@ if (-not $SinRender) {
   New-Item -ItemType Directory -Force $work | Out-Null
   Write-Host 'Renderizando en Blender...' -ForegroundColor Cyan
   $scene = Join-Path $PSScriptRoot 'icon\vinilo.py'
-  foreach ($r in @(@($big, $BigRender, @()), @($bare, $BareRender, @('--plano')))) {
-    # '--' quoted: bare, PowerShell would take it as the end of Run's own parameters and drop it
-    $out = Run $blender -b --factory-startup -P $scene '--' $r[0] $r[1] @($r[2])
-    if (-not ($out | Select-String '^OK ')) { $out | Select-Object -Last 15 | Write-Host; throw 'El render de Blender falló.' }
-  }
+  # '--' quoted: bare, PowerShell would take it as the end of Run's own parameters and drop it
+  $out = Run $blender -b --factory-startup -P $scene '--' $big $BigRender
+  if (-not ($out | Select-String '^OK ')) { $out | Select-Object -Last 15 | Write-Host; throw 'El render de Blender falló.' }
 }
-$lensBig = [System.Drawing.Image]::FromFile((Need 'el render grande' $big 'Corré make-icon.ps1 sin -SinRender.'))
-$lensBare = [System.Drawing.Image]::FromFile((Need 'el render chico' $bare 'Corré make-icon.ps1 sin -SinRender.'))
+$lensBig = [System.Drawing.Image]::FromFile((Need 'el render' $big 'Corré make-icon.ps1 sin -SinRender.'))
 
-function C([int]$a, [int]$r, [int]$g, [int]$b) { [System.Drawing.Color]::FromArgb($a, $r, $g, $b) }
-
-function New-IconPng([int]$s) {
-  $bmp = New-Object System.Drawing.Bitmap $s, $s
-  $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.SmoothingMode = 'AntiAlias'; $g.PixelOffsetMode = 'HighQuality'; $g.InterpolationMode = 'HighQualityBicubic'
-  $g.Clear([System.Drawing.Color]::Transparent)
-  $k = $s / 256.0
-  $small = $s -le 32
-  # Rounded-square background, dark, with a faint top rim
-  $m = if ($small) { 0 } else { 4 * $k }
-  $r = 54 * $k; $w = $s - 2 * $m
-  $bg = New-Object System.Drawing.Drawing2D.GraphicsPath
-  $bg.AddArc($m, $m, 2 * $r, 2 * $r, 180, 90); $bg.AddArc($m + $w - 2 * $r, $m, 2 * $r, 2 * $r, 270, 90)
-  $bg.AddArc($m + $w - 2 * $r, $m + $w - 2 * $r, 2 * $r, 2 * $r, 0, 90); $bg.AddArc($m, $m + $w - 2 * $r, 2 * $r, 2 * $r, 90, 90)
-  $bg.CloseFigure()
-  $top = New-Object System.Drawing.PointF 0, 0; $bottom = New-Object System.Drawing.PointF 0, $s
-  $g.FillPath((New-Object System.Drawing.Drawing2D.LinearGradientBrush $top, $bottom, (C 255 41 41 46), (C 255 13 13 15)), $bg)
-  if (-not $small) {
-    $rim = New-Object System.Drawing.Drawing2D.LinearGradientBrush $top, $bottom, (C 70 255 255 255), (C 0 255 255 255)
-    $g.DrawPath((New-Object System.Drawing.Pen $rim, ([Math]::Max(1.5 * $k, 1))), $bg)
-  }
-  # The record, nearly edge to edge (fully at the small sizes, where every pixel counts)
-  $lens = if ($s -ge $GroovedFrom) { $lensBig } else { $lensBare }
-  $d = if ($small) { $s } else { [Math]::Round($s * 0.94) }
-  $o = ($s - $d) / 2
-  $g.DrawImage($lens, [float]$o, [float]$o, [float]$d, [float]$d)
-  $g.Dispose()
+function Save-Png($bmp) {
   $ms = New-Object System.IO.MemoryStream
   $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
   return , $ms.ToArray()
 }
 
+# The small icon, flat
+function New-MarkPng([int]$s) {
+  $b = $s * $MarkOversample
+  $hi = New-Object System.Drawing.Bitmap $b, $b
+  $g = [System.Drawing.Graphics]::FromImage($hi)
+  $g.SmoothingMode = 'AntiAlias'; $g.PixelOffsetMode = 'HighQuality'
+  $g.Clear([System.Drawing.Color]::Transparent)
+  $black = [System.Drawing.ColorTranslator]::FromHtml($MarkBlack)
+  $orange = [System.Drawing.ColorTranslator]::FromHtml($MarkOrange)
+  $g.FillEllipse((New-Object System.Drawing.SolidBrush $black), 0, 0, $b, $b)
+  $v = [Math]::Max($MarkVinyl * $s, 1) * $MarkOversample
+  $g.FillEllipse((New-Object System.Drawing.SolidBrush $orange), [float]$v, [float]$v, [float]($b - 2 * $v), [float]($b - 2 * $v))
+  $pen = New-Object System.Drawing.Pen $black, ([float]($MarkXWidth * $b))
+  $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
+  $c = $b / 2.0; $h = $MarkXHalf * $b
+  $g.DrawLine($pen, [float]($c - $h), [float]($c - $h), [float]($c + $h), [float]($c + $h))
+  $g.DrawLine($pen, [float]($c - $h), [float]($c + $h), [float]($c + $h), [float]($c - $h))
+  $g.Dispose()
+  $bmp = New-Object System.Drawing.Bitmap $s, $s
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.PixelOffsetMode = 'HighQuality'; $g.InterpolationMode = 'HighQualityBicubic'
+  $g.Clear([System.Drawing.Color]::Transparent)
+  $g.DrawImage($hi, 0, 0, $s, $s)
+  $g.Dispose(); $hi.Dispose()
+  Save-Png $bmp
+}
+
+function New-IconPng([int]$s) {
+  if ($s -lt $RenderedFrom) { return New-MarkPng $s }
+  $bmp = New-Object System.Drawing.Bitmap $s, $s
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.PixelOffsetMode = 'HighQuality'; $g.InterpolationMode = 'HighQualityBicubic'
+  $g.Clear([System.Drawing.Color]::Transparent)
+  $g.DrawImage($lensBig, 0, 0, $s, $s)
+  $g.Dispose()
+  Save-Png $bmp
+}
+
 $out = Join-Path $assets 'XTreme.ico'
-$sizes = 16, 20, 24, 32, 40, 48, 64, 128, 256
+# 72 and 96: a 48 px shortcut at 150 and 200 % display scaling would otherwise scale the rendered frame down
+$sizes = 16, 20, 24, 32, 40, 48, 64, 72, 96, 128, 256
 $images = $sizes | ForEach-Object { , (New-IconPng $_) }
 $fs = [System.IO.File]::Create($out); $w = New-Object System.IO.BinaryWriter $fs
 $w.Write([uint16]0); $w.Write([uint16]1); $w.Write([uint16]$sizes.Count)
@@ -100,5 +115,5 @@ $w.Close()
 $icon512 = New-IconPng 512
 [System.IO.File]::WriteAllBytes((Join-Path $assets 'XTreme-512.png'), $icon512)
 [System.IO.File]::WriteAllBytes((Join-Path $root 'docs\xtreme-icon.png'), $icon512)
-$lensBig.Dispose(); $lensBare.Dispose()
+$lensBig.Dispose()
 Write-Output "OK $out"
