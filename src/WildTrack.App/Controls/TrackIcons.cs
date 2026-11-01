@@ -113,16 +113,16 @@ public static partial class TrackIcons
     }
 
     /// <summary>
-    /// A bus's badge, the same as a track's: its icon tinted with its color, or without an icon the effect icon of its
-    /// first reverb or delay (<paramref name="fx"/>, an <see cref="FxIcon"/> key). A bus has no number.
+    /// A bus's badge, the same as a track's: its icon tinted with its color, or without an icon <see cref="FxIcon.Bus"/>,
+    /// the same one whatever its slots hold (asked by the user). A bus has no number.
     /// </summary>
-    public static void DrawBusBadge(DrawingContext ctx, Rect r, string? color, string? icon, string fx, bool active, double radius)
+    public static void DrawBusBadge(DrawingContext ctx, Rect r, string? color, string? icon, bool active, double radius)
     {
         var fg = Palette.Alpha(DrawBadgeBack(ctx, r, ColorOf(color), active, radius), 1);
         double size = Math.Round(r.Height * BadgeFill);
         if (Draw(ctx, icon, new Rect(r.Center.X - size / 2, r.Center.Y - size / 2, size, size), fg)) return;
         double fs = Math.Round(r.Height * BusFxFill);
-        FxIcon.Draw(ctx, fx, new Rect(r.Center.X - fs / 2, r.Center.Y - fs / 2, fs, fs), fg);
+        FxIcon.Draw(ctx, FxIcon.Bus, new Rect(r.Center.X - fs / 2, r.Center.Y - fs / 2, fs, fs), fg);
     }
 
     /// <summary>How much of a bus's badge its effect icon fills (lucide's grid already leaves a margin).</summary>

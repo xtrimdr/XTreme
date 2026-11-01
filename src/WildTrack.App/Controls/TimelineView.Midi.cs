@@ -39,17 +39,23 @@ public sealed partial class TimelineView
 
     /// <summary>The width of the chip's arrow, which always opens the list.</summary>
     const double ChipArrowW = 20;
+    /// <summary>The chip's limits: below <see cref="ChipTextW"/> a name wouldn't read, so it folds to just its arrow,
+    /// <see cref="ChipFoldedW"/> wide.</summary>
+    const double ChipMaxW = 170, ChipTextW = 56, ChipFoldedW = 24;
+    /// <summary>What the name keeps beside a chip that shows its text.</summary>
+    const double ChipNameW = 70;
 
     /// <summary>
     /// A MIDI track's instrument chip, in the header's first row (asked by the user: the instrument shows on the channel
-    /// and changes from there): from the name (which keeps at least 70 px) to just before the ● (an armed MIDI track
-    /// records the keyboard; armed, before its input chip), up to 170 px.
+    /// and changes from there): from the name to just before the ● (an armed MIDI track records the keyboard; armed,
+    /// before its input chip). It never overlaps them: with no room it folds to its arrow.
     /// </summary>
     Rect InstrumentRect(int i)
     {
         double right = armed.Contains(i) && !Recording && InputLabel != null ? InputRect(i).X - 4 : ArmRect(i).X - 6;
-        double left = Math.Max(58 + Indent(i) + NameShift(i) + 70, right - 170);
-        return new(left, LaneY(i) + 8, Math.Max(40, right - left), 24);
+        double w = Math.Min(ChipMaxW, right - (58 + Indent(i) + NameShift(i) + ChipNameW));
+        if (w < ChipTextW) w = ChipFoldedW;
+        return new(right - w, LaneY(i) + 8, w, 24);
     }
 
     InstrumentState StateOf(LiveTrack t) =>
@@ -65,6 +71,11 @@ public sealed partial class TimelineView
         var fill = ready ? Palette.AccentSoft : hot ? Palette.Hover : Palette.Raised;
         var pen = Palette.Pen(ready ? Palette.Alpha(Palette.AccentColor, hot ? 0.8 : 0.4) : Palette.Line);
         ctx.DrawRectangle(fill, pen, r, 6, 6);
+        if (r.Width <= ChipFoldedW)
+        {
+            DrawChevron(ctx, new Point(r.Center.X, r.Center.Y + 1), ready ? Palette.Accent : Palette.Dim);
+            return;
+        }
         var brush = state switch
         {
             InstrumentState.Ready => Palette.Accent, InstrumentState.Loading => Palette.Dim,
@@ -74,18 +85,24 @@ public sealed partial class TimelineView
         ctx.DrawText(name, 11, brush, new Point(r.X + 8, r.Y + 5), ready ? Palette.UiBold : Palette.Ui, Math.Max(0, r.Width - ChipArrowW - 10));
         double ax = r.Right - ChipArrowW;
         ctx.DrawLine(Palette.Pen(ready ? Palette.Alpha(Palette.AccentColor, 0.3) : Palette.Line), new Point(ax + 0.5, r.Y + 5), new Point(ax + 0.5, r.Bottom - 5));
-        var c = new Point(ax + ChipArrowW / 2, r.Center.Y + 1);
-        var arrow = Palette.Pen(ready ? Palette.Accent : Palette.Dim, 1.5, PenLineCap.Round);
+        DrawChevron(ctx, new Point(ax + ChipArrowW / 2, r.Center.Y + 1), ready ? Palette.Accent : Palette.Dim);
+    }
+
+    /// <summary>The arrow of a header's select (the instrument and input chips): its tip at <paramref name="c"/>.</summary>
+    static void DrawChevron(DrawingContext ctx, Point c, IBrush brush)
+    {
+        var arrow = Palette.Pen(brush, 1.5, PenLineCap.Round);
         ctx.DrawLine(arrow, new Point(c.X - 3.5, c.Y - 2), c);
         ctx.DrawLine(arrow, c, new Point(c.X + 3.5, c.Y - 2));
     }
 
-    /// <summary>A press on the chip: the arrow (or a track without a working plugin) asks for the list, the rest opens the plugin's window.</summary>
+    /// <summary>A press on the chip: the arrow (all there is of a folded chip, or a track without a working plugin) asks
+    /// for the list, the rest opens the plugin's window.</summary>
     void InstrumentChipPressed(int i, Point p, bool right)
     {
         var t = tracks[i];
         var r = InstrumentRect(i);
-        if (!right && p.X < r.Right - ChipArrowW && StateOf(t) == InstrumentState.Ready) InstrumentWindowRequested?.Invoke(t);
+        if (!right && r.Width > ChipFoldedW && p.X < r.Right - ChipArrowW && StateOf(t) == InstrumentState.Ready) InstrumentWindowRequested?.Invoke(t);
         else InstrumentMenuRequested?.Invoke(t, r.BottomLeft + new Point(0, 4));
     }
 

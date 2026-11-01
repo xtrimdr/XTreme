@@ -5,6 +5,47 @@ qué se hizo y dónde. Es historial: no hace falta leerlo para trabajar, salvo p
 Hasta 2026-10-29 la app se llamó GuitarCam Studio Native: los ítems de antes usan los nombres de entonces
 (`GuitarCam.*`, `gclab`, `gcvsthost`).
 
+- 2026-11-01: **Versión 0.9.10 publicada** (instalador `WildTrack-Setup.exe` en el release `v0.9.10`).
+- 2026-10-31: **Los plugins en vivo saben el bloque real del driver**: se les anunciaba 8192 y Splice INSTRUMENT
+  gastaba el doble (445 → 230 µs por bloque a 192 muestras, peor caso 1,2 → 0,7 ms); el DSP dejó de dispararse con sus
+  cuerdas (lo probó el usuario). `wtvsthost --block`, `VstBridge.Start(maxBlock)`; el host parte en pedazos un bloque
+  mayor (el warmup, un cambio de buffer). `audio-cortes.log` desglosa el peor callback, el host tiene `stats`, y wtlab
+  suma `colas` y `vst vivo --tope --prioridad --mmcss`.
+- 2026-10-31: **El teclado toca una sola pista**: la elegida o, sin ninguna, la primera armada; antes sonaba también en
+  todas las armadas y las notas llegaban a dos instrumentos. Grabando, en las armadas (`Hears`, `KeyTrack`).
+- 2026-10-31: **Teclado MIDI virtual** (Ctrl+K o el botón del transporte): A S D F G H J K L son las blancas, W E T Y U
+  O P las negras, Z/X la octava y C/V la velocidad; los demás atajos siguen andando. Las notas entran como las de un
+  teclado real (`VirtualKeyboard`, `MidiInputs.VirtualPort`): suenan en la pista elegida y las armadas, y se graban. Una
+  tira bajo el transporte muestra las teclas y se toca con clic (`VirtualKeyboardView`, `MainWindow.VirtualKeys.cs`).
+  Las teclas se leen por Raw Input en su propio hilo, sin esperar a la UI (`RawKeys`; `sesiones.log` dice cuánto ahorra),
+  Shift es el sustain, la fila sigue después de la L (Ñ, { y + en un teclado latino), la tira muestra de 1 a 7 octavas (la ruedita hace zoom) y
+  se puede transponer. Con el modo prendido, el panel sigue a la ventana de un instrumento (el host avisa dónde está:
+  `editor-rect`, y el panel va integrado adentro de ella: `EmbedPanel`) y con esa ventana al frente las teclas tocan ahí y en la pista de ese plugin. La tira muestra dónde
+  caen las notas transpuestas, se desplaza con clic derecho, y Transponer, Velocidad y Rango son barras (`ValueBar`).
+  Con una ventana de instrumento abierta las teclas tocan siempre en su pista, y esa ventana tiene el aspecto de la
+  app, su ícono y una barra con Teclado, M, S y Detener notas (`main.cpp`, `ShowPluginBars`). El Sustain es un botón On/Off con la tecla Shift a la vista: Shift mientras se aprieta, clic para dejarlo prendido.
+  `probar.ps1` ya no se
+  traba: pregunta en una ventana siempre visible, se resuelve solo y confirma que la copia arrancó.
+- 2026-10-31: **Instrumentos VST3 que quedaban mudos**: cuando el cabezal cae en medio de una nota larga, la nota se
+  retoma (`InstrumentPlayer.CatchUp`); antes un acorde largo no sonaba hasta la nota siguiente. Un plugin que recién
+  abrió se prueba con una nota de la pista hasta que suena, antes de ponerlo en la pista y antes de exportar
+  (`InstrumentWarmup`): Splice INSTRUMENT perdía las notas mientras cargaba y exportaba silencio. Un bloque que llega
+  tarde se oye con el siguiente (`VstBridge.Exchange`). `wtlab vst vivo` toca un instrumento como la reproducción.
+  Con la canción parada ahora se oye lo que el plugin toca solo, como las teclas de su ventana (`InstrumentPlayer.Idle`,
+  después de que se apaga la cola de la canción); antes se descartaba.
+- 2026-10-31: **Un solo ícono para los buses sin ícono** (`FxIcon.Bus`; antes dependía de su primera reverb o delay),
+  también en los envíos. La tira seleccionada del mixer se marca con el borde en acento y conserva el color del canal
+  en el filo de arriba (`StripCardLook`).
+- 2026-10-31: **Menú de canal en el mixer**: el clic derecho en una tira de pista abre sus acciones, las mismas del
+  encabezado del timeline más Color e ícono (`TrackMenuItems`). Doble clic en todo el título de pista, bus o carpeta
+  para renombrar, también con la tira sin seleccionar (`RenameOnDoubleClick`).
+- 2026-10-31: **Escala de los medidores legible con cualquier tema**: números en `Dim` (el 0 en `Fg`) y fondo de las
+  barras en `Hover`, que además no se pierde sobre una tira seleccionada (`MixerMeter`).
+- 2026-10-29: **Master y medidor fijos a la derecha**: en el mixer la tira del master queda fuera de lo que se
+  desplaza (`masterPin`, `AlignPin`); en Mastering, el Medidor de la salida en vivo (`LiveMeter`: medidor L/R, LUFS,
+  pico real, COR y MONO), con las lecturas que antes estaban en Volumen. Etapas con ícono, filo y borde de acento
+  cuando están prendidas, títulos de caja con presencia, reducción desde la derecha y sin los textos que explicaban
+  la cadena (`MainWindow.Master.cs`).
 - 2026-10-29: **Versión 0.9.9 publicada**, la primera como WildTrack (instalador `WildTrack-Setup.exe` en el release
   `v0.9.9`).
 - 2026-10-29: **La ventana recuerda dónde quedó**: posición, tamaño y si estaba maximizada, en `config.json` "window"

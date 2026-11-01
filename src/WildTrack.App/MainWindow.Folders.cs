@@ -328,7 +328,7 @@ public partial class MainWindow
         var name = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 260, Margin = new Thickness(6, 0, 0, 0) };
         name.Inlines!.AddRange([nameRun, new Run("  "), count]);
         ToolTip.SetTip(name, Loc.T("mixer.folder.name.tip"));
-        name.DoubleTapped += (_, _) => RenameFolder(F(), name, null);
+        RenameOnDoubleClick(name, () => RenameFolder(F(), name, null));
         // the band never widens the group: the strips set the width and the name trims to it
         // the folder strip already shows the folder glyph: the band leaves that room to the name
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(8, 4, 8, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -392,10 +392,10 @@ public partial class MainWindow
 
     // --- track presets ------------------------------------------------------------------------------
 
-    void SavePreset(LiveTrack track, Point at)
+    void SavePreset(LiveTrack track, Control anchor, Point? at)
     {
         string name = track.Track.Name;
-        AskName(Timeline, at, Loc.T("preset.save"), name, Loc.T("preset.save.ok"), chosen =>
+        AskName(anchor, at, Loc.T("preset.save"), name, Loc.T("preset.save.ok"), chosen =>
         {
             try
             {

@@ -144,7 +144,7 @@ public partial class MainWindow
     {
         if (sendKnobs.TryGetValue(t, out var c) && c.Stamp == editStamp) return c.Knobs;
         if (sendKnobs.Count > tracks.Count * 2 + 8) sendKnobs.Clear();
-        SendKnob[] knobs = store == null ? [] : [.. ProjectBuses.Shown(store.Project, t.Channel).Select(b => new SendKnob(b.Id, b.Name, BusIcon(b)))];
+        SendKnob[] knobs = store == null ? [] : [.. ProjectBuses.Shown(store.Project, t.Channel).Select(b => new SendKnob(b.Id, b.Name))];
         sendKnobs[t] = (editStamp, knobs);
         return knobs;
     }
@@ -157,14 +157,10 @@ public partial class MainWindow
     {
         if (folderSendKnobs.TryGetValue(f, out var c) && c.Stamp == editStamp) return c.Knobs;
         if (store == null || folderSendKnobs.Count > store.Project.Folders.Count * 2 + 8) folderSendKnobs.Clear();
-        SendKnob[] knobs = store == null ? [] : [.. ProjectBuses.Shown(store.Project, f).Select(b => new SendKnob(b.Id, b.Name, BusIcon(b)))];
+        SendKnob[] knobs = store == null ? [] : [.. ProjectBuses.Shown(store.Project, f).Select(b => new SendKnob(b.Id, b.Name))];
         folderSendKnobs[f] = (editStamp, knobs);
         return knobs;
     }
-
-    /// <summary>The icon of a bus: its first reverb or delay slot's, or the bus glyph's stand-in (the reverb's waves) without one.</summary>
-    static string BusIcon(Bus b) =>
-        b.Inserts.FirstOrDefault(s => s.Type is InsertSlot.ReverbKind or InsertSlot.DelayKind)?.Type == InsertSlot.DelayKind ? FxIcon.Delay : FxIcon.Reverb;
 
     /// <summary>One line on what a bus does: its first reverb's or delay's preset and length, or how many effects it has.</summary>
     string BusInfo(Bus b)
@@ -209,7 +205,7 @@ public partial class MainWindow
             string id = b.Id;
             bool on = shown.Contains(b);
             var check = new TextBlock { Classes = { "icon" }, Text = "\ue73e", FontSize = 12, Foreground = Palette.Accent, Opacity = on ? 1 : 0, VerticalAlignment = VerticalAlignment.Center };
-            var icon = FxIcon.Create(BusIcon(b), 12);
+            var icon = FxIcon.Create(FxIcon.Bus, 12);
             icon.VerticalAlignment = VerticalAlignment.Center;
             FxIcon.SetColor(icon, on ? Palette.Accent : Palette.Faint);
             var item = new MenuItem { Header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
@@ -348,8 +344,8 @@ public partial class MainWindow
             OpenAnchoredMenu(BusMenu(id, box), box);
         };
 
-        var name = new TextBlock { FontSize = 11.5, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis };
-        name.DoubleTapped += (_, _) => RenameBus(id, name);
+        var name = new TextBlock { FontSize = 11.5, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent };
+        RenameOnDoubleClick(name, () => RenameBus(id, name));
         mx.Refresh.Add(() =>
         {
             name.Text = B().Name;
@@ -359,7 +355,7 @@ public partial class MainWindow
         var badge = new TrackBadge { Width = 22, Height = 22 };
         ToolTip.SetTip(badge, Loc.T("look.bus.tip"));
         badge.Clicked += () => ShowBusLook(id, badge);
-        mx.Refresh.Add(() => badge.SetBus(B().Color, B().Icon, BusIcon(B()), selBusId == id));
+        mx.Refresh.Add(() => badge.SetBus(B().Color, B().Icon, selBusId == id));
 
         var fader = new Fader();
         fader.Changed += v => BusEdit(id, b => b.Volume = v, "volume");
@@ -480,7 +476,7 @@ public partial class MainWindow
         busRefresh.Add(() =>
         {
             if (SelectedBus is not { } b) return;
-            badge.SetBus(b.Color, b.Icon, BusIcon(b), true);
+            badge.SetBus(b.Color, b.Icon, true);
             if (!busName.IsFocused || busName.Text?.Trim() != b.Name) busName.Text = b.Name;
             info.Text = BusInfo(b);
         });
@@ -661,7 +657,7 @@ public partial class MainWindow
         var router = RouterOf(t);
         var targets = SendTargets(router);
         string key = $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(t)}|{t.Track.FolderId}|"
-            + string.Join("/", targets.Select(b => b.Id + ":" + b.Name + ":" + BusIcon(b))) + "|" + Targets(router).Count;
+            + string.Join("/", targets.Select(b => b.Id + ":" + b.Name)) + "|" + Targets(router).Count;
         if (key == inspectorSendsKey) return;
         inspectorSendsKey = key;
         foreach (string title in sendSections) { inspectorSections.Remove(title); sectionLooks.Remove(title); }
@@ -714,7 +710,7 @@ public partial class MainWindow
         bool Lit() => S().On && S().Level > 0;
         var power = ListPower(Lit, () => Set(on: !S().On, k: "on"), sendRefresh);
         power.Width = power.Height = power.MinHeight = 22;
-        var icon = FxIcon.Create(BusIcon(bus), 12);
+        var icon = FxIcon.Create(FxIcon.Bus, 12);
         icon.VerticalAlignment = VerticalAlignment.Center;
         icon.Margin = new Thickness(2, 0, 6, 0);
         var name = new TextBlock { Text = bus.Name, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
@@ -752,7 +748,7 @@ public partial class MainWindow
             e.Handled = true;
             ShowSendMenu(router, id, row);
         };
-        sectionLooks[title] = (BusIcon(bus), Lit);
+        sectionLooks[title] = (FxIcon.Bus, Lit);
         sendSections.Add(title);
         sendRows[title] = row;
         return row;

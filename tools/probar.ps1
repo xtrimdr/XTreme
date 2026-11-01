@@ -6,8 +6,10 @@
 #   tools\probar.ps1 -Abrir                  -> open the newest copy without building (the desktop shortcut)
 #   tools\probar.ps1 -SinComprobar           -> skip wtlab comprobar-dsp (UI-only changes in a hurry)
 #   tools\probar.ps1 -NoAbrir                -> build, check and copy only (what the agent runs after each change)
-# Before opening, if a WildTrack is already open, a dialog asks whether to close it (it saves first), so the new copy
-# does not open the same project read-only; one open from bin\ is asked about before building, since it blocks it.
+# Before opening, if a WildTrack is already open, a window offers to close it and open the new one (it saves first);
+# one open from bin\ is asked about before building, since it blocks it. A WildTrack with no window left is not asked
+# about: it already saved and closed, and it would hold the audio interface and the project.
+# Exit codes: 0 opened (or built, with -NoAbrir), 1 it failed, 2 the user cancelled, 3 nobody answered the question.
 param(
     [Parameter(Position = 0)][string]$Que = '',
     [string]$Proyecto = '',
@@ -42,42 +44,100 @@ function SessionLog([string]$text) {
 # From the desktop shortcut the console is hidden: an error would vanish without a trace
 trap { SessionLog "probar.ps1 falló: $_ $($_.InvocationInfo.PositionMessage)"; break }
 
-# How long a WildTrack asked to close gets to save and close before the script gives up
-$CloseWaitSec = 20
+# How long a WildTrack with its window gone gets to end on its own
+$GhostWaitSec = 3
+# How long the question stays up: less than the two minutes an agent's command gets, so it hears back
+$AskWaitSec = 100
+# How long the new copy gets to appear, and how long it has to stay up to count as opened
+$StartWaitSec = 15
+$AliveWaitSec = 8
 
 # The app's process, and its name before the rename (a test copy from then may still be open)
 $AppProcesses = 'WildTrack', 'GuitarCam'
 
-# Asks in a dialog (the agent's console cannot be answered) whether to close the WildTrack windows that are open.
-# Closing goes through the window's own close, so the project is saved and a take in progress is kept; an export in
-# progress refuses to close. Returns 'closed', 'keep' (open the new one anyway) or 'cancel'.
-function AskClose($procs, [string]$why, [bool]$canKeep) {
-    Add-Type -AssemblyName System.Windows.Forms
-    $names = ($procs | ForEach-Object { if ($_.MainWindowTitle) { $_.MainWindowTitle } else { 'WildTrack' } }) -join "`n"
-    $text = "Tenés WildTrack abierto:`n$names`n`n$why`n`n¿Lo cierro? (guarda el proyecto antes de cerrar)"
-    if ($canKeep) { $text += "`n`nSí: lo cierro y abro la nueva.`nNo: abro la nueva igual (si es el mismo proyecto, en solo lectura).`nCancelar: no abro nada." }
-    $buttons = if ($canKeep) { 'YesNoCancel' } else { 'YesNo' }
-    $owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true; ShowInTaskbar = $false }
-    $answer = [System.Windows.Forms.MessageBox]::Show($owner, $text, 'WildTrack · Probar', $buttons, 'Question')
-    $owner.Dispose()
-    if ($answer -eq 'Cancel' -or (-not $canKeep -and $answer -eq 'No')) { return 'cancel' }
-    if ($answer -eq 'No') { return 'keep' }
-    SessionLog "probar.ps1 cierra pid $(($procs | ForEach-Object Id) -join ', ') (respuesta: $answer)"
-    foreach ($p in $procs) { [void]$p.CloseMainWindow() }
-    foreach ($p in $procs) {
-        if (-not $p.WaitForExit($CloseWaitSec * 1000)) {
-            Fail "WildTrack no se cerró en $CloseWaitSec s (¿está exportando o esperando algo?). Cerralo a mano y volvé a correr esto."
+# Closes one WildTrack through its window, so the project is saved and a take in progress is kept. The window may stay
+# up asking something (changes it could not save, an export running): it gets time and is never forced. Once the window
+# is gone, a process that doesn't end has nothing left to lose and is ended.
+function CloseApp($p) {
+    $p.Refresh()
+    if ($p.MainWindowHandle -ne 0) { [void]$p.CloseMainWindow() }
+    $until = (Get-Date).AddSeconds($AskWaitSec)
+    $gone = $null
+    while (-not $p.HasExited -and (Get-Date) -lt $until) {
+        $p.Refresh()
+        if ($p.MainWindowHandle -ne 0) { $gone = $null }
+        elseif (-not $gone) { $gone = Get-Date }
+        elseif (((Get-Date) - $gone).TotalSeconds -gt $GhostWaitSec) {
+            SessionLog "probar.ps1 termina pid $($p.Id): sin ventana y sin terminar"
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            [void]$p.WaitForExit(5000)
+            return
         }
+        Start-Sleep -Milliseconds 200
     }
+    if (-not $p.HasExited) { Fail 'WildTrack sigue abierto: está pidiendo algo en su ventana. Contestale y volvé a correr esto.' }
+}
+
+# Offers in a window of its own (the agent's console cannot be answered) to close the WildTrack windows that are open.
+# It is always on top and in the taskbar, whoever has the focus: a message box with a hidden owner opened behind
+# everything and the script waited forever. It stops asking when there is nothing left to ask: WildTrack was closed by
+# hand, or nobody answered in $AskWaitSec s. Returns 'closed', 'cancel' or 'timeout'.
+function AskClose($procs) {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+    $names = ($procs | ForEach-Object { if ($_.MainWindowTitle) { $_.MainWindowTitle } else { 'WildTrack' } }) -join "`n"
+    $script:askAnswer = 'cancel'
+    $script:askProcs = $procs
+    $script:askStart = Get-Date
+    $form = New-Object System.Windows.Forms.Form -Property @{
+        Text = 'WildTrack · Probar'; TopMost = $true; StartPosition = 'CenterScreen'; FormBorderStyle = 'FixedDialog'
+        MaximizeBox = $false; MinimizeBox = $false; ShowInTaskbar = $true; AutoSize = $true; AutoSizeMode = 'GrowAndShrink'
+        Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    }
+    $script:askForm = $form
+    $body = New-Object System.Windows.Forms.FlowLayoutPanel -Property @{ FlowDirection = 'TopDown'; AutoSize = $true; Padding = New-Object System.Windows.Forms.Padding(14) }
+    $body.Controls.Add((New-Object System.Windows.Forms.Label -Property @{ Text = "WildTrack está abierto:`n$names"; AutoSize = $true; MaximumSize = New-Object System.Drawing.Size(460, 0) }))
+    $row = New-Object System.Windows.Forms.FlowLayoutPanel -Property @{ FlowDirection = 'LeftToRight'; AutoSize = $true; Margin = New-Object System.Windows.Forms.Padding(0, 14, 0, 0) }
+    foreach ($c in @(@('Cerrar y volver a abrir', 'close'), @('Cancelar', 'cancel'))) {
+        $b = New-Object System.Windows.Forms.Button -Property @{ Text = $c[0]; Tag = $c[1]; AutoSize = $true; Padding = New-Object System.Windows.Forms.Padding(8, 3, 8, 3) }
+        $b.add_Click({ param($sender, $e) $script:askAnswer = $sender.Tag; $script:askForm.Close() })
+        [void]$row.Controls.Add($b)
+    }
+    [void]$body.Controls.Add($row)
+    [void]$form.Controls.Add($body)
+    # no button takes the focus: a Space or an Enter meant for something else must not answer
+    $form.ActiveControl = $body
+    $timer =New-Object System.Windows.Forms.Timer -Property @{ Interval = 400 }
+    $timer.add_Tick({
+        if (@($script:askProcs | Where-Object { -not $_.HasExited }).Count -eq 0) { $script:askAnswer = 'gone'; $script:askForm.Close() }
+        elseif (((Get-Date) - $script:askStart).TotalSeconds -gt $AskWaitSec) { $script:askAnswer = 'timeout'; $script:askForm.Close() }
+    })
+    $form.add_Shown({ $script:askForm.Activate() })
+    $timer.Start()
+    [void]$form.ShowDialog()
+    $timer.Dispose()
+    $form.Dispose()
+    if ($script:askAnswer -eq 'gone') { return 'closed' }
+    if ($script:askAnswer -ne 'close') { return $script:askAnswer }
+    SessionLog "probar.ps1 cierra pid $(($procs | ForEach-Object Id) -join ', ')"
+    foreach ($p in $procs) { CloseApp $p }
     Write-Host 'WildTrack cerrado.' -ForegroundColor DarkGray
     return 'closed'
 }
 
 function Launch([string]$dir) {
-    $open = @(Get-Process $AppProcesses -ErrorAction SilentlyContinue)
-    if ($open.Count -and (AskClose $open 'Voy a abrir la versión nueva para probar.' $true) -eq 'cancel') {
+    $running = @(Get-Process $AppProcesses -ErrorAction SilentlyContinue)
+    foreach ($p in $running) { if ($p.MainWindowHandle -eq 0) { CloseApp $p } }
+    $open = @($running | Where-Object { -not $_.HasExited })
+    $asked = if ($open.Count) { AskClose $open } else { 'closed' }
+    if ($asked -eq 'cancel') {
         Write-Host 'No abrí nada: elegiste cancelar.' -ForegroundColor Yellow
         exit 2
+    }
+    if ($asked -eq 'timeout') {
+        Write-Host "No abrí nada: nadie contestó en $AskWaitSec s." -ForegroundColor Yellow
+        SessionLog 'probar.ps1: nadie contestó si cerraba WildTrack'
+        exit 3
     }
     $a = @()
     if ($Proyecto) { $a += $Proyecto }
@@ -93,6 +153,21 @@ function Launch([string]$dir) {
     $s.Arguments = ($a | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }) -join ' '
     $s.Save()
     explorer.exe $lnk
+    # Explorer says nothing if it failed: only the process itself proves it opened
+    $opened = Get-Date
+    $until = $opened.AddSeconds($StartWaitSec)
+    $app = $null
+    while (-not $app -and (Get-Date) -lt $until) {
+        $app = Get-Process WildTrack -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Select-Object -First 1
+        if (-not $app) { Start-Sleep -Milliseconds 250 }
+    }
+    if (-not $app) { Fail "pedí abrir $exe y no arrancó en $StartWaitSec s." }
+    # having started proves little: a crash in the first frames comes seconds later, and the reason is in the event log
+    if ($app.WaitForExit($AliveWaitSec * 1000)) {
+        $crash = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = '.NET Runtime'; StartTime = $opened } -MaxEvents 1 -ErrorAction SilentlyContinue
+        $why = if ($crash) { (($crash.Message -split "`r?`n" | Where-Object { $_ -match 'Exception Info|^\s+at WildTrack' } | Select-Object -First 3) -join ' ').Trim() } else { 'sin error registrado' }
+        Fail "WildTrack abrió y se cerró enseguida: $why"
+    }
     Write-Host "Abierto: $exe" -ForegroundColor Green
 }
 
@@ -105,7 +180,7 @@ if ($Abrir) {
 
 # An app opened straight from bin\ (an old shortcut, or by hand) locks the DLLs and the build fails
 $fromBin = @(Get-Process $AppProcesses -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($bin, 'OrdinalIgnoreCase') })
-if ($fromBin.Count -and (AskClose $fromBin 'Está abierto desde la carpeta de compilación y no me deja compilar.' $false) -ne 'closed') {
+if ($fromBin.Count -and (AskClose $fromBin) -ne 'closed') {
     Fail 'hay un WildTrack abierto desde bin\ y no lo cerré. Cerralo y volvé a correr esto.'
 }
 

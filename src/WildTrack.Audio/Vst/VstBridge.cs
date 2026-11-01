@@ -38,8 +38,8 @@ public struct VstNote
 /// <para>
 /// Live (<see cref="Exchange"/>), the audio thread never waits for the other process: each block it publishes the next
 /// request and takes the output of the one before, so the plugin is heard one block late (the notes go that much early,
-/// <see cref="InstrumentPlayer"/>). If the plugin did not finish in time, that block of it is silent and nothing else
-/// stops. Offline (<see cref="Render"/>, the export) it waits for each block.
+/// <see cref="InstrumentPlayer"/>). If the plugin did not finish in time, nothing else stops: that stretch of it is
+/// silent and its block is heard with the next one. Offline (<see cref="Render"/>, the export) it waits for each block.
 /// </para>
 /// </summary>
 public sealed unsafe class VstBridge : IDisposable
@@ -66,8 +66,12 @@ public sealed unsafe class VstBridge : IDisposable
     bool disposed;
     /// <summary>The last block published (audio thread, or the export's thread).</summary>
     long seq;
+    /// <summary>The last block whose output <see cref="Exchange"/> took.</summary>
+    long taken;
 
     public string Name { get; }
+    /// <summary>The plugin's process.</summary>
+    public int ProcessId => process.Id;
     /// <summary>Its own latency in frames, as it reported when it loaded.</summary>
     public int Latency { get; private set; }
     public bool IsInstrument { get; private set; }
@@ -76,7 +80,8 @@ public sealed unsafe class VstBridge : IDisposable
     public int Misses;
 
     /// <summary>A line from the plugin's process that is not an answer: "dirty", "editor-open", "editor-closed", "latency N"
-    /// (after <see cref="Latency"/> changed), "error …". Raised on a background thread.</summary>
+    /// (after <see cref="Latency"/> changed), "editor-rect left top right bottom" (where its window is, in pixels; alone
+    /// when it is minimized), "editor-active", "editor-inactive", "toolbar id" (a button of its bar), "error …". Raised on a background thread.</summary>
     public event Action<string>? Message;
     /// <summary>The process ended (it crashed, or was closed). Raised on a background thread.</summary>
     public event Action? Exited;
@@ -85,7 +90,7 @@ public sealed unsafe class VstBridge : IDisposable
     /// <summary>It failed to load or crashed: it plays nothing.</summary>
     public bool Broken => Volatile.Read(ref *(int*)(mem + OffStatus)) is StatusFailed or StatusCrashed;
 
-    VstBridge(string pluginPath, string cid, string name, int sampleRate, bool offline)
+    VstBridge(string pluginPath, string cid, string name, int sampleRate, bool offline, int maxBlock)
     {
         Name = name;
         string exe = VstHost.Find() ?? throw new FileNotFoundException(Texts.T("err.vst.noHost", "Falta wtvsthost.exe."));
@@ -112,7 +117,7 @@ public sealed unsafe class VstBridge : IDisposable
             StandardOutputEncoding = Encoding.UTF8,
             StandardInputEncoding = new UTF8Encoding(false),
         };
-        foreach (var a in (string[])["--host", pluginPath, "--cid", cid, "--shm", id, "--sr", sampleRate.ToString(), "--parent", Environment.ProcessId.ToString()])
+        foreach (var a in (string[])["--host", pluginPath, "--cid", cid, "--shm", id, "--sr", sampleRate.ToString(), "--block", maxBlock.ToString(), "--parent", Environment.ProcessId.ToString()])
             psi.ArgumentList.Add(a);
         if (offline) psi.ArgumentList.Add("--offline");
         process = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -132,10 +137,12 @@ public sealed unsafe class VstBridge : IDisposable
     /// <summary>
     /// Starts <paramref name="name"/>'s process and waits until the plugin loaded (or failed: then <see cref="Error"/>
     /// says why and it throws). Slow plugins (big sample libraries) take seconds: never on the UI thread.
+    /// <paramref name="maxBlock"/> is the largest block it is told about: live, the driver's (<see cref="VstInsert.LiveBlock"/>),
+    /// since plugins size their work by it and pay for more than they get; a larger block still works, the host splits it.
     /// </summary>
-    public static VstBridge Start(string pluginPath, string cid, string name, int sampleRate, bool offline, int timeoutMs = 60000)
+    public static VstBridge Start(string pluginPath, string cid, string name, int sampleRate, bool offline, int maxBlock = MaxBlock, int timeoutMs = 60000)
     {
-        var b = new VstBridge(pluginPath, cid, name, sampleRate, offline);
+        var b = new VstBridge(pluginPath, cid, name, sampleRate, offline, Math.Clamp(maxBlock, 1, MaxBlock));
         if (!b.readyEvent.Wait(timeoutMs)) b.Error ??= Texts.T("err.vst.timeout", "El plugin tardó demasiado en abrir.");
         if (b.Ready) return b;
         string error = b.Error ?? Texts.T("err.vst.failed", "No se pudo abrir.");
@@ -223,6 +230,9 @@ public sealed unsafe class VstBridge : IDisposable
 
     public void CloseEditor() => Send("editor-close");
 
+    /// <summary>A line for the plugin's window: its colors, title and bar (see main.cpp's list of commands).</summary>
+    public void Command(string line) => Send(line);
+
     Span<float> SlotSpan(int slot, int offset, int channel, int frames) =>
         new(mem + OffSlots + slot * SlotSize + offset + channel * MaxBlock * sizeof(float), frames);
 
@@ -268,9 +278,14 @@ public sealed unsafe class VstBridge : IDisposable
         long finished = Volatile.Read(ref *(long*)(mem + OffDone));
         if (seq > 0)
         {
-            if (finished >= seq)
+            if (finished < seq) Misses++;
+            // a block that came late is still there and is heard one block later: dropping it, a plugin that is always
+            // a little late would never be heard at all
+            long take = finished >= seq ? seq : seq - 1;
+            if (finished >= take && take > taken)
             {
-                int slot = (int)(seq & 1);
+                taken = take;
+                int slot = (int)(take & 1);
                 int n = Math.Min(Math.Min(*(int*)(mem + OffSlots + slot * SlotSize + SlotFrames), outL.Length), outR.Length);
                 var l = SlotSpan(slot, SlotOut, 0, n);
                 var r = SlotSpan(slot, SlotOut, 1, n);
@@ -280,7 +295,6 @@ public sealed unsafe class VstBridge : IDisposable
                     outR[i] += r[i];
                 }
             }
-            else Misses++;
         }
         // the slot this request takes was last used by the block before the previous one: it must be done
         if (finished < seq - 1) return false;

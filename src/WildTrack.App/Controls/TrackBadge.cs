@@ -15,8 +15,8 @@ namespace WildTrack.App.Controls;
 public sealed class TrackBadge : Control
 {
     (Track? Track, int Number, bool Active, string? Color, string? Icon, bool Video) state;
-    /// <summary>A bus's look (<see cref="SetBus"/>); <c>Fx</c> is null while it shows a track.</summary>
-    (string? Fx, string? Color, string? Icon, bool Active) bus;
+    /// <summary>A bus's look (<see cref="SetBus"/>); <c>Shown</c> is false while it shows a track.</summary>
+    (bool Shown, string? Color, string? Icon, bool Active) bus;
 
     public double Radius { get; init; } = 4;
 
@@ -32,16 +32,16 @@ public sealed class TrackBadge : Control
     public void Set(Track? t, int number, bool active, bool video)
     {
         var next = (t, number, active, t?.Color, t?.Icon, video && t?.Video == true);
-        if (next == state && bus.Fx == null) return;
+        if (next == state && !bus.Shown) return;
         state = next;
         bus = default;
         InvalidateVisual();
     }
 
-    /// <summary>Shows a bus: its color and icon, or <paramref name="fx"/> (an <see cref="FxIcon"/> key) without an icon.</summary>
-    public void SetBus(string? color, string? icon, string fx, bool active)
+    /// <summary>Shows a bus: its color and icon, or <see cref="FxIcon.Bus"/> without an icon.</summary>
+    public void SetBus(string? color, string? icon, bool active)
     {
-        var next = ((string?)fx, color, icon, active);
+        var next = (true, color, icon, active);
         if (next == bus) return;
         bus = next;
         state = default;
@@ -58,7 +58,7 @@ public sealed class TrackBadge : Control
 
     public override void Render(DrawingContext ctx)
     {
-        if (bus.Fx is { } fx) TrackIcons.DrawBusBadge(ctx, new Rect(Bounds.Size), bus.Color, bus.Icon, fx, bus.Active, Radius);
+        if (bus.Shown) TrackIcons.DrawBusBadge(ctx, new Rect(Bounds.Size), bus.Color, bus.Icon, bus.Active, Radius);
         else if (state.Track is { } t) TrackIcons.DrawBadge(ctx, new Rect(Bounds.Size), t, state.Number, state.Active, Radius, state.Video);
     }
 }

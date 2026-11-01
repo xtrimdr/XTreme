@@ -577,18 +577,21 @@ public partial class MainWindow
     static MenuItem MenuAction(string label, Func<Task> action, string? hint = null, bool enabled = true, bool danger = false, string? icon = null, string? tip = null)
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        var text = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        // a grid, not a stack: a long label trims before the hint instead of running under it
+        var text = new Grid { ColumnDefinitions = new ColumnDefinitions(icon != null ? "20,*" : "*") };
         if (icon == "empty") text.Children.Add(new Avalonia.Controls.Shapes.Rectangle
         {
-            Width = 12, Height = 12, Stroke = Palette.Dim, StrokeThickness = 1,
+            Width = 12, Height = 12, Stroke = Palette.Dim, StrokeThickness = 1, HorizontalAlignment = HorizontalAlignment.Left,
             StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 2, 2 }, VerticalAlignment = VerticalAlignment.Center,
         });
         else if (icon != null) text.Children.Add(new TextBlock { Text = icon, Classes = { "icon" }, FontSize = 12 });
-        text.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = danger ? Palette.Rec : Palette.Fg, VerticalAlignment = VerticalAlignment.Center });
+        var name = new TextBlock { Text = label, FontSize = 12, Foreground = danger ? Palette.Rec : Palette.Fg, VerticalAlignment = VerticalAlignment.Center, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
+        if (icon != null) Grid.SetColumn(name, 1);
+        text.Children.Add(name);
         header.Children.Add(text);
         if (hint != null)
         {
-            var value = new TextBlock { Text = hint, Classes = { "mono" }, FontSize = 10.5, Foreground = Palette.Faint, Margin = new Thickness(12, 0, 0, 0) };
+            var value = new TextBlock { Text = hint, Classes = { "mono" }, FontSize = 10.5, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
             Grid.SetColumn(value, 1);
             header.Children.Add(value);
         }
@@ -616,7 +619,7 @@ public partial class MainWindow
         var (label, icon) = look();
         var item = MenuAction(label, () => { apply(); return Task.CompletedTask; }, hint, enabled, icon: icon, tip: tip);
         // MenuAction puts the icon and the label in the header's first row
-        var row = (StackPanel)((Grid)item.Header!).Children[0];
+        var row = (Grid)((Grid)item.Header!).Children[0];
         var (glyph, text) = ((TextBlock)row.Children[0], (TextBlock)row.Children[1]);
         refresh.Add(() => (text.Text, glyph.Text) = look());
         // the menu only clicks with the left button: the right one is left to us, even when something handled it
@@ -812,38 +815,47 @@ public partial class MainWindow
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxWidth = 212,
             } });
         }
-        else
-        {
-            if (!AudioOnly && !track.Track.IsMidi)
-                list.Add(MenuAction(track.Track.Video ? Loc.T("menu.hideVideo") : Loc.T("menu.showVideo"), () => SetInVideo(track, !track.Track.Video),
-                    enabled: enabled, icon: ""));
-            list.Add(MenuAction(Loc.T("menu.renameTrack") + "…", () => { RenameInPlace(track.Track.Id, () => takeName.Focus()); return Task.CompletedTask; }, enabled: enabled, icon: ""));
-            list.Add(FolderSubmenu(track, enabled));
-            if (track.Track.IsMidi)
-                list.Add(new MenuItem { Header = MenuHeader(Loc.T("vst.menu", track.Track.Instrument?.Name ?? Loc.T("vst.testTone")), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }),
-                    ItemsSource = InstrumentItems(track, enabled) });
-            if (track.Track.IsMidi)
-            {
-                // its own menu, opened where this one was (it stays open to try one input after the other)
-                list.Add(MenuAction(Loc.T("midi.in.menu", MidiInputLabel(track.Track)) + "…", () =>
-                {
-                    Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowMidiInputMenu(track, Timeline, point));
-                    return Task.CompletedTask;
-                }, enabled: enabled, icon: ""));
-            }
-            var sendsIcon = FxIcon.Create(FxIcon.Reverb, 12);
-            sendsIcon.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
-            list.Add(new MenuItem { Header = MenuHeader(Loc.T("send.menu"), sendsIcon), ItemsSource = SendChoices(RouterOf(track)), IsEnabled = enabled });
-            list.Add(MenuAction(Loc.T("separator.addAbove"), () => NewSeparatorAbove(track), enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")));
-            list.Add(MenuAction(Loc.T("preset.save") + "…", () => { SavePreset(track, point); return Task.CompletedTask; }, enabled: true, icon: "", tip: Loc.T("preset.save.tip")));
-            if (!track.Track.IsMidi) list.Add(ApplyPresetSubmenu(track, enabled));
-            if (!track.Track.IsMidi) list.Add(TrackLockItem(track, enabled));
-            list.Add(MenuAction(Loc.T("menu.paste"), PasteClips, Shortcuts.Label("paste"), enabled && clipboard != null, icon: "", tip: Loc.T("menu.paste.tip")));
-            list.Add(new Separator());
-            list.Add(MenuAction(Loc.T("menu.removeTrack"), () => EditTimeline(p => { ClipEditing.RemoveTrack(p, track.Track.Id); return null; }, "track-removed"),
-                "Supr", enabled && !ClipEditing.HasLock(track.Track), danger: true, tip: ClipEditing.HasLock(track.Track) ? Loc.T("lock.remove.tip") : null));
-        }
+        else list.AddRange(TrackMenuItems(track, Timeline, point, () => RenameInPlace(track.Track.Id, () => takeName.Focus())));
         OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
+    }
+
+    /// <summary>A track's own actions, the same from its timeline header and from its mixer strip (asked by the user).
+    /// <paramref name="anchor"/> and <paramref name="point"/> place what they open; <paramref name="look"/> adds
+    /// its color and icon, for the strip (the timeline's header has its badge for that).</summary>
+    List<object> TrackMenuItems(LiveTrack track, Control anchor, Point? point, Action rename, bool look = false)
+    {
+        bool enabled = store is { ReadOnly: false };
+        var list = new List<object>();
+        if (!AudioOnly && !track.Track.IsMidi)
+            list.Add(MenuAction(track.Track.Video ? Loc.T("menu.hideVideo") : Loc.T("menu.showVideo"), () => SetInVideo(track, !track.Track.Video),
+                enabled: enabled, icon: ""));
+        list.Add(MenuAction(Loc.T("menu.renameTrack") + "…", () => { rename(); return Task.CompletedTask; }, enabled: enabled, icon: ""));
+        if (look) list.Add(MenuAction(Loc.T("look.bus.menu"), () => { ShowTrackLook(track, anchor); return Task.CompletedTask; }, enabled: enabled, icon: "\ue790"));
+        list.Add(FolderSubmenu(track, enabled));
+        if (track.Track.IsMidi)
+            list.Add(new MenuItem { Header = MenuHeader(Loc.T("vst.menu", track.Track.Instrument?.Name ?? Loc.T("vst.testTone")), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }),
+                ItemsSource = InstrumentItems(track, enabled) });
+        if (track.Track.IsMidi)
+        {
+            // its own menu, opened where this one was (it stays open to try one input after the other)
+            list.Add(MenuAction(Loc.T("midi.in.menu", MidiInputLabel(track.Track)) + "…", () =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowMidiInputMenu(track, anchor, point));
+                return Task.CompletedTask;
+            }, enabled: enabled, icon: ""));
+        }
+        var sendsIcon = FxIcon.Create(FxIcon.Bus, 12);
+        sendsIcon.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        list.Add(new MenuItem { Header = MenuHeader(Loc.T("send.menu"), sendsIcon), ItemsSource = SendChoices(RouterOf(track)), IsEnabled = enabled });
+        list.Add(MenuAction(Loc.T("separator.addAbove"), () => NewSeparatorAbove(track), enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")));
+        list.Add(MenuAction(Loc.T("preset.save") + "…", () => { SavePreset(track, anchor, point); return Task.CompletedTask; }, enabled: true, icon: "", tip: Loc.T("preset.save.tip")));
+        if (!track.Track.IsMidi) list.Add(ApplyPresetSubmenu(track, enabled));
+        if (!track.Track.IsMidi) list.Add(TrackLockItem(track, enabled));
+        list.Add(MenuAction(Loc.T("menu.paste"), PasteClips, Shortcuts.Label("paste"), enabled && clipboard != null, icon: "", tip: Loc.T("menu.paste.tip")));
+        list.Add(new Separator());
+        list.Add(MenuAction(Loc.T("menu.removeTrack"), () => EditTimeline(p => { ClipEditing.RemoveTrack(p, track.Track.Id); return null; }, "track-removed"),
+            "Supr", enabled && !ClipEditing.HasLock(track.Track), danger: true, tip: ClipEditing.HasLock(track.Track) ? Loc.T("lock.remove.tip") : null));
+        return list;
     }
 
     /// <summary>Rough height of a popup menu, to place it inside the window before it opens (it can't be measured

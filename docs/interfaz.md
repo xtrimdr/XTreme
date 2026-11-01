@@ -561,7 +561,8 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
 ## Mixer (`MainWindow.Mixer.cs`)
 
 - Ocupa el lugar del timeline (X o "Timeline / Mixer") con su propia altura (mínimo 250). Una tira por pista, también
-  las vacías.
+  las vacías. **El master queda fijo a la derecha** (pedido del usuario, `masterPin`): fuera de lo que se desplaza,
+  separado por una línea, y con el mismo pie que las demás tiras aunque aparezca la barra de desplazamiento (`AlignPin`).
 - **Zoom del mixer** (pedido del usuario: un solo flujo, sin botones Compacto / Amplio / Auto, y una sola tira, la de
   lista, en todos los anchos): todas las tiras de pista y bus tienen un ancho, `mixerStripW` (`config.json`
   "mixerStripW", 120 de entrada), que va de `MinStripW` (42) a `WideMax` (150: más ancho no suma nada, pedido del
@@ -582,11 +583,13 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   se van y queda el +, y M S ● se reparten el ancho hasta `MinToggleW`, donde ● deja su lugar (sigue en el encabezado
   de la pista en el timeline).
 - **Una tira para todos los canales** (pedido del usuario): pistas y buses usan el mismo ancho (el del zoom), la misma
-  tarjeta y selección (`StripCardLook`: hover, seleccionada con borde y filo de acento, armada en rojo, su color en el
-  filo de arriba) y las mismas piezas: `StripHead`, `CompactChain` (efectos, envíos, paneo y sus botones) y los dB al
+  tarjeta y selección (`StripCardLook`: hover, seleccionada con el borde en acento, armada en rojo, su color siempre en
+  el filo de arriba) y las mismas piezas: `StripHead`, `CompactChain` (efectos, envíos, paneo y sus botones) y los dB al
   pie. Lo que un canal no tiene deja su sección vacía para que los faders queden parejos (un bus no tiene envíos; una
-  carpeta, efectos). Un tipo de canal nuevo se arma con estas piezas, no con su propio layout. Doble clic en el nombre
-  de una pista o un bus lo renombra. La salida de una pista se elige en el inspector.
+  carpeta, efectos). Un tipo de canal nuevo se arma con estas piezas, no con su propio layout. Doble clic en el título
+  de una pista, un bus o una carpeta lo renombra (`RenameOnDoubleClick`; en una tira angosta, sin título, desde el menú).
+  **Clic derecho en una pista**: el mismo menú que su encabezado del timeline, más Color e ícono (`TrackMenuItems`,
+  pedido del usuario). La salida de una pista se elige en el inspector.
 - Arriba, sobre el mixer y sobre Mastering (no en solo audio), la mini timeline (`Controls/MiniTimeline.cs`): toda la
   canción, el cabezal (clic o arrastre para moverlo) y una regla en compases o en minutos y segundos, con su propio
   switch de dos botones a la izquierda que es el mismo modo que el de la regla del timeline (`SetRulerMode`).
@@ -656,10 +659,15 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
 - **Mastering** (`MainWindow.Master.cs`): la tercera vista del selector Timeline · Mixer · Mastering (la X sigue
   alternando timeline / mixer). Usa el lugar del mixer (`MixerHost`, con su altura y su lugar en solo audio): esconde
   la cabecera y las tiras y muestra la cadena. El botón "Master" del canal master (en acento con el master prendido)
-  también lleva ahí. Dos grupos, de izquierda a derecha (pedido del usuario): una **caja** con el ON del master, qué
-  está haciendo y las etapas que ese ON prende (se atenúan enteras con el master apagado), y al lado, en otra caja igual (mismo encabezado y paneles del mismo alto), **Salida**
-  (Limitador → Volumen), que funciona siempre. Un panel por etapa con su ON y flechas entre ellos, perillas de 44 px
-  (pedido del usuario): **Look** (sin ON: un `SelectButton` con A mano · Natural · Pegadito · Brillante · Cálido · Al
+  también lleva ahí. Dos grupos, de izquierda a derecha (pedido del usuario): una **caja** con el título "Master", su ON al
+  lado y las etapas que ese ON prende (se atenúan enteras con el master apagado; prendido, la caja
+  lleva el borde del acento), y al lado, en otra caja igual (mismo encabezado y paneles del mismo alto), **Salida**
+  (Limitador → Volumen), que funciona siempre. Un panel por etapa con su ícono, su ON y flechas entre ellos, perillas de 44 px
+  (pedido del usuario); una etapa prendida lleva el filo de arriba y el ícono en acento (`StageCard`, `StageHead`), y
+  las barras de reducción crecen desde la derecha (`GrMeter`). **Fijo a la derecha**, fuera de lo que se desplaza
+  (pedido del usuario, `masteringPin`, `LiveMeter`): el **Medidor** de la salida en vivo, el mismo `MixerMeter` del
+  master con LUFS de los últimos 3 s e integrado, pico real de la pasada (`TruePeak`, en rojo si pasó del Techo), COR y
+  MONO. Las etapas: **Look** (sin ON: un `SelectButton` con A mano · Natural · Pegadito · Brillante · Cálido · Al
   frente · Domar la púa, `MasterLooks`; la perilla Cuánto, de Natural al look entero, que reescribe las perillas; y
   **Sugerime**, `MainWindow.Suggest.cs`, que escucha la mezcla entera antes del master en segundo plano,
   `MasterSuggest`, y abre una tarjeta con una línea por propuesta y Aplicar / Cancelar; tocar a mano una perilla que el
@@ -673,9 +681,9 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   resto queda para el limitador; `ClipOn`) | Salida: **Limitador** (Empuje, Techo en pico real, −1 dBTP por defecto,
   Release y su barra; `LimOn`, aparte del ON del master; apagado, los picos pueden pasar de 0 dB) → **Volumen** (sin
   ON: el **Destino** arriba, un `SelectButton` con Como está · YouTube · Instagram · TikTok · Spotify · Apple Music
-  (`MasterLoudness`, `MasterSettings.Target`) y abajo qué está haciendo; LUFS de los últimos 3 s e integrado, el
-  mismo medidor que la celda LUFS, el pico real de la pasada (`TruePeak`) en rojo si pasó del Techo, y cuánto falta
-  para los LUFS del destino, o −14 sin destino).
+  (`MasterLoudness`, `MasterSettings.Target`) y abajo qué está haciendo; sin destino, cuánto falta para −14 LUFS. Las
+  lecturas están en el Medidor). Sin textos que expliquen la cadena (pedido del usuario): lo que hace Salida va en el
+  tooltip de su título.
 - **Destino** (`MainWindow.Loudness.cs`): con un destino, cada edición (`MarkDirty`) espera 1,5 s y mide la mezcla
   entera en segundo plano con el mismo `MixMaster.Render` de la exportación; la ganancia que encuentra va a
   `MasterSettings.TargetGainDb` (se guarda) y la reproducción se desliza hasta ella (50 ms), así que se escucha al
@@ -688,7 +696,7 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   así una perilla se escucha en el momento, con cualquier mezcla y a cualquier volumen. Sin limitador, la exportación
   con destino de LUFS frena la ganancia donde el pico real toca el Techo.
 - **Lados y orden** (`MainWindow.MixerOrder.cs`, pedido del usuario): el mixer tiene dos lados, izquierdo (`MixerOrder.Left`,
-  columna 0) y derecho (`Right`, columna 2, antes del master), con el espacio libre en el medio. Por defecto pistas y
+  columna 0) y derecho (`Right`, columna 2, pegado al master fijo), con el espacio libre en el medio. Por defecto pistas y
   carpetas van a la izquierda y los buses a la derecha (`MixerSides`); cualquier tira se arrastra desde su tarjeta
   (`MixerDraggable`: un clic sigue siendo un clic, esté seleccionada o no, y el arrastre arranca a los 6 px) a otro lugar,
   a una carpeta abierta o al otro lado, deslizándose como todo lo que se reordena (`SlotDrag.SlideEase`, pedido del
@@ -709,7 +717,8 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   **selecciona** como a una pista (`SelectBus`, `selBusId`: el timeline suelta su pista o carpeta y elegir otra cosa
   suelta el bus) y el inspector muestra su panel (`InitBusInspector`: badge y nombre, qué tiene, color, ícono y
   "Quitar bus"). Tiene **color e ícono** como una pista (`Bus.Color`, `Bus.Icon`; el mismo selector, `ShowLook` /
-  `ShowBusLook`, desde su badge, el inspector o el menú); sin ícono muestra el de su primera reverb o delay. Clic
+  `ShowBusLook`, desde su badge, el inspector o el menú); sin ícono muestra siempre el mismo (`FxIcon.Bus`, pedido del
+  usuario: no depende de sus efectos), que también es el de los envíos. Clic
   derecho: Renombrar, Color e ícono…, Quitar bus (sin preguntar y en un paso de deshacer: se van los envíos que le
   llegaban y lo que salía a él pasa al Master). Sin SALIDA ni envíos: por ahora un bus sale solo al Master (decisión
   del usuario, `ProjectBuses.CanFeed`). No hay columna "+ Bus" (pedido del usuario): clic derecho en el mixer, también
@@ -830,14 +839,37 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
 - **Sonido**: sin instrumento, un tono de prueba (`NoteSynth`, sin estado: igual en la reproducción, la
   exportación y wtlab). Las notas que suenan al tocar el teclado del piano roll o escribir van directo a la salida
   (`PlaybackEngine.PreviewNote`), sin la cadena de la pista.
-- **Teclado MIDI** (`MainWindow.MidiInput.cs`, etapa 4, decidido con el usuario): suena en la **pista MIDI elegida**
-  (como Logic y Studio One, sin armar nada) y en las **armadas**, con su instrumento (o el tono de prueba, que suena
+- **Teclado MIDI** (`MainWindow.MidiInput.cs`, etapa 4, decidido con el usuario): suena en **una sola pista**, la
+  **MIDI elegida** (como Logic y Studio One, sin armar nada) o, sin ninguna elegida, la primera **armada**; solo
+  grabando suena en todas las armadas, y únicamente en ellas (pedido del usuario: nunca dos instrumentos sin querer). Con su instrumento (o el tono de prueba, que suena
   igual que la nota escrita) y su cadena, parado o reproduciendo, también durante la cuenta. El pedal de sustain
   sostiene lo que se suelta (`LiveNotes`; el puente VST3 solo lleva notas). Cada pista elige de dónde toca
   (`Track.MidiInput` / `MidiChannel`): armada, en el chip a la izquierda del ● ("MIDI" = todas, o las primeras letras
   del nombre del aparato), en el chip de la tira del mixer o con clic derecho → "Entrada MIDI: …"; el menú tiene
   "Todas las entradas", cada aparato (enchufado o recordado), el canal y "Configurar las entradas MIDI…". En el
-  encabezado el instrumento queda a la izquierda del ● (y del chip, armada).
+  encabezado el instrumento queda a la izquierda del ● (y del chip, armada); si no entra su nombre, se pliega a su
+  flecha, que abre la lista (la ventana del plugin se abre desde el inspector).
+- **Teclado virtual** (`MainWindow.VirtualKeys.cs`, `VirtualKeyboard`, `Controls/VirtualKeyboardView.cs`; pedido del
+  usuario, para tocar sin aparato): Ctrl+K (o el botón junto a Ver todo, en el transporte) lo prende. Casi todas las
+  letras son atajos, por eso es un modo: prendido, la fila de A son las blancas (sigue después de la L: Ñ, { en un
+  teclado latino), la de arriba las negras (W E T Y U O P y el +), Z / X la octava, C / V la velocidad y cualquier Shift
+  el sustain (con Shift las notas tocan y Z, X, C, V vuelven a ser atajos); los demás atajos y estas letras con Ctrl o
+  Alt siguen andando. Estas teclas son fijas y físicas: no salen de `Shortcuts`. Las notas no pasan por la UI: las lee
+  `RawKeys` (Raw Input, en su hilo) mientras el modo está prendido y el programa al frente; el `OnKey` de la ventana solo
+  frena el atajo y mide cuánto tarda en llegarle (`sesiones.log`, al apagar el modo). Una tira bajo el transporte
+  muestra de 1 a 7 octavas (Rango), dónde toca, la octava, la velocidad (guardados en `config.json`) y el Sustain, un botón On/Off con la tecla Shift a la vista: Shift lo prende mientras se aprieta y un clic lo deja prendido, y se
+  toca con clic y arrastrando. La tira muestra las notas que suenan: al transponer, las letras (cada una en su recuadro) se corren a donde caen sin mover la vista, y lo mismo con la octava;
+  y un clic toca la nota que está debajo. Clic derecho y arrastrar la desplaza por todo el teclado, la ruedita lo escala de forma continua y suave (de
+  1 a 7 octavas, alrededor del mouse). Transponer,
+  Velocidad y Rango son barras (`ValueBar`): clic o arrastrar las pone donde está el mouse, la ruedita las corre y el
+  clic derecho las vuelve a su valor (0, 100 y 2). Con una ventana de instrumento
+  abierta, la ventana crece y lleva el mismo panel abajo, integrado (`EmbedPanel`: una ventana nuestra hija de la del
+  host, solo las teclas si es angosta); el host avisa si está abierta, y mientras esté abierta (aunque el foco esté en la
+  ventana principal) las teclas tocan en la pista de ese plugin (`keyTarget`, `Hears`), no en la elegida; con varias,
+  en la última que tuvo el foco. La ventana del host usa los colores y el ícono de la app, con una barra arriba:
+  la pista (con su color) y el plugin a la izquierda; Teclado, M, S y Detener notas a la derecha, solo con íconos si no
+  entran (`ShowPluginBars`, `PluginBarClicked`; las de efectos, sin barra). Suena y graba como un teclado real, en las mismas pistas, sin importar la entrada ni el
+  canal que eligieron (`MidiInputs.VirtualPort`). Al apagarlo o al perder la ventana el foco, las notas se sueltan.
 - **Grabar notas**: una pista MIDI armada graba lo que toca su entrada junto con las tomas de audio y la cámara (o
   sola, sin tomas). Al parar, las notas son un clip nuevo en esa pista, del compás donde empezó la toma al compás
   después del final (las de la cuenta entran desde ahí), arriba de lo que había (no reemplaza: los dos suenan) y en el

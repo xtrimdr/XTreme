@@ -293,6 +293,10 @@ public sealed class PlaybackEngine : IDisposable
 
     // callback timing for AudioGapLog: written by the audio thread, read and reset by the UI
     long lastCallback, worstGap, worstRun;
+    /// <summary>Where the block's time went: when the input and the keyboard were done, and when the tracks (with their plugins) were.</summary>
+    long inputDone, tracksDone;
+    /// <summary>The same two stretches of the longest callback (<see cref="TakeTimings"/>).</summary>
+    long worstInput, worstTracks;
     int lastBlock;
     int seeks;
 
@@ -305,11 +309,12 @@ public sealed class PlaybackEngine : IDisposable
     /// <summary>The open driver stopped calling back (see <see cref="StallTimeout"/>). False until its first callback.</summary>
     public bool Stalled => io != null && Volatile.Read(ref lastCallback) is var t && t != 0 && Stopwatch.GetElapsedTime(t) > StallTimeout;
 
-    /// <summary>Longest wait between callbacks and longest callback since the last call (ms), the block length, and seeks made.</summary>
-    public (double GapMs, double RunMs, double BlockMs, int Seeks) TakeTimings()
+    /// <summary>Longest wait between callbacks and longest callback since the last call (ms), the part of that callback spent on the input and on the tracks, the block length, and seeks made.</summary>
+    public (double GapMs, double RunMs, double InputMs, double TracksMs, double BlockMs, int Seeks) TakeTimings()
     {
         double ms = 1000.0 / Stopwatch.Frequency;
         var res = (Interlocked.Exchange(ref worstGap, 0) * ms, Interlocked.Exchange(ref worstRun, 0) * ms,
+            Interlocked.Read(ref worstInput) * ms, Interlocked.Read(ref worstTracks) * ms,
             1000.0 * lastBlock / SampleRate, Interlocked.Exchange(ref seeks, 0));
         return res;
     }
@@ -949,6 +954,7 @@ public sealed class PlaybackEngine : IDisposable
         else Pitch.Write(procL, procR);
 
         DispatchMidi(t0);
+        inputDone = Stopwatch.GetTimestamp();
 
         var cal = activeCalibration;
         if (cal != null)
@@ -1060,6 +1066,7 @@ public sealed class PlaybackEngine : IDisposable
                 for (int i = 0; i < list.Length; i++) if (list[i].Soloed) { anySolo = true; break; }
                 for (int i = 0; i < list.Length; i++) if (list[i].RunsIdle) list[i].MixIdle(n, anySolo, ml, mr);
             }
+            tracksDone = Stopwatch.GetTimestamp();
 
             if (fadeMode != 0) TransportRamp(ref fadeLevel, fadeMode > 0, rampStep, n, rampGain, ml, mr, curNodes);
             // the folders and buses in order, each into the next node or the master (the export runs the same order)
@@ -1166,6 +1173,7 @@ public sealed class PlaybackEngine : IDisposable
             bool idleSolo = false;
             for (int i = 0; i < idle.Length; i++) if (idle[i].Soloed) { idleSolo = true; break; }
             for (int i = 0; i < idle.Length; i++) if (idle[i].RunsIdle) idle[i].MixIdle(n, idleSolo, ml, mr);
+            tracksDone = Stopwatch.GetTimestamp();
             // Transport stopped: keep processing the buses with silent input so reverb and delay tails decay
             // naturally in real time (matching MixBus in the web app).
             for (int i = 0; i < curNodes.Length; i++) curNodes[i].End(n, ml, mr);
@@ -1277,10 +1285,11 @@ public sealed class PlaybackEngine : IDisposable
         {
             // a key that waited (the audio was closed or busy) is not played late: only its end counts
             if (e.Kind == MidiKind.NoteOn && t0 - e.Ticks > StaleKey) continue;
+            bool everyone = e.Port == MidiInputs.VirtualPort;
             for (int i = 0; i < list.Length; i++)
             {
                 var l = list[i];
-                if (l.Port != 0 && l.Port != e.Port || l.Channel != 0 && l.Channel != e.Channel) continue;
+                if (!everyone && (l.Port != 0 && l.Port != e.Port || l.Channel != 0 && l.Channel != e.Channel)) continue;
                 var keys = l.Track.Keys;
                 int before = keys.EventCount;
                 keys.Handle(e);
@@ -1311,7 +1320,12 @@ public sealed class PlaybackEngine : IDisposable
     void UpdateLoad(long t0, int n)
     {
         long run = Stopwatch.GetTimestamp() - t0;
-        if (run > Interlocked.Read(ref worstRun)) Interlocked.Exchange(ref worstRun, run);
+        if (run > Interlocked.Read(ref worstRun))
+        {
+            Interlocked.Exchange(ref worstRun, run);
+            Interlocked.Exchange(ref worstInput, inputDone - t0);
+            Interlocked.Exchange(ref worstTracks, tracksDone - inputDone);
+        }
         double used = run / (double)Stopwatch.Frequency;
         double budget = n / (double)SampleRate;
         LoadPercent = LoadPercent * 0.9 + 0.1 * (100 * used / budget);

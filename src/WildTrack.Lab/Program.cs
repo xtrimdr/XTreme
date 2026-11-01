@@ -25,6 +25,7 @@ static class Program
                 "exportar" => DspCommands.Export(a),
                 "click" => DspCommands.Click(a),
                 "comprobar-dsp" => DspCommands.Check(a),
+                "colas" => TailCommands.Run(a),
                 "espectro" => DspCommands.Spectrum(a),
                 "lufs" => DspCommands.Lufs(a),
                 "masterizar" => DspCommands.Master(a),
@@ -98,6 +99,9 @@ static class Program
                                            el "Avanzado" del diálogo: el lado corto del cuadro y el bitrate del video
               click     [--salida clicks.wav] [--bpm 100]
                                            escribe todos los sonidos de click a un WAV para escucharlos
+              colas     [--proyecto carpeta] [--bloque 192] [--segundos 3] [--silencio 120] [--paso 5] [--nivel 0.1] [--caida dB/s]
+                                           lo que cuestan por bloque los buses y el master mientras se apagan sus colas;
+                                           --caida apaga la entrada de a poco, como la cola de un instrumento
               lufs      archivo.wav|mp3        volumen integrado (EBU R128) del archivo, como el medidor LUFS del master
               masterizar archivo.wav [--salida x_master.wav] [--cuanto 0.35] [--banda-graves|--banda-medios|--banda-agudos 0..1]
                         [--corte 0|20..150] [--barro dB] [--graves dB] [--presencia dB] [--aire dB] [--inclinacion dB]

@@ -12,8 +12,8 @@ namespace WildTrack.App;
 /// Instrument plugins on MIDI tracks (native only, stage 3 of the MIDI editor, the user's order: instruments first):
 /// each track's <see cref="Track.Instrument"/> runs in its own wtvsthost.exe (<see cref="VstBridge"/>), loaded in the
 /// background after every edit that may change them (<see cref="SyncInstruments"/>), and plays through the track's
-/// <see cref="LiveTrack.Instrument"/>; until it is up, or if it can't be opened, the track plays the test tone and a
-/// toast says why. What the user changes in the plugin's window is saved in the project: when it says "dirty" or its
+/// <see cref="LiveTrack.Instrument"/>; until it is up and sounding (<see cref="InstrumentWarmup"/>), or if it can't be
+/// opened, the track plays the test tone and a toast says why. What the user changes in the plugin's window is saved in the project: when it says "dirty" or its
 /// window closes, its state is asked for and kept in <see cref="PluginRef.State"/> (outside the undo, like the tempo).
 /// The list of plugins comes from <see cref="PluginScan"/> (scanned once, cached; managed in Configuración → Plugins).
 /// </summary>
@@ -38,6 +38,9 @@ public partial class MainWindow
     static readonly TimeSpan InstrumentStateDelay = TimeSpan.FromSeconds(1.5);
     /// <summary>How long the piano roll's keys sound through an instrument.</summary>
     const double AuditionSec = 0.35;
+    /// <summary>How long a plugin that just opened may stay "loading" until it sounds (<see cref="InstrumentWarmup"/>):
+    /// past that it goes on the track anyway (the key tried may mean nothing on it).</summary>
+    const double InstrumentWarmSec = 5;
 
     void InitInstruments()
     {
@@ -122,14 +125,17 @@ public partial class MainWindow
         instrumentLoads[trackId] = plugin;
         string path = plugin.Path, cid = plugin.ClassId, name = plugin.Name;
         string? state = plugin.State;
+        int pitch = InstrumentWarmup.Pitch(tracks.FirstOrDefault(x => x.Track.Id == trackId)?.Notes);
+        double tempo = store?.Project.Settings.Bpm ?? 120;
         _ = Task.Run(() =>
         {
             try
             {
                 if (!File.Exists(path) && !Directory.Exists(path)) throw new FileNotFoundException(Loc.T("vst.missing", path));
-                var bridge = VstBridge.Start(path, cid, name, PlaybackEngine.SampleRate, offline: false);
+                var bridge = VstBridge.Start(path, cid, name, PlaybackEngine.SampleRate, offline: false, VstInsert.LiveBlock);
                 if (state != null && !bridge.SetState(state))
                     Dispatcher.UIThread.Post(() => Toast(Loc.T("vst.stateFailed", name)));
+                InstrumentWarmup.Run(bridge, pitch, tempo, PlaybackEngine.SampleRate, InstrumentWarmSec);
                 return (Bridge: bridge, Error: (string?)null);
             }
             catch (Exception e) when (e is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
@@ -171,6 +177,7 @@ public partial class MainWindow
     void DropInstrument(string trackId)
     {
         if (!instruments.Remove(trackId, out var loaded)) return;
+        ForgetPluginWindow(trackId);
         if (tracks.FirstOrDefault(t => t.Track.Id == trackId) is { } live && live.Instrument == loaded.Player) live.Instrument = null;
         _ = Task.Run(async () => { await Task.Delay(200); loaded.Bridge.Dispose(); });
         InstrumentsChanged();
@@ -187,6 +194,7 @@ public partial class MainWindow
     void InstrumentSaid(string trackId, LoadedInstrument loaded, string line)
     {
         if (!instruments.TryGetValue(trackId, out var current) || current != loaded) return;
+        VirtualEditorSaid(trackId, loaded.Bridge.ProcessId, line);
         if (line is "dirty" or "editor-closed")
         {
             loaded.StateDue = true;
@@ -247,7 +255,14 @@ public partial class MainWindow
     void OpenInstrumentWindow(LiveTrack track)
     {
         if (instruments.TryGetValue(track.Track.Id, out var loaded))
+        {
+            DressPluginWindow(loaded.Bridge, loaded.Plugin.Name);
+            loaded.Bridge.Command($"toolbar keys=\uE765:{Loc.T("vst.bar.keys")}|-|mute=:M|solo=:S|-|panic=\uE71A:{Loc.T("vst.bar.panic")}");
+            TellPluginTrack(loaded.Bridge, loaded.Plugin.Name, track.Track);
+            pluginBars.Remove(track.Track.Id);
+            TellPluginPanel(loaded.Bridge);
             loaded.Bridge.OpenEditor(TryGetPlatformHandle()?.Handle ?? 0);
+        }
         else if (track.Track.Instrument is { } plugin) Toast(Loc.T(instrumentLoads.ContainsKey(track.Track.Id) ? "vst.stillLoading" : "vst.notLoaded", plugin.Name));
     }
 

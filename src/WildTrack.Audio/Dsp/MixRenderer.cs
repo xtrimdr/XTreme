@@ -894,6 +894,12 @@ public static class MixRenderer
             }
         }
         if (only >= 0) anySolo = false;
+        // each instrument, freshly opened, may still be loading its samples: the export can't start until it sounds
+        Open(() =>
+        {
+            try { Parallel.ForEach(instruments.Where(m => m != null), m => m!.Value.Render.Warm()); }
+            catch (AggregateException e) when (e.InnerException != null) { throw e.InnerException; }
+        });
 
         // the plugin delay compensation: every leg waits so that what adds up arrives together, and the master's own
         // lateness is cut from the start along with the limiter's look-ahead

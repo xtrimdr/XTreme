@@ -207,6 +207,7 @@ Todos se pueden cambiar en ⚙ Configuración → Atajos de teclado (menos Esc).
 | C / Shift+C / T | click / cuenta previa / tap tempo |
 | A | afinador |
 | M / S | mute / solo de la pista |
+| Ctrl+K | teclado virtual: con él prendido, la fila de A son las blancas, la de arriba las negras, Z / X la octava, C / V la velocidad y Shift el sustain |
 | F | ver todo |
 | X | timeline / mixer |
 | Alt+X / D | dividir el clip en el cabezal / duplicarlo (o los marcados, en bloque) |
@@ -319,10 +320,13 @@ la consola, sin abrir la ventana.
 | `midi humanizar carpeta --clip id [--cantidad 10] [--semilla n]` | mueve cada velocidad al azar hasta ± cantidad |
 | `midi entradas` | los teclados y controladores MIDI que ve Windows, con sus ajustes de Configuración → MIDI |
 | `midi escuchar [--entrada nombre] [--segundos 10]` | abre las entradas como la ventana e imprime lo que llega y lo que toma el motor (canal y curva de velocidad aplicados) |
+| `midi teclas [--segundos 10]` | las teclas físicas de la computadora como las lee el teclado virtual, por Raw Input |
 | `midi instrumento carpeta [--pista n] --plugin "nombre" \| --quitar` | el instrumento VST3 que toca la pista; `mezclar carpeta` lo renderiza con el plugin, como la exportación |
 | `vst escanear [--todo] [--archivo X]` / `vst lista` | busca los plugins VST3 (cada archivo en su propio proceso; los recuerda en `plugins.json`; `--archivo` reintenta uno) / los lista |
 | `vst carpetas [--agregar X] [--sacar X]` / `vst ocultar\|mostrar "nombre"` | dónde se buscan los plugins y cuáles salen en los menús (lo mismo que Configuración → Plugins) |
-| `vst probar "nombre" [--segundos 4] [--ventana] [--espera s] [--tiempo-real]` | toca un acorde (o un ritmo, si es una batería) con el plugin a un WAV, por el mismo puente que la exportación; `--ventana` abre antes su ventana. Con la variable `GCVST_DEBUG=1`, el puente cuenta sus salidas y cada bloque |
+| `vst probar "nombre" [--segundos 4] [--ventana] [--espera s] [--tiempo-real]` | toca un acorde (o un ritmo, si es una batería) con el plugin a un WAV, por el mismo puente que la exportación; `--ventana` abre antes su ventana y `--espera` limita cuánto espera a que suene (10 s, como la exportación; 0 = no espera). Con la variable `GCVST_DEBUG=1`, el puente cuenta sus salidas y cada bloque |
+| `colas [--proyecto carpeta] [--bloque 192] [--segundos 3] [--silencio 120] [--paso 5] [--nivel 0.1] [--caida dB/s]` | lo que cuestan por bloque los buses y el master mientras se apagan sus colas; `--caida` apaga la entrada de a poco, como la cola de un instrumento |
+| `vst vivo "nombre" [--segundos 4] [--bloque 256] [--tope 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--prioridad] [--mmcss] [--ventana] [--salida x.wav]` | toca el instrumento como la reproducción, en bloques del driver a tiempo real, y cuenta los bloques perdidos y los que salieron con sonido, lo que tarda cada bloque en el hilo de audio y en el del plugin, y la CPU de su proceso. `--tope` es el bloque máximo que se le anuncia (por defecto, el del driver), `--prioridad` y `--mmcss` suben este hilo a la prioridad de uno de driver. `--desde` arranca en ese segundo (en medio de una nota), `--espera` lo deja parado antes, `--sin-carga` no espera a que suene y `--apuro 20` adelanta los bloques para que el plugin llegue siempre tarde |
 | `vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--apagado]` | pasa audio (o acordes de prueba) por un efecto como la exportación y en vivo, en bloques del driver a tiempo real; escribe los dos WAV y comprueba que en vivo llega justo un bloque después (lo que cuenta la compensación de latencia) |
 | `midi comprobar` | el sonido de las notas: igual en cualquier tamaño de bloque, termina con el release, la exportación suena como la reproducción y el clip pasa a notas con el tempo; y el teclado: una tecla suena como la nota escrita, el pedal, las tomas, cuantizar y el clip grabado (también corre en `comprobar-dsp`) |
 | `transponer archivo.wav [--semitonos 2] [--salida x.wav]` | cambia el tono sin cambiar el largo, como el Transponer de la pista (de −12 a +12, admite cents) |

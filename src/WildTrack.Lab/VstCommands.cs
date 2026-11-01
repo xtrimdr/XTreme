@@ -60,8 +60,10 @@ static class VstCommands
                 return Try(a);
             case "efecto":
                 return Effect(a);
+            case "vivo":
+                return LivePlay(a);
             default:
-                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado]");
+                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado]");
         }
     }
 
@@ -94,30 +96,12 @@ static class VstCommands
             state = live.GetStateAsync().Result;
             Console.WriteLine(state == null ? "No me dio su estado." : $"Estado: {state.Length} caracteres.");
         }
-        NoteSequence notes;
-        if (plugin.Categories.Contains("Drum", StringComparison.OrdinalIgnoreCase))
-        {
-            // a drum kit: kick and snare (General MIDI 36 and 38) on the beats and the hi-hat (42) in eighths, at 120
-            var hits = new List<NoteEvent>();
-            for (int e = 0; e < (int)((seconds - 1) * 4); e++)
-            {
-                long at = sr / 10 + e * sr / 4;
-                hits.Add(new NoteEvent(at, sr / 8, 0, 0, 42, 90));
-                if (e % 2 == 0) hits.Add(new NoteEvent(at, sr / 8, 0, 0, e % 4 == 0 ? 36 : 38, 110));
-            }
-            notes = new NoteSequence([.. hits], sr);
-        }
-        else
-        {
-            int[] chord = [48, 60, 64, 67];
-            long held = (long)((seconds - 1) * sr);
-            notes = new NoteSequence([.. chord.Select(p => new NoteEvent(sr / 10, held, NoteSynth.Hz(p), 0, p, 100))], sr);
-        }
+        var notes = TestNotes(plugin, seconds, sr);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         using var render = new InstrumentRender(new VstInstance(plugin.Path, plugin.ClassId, plugin.Name, state), notes, 120, sr, offline: !a.Flag("tiempo-real"));
         double opened = sw.Elapsed.TotalSeconds;
-        // some instruments (big sample libraries) keep loading in the background after they open
-        if (a.Double("espera", 0) is var wait and > 0) render.Warm(wait);
+        // like the export: some instruments (big sample libraries) keep loading in the background after they open
+        if (a.Double("espera", InstrumentRender.WarmSec) is var wait and > 0) Console.WriteLine(render.Warm(wait) ? $"Sonó a los {sw.Elapsed.TotalSeconds:0.0} s." : $"No sonó en {wait:0.#} s.");
         int frames = (int)(seconds * sr);
         var l = new float[frames];
         var r = new float[frames];
@@ -131,6 +115,139 @@ static class VstCommands
         Console.WriteLine($"{plugin.Name}: abrió en {opened:0.0} s, {seconds:0.#} s de audio en {took:0.00} s, pico {Palette(peak)}");
         Console.WriteLine($"Escrito: {output}");
         return peak > 1e-4 ? 0 : 3;
+    }
+
+    /// <summary>A beat on a drum kit (kick, snare and hi-hat, General MIDI, at 120) or a C major chord with a bass C on anything else.</summary>
+    static NoteSequence TestNotes(VstPluginInfo plugin, double seconds, int sr)
+    {
+        if (plugin.Categories.Contains("Drum", StringComparison.OrdinalIgnoreCase))
+        {
+            var hits = new List<NoteEvent>();
+            for (int e = 0; e < (int)((seconds - 1) * 4); e++)
+            {
+                long at = sr / 10 + e * sr / 4;
+                hits.Add(new NoteEvent(at, sr / 8, 0, 0, 42, 90));
+                if (e % 2 == 0) hits.Add(new NoteEvent(at, sr / 8, 0, 0, e % 4 == 0 ? 36 : 38, 110));
+            }
+            return new NoteSequence([.. hits], sr);
+        }
+        int[] chord = [48, 60, 64, 67];
+        long held = (long)((seconds - 1) * sr);
+        return new NoteSequence([.. chord.Select(p => new NoteEvent(sr / 10, held, NoteSynth.Hz(p), 0, p, 100))], sr);
+    }
+
+    /// <summary>
+    /// An instrument played the way the app plays it (<see cref="InstrumentPlayer"/>): stopped for <c>--espera</c>
+    /// seconds, then the notes in driver blocks of <c>--bloque</c> at the speed of real time, never waiting for the
+    /// plugin. Says how many blocks it missed and how many came out with sound, what each block took on this thread (what
+    /// the app's "DSP x %" counts) and on the plugin's, and the CPU of the plugin's whole process. <c>--prioridad</c> runs
+    /// this thread at the priority of a driver's.
+    /// </summary>
+    static int LivePlay(Args a)
+    {
+        string name = a.Positional.Skip(1).FirstOrDefault() ?? throw new ArgumentException("vst vivo \"nombre del plugin\"");
+        var plugin = PluginCatalog.Find(PluginCatalog.Plugins(PluginCatalog.Load()), name)
+            ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con vst escanear.");
+        const int sr = 48000;
+        double seconds = a.Double("segundos", 4), wait = a.Double("espera", 0);
+        int block = Math.Clamp(a.Int("bloque", 256), 32, VstBridge.MaxBlock);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        // --tope: the block the plugin is told about, if it isn't the driver's
+        using var bridge = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, sr, offline: false, a.Int("tope", block));
+        Console.WriteLine($"{plugin.Name}: abrió en {sw.Elapsed.TotalSeconds:0.0} s, latencia {bridge.Latency} muestras");
+        if (a.Get("estado") is { } stateFile && !bridge.SetState(File.ReadAllText(stateFile).Trim())) Console.WriteLine("No aceptó el estado.");
+        if (a.Flag("ventana"))
+        {
+            bridge.Message += line => Console.WriteLine($"  {line}");
+            bridge.Command("toolbar keys=\uE765:Teclado|-|mute=:M|solo=:S|-|panic=\uE71A:Detener notas");
+            bridge.Command($"toolbar-track e8743b|Pista de prueba|{plugin.Name}");
+            bridge.Command("toolbar-state keys=1 mute=1 solo=0");
+            bridge.Command("keys-panel 84");
+            bridge.OpenEditor(0);
+        }
+        var hostStats = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        bridge.Message += line => { if (line.StartsWith("stats ")) hostStats.TrySetResult(line); };
+        var player = new InstrumentPlayer(bridge) { Notes = TestNotes(plugin, seconds, sr), Tempo = 120 };
+        // what the app does before it puts the plugin on the track
+        if (!a.Flag("sin-carga")) Console.WriteLine(InstrumentWarmup.Run(bridge, InstrumentWarmup.Pitch(player.Notes), 120, sr, 5) ? $"Sonó a los {sw.Elapsed.TotalSeconds:0.0} s." : "No sonó en 5 s.");
+        // --apuro 20: the driver's blocks twenty times as fast as real time, so the plugin always comes late
+        double hurry = a.Double("apuro", 1);
+        var l = new float[(int)(seconds * sr) + block];
+        var r = new float[l.Length];
+        var none = new float[block];
+        int idle = (int)(wait * sr / block), played = (l.Length - block) / block, sounding = 0;
+        long start = (long)(a.Double("desde", 0) * sr);
+        nint mmcss = 0;
+        if (a.Flag("prioridad")) SetThreadPriority(GetCurrentThread(), ThreadPriorityTimeCritical);
+        if (a.Flag("mmcss"))
+        {
+            // what a driver's thread gets: a real-time priority, above the plugin's own audio thread
+            int task = 0;
+            mmcss = AvSetMmThreadCharacteristicsW("Pro Audio", ref task);
+            if (mmcss != 0) AvSetMmThreadPriority(mmcss, AvrtPriorityCritical);
+        }
+        var times = new long[idle + played];
+        // what the warmup cost doesn't count
+        bridge.Command("stats");
+        hostStats.Task.Wait(1000);
+        hostStats = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var process = System.Diagnostics.Process.GetProcessById(bridge.ProcessId);
+        var cpuFrom = process.TotalProcessorTime;
+        sw.Restart();
+        for (int k = 0; k < idle + played; k++)
+        {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            int at = (k - idle) * block;
+            if (k < idle) player.Idle(block, none, none);
+            else player.Play(start + at, block, l.AsSpan(at, block), r.AsSpan(at, block));
+            times[k] = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+            if (k >= idle)
+            {
+                float peak = 0;
+                for (int i = at; i < at + block; i++) peak = Math.Max(peak, Math.Max(Math.Abs(l[i]), Math.Abs(r[i])));
+                if (peak > 1e-4f) sounding++;
+            }
+            double due = (k + 1) * block / (double)sr / hurry;
+            while (sw.Elapsed.TotalSeconds < due) Thread.Yield();
+        }
+        double ran = sw.Elapsed.TotalSeconds;
+        process.Refresh();
+        double cpu = (process.TotalProcessorTime - cpuFrom).TotalSeconds;
+        if (a.Flag("prioridad")) SetThreadPriority(GetCurrentThread(), 0);
+        if (mmcss != 0) AvRevertMmThreadCharacteristics(mmcss);
+        Console.WriteLine($"Bloques de {block}: {bridge.Misses} perdidos de {idle + played}, {sounding} de {played} con sonido, pico {Palette(Peak(l, r))}");
+        Array.Sort(times);
+        double us = 1e6 / System.Diagnostics.Stopwatch.Frequency, budget = block * 1e6 / sr;
+        double mean = times.Average() * us;
+        Console.WriteLine($"Hilo de audio: media {mean:0.0} µs ({100 * mean / budget:0.0} % del bloque), 99 % {times[(int)(times.Length * 0.99)] * us:0.0} µs, peor {times[^1] * us:0.0} µs");
+        bridge.Command("stats");
+        if (hostStats.Task.Wait(1000) && hostStats.Task.Result.Split(' ') is { Length: 6 } st && long.Parse(st[1]) is > 0 and var done)
+        {
+            double wall = long.Parse(st[3]) / (double)done, onCpu = long.Parse(st[5]) / (double)done;
+            Console.WriteLine($"Plugin: {done} bloques, media {wall:0.0} µs de reloj y {onCpu:0.0} µs de CPU ({100 * wall / budget:0.0} % del bloque), peor {st[4]} µs");
+        }
+        Console.WriteLine($"Proceso del plugin: {100 * cpu / ran:0.0} % de un núcleo");
+
+        // stopped, as the app runs it: the song's tail stays shut, the piano roll's key is heard
+        var stoppedL = new float[block];
+        var stoppedR = new float[block];
+        int RunStopped(double sec)
+        {
+            int open = 0;
+            sw.Restart();
+            for (int k = 0, blocks = (int)(sec * sr / block); k < blocks; k++)
+            {
+                if (player.Idle(block, stoppedL, stoppedR)) open++;
+                double due = (k + 1) * block / (double)sr;
+                while (sw.Elapsed.TotalSeconds < due) Thread.Yield();
+            }
+            return open;
+        }
+        int afterStop = RunStopped(2);
+        player.Audition(60, 100, sr / 3);
+        Console.WriteLine($"Parado: {afterStop} bloques abiertos después de parar, {RunStopped(1)} con una tecla del piano roll");
+        if (a.Get("salida") is { } output) Wav.Write(Path.GetFullPath(output), l, r, sr);
+        return sounding > 0 ? 0 : 3;
     }
 
     /// <summary>
@@ -189,7 +306,7 @@ static class VstCommands
         Console.WriteLine($"{plugin.Name} como en la exportación: {n / (double)sr:0.0} s en {sw.Elapsed.TotalSeconds:0.00} s, latencia propia {pluginLatency} muestras, pico {Palette(Peak(expL, expR))}");
 
         // live: the window's process, blocks of the driver's size at the speed of real time, never waiting for it
-        using var bridge = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, sr, offline: false);
+        using var bridge = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, sr, offline: false, block);
         VstInsert.LiveBlock = block;
         var live = new VstInsert(sr);
         live.Set(new VstSlotSpec(instance, on) { Live = bridge }, 120);
@@ -233,6 +350,23 @@ static class VstCommands
         Console.WriteLine($"Escritos: {output} y {liveOut}");
         return best == expected ? 0 : 3;
     }
+
+    const int ThreadPriorityTimeCritical = 15, AvrtPriorityCritical = 2;
+
+    [System.Runtime.InteropServices.DllImport("avrt", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern nint AvSetMmThreadCharacteristicsW(string task, ref int index);
+
+    [System.Runtime.InteropServices.DllImport("avrt")]
+    static extern bool AvSetMmThreadPriority(nint handle, int priority);
+
+    [System.Runtime.InteropServices.DllImport("avrt")]
+    static extern bool AvRevertMmThreadCharacteristics(nint handle);
+
+    [System.Runtime.InteropServices.DllImport("kernel32")]
+    static extern nint GetCurrentThread();
+
+    [System.Runtime.InteropServices.DllImport("kernel32")]
+    static extern bool SetThreadPriority(nint thread, int priority);
 
     static float Peak(float[] l, float[] r)
     {

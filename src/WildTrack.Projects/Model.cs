@@ -825,7 +825,7 @@ public sealed class Bus : IRouted
     public bool Muted { get; set; }
     /// <summary>"#rrggbb" or null (no color), like <see cref="Track.Color"/>.</summary>
     public string? Color { get; set; }
-    /// <summary>An icon id from the tracks' set (<see cref="Track.Icon"/>); null = the icon of its first reverb or delay.</summary>
+    /// <summary>An icon id from the tracks' set (<see cref="Track.Icon"/>); null = the bus icon every bus without one shows.</summary>
     public string? Icon { get; set; }
     public List<InsertSlot> Inserts { get; set; } = [];
     /// <inheritdoc/>

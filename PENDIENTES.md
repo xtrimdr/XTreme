@@ -56,11 +56,17 @@ _Ideas y mejoras para la nativa._
   - [ ] Un efecto apagado sigue procesando (así prenderlo no corta): ver si conviene pausarlo para ahorrar CPU.
   - [ ] La cola de una reverb VST3 en la exportación: la duración sale de los clips, sin contar cuánto suena el plugin
     después (`--cola` lo mide en el master; probarlo con Supermassive).
-  - [ ] EZdrummer 3 abre pero no suena por el puente (procesa y devuelve silencio, también en tiempo real y después de
-    esperar): probar si carga su kit al abrir su ventana o si le falta la autorización de Toontrack.
-  - [ ] Que un instrumento retome las notas largas cuando el cabezal cae en su medio (hoy no se redisparan), y que el
-    loop mande las notas de después de A a tiempo (hoy el primer bloque después del salto puede salir tarde).
-  - [ ] Elegir el preset del plugin desde la app y mostrar su carga de CPU.
+  - [ ] Que el loop mande las notas de después de A a tiempo (hoy el primer bloque después del salto puede salir tarde).
+  - [ ] Un efecto VST3 que llega siempre un poco tarde pierde todos sus bloques (`VstInsert`, `TrySend`/`TryTake`):
+    que tome el bloque atrasado, como ya hace el instrumento en `VstBridge.Exchange`.
+  - [ ] Elegir el preset del plugin desde la app y mostrar su carga de CPU. El "DSP %" de la barra de título mide solo
+    el callback de ASIO, no el proceso de cada plugin; el comando `stats` del host ya da su tiempo por bloque.
+  - [ ] Si vuelven callbacks de 4 ms con el transporte parado (2026-10-31, una vez: 90 en 5 minutos, sin GC, con Splice
+    INSTRUMENT y un host anunciando 8192): `audio-cortes.log` ahora dice en qué tramo fue (entrada, pistas, resto). No
+    se pudo reproducir en `wtlab` y no se explica cómo el bloque anunciado alargaría el callback de la app.
+  - [ ] El hilo de audio del host es TIME_CRITICAL sin MMCSS, y a veces queda esperando un hilo del plugin (Windows sube
+    ese hilo a prioridad 15): ver si pasarlo a MMCSS "Pro Audio" reduce los bloques perdidos.
+  - [ ] Un GC de la UI frena el callback 6 a 8 ms cada unos 8 s con el motor parado (`audio-cortes.log`): ver qué asigna.
 - Notas: decidido con el usuario (2026-10-28): **puente en C++ con el SDK oficial de Steinberg, en otro proceso**,
   comunicado por memoria compartida, así si un plugin se cuelga no tira abajo la grabación. El SDK de VST3 es MIT
   desde la 3.8 (octubre de 2025): ya no hay tema de GPL. Hace falta el compilador de C++ de Visual Studio y es un

@@ -23,14 +23,14 @@ public sealed class AudioGapLog
 
     public void Tick(PlaybackEngine engine)
     {
-        var (gap, run, block, seeks) = engine.TakeTimings();
+        var (gap, run, input, tracks, block, seeks) = engine.TakeTimings();
         int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2), vr = VideoDecoder.Restarts;
         bool bad = block > 0 && (gap > block * GapBlocks || run > block);
         if (bad)
         {
             string line = string.Format(CultureInfo.InvariantCulture,
-                "{0:HH:mm:ss.fff}  hueco {1,6:0.0} ms  callback {2,5:0.0} ms  bloque {3:0.0} ms  {4}  GC {5}/{6}/{7}  saltos {8}  ffmpeg {9}",
-                DateTime.Now, gap, run, block, engine.Playing ? "sonando" : "parado", g0 - gen0, g1 - gen1, g2 - gen2, seeks, vr - restarts);
+                "{0:HH:mm:ss.fff}  hueco {1,6:0.0} ms  callback {2,5:0.0} ms (entrada {3:0.0}, pistas {4:0.0}, resto {5:0.0})  bloque {6:0.0} ms  {7}  GC {8}/{9}/{10}  saltos {11}  ffmpeg {12}",
+                DateTime.Now, gap, run, input, tracks, run - input - tracks, block, engine.Playing ? "sonando" : "parado", g0 - gen0, g1 - gen1, g2 - gen2, seeks, vr - restarts);
             bool first = !started;
             started = true;
             ThreadPool.QueueUserWorkItem(_ => Append(line, first));

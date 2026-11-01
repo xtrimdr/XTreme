@@ -2319,7 +2319,8 @@ public sealed partial class TimelineView : Control
     double VolumeShift(int i) => BadgeShift(i) + Math.Min(BadgeShift(i), VolumeGap);
     Rect BadgeRect(int i) { double s = BadgeSize(i); return new(25 + Indent(i), LaneY(i) + 6, s, s); }
     Rect ArmRect(int i) => new(HeaderRight - 122, LaneY(i) + 8, 24, 24);
-    Rect InputRect(int i) => new(HeaderRight - 166, LaneY(i) + 8, 40, 24);
+    /// <summary>The input chip: wide enough for its longest label ("11-12") and the arrow side by side.</summary>
+    Rect InputRect(int i) => new(HeaderRight - 176, LaneY(i) + 8, 50, 24);
     Rect MuteRect(int i) => new(HeaderRight - 94, LaneY(i) + 8, 24, 24);
     Rect SoloRect(int i) => new(HeaderRight - 66, LaneY(i) + 8, 24, 24);
     Rect RemoveRect(int i) => new(HeaderRight - 38, LaneY(i) + 8, 24, 24);
@@ -2416,7 +2417,7 @@ public sealed partial class TimelineView : Control
             }
             else ctx.DrawText(t.Track.Name, 12.5, Palette.Fg, new Point(nameX, y + 11), Palette.UiBold, nameW);
         }
-        if (chip) DrawInputChip(ctx, InputRect(i), InputLabel!(t));
+        if (chip) DrawInputChip(ctx, InputRect(i), InputLabel!(t), Hot(InputRect(i)));
 
         if (!RecordingInto(i) && lastPointer.Y >= y && lastPointer.Y < y + lh)
             DrawTrash(ctx, RemoveRect(i), Hot(RemoveRect(i)));
@@ -2482,7 +2483,7 @@ public sealed partial class TimelineView : Control
         // a narrow cell keeps only the icon
         bool withText = 16 + label.Width <= lr.Width - 4;
         double lx = lr.Center.X - (withText ? 16 + label.Width : 12) / 2;
-        FxIcon.Draw(ctx, s.Icon, new Rect(lx, lr.Center.Y - 6, 12, 12), brush);
+        FxIcon.Draw(ctx, FxIcon.Bus, new Rect(lx, lr.Center.Y - 6, 12, 12), brush);
         if (withText) ctx.DrawText(label, new Point(lx + 16, lr.Center.Y - label.Height / 2));
     }
 
@@ -2599,14 +2600,12 @@ public sealed partial class TimelineView : Control
     }
 
     /// <summary>The armed track's input: a small outlined chip with the input and a caret, like a select.</summary>
-    static void DrawInputChip(DrawingContext ctx, Rect r, string label)
+    static void DrawInputChip(DrawingContext ctx, Rect r, string label, bool hot)
     {
-        ctx.DrawRectangle(Palette.Hover, Palette.Pen(Palette.Alpha(Palette.RecColor, 0.45)), r, 4, 4);
+        ctx.DrawRectangle(Palette.Hover, Palette.Pen(Palette.Alpha(Palette.RecColor, hot ? 0.8 : 0.45)), r, 6, 6);
         var t = Palette.Text(label, 10.5, Palette.Fg, Palette.Mono);
-        double x = r.X + 6;
-        ctx.DrawText(t, new Point(x, r.Center.Y - t.Height / 2));
-        var caret = Palette.Text("\uE70D", 8, Palette.Dim, new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"));
-        ctx.DrawText(caret, new Point(r.Right - caret.Width - 5, r.Center.Y - caret.Height / 2));
+        ctx.DrawText(t, new Point(r.X + 6, r.Center.Y - t.Height / 2));
+        DrawChevron(ctx, new Point(r.Right - 9, r.Center.Y + 1), Palette.Dim);
     }
 
     /// <summary>An M / S toggle; on hover it glows in the accent and, while off, its letter and border brighten.</summary>
@@ -3376,4 +3375,4 @@ public sealed partial class TimelineView : Control
 }
 
 /// <summary>A send shown as a knob in a track's header: the bus, its name (the knob's label) and its <see cref="FxIcon"/> icon.</summary>
-public readonly record struct SendKnob(string BusId, string Name, string Icon);
+public readonly record struct SendKnob(string BusId, string Name);

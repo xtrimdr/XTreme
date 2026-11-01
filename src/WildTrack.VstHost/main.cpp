@@ -4,19 +4,34 @@
 //   wtvsthost --scan <file.vst3>
 //       prints one JSON line per audio class of the file (with its main audio and event inputs, to tell instruments
 //       from effects) and exits (scanning runs out of process too).
-//   wtvsthost --host <file.vst3> --cid <32 hex> --shm <name> --sr 48000 [--offline] [--parent <pid>]
+//   wtvsthost --host <file.vst3> --cid <32 hex> --shm <name> --sr 48000 [--block <frames>] [--offline] [--parent <pid>]
 //       loads that class and processes blocks through the shared memory <name> (shared.h), woken by the event
-//       <name>.req and answering on <name>.done. Commands come on stdin, one per line:
+//       <name>.req and answering on <name>.done. --block is the largest block the plugin is told about (the driver's):
+//       plugins size their internals by it (the partitions of a convolution reverb, say), so telling it more than it
+//       will get makes it spend more on every block; a larger block still works, in pieces. Commands come on stdin, one
+//       per line:
 //         state                 -> "state <base64>" (the component's and the controller's state)
 //         load-state <base64>   -> "loaded" or "error <message>"
 //         editor [owner hwnd]   opens (or brings up) the plugin's window
 //         editor-close          closes it
+//         look <panel> <raised> <fg> <dim> <accent> <line>   the window's colors, as rrggbb (the app's theme)
+//         title <text>          the window's title
+//         toolbar id=icon:text|-|id=:text...   the buttons of the bar above the plugin, "-" between groups; nothing sent = no bar
+//         toolbar-track <rrggbb>|<track>|<plugin>   who it plays for, on the left of the bar (no color = the accent)
+//         toolbar-state id=0 id=1...   which buttons are lit
+//         keys-panel <pixels>   room at the bottom of the window for a panel of the app; 0 = none. It answers "editor-panel <hwnd>"
+//         stats                 -> "stats <blocks> <frames> <wall us> <worst wall us> <cpu us>" since the last stats
 //         quit
 //       and it says on stdout: "ready <latency> <outputs> <instrument>", "error <message>", "dirty" (a parameter
-//       changed in its window), "latency <frames>" (the plugin changed its latency), "editor-open", "editor-closed".
+//       changed in its window), "latency <frames>" (the plugin changed its latency), "editor-open", "editor-closed",
+//       "editor-rect <left> <top> <right> <bottom>" (where its window is now; no numbers = minimized), "editor-active",
+//       "editor-inactive" (it took or lost the keyboard), "toolbar <id>" (a button of the bar was clicked),
+//       "editor-panel <hwnd>" (where the app puts its panel, as a child window).
 //   It exits when stdin closes or the app (--parent) goes away.
 
 #include <windows.h>
+#include <dwmapi.h>
+#include <shellapi.h>
 
 #include "shared.h"
 
@@ -43,6 +58,15 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+// gdiplus.h wants min and max, which NOMINMAX takes away
+namespace Gdiplus { using std::min; using std::max; }
+#include <gdiplus.h>
+
+#pragma comment(lib, "dwmapi")
+#pragma comment(lib, "gdi32")
+#pragma comment(lib, "gdiplus")
+#pragma comment(lib, "shell32")
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
@@ -223,18 +247,39 @@ public:
 
 struct Host;
 
-/// The plugin's window: a top-level window of this process (owned by WildTrack's, so it stays above it).
+/// A button of the bar above the plugin.
+struct ToolButton
+{
+    std::string id;
+    std::wstring icon, text;
+    RECT rect {};
+    bool on = false;
+};
+
+/// The plugin's window: a top-level window of this process (owned by WildTrack's, so it stays above it), with the
+/// app's colors and icon, a bar the app fills on top, and the plugin's own view in a child window under the bar.
 class Editor : public IPlugFrame
 {
 public:
+    static constexpr int BarHeight = 46;
+
     Host* host = nullptr;
-    HWND hwnd = nullptr;
+    HWND hwnd = nullptr, plug = nullptr, panelHost = nullptr;
+    /// The room for the app's panel at the bottom of the window.
+    int panelHeight = 0;
     IPtr<IPlugView> view;
+    std::vector<ToolButton> buttons;
+    std::wstring title, trackName, pluginName;
+    int hover = -1;
+    COLORREF panel = RGB(0x13, 0x13, 0x16), raised = RGB(0x1c, 0x1c, 0x20), fg = RGB(0xec, 0xec, 0xef), dim = RGB(0xa1, 0xa1, 0xaa),
+        accent = RGB(0x22, 0xd3, 0xee), line = RGB(0x27, 0x27, 0x2c), trackColor = accent;
+
+    int Bar() const { return buttons.empty() ? 0 : BarHeight; }
 
     tresult PLUGIN_API resizeView(IPlugView* v, ViewRect* r) override
     {
         if (!hwnd || !r) return kInvalidArgument;
-        RECT wr {0, 0, r->getWidth(), r->getHeight()};
+        RECT wr {0, 0, r->getWidth(), r->getHeight() + Bar() + panelHeight};
         AdjustWindowRectEx(&wr, GetWindowLong(hwnd, GWL_STYLE), FALSE, GetWindowLong(hwnd, GWL_EXSTYLE));
         SetWindowPos(hwnd, nullptr, 0, 0, wr.right - wr.left, wr.bottom - wr.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         v->onSize(r);
@@ -253,6 +298,11 @@ public:
     uint32 PLUGIN_API addRef() override { return 1; }
     uint32 PLUGIN_API release() override { return 1; }
 };
+
+// the bar above the plugin, in pixels and with the app's token for a mute that is on
+constexpr int BarMargin = 12, ChipHeight = 30, ChipGap = 4, GroupGap = 17, LabelGap = 10, IconSize = 15, MinIdentity = 200;
+constexpr float ChipRadius = 6;
+constexpr COLORREF Amber = RGB(0xf5, 0x9e, 0x0b);
 
 struct Host
 {
@@ -276,9 +326,13 @@ struct Host
     bool debug = GetEnvironmentVariableW(L"GCVST_DEBUG", nullptr, 0) > 0;
     int64_t blocks = 0;
     DWORD mainThread = 0;
+    /// The largest block the plugin was told about: a larger one goes to it in pieces.
+    int32 setupBlock = gcvst::MaxBlock;
+    // what the audio thread spends, for the "stats" command: per block, on the clock and on the CPU
+    std::atomic<int64_t> statBlocks {0}, statFrames {0}, statWall {0}, statWorst {0}, statCycles {0};
     HWND messages = nullptr;
 
-    bool Load(const std::string& path, const std::string& cid, int32 sampleRate, bool offline)
+    bool Load(const std::string& path, const std::string& cid, int32 sampleRate, bool offline, int32 maxBlock)
     {
         std::string error;
         module = VST3::Hosting::Module::create(path, error);
@@ -308,7 +362,8 @@ struct Host
         if (audioIns > 0) component->activateBus(kAudio, kInput, 0, true);
         if (eventIns > 0) component->activateBus(kEvent, kInput, 0, true);
 
-        ProcessSetup setup {offline ? kOffline : kRealtime, kSample32, gcvst::MaxBlock, static_cast<SampleRate>(sampleRate)};
+        setupBlock = std::clamp(maxBlock, 1, gcvst::MaxBlock);
+        ProcessSetup setup {offline ? kOffline : kRealtime, kSample32, setupBlock, static_cast<SampleRate>(sampleRate)};
         if (processor->setupProcessing(setup) != kResultOk) return Fail("el plugin no acepta 48 kHz en 32 bits");
         data.prepare(*component, gcvst::MaxBlock, kSample32);
         data.inputEvents = &events;
@@ -357,7 +412,19 @@ struct Host
             while (!quit && shared->done < shared->requested)
             {
                 int64_t seq = shared->done + 1;
+                LARGE_INTEGER t0, t1;
+                ULONG64 c0 = 0, c1 = 0;
+                QueryPerformanceCounter(&t0);
+                QueryThreadCycleTime(GetCurrentThread(), &c0);
                 Process(shared->slots[seq & 1]);
+                QueryThreadCycleTime(GetCurrentThread(), &c1);
+                QueryPerformanceCounter(&t1);
+                int64_t wall = t1.QuadPart - t0.QuadPart;
+                statBlocks++;
+                statFrames += shared->slots[seq & 1].frames;
+                statWall += wall;
+                statCycles += static_cast<int64_t>(c1 - c0);
+                if (wall > statWorst.load()) statWorst = wall;
                 InterlockedExchange64(&shared->done, seq);
                 SetEvent(done);
             }
@@ -388,14 +455,6 @@ struct Host
         if (s.flags & gcvst::AllNotesOff)
             for (int16 p = 0; p < 128; p++)
                 if (active[p]) { AddNote(false, 0, p, 0); active[p] = false; }
-        for (int32 i = 0; i < std::min(s.numEvents, gcvst::MaxEvents); i++)
-        {
-            auto& e = s.events[i];
-            if (e.pitch < 0 || e.pitch > 127) continue;
-            bool on = e.type == gcvst::NoteOn;
-            AddNote(on, std::clamp(e.offset, 0, n - 1), static_cast<int16>(e.pitch), e.velocity);
-            active[e.pitch] = on;
-        }
         // what the plugin's window changed since the last block, without waiting for the window's thread
         if (handler.lock.try_lock())
         {
@@ -410,31 +469,53 @@ struct Host
         context.state = ProcessContext::kTempoValid | ProcessContext::kProjectTimeMusicValid | ProcessContext::kTimeSigValid |
             ((s.flags & gcvst::Playing) ? ProcessContext::kPlaying : 0);
         context.tempo = s.tempo > 0 ? s.tempo : 120;
-        context.projectTimeSamples = s.timeSamples;
-        context.projectTimeMusic = s.timeSamples / context.sampleRate * context.tempo / 60.0;
         context.timeSigNumerator = 4;
         context.timeSigDenominator = 4;
 
-        // an effect gets the block's input
-        if (data.numInputs > 0)
-            for (int32 c = 0; c < data.inputs[0].numChannels; c++)
-                std::memcpy(data.inputs[0].channelBuffers32[c], s.in[std::min(c, 1)], n * sizeof(float));
-        data.numSamples = n;
-        tresult result = processor->process(data);
-        if (debug && (blocks++ % 50 == 0 || s.numEvents > 0))
+        // the events are in time order: each piece takes the ones that fall in it
+        int32 count = std::min(s.numEvents, gcvst::MaxEvents), next = 0;
+        for (int32 at = 0; at < n;)
         {
-            float peak = 0;
-            for (int32 c = 0; c < data.outputs[0].numChannels; c++)
-                for (int32 i = 0; i < n; i++) peak = std::max(peak, std::abs(data.outputs[0].channelBuffers32[c][i]));
-            std::fprintf(stderr, "block %lld: %d frames, %d events, process %d, peak %g, silence %llx\n", (long long)s.seq, n, s.numEvents, result, peak,
-                (unsigned long long)data.outputs[0].silenceFlags);
-        }
-        // the main output to the app; a mono plugin is heard on both sides
-        auto& out = data.outputs[0];
-        for (int32 c = 0; c < 2; c++)
-        {
-            if (out.numChannels > 0) std::memcpy(s.out[c], out.channelBuffers32[std::min(c, out.numChannels - 1)], n * sizeof(float));
-            else std::memset(s.out[c], 0, n * sizeof(float));
+            int32 len = std::min(n - at, setupBlock);
+            bool last = at + len >= n;
+            for (; next < count && (last || s.events[next].offset < at + len); next++)
+            {
+                auto& e = s.events[next];
+                if (e.pitch < 0 || e.pitch > 127) continue;
+                bool on = e.type == gcvst::NoteOn;
+                AddNote(on, std::clamp(e.offset - at, 0, len - 1), static_cast<int16>(e.pitch), e.velocity);
+                active[e.pitch] = on;
+            }
+            context.projectTimeSamples = s.timeSamples + at;
+            context.projectTimeMusic = context.projectTimeSamples / context.sampleRate * context.tempo / 60.0;
+            // an effect gets the block's input
+            if (data.numInputs > 0)
+                for (int32 c = 0; c < data.inputs[0].numChannels; c++)
+                    std::memcpy(data.inputs[0].channelBuffers32[c], s.in[std::min(c, 1)] + at, len * sizeof(float));
+            data.numSamples = len;
+            tresult result = processor->process(data);
+            if (debug && (blocks++ % 50 == 0 || s.numEvents > 0))
+            {
+                float peak = 0;
+                for (int32 c = 0; c < data.outputs[0].numChannels; c++)
+                    for (int32 i = 0; i < len; i++) peak = std::max(peak, std::abs(data.outputs[0].channelBuffers32[c][i]));
+                std::fprintf(stderr, "block %lld: %d frames, %d events, process %d, peak %g, silence %llx\n", (long long)s.seq, len, s.numEvents, result, peak,
+                    (unsigned long long)data.outputs[0].silenceFlags);
+            }
+            // the main output to the app; a mono plugin is heard on both sides
+            auto& out = data.outputs[0];
+            for (int32 c = 0; c < 2; c++)
+            {
+                if (out.numChannels > 0) std::memcpy(s.out[c] + at, out.channelBuffers32[std::min(c, out.numChannels - 1)], len * sizeof(float));
+                else std::memset(s.out[c] + at, 0, len * sizeof(float));
+            }
+            at += len;
+            if (!last)
+            {
+                // what this piece carried is delivered: the next one starts empty
+                events.clear();
+                params.clearQueue();
+            }
         }
     }
 
@@ -460,6 +541,33 @@ struct Host
             e.noteOff.noteId = -1;
         }
         events.addEvent(e);
+    }
+
+    /// The "stats" line.
+    std::string Stats()
+    {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        double us = 1e6 / f.QuadPart;
+        int64_t b = statBlocks.exchange(0), n = statFrames.exchange(0), w = statWall.exchange(0), worst = statWorst.exchange(0), c = statCycles.exchange(0);
+        return "stats " + std::to_string(b) + " " + std::to_string(n) + " " + std::to_string(static_cast<int64_t>(w * us)) + " " +
+            std::to_string(static_cast<int64_t>(worst * us)) + " " + std::to_string(static_cast<int64_t>(c / CyclesPerMicrosecond()));
+    }
+
+    /// The speed of the thread cycle counter, measured once (it counts at the CPU's base clock, which Windows doesn't say).
+    static double CyclesPerMicrosecond()
+    {
+        static double mhz = [] {
+            ULONG64 c0 = 0, c1 = 0;
+            LARGE_INTEGER f, t0, t1;
+            QueryPerformanceFrequency(&f);
+            QueryPerformanceCounter(&t0);
+            QueryThreadCycleTime(GetCurrentThread(), &c0);
+            do QueryPerformanceCounter(&t1); while ((t1.QuadPart - t0.QuadPart) * 50 < f.QuadPart);
+            QueryThreadCycleTime(GetCurrentThread(), &c1);
+            return (c1 - c0) * (f.QuadPart / 1e6) / (t1.QuadPart - t0.QuadPart);
+        }();
+        return mhz;
     }
 
     // --- state (the window's thread) ---
@@ -528,15 +636,20 @@ struct Host
         ViewRect r {};
         editor.view->getSize(&r);
         bool resizable = editor.view->canResize() == kResultTrue;
-        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | (resizable ? WS_THICKFRAME | WS_MAXIMIZEBOX : 0);
-        RECT wr {0, 0, std::max<int32>(r.getWidth(), 100), std::max<int32>(r.getHeight(), 60)};
+        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN | (resizable ? WS_THICKFRAME | WS_MAXIMIZEBOX : 0);
+        int width = std::max<int32>(r.getWidth(), 100), height = std::max<int32>(r.getHeight(), 60);
+        RECT wr {0, 0, width, height + editor.Bar() + editor.panelHeight};
         AdjustWindowRectEx(&wr, style, FALSE, 0);
-        std::wstring title = Wide(name) + L" · WildTrack";
+        std::wstring title = !editor.title.empty() ? editor.title : Wide(name);
         editor.hwnd = CreateWindowExW(0, L"WtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
             wr.right - wr.left, wr.bottom - wr.top, owner, nullptr, GetModuleHandleW(nullptr), this);
         editor.host = this;
+        DressWindow();
+        editor.plug = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, editor.Bar(), width, height,
+            editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        if (editor.panelHeight > 0) MakePanelHost();
         editor.view->setFrame(&editor);
-        if (editor.view->attached(editor.hwnd, kPlatformTypeHWND) != kResultOk)
+        if (editor.view->attached(editor.plug, kPlatformTypeHWND) != kResultOk)
         {
             DestroyWindow(editor.hwnd);
             Say("error no pude abrir la ventana del plugin");
@@ -545,6 +658,295 @@ struct Host
         ShowWindow(editor.hwnd, SW_SHOWNORMAL);
         SetForegroundWindow(editor.hwnd);
         Say("editor-open");
+    }
+
+    void MakePanelHost()
+    {
+        RECT client {};
+        GetClientRect(editor.hwnd, &client);
+        editor.panelHost = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, client.bottom - editor.panelHeight,
+            client.right, editor.panelHeight, editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        Say("editor-panel " + std::to_string(reinterpret_cast<intptr_t>(editor.panelHost)));
+    }
+
+    /// The window grows or shrinks by the panel: the plugin keeps its size.
+    void SetPanel(int height)
+    {
+        height = std::max(0, height);
+        if (height == editor.panelHeight) return;
+        if (!editor.hwnd)
+        {
+            editor.panelHeight = height;
+            return;
+        }
+        if (height == 0 && editor.panelHost)
+        {
+            DestroyWindow(editor.panelHost);
+            editor.panelHost = nullptr;
+        }
+        int grow = height - editor.panelHeight;
+        editor.panelHeight = height;
+        RECT r {};
+        GetWindowRect(editor.hwnd, &r);
+        SetWindowPos(editor.hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top + grow, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        if (height > 0 && !editor.panelHost) MakePanelHost();
+    }
+
+    /// The title bar in the app's colors (Windows 11; older ones keep theirs) and the app's icon, from the exe next to this one.
+    void DressWindow()
+    {
+        BOOL dark = TRUE;
+        DwmSetWindowAttribute(editor.hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof dark);
+        DwmSetWindowAttribute(editor.hwnd, DWMWA_CAPTION_COLOR, &editor.panel, sizeof editor.panel);
+        DwmSetWindowAttribute(editor.hwnd, DWMWA_TEXT_COLOR, &editor.fg, sizeof editor.fg);
+        DwmSetWindowAttribute(editor.hwnd, DWMWA_BORDER_COLOR, &editor.line, sizeof editor.line);
+        wchar_t path[MAX_PATH];
+        DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
+        if (n == 0 || n >= MAX_PATH) return;
+        std::wstring exe(path);
+        exe = exe.substr(0, exe.find_last_of(L'\\') + 1) + L"WildTrack.exe";
+        HICON bigIcon = nullptr, smallIcon = nullptr;
+        if (ExtractIconExW(exe.c_str(), 0, &bigIcon, &smallIcon, 1) == 0) return;
+        if (bigIcon) SendMessageW(editor.hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(bigIcon));
+        if (smallIcon) SendMessageW(editor.hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
+    }
+
+    static COLORREF Color(const std::string& hex, COLORREF fallback)
+    {
+        if (hex.size() != 6) return fallback;
+        unsigned long v = std::strtoul(hex.c_str(), nullptr, 16);
+        return RGB(v >> 16 & 0xff, v >> 8 & 0xff, v & 0xff);
+    }
+
+    void SetLook(const std::string& arg)
+    {
+        std::vector<std::string> c;
+        for (size_t at = 0; at < arg.size();)
+        {
+            size_t end = std::min(arg.find(' ', at), arg.size());
+            c.push_back(arg.substr(at, end - at));
+            at = end + 1;
+        }
+        if (c.size() != 6) return;
+        editor.panel = Color(c[0], editor.panel);
+        editor.raised = Color(c[1], editor.raised);
+        editor.fg = Color(c[2], editor.fg);
+        editor.dim = Color(c[3], editor.dim);
+        editor.accent = Color(c[4], editor.accent);
+        editor.line = Color(c[5], editor.line);
+        if (editor.hwnd) DressWindow();
+        RedrawBar();
+    }
+
+    void SetButtons(const std::string& arg)
+    {
+        if (editor.hwnd) return; // the bar's height is settled when the window opens
+        editor.buttons.clear();
+        for (size_t at = 0; at < arg.size();)
+        {
+            size_t end = std::min(arg.find('|', at), arg.size()), eq = arg.find('=', at), colon = arg.find(':', at);
+            if (arg.compare(at, end - at, "-") == 0) editor.buttons.push_back({"-"});
+            else if (eq < end && colon < end) editor.buttons.push_back({arg.substr(at, eq - at), Wide(arg.substr(eq + 1, colon - eq - 1)), Wide(arg.substr(colon + 1, end - colon - 1))});
+            at = end + 1;
+        }
+    }
+
+    void SetTrack(const std::string& arg)
+    {
+        size_t first = arg.find('|'), second = first == std::string::npos ? first : arg.find('|', first + 1);
+        if (second == std::string::npos) return;
+        editor.trackColor = Color(arg.substr(0, first), editor.accent);
+        editor.trackName = Wide(arg.substr(first + 1, second - first - 1));
+        editor.pluginName = Wide(arg.substr(second + 1));
+        RedrawBar();
+    }
+
+    void SetButtonStates(const std::string& arg)
+    {
+        for (auto& b : editor.buttons)
+        {
+            size_t at = arg.find(b.id + "=");
+            if (at != std::string::npos && at + b.id.size() + 1 < arg.size()) b.on = arg[at + b.id.size() + 1] == '1';
+        }
+        RedrawBar();
+    }
+
+    void RedrawBar()
+    {
+        if (!editor.hwnd) return;
+        RECT r {};
+        GetClientRect(editor.hwnd, &r);
+        r.bottom = editor.Bar();
+        InvalidateRect(editor.hwnd, &r, FALSE);
+    }
+
+    static Gdiplus::Color Tint(COLORREF c, BYTE alpha = 255) { return Gdiplus::Color(alpha, GetRValue(c), GetGValue(c), GetBValue(c)); }
+
+    static void Rounded(Gdiplus::GraphicsPath& path, const RECT& r, float radius)
+    {
+        float x = static_cast<float>(r.left), y = static_cast<float>(r.top), w = static_cast<float>(r.right - r.left - 1),
+            h = static_cast<float>(r.bottom - r.top - 1), d = radius * 2;
+        path.AddArc(x, y, d, d, 180, 90);
+        path.AddArc(x + w - d, y, d, d, 270, 90);
+        path.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+        path.AddArc(x, y + h - d, d, d, 90, 90);
+        path.CloseFigure();
+    }
+
+    /// A button's box, as the app's chips: outlined; lit, tinted with its color.
+    static void DrawChip(Gdiplus::Graphics& g, const RECT& r, COLORREF border, BYTE borderAlpha, COLORREF fill, BYTE fillAlpha)
+    {
+        Gdiplus::GraphicsPath path;
+        Rounded(path, r, ChipRadius);
+        if (fillAlpha > 0)
+        {
+            Gdiplus::SolidBrush brush(Tint(fill, fillAlpha));
+            g.FillPath(&brush, &path);
+        }
+        Gdiplus::Pen pen(Tint(border, borderAlpha));
+        g.DrawPath(&pen, &path);
+    }
+
+    static HFONT Font(int size, int weight, const wchar_t* face) { return CreateFontW(-size, 0, 0, 0, weight, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, face); }
+
+    /// Windows 11's icon font, or the one Windows 10 has with the same glyphs.
+    static HFONT IconFont(HDC dc)
+    {
+        HFONT font = Font(IconSize, FW_NORMAL, L"Segoe Fluent Icons");
+        auto old = SelectObject(dc, font);
+        wchar_t face[LF_FACESIZE] {};
+        GetTextFaceW(dc, LF_FACESIZE, face);
+        SelectObject(dc, old);
+        if (wcscmp(face, L"Segoe Fluent Icons") == 0) return font;
+        DeleteObject(font);
+        return Font(IconSize, FW_NORMAL, L"Segoe MDL2 Assets");
+    }
+
+    static int TextWidth(HDC dc, HFONT font, const std::wstring& text)
+    {
+        auto old = SelectObject(dc, font);
+        SIZE size {};
+        GetTextExtentPoint32W(dc, text.c_str(), static_cast<int>(text.size()), &size);
+        SelectObject(dc, old);
+        return size.cx;
+    }
+
+    /// The bar, drawn off screen first so it never flickers: who it plays for on the left, in the track's color, and
+    /// the buttons on the right, in groups. Short of room, the buttons keep only their icons.
+    void PaintBar(HDC target, int width)
+    {
+        int height = editor.Bar();
+        if (height == 0 || width <= 0) return;
+        HDC dc = CreateCompatibleDC(target);
+        HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
+        auto oldBitmap = SelectObject(dc, bitmap);
+        HFONT label = Font(12, FW_NORMAL, L"Segoe UI"), strong = Font(13, FW_SEMIBOLD, L"Segoe UI"), icons = IconFont(dc);
+        auto oldFont = SelectObject(dc, label);
+        SetBkMode(dc, TRANSPARENT);
+        RECT all {0, 0, width, height}, under {0, height - 1, width, height};
+        HBRUSH back = CreateSolidBrush(editor.panel), lineBrush = CreateSolidBrush(editor.line);
+        FillRect(dc, &all, back);
+        FillRect(dc, &under, lineBrush);
+        DeleteObject(back);
+        DeleteObject(lineBrush);
+
+        int total = 0, labels = 0;
+        for (auto& b : editor.buttons)
+        {
+            if (b.id == "-") total += GroupGap;
+            else if (b.icon.empty()) total += ChipHeight + ChipGap;
+            else
+            {
+                total += ChipHeight + ChipGap;
+                labels += TextWidth(dc, label, b.text) + LabelGap;
+            }
+        }
+        bool room = width - total - labels >= MinIdentity;
+        if (room) total += labels;
+
+        Gdiplus::Graphics g(dc);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        int top = (height - 1 - ChipHeight) / 2, x = width - BarMargin - total + ChipGap;
+        for (size_t i = 0; i < editor.buttons.size(); i++)
+        {
+            auto& b = editor.buttons[i];
+            if (b.id == "-")
+            {
+                RECT sep {x + (GroupGap - ChipGap) / 2, top + 4, x + (GroupGap - ChipGap) / 2 + 1, top + ChipHeight - 4};
+                Gdiplus::SolidBrush brush(Tint(editor.line));
+                g.FillRectangle(&brush, static_cast<int>(sep.left), static_cast<int>(sep.top), 1, static_cast<int>(sep.bottom - sep.top));
+                x += GroupGap;
+                b.rect = {};
+                continue;
+            }
+            bool hover = static_cast<int>(i) == editor.hover, wide = room && !b.icon.empty();
+            int w = ChipHeight + (wide ? TextWidth(dc, label, b.text) + LabelGap : 0);
+            b.rect = {x, top, x + w, top + ChipHeight};
+            COLORREF lit = b.id == "mute" ? Amber : editor.accent;
+            if (b.on) DrawChip(g, b.rect, lit, 0x66, lit, 0x24);
+            else DrawChip(g, b.rect, editor.line, 255, editor.line, hover ? 255 : 0);
+            COLORREF ink = b.on ? lit : hover ? editor.fg : editor.dim;
+            SetTextColor(dc, ink);
+            g.Flush(Gdiplus::FlushIntentionSync);
+            RECT r = b.rect;
+            if (b.icon.empty())
+            {
+                SelectObject(dc, strong);
+                DrawTextW(dc, b.text.c_str(), -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
+            else
+            {
+                SelectObject(dc, icons);
+                RECT ir {r.left, r.top, r.left + ChipHeight, r.bottom};
+                DrawTextW(dc, b.icon.c_str(), -1, &ir, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                if (wide)
+                {
+                    SelectObject(dc, label);
+                    RECT tr {r.left + ChipHeight - 4, r.top, r.right - 8, r.bottom};
+                    DrawTextW(dc, b.text.c_str(), -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+                }
+            }
+            x += w + ChipGap;
+        }
+
+        // who it plays for: the track's color, its name, and the plugin after it
+        int limit = width - BarMargin - total - 12;
+        Gdiplus::SolidBrush stripe(Tint(editor.trackColor));
+        Gdiplus::GraphicsPath path;
+        RECT bar {BarMargin, top + 3, BarMargin + 4, top + ChipHeight - 3};
+        Rounded(path, bar, 1.5f);
+        g.FillPath(&stripe, &path);
+        g.Flush(Gdiplus::FlushIntentionSync);
+        int text = BarMargin + 13;
+        RECT name {text, 0, std::max(text, limit), height - 1};
+        SelectObject(dc, strong);
+        SetTextColor(dc, editor.fg);
+        DrawTextW(dc, editor.trackName.c_str(), -1, &name, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        int after = text + TextWidth(dc, strong, editor.trackName) + 10;
+        if (after + 40 < limit)
+        {
+            RECT plugin {after, 0, limit, height - 1};
+            SelectObject(dc, label);
+            SetTextColor(dc, editor.dim);
+            DrawTextW(dc, editor.pluginName.c_str(), -1, &plugin, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        }
+
+        BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+        SelectObject(dc, oldFont);
+        SelectObject(dc, oldBitmap);
+        DeleteObject(label);
+        DeleteObject(strong);
+        DeleteObject(icons);
+        DeleteObject(bitmap);
+        DeleteDC(dc);
+    }
+
+    int ButtonAt(int x, int y)
+    {
+        POINT p {x, y};
+        for (size_t i = 0; i < editor.buttons.size(); i++)
+            if (PtInRect(&editor.buttons[i].rect, p)) return static_cast<int>(i);
+        return -1;
     }
 
     void CloseEditor()
@@ -557,7 +959,18 @@ struct Host
     {
         auto space = line.find(' ');
         std::string cmd = line.substr(0, space), arg = space == std::string::npos ? "" : line.substr(space + 1);
-        if (cmd == "state") Say("state " + GetState());
+        if (cmd == "look") SetLook(arg);
+        else if (cmd == "title")
+        {
+            editor.title = Wide(arg);
+            if (editor.hwnd) SetWindowTextW(editor.hwnd, editor.title.c_str());
+        }
+        else if (cmd == "toolbar") SetButtons(arg);
+        else if (cmd == "toolbar-track") SetTrack(arg);
+        else if (cmd == "toolbar-state") SetButtonStates(arg);
+        else if (cmd == "keys-panel") SetPanel(std::atoi(arg.c_str()));
+        else if (cmd == "state") Say("state " + GetState());
+        else if (cmd == "stats") Say(Stats());
         else if (cmd == "load-state") Say(SetState(arg) ? "loaded" : "error no pude cargar el estado guardado del plugin");
         else if (cmd == "editor") OpenEditor(arg.empty() ? nullptr : reinterpret_cast<HWND>(static_cast<intptr_t>(std::stoll(arg))));
         else if (cmd == "editor-close") CloseEditor();
@@ -582,6 +995,19 @@ struct Host
 
 Host* gHost = nullptr;
 
+/// Tells the app where the window is, as seen: GetWindowRect counts the invisible border it resizes from.
+void SayEditorRect(HWND hwnd)
+{
+    RECT r {};
+    if (IsIconic(hwnd) || !IsWindowVisible(hwnd))
+    {
+        Say("editor-rect");
+        return;
+    }
+    if (FAILED(DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &r, sizeof r))) GetWindowRect(hwnd, &r);
+    Say("editor-rect " + std::to_string(r.left) + " " + std::to_string(r.top) + " " + std::to_string(r.right) + " " + std::to_string(r.bottom));
+}
+
 LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_NCCREATE)
@@ -589,11 +1015,69 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     auto* host = reinterpret_cast<Host*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     switch (msg)
     {
+    case WM_WINDOWPOSCHANGED:
+        SayEditorRect(hwnd);
+        break;
+    case WM_ACTIVATE:
+        Say(LOWORD(wp) != WA_INACTIVE ? "editor-active" : "editor-inactive");
+        break;
     case WM_SIZE:
-        if (host && host->editor.view && host->editor.view->canResize() == kResultTrue)
+        if (host && host->editor.plug)
         {
-            ViewRect r {0, 0, LOWORD(lp), HIWORD(lp)};
-            host->editor.view->onSize(&r);
+            int bar = host->editor.Bar(), panel = host->editor.panelHeight, width = LOWORD(lp), height = std::max(0, HIWORD(lp) - bar - panel);
+            MoveWindow(host->editor.plug, 0, bar, width, height, TRUE);
+            if (host->editor.panelHost)
+            {
+                MoveWindow(host->editor.panelHost, 0, bar + height, width, panel, TRUE);
+                // the panel is the app's window: asked, not waited for
+                if (HWND content = GetWindow(host->editor.panelHost, GW_CHILD))
+                    SetWindowPos(content, nullptr, 0, 0, width, panel, SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+            }
+            if (host->editor.view && host->editor.view->canResize() == kResultTrue)
+            {
+                ViewRect r {0, 0, width, height};
+                host->editor.view->onSize(&r);
+            }
+            host->RedrawBar();
+        }
+        break;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT client {};
+        GetClientRect(hwnd, &client);
+        if (host) host->PaintBar(dc, client.right);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+        if (host)
+        {
+            int over = host->ButtonAt(LOWORD(lp), HIWORD(lp));
+            if (over != host->editor.hover)
+            {
+                host->editor.hover = over;
+                host->RedrawBar();
+            }
+            TRACKMOUSEEVENT track {sizeof track, TME_LEAVE, hwnd, 0};
+            TrackMouseEvent(&track);
+        }
+        break;
+    case WM_MOUSELEAVE:
+        if (host)
+        {
+            host->editor.hover = -1;
+            host->RedrawBar();
+        }
+        break;
+    case WM_LBUTTONDOWN:
+        if (host)
+        {
+            int at = host->ButtonAt(LOWORD(lp), HIWORD(lp));
+            if (at >= 0) Say("toolbar " + host->editor.buttons[at].id);
         }
         break;
     case WM_DESTROY:
@@ -603,6 +1087,9 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             host->editor.view->removed();
             host->editor.view = nullptr;
             host->editor.hwnd = nullptr;
+            host->editor.plug = nullptr;
+            host->editor.panelHost = nullptr;
+            host->editor.hover = -1;
             Say("editor-closed");
         }
         break;
@@ -633,9 +1120,12 @@ LONG WINAPI OnCrash(EXCEPTION_POINTERS*)
     return EXCEPTION_EXECUTE_HANDLER;
 }
 
-int HostMain(const std::string& path, const std::string& cid, const std::wstring& shm, int32 sampleRate, bool offline, DWORD parent)
+int HostMain(const std::string& path, const std::string& cid, const std::wstring& shm, int32 sampleRate, bool offline, int32 maxBlock, DWORD parent)
 {
     SetUnhandledExceptionFilter(OnCrash);
+    ULONG_PTR gdiplus = 0;
+    Gdiplus::GdiplusStartupInput gdiplusInput;
+    Gdiplus::GdiplusStartup(&gdiplus, &gdiplusInput, nullptr);
     Host host;
     gHost = &host;
     host.mainThread = GetCurrentThreadId();
@@ -658,6 +1148,13 @@ int HostMain(const std::string& path, const std::string& cid, const std::wstring
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.lpszClassName = L"WtVstEditor";
     RegisterClassW(&wc);
+    WNDCLASSW pc {};
+    pc.lpfnWndProc = DefWindowProcW;
+    pc.hInstance = wc.hInstance;
+    pc.hCursor = wc.hCursor;
+    pc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    pc.lpszClassName = L"WtVstPlug";
+    RegisterClassW(&pc);
     WNDCLASSW mc {};
     mc.lpfnWndProc = MessageProc;
     mc.hInstance = GetModuleHandleW(nullptr);
@@ -667,7 +1164,7 @@ int HostMain(const std::string& path, const std::string& cid, const std::wstring
 
     static HostApplication hostApp;
     PluginContextFactory::instance().setPluginContext(&hostApp);
-    if (!host.Load(path, cid, sampleRate, offline)) return 3;
+    if (!host.Load(path, cid, sampleRate, offline, maxBlock)) return 3;
 
     std::thread audio([&host] { host.Run(); });
     // stdin: one command per line, handed to the window's thread (VST3 wants state and views there)
@@ -710,7 +1207,7 @@ int wmain(int argc, wchar_t** argv)
 {
     std::string scan, path, cid;
     std::wstring shm;
-    int32 sampleRate = 48000;
+    int32 sampleRate = 48000, maxBlock = gcvst::MaxBlock;
     bool offline = false;
     DWORD parent = 0;
     for (int i = 1; i < argc; i++)
@@ -722,13 +1219,14 @@ int wmain(int argc, wchar_t** argv)
         else if (a == L"--cid") cid = Utf8(next().c_str());
         else if (a == L"--shm") shm = next();
         else if (a == L"--sr") sampleRate = std::stoi(next());
+        else if (a == L"--block") maxBlock = std::stoi(next());
         else if (a == L"--offline") offline = true;
         else if (a == L"--parent") parent = static_cast<DWORD>(std::stoul(next()));
     }
     // a plugin's message box or crash dialog must not hang an invisible process
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     if (!scan.empty()) return Scan(scan);
-    if (!path.empty() && !shm.empty()) return HostMain(path, cid, shm, sampleRate, offline, parent);
-    Say("error uso: wtvsthost --scan archivo.vst3 | --host archivo.vst3 --cid id --shm nombre [--sr 48000] [--offline] [--parent pid]");
+    if (!path.empty() && !shm.empty()) return HostMain(path, cid, shm, sampleRate, offline, maxBlock, parent);
+    Say("error uso: wtvsthost --scan archivo.vst3 | --host archivo.vst3 --cid id --shm nombre [--sr 48000] [--block n] [--offline] [--parent pid]");
     return 1;
 }

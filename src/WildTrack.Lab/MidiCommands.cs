@@ -19,8 +19,9 @@ static class MidiCommands
         if (sub == "comprobar") return Check() ? 0 : 3;
         if (sub == "entradas") return Inputs();
         if (sub == "escuchar") return Listen(a.Get("entrada"), a.Double("segundos", 10));
+        if (sub == "teclas") return RawKeyList(a.Double("segundos", 10));
         string? dir = a.Positional.Skip(1).FirstOrDefault();
-        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|cuantizar|velocidad|humanizar|quitar|instrumento <carpeta> (o midi comprobar, entradas, escuchar)");
+        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|cuantizar|velocidad|humanizar|quitar|instrumento <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
         using var store = ProjectStore.Open(Path.GetFullPath(dir));
         var p = store.Project;
         if (sub != "ver" && store.ReadOnly) throw new IOException(store.ReadOnlyReason);
@@ -299,6 +300,7 @@ static class MidiCommands
         Console.WriteLine($"{"MIDI: copiar y pegar clips",-36} {pastedClip.Notes.Count,12} {"2",10}  {(pasteOk ? "igual" : "DISTINTO")}");
 
         ok &= CheckLive(sr);
+        ok &= CheckVirtualKeyboard();
 
         bool parseOk =MidiNote.Parse("C4") == 60 && MidiNote.Parse("f#2") == 42 && MidiNote.Parse("Eb3") == 51 && MidiNote.Name(61) == "C#4"
             && MidiNote.Parse("H2") == null;
@@ -311,6 +313,82 @@ static class MidiCommands
     /// The keyboard: a key played live sounds as the same note written in a clip, the sustain pedal holds what is let
     /// go, a take pairs its notes, quantizing goes to the song's grid and a recorded clip starts on the bar.
     /// </summary>
+    /// <summary>What <see cref="RawKeys"/> reads, for <paramref name="seconds"/>: the physical keys, whatever has the focus.</summary>
+    static int RawKeyList(double seconds)
+    {
+        using var keys = RawKeys.Start((scan, down) => Console.WriteLine($"{scan:X2} {(down ? "baja" : "sube")} {VirtualKeyboard.CharOf(scan)}"));
+        if (keys == null)
+        {
+            Console.WriteLine("Windows no dio las teclas.");
+            return 1;
+        }
+        Console.WriteLine($"Leyendo las teclas {seconds:0.#} s.");
+        Thread.Sleep(TimeSpan.FromSeconds(seconds));
+        return 0;
+    }
+
+    /// <summary>The virtual keyboard: what its keys send to the engine, a held key counted once, and the octave and velocity.</summary>
+    static bool CheckVirtualKeyboard()
+    {
+        var inputs = new MidiInputs();
+        var keys = new VirtualKeyboard(inputs);
+        string Sent()
+        {
+            var said = new List<string>();
+            while (inputs.TryRead(out var e)) said.Add($"{e.Kind} {e.Pitch} {e.Velocity} {e.Port}");
+            return string.Join(", ", said);
+        }
+        int port = MidiInputs.VirtualPort;
+        bool shortcut = !keys.KeyDown('q') && !keys.KeyUp('q');
+        keys.KeyDown('a');
+        keys.KeyDown('a');
+        string first = Sent();
+        keys.KeyDown('x');
+        keys.KeyUp('x');
+        keys.KeyDown('w');
+        keys.KeyUp('a');
+        string moved = Sent();
+        keys.KeyDown('c');
+        keys.KeyDown('e');
+        keys.AllOff();
+        string off = Sent();
+        bool ok = shortcut && first == $"NoteOn 60 100 {port}" && moved == $"NoteOn 73 100 {port}, NoteOff 60 0 {port}"
+            && off == $"NoteOn 75 90 {port}, NoteOff 73 0 {port}, NoteOff 75 0 {port}";
+        // Shift is the pedal: the notes still play, Z to V are shortcuts again; the row goes on past the L
+        keys.ShiftKey(left: true, isDown: true);
+        keys.ShiftKey(left: false, isDown: true);
+        bool control = !keys.KeyDown('z');
+        keys.KeyDown(VirtualKeyboard.CharOf(0x27));
+        keys.ShiftKey(left: true, isDown: false);
+        keys.ShiftKey(left: false, isDown: false);
+        string pedal = Sent();
+        ok &= control && pedal == $"Sustain 0 127 {port}, NoteOn 88 90 {port}, Sustain 0 0 {port}" && VirtualKeyboard.CharOf(0x1E) == 'a' && VirtualKeyboard.ScanOf(0) == 0x1E;
+        // the transposition moves what is sent, and a held note ends as it started
+        keys.AllOff();
+        Sent();
+        keys.Transpose = 3;
+        keys.Press(60);
+        ok &= keys.IsSounding(63) && !keys.IsSounding(60);
+        keys.Transpose = 0;
+        keys.Release(60);
+        ok &= !keys.IsSounding(63);
+        keys.Transpose = 100;
+        keys.Press(125);
+        keys.AllOff();
+        keys.Transpose = 0;
+        ok &= Sent() == $"NoteOn 63 90 {port}, NoteOff 63 0 {port}";
+        // left down, the pedal outlives a lost window and a Shift, until it is let go
+        keys.ToggleSustain();
+        keys.ShiftKey(left: true, isDown: true);
+        keys.ShiftKey(left: true, isDown: false);
+        keys.AllOff();
+        ok &= keys.Sustain && Sent() == $"Sustain 0 127 {port}";
+        keys.ToggleSustain();
+        ok &= !keys.Sustain && Sent() == $"Sustain 0 0 {port}";
+        Console.WriteLine($"Teclado virtual: {(ok ? "igual" : $"DISTINTO ({first} | {moved} | {off})")}");
+        return ok;
+    }
+
     static bool CheckLive(int sr)
     {
         bool ok = true;

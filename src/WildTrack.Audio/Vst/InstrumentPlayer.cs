@@ -10,10 +10,12 @@ namespace WildTrack.Audio.Vst;
 /// with nothing else delayed. A jump (seek, loop) or a stop turns every note off first; the notes between where it lands
 /// and that lookahead (the first beat of the song, when it starts from 0) go right away, at the start of the first block,
 /// late by the lookahead instead of lost; so do the ones that began less than a block before it (a loop lands that much
-/// past its start). Notes already playing longer than that when the playhead lands in their middle are not retriggered.
+/// past its start) and the ones the playhead lands in the middle of, which start over from there (a long chord would
+/// stay silent until the next note otherwise).
 /// <para>
-/// While stopped (<see cref="Idle"/>) it keeps running, silent, so the piano roll's keys (<see cref="Audition"/>) sound
-/// through the instrument: its output opens with the first one and closes at the next stop. Audio thread only, except
+/// While stopped (<see cref="Idle"/>) it keeps running, silent, so the piano roll's keys (<see cref="Audition"/>) and
+/// what the plugin plays on its own (the keys in its window) sound through the instrument: its output opens with the
+/// first one and closes at the next stop. Audio thread only, except
 /// <see cref="Audition"/>, <see cref="Notes"/> and <see cref="Tempo"/>; no allocations, no locks.
 /// </para>
 /// <para>
@@ -42,11 +44,22 @@ public sealed class InstrumentPlayer(VstBridge bridge)
     /// <summary>The output while stopped: 0 (shut after a stop) to 1 (open since an audition).</summary>
     float gate;
     const float GateStep = 1f / 240; // 5 ms at 48 kHz
+    /// <summary>What it plays after a stop is still the song's tail, until it goes quiet.</summary>
+    bool tail;
+    /// <summary>Below this (-80 dB), it is not playing.</summary>
+    const float Quiet = 1e-4f;
+    int quietFor;
+    /// <summary>How long it has to stay quiet for the tail to be over (500 ms at 48 kHz): a release can dip and come back.</summary>
+    const int TailGap = 24000;
 
     // the piano roll's notes: a lock-free ring from the UI thread, and how long each key still has to sound
     readonly (int Pitch, int Velocity, int Frames)[] ring = new (int, int, int)[64];
     int ringHead, ringTail;
     readonly int[] offIn = new int[128];
+
+    int panic;
+    /// <summary>Every note it holds goes off on the next block, whoever played it. Any thread.</summary>
+    public void Panic() => Volatile.Write(ref panic, 1);
 
     /// <summary>Plays a key on its own for <paramref name="frames"/> (the piano roll). UI thread.</summary>
     public void Audition(int pitch, int velocity, int frames)
@@ -64,7 +77,7 @@ public sealed class InstrumentPlayer(VstBridge bridge)
     public void Play(long pos, int n, Span<float> l, Span<float> r, LiveNotes? keys = null)
     {
         int flags = VstBridge.FlagPlaying;
-        if (pos != expected || idle)
+        if (pos != expected || idle || Interlocked.Exchange(ref panic, 0) != 0)
         {
             flags |= VstBridge.FlagAllNotesOff;
             if (!carried) count = 0;
@@ -104,8 +117,9 @@ public sealed class InstrumentPlayer(VstBridge bridge)
     }
 
     /// <summary>
-    /// After a jump: the notes that start between the playhead and the lookahead (they can't be early any more) go at the
-    /// start of the block, with their own length when they also end before it.
+    /// After a jump: the notes that start between the playhead and the lookahead (they can't be early any more) and the
+    /// ones still sounding past it (the playhead landed in their middle) go at the start of the block, with their own
+    /// length when they also end before the lookahead; the end of the others comes in its own block.
     /// </summary>
     void CatchUp(NoteSequence seq, long pos, long from, int n)
     {
@@ -113,29 +127,37 @@ public sealed class InstrumentPlayer(VstBridge bridge)
         int lo = 0, hi = all.Length;
         // a loop lands a little past its start (what the last block ran over the end): the notes right at the start
         // began up to a block before the playhead and are played too, or the first beat of every lap was lost
-        long since = pos - n;
+        long since = pos - n, earliest = since - seq.MaxSpan;
         while (lo < hi)
         {
             int mid = (lo + hi) >> 1;
-            if (all[mid].Start < since) lo = mid + 1; else hi = mid;
+            if (all[mid].Start < earliest) lo = mid + 1; else hi = mid;
         }
         for (int k = lo; k < all.Length && all[k].Start < from; k++)
         {
             var e = all[k];
+            long end = e.Start + e.Length;
+            if (e.Start < since && end < from) continue; // over already
             Add(0, VstNote.On, e.Pitch, e.Velocity);
-            if (e.Start + e.Length < from) Add((int)Math.Clamp(e.Length, 1, n - 1), VstNote.Off, e.Pitch, e.Velocity);
+            if (end < from) Add((int)Math.Clamp(e.Length, 1, n - 1), VstNote.Off, e.Pitch, e.Velocity);
         }
     }
 
-    /// <summary>While stopped: auditions and the keyboard only. Adds the output while the gate is open; false when there was nothing to add.</summary>
+    /// <summary>
+    /// While stopped: auditions, the keyboard, and what the plugin plays on its own (the keys in its window, a preset's
+    /// preview). Puts the output in <paramref name="l"/> / <paramref name="r"/> while the gate is open; false when there
+    /// is nothing to hear.
+    /// </summary>
     public bool Idle(int n, Span<float> l, Span<float> r, LiveNotes? keys = null)
     {
-        int flags = 0;
+        int flags = Interlocked.Exchange(ref panic, 0) != 0 ? VstBridge.FlagAllNotesOff : 0;
         if (!idle)
         {
             // just stopped: everything off, and the output shuts (the transport already faded it out)
             idle = true;
             gate = 0;
+            tail = true;
+            quietFor = 0;
             flags |= VstBridge.FlagAllNotesOff;
             if (!carried) count = 0;
         }
@@ -143,15 +165,19 @@ public sealed class InstrumentPlayer(VstBridge bridge)
         BeginBlock();
         bool auditioned = Auditions(n);
         auditioned |= Keys(keys, flags);
-        if (!auditioned && gate <= 0)
-        {
-            // keep it running so its tails and envelopes stay current, but nothing is heard
-            Send(n, 0, flags, default, default);
-            return false;
-        }
         l.Clear();
         r.Clear();
         Send(n, 0, flags, l, r);
+        if (!auditioned && gate <= 0)
+        {
+            // it keeps running so its tails and envelopes stay current, but the song's tail is not heard: once it has
+            // gone quiet, the next sound can only be the plugin's own
+            bool quiet = true;
+            for (int i = 0; i < n && quiet; i++) quiet = Math.Abs(l[i]) < Quiet && Math.Abs(r[i]) < Quiet;
+            quietFor = quiet ? quietFor + n : 0;
+            if (quietFor >= TailGap) tail = false;
+            if (quiet || tail) return false;
+        }
         float g = gate;
         for (int i = 0; i < n; i++)
         {
@@ -247,6 +273,52 @@ public sealed class InstrumentPlayer(VstBridge bridge)
 }
 
 /// <summary>
+/// Waits for an instrument to really sound. Some (sample libraries) finish opening with their samples still loading in
+/// the background, some load them only while they are being processed, and until then they drop the notes they get, so
+/// a held chord stays silent, or a whole export. This plays a key of the track at the speed of real time until the
+/// plugin answers and clears what the key left. Before the audio thread or the export use the bridge: nobody hears it.
+/// </summary>
+public static class InstrumentWarmup
+{
+    /// <summary>The key to try on a track without notes.</summary>
+    public const int DefaultPitch = 60;
+    const int Block = 1024;
+    /// <summary>Blocks between tries (about 200 ms): a key sent while it was loading is gone, so it goes again.</summary>
+    const int RepeatBlocks = 9;
+    /// <summary>What counts as sound: -80 dB.</summary>
+    const float Heard = 1e-4f;
+    /// <summary>What it runs on silence afterwards, for the release of the key.</summary>
+    const double TailSec = 1;
+
+    /// <summary>The key of <paramref name="notes"/> to try: the first one the track plays, so it is one that means something on this instrument.</summary>
+    public static int Pitch(NoteSequence? notes) => notes is { Notes.Length: > 0 } seq ? seq.Notes[0].Pitch : DefaultPitch;
+
+    /// <summary>True when it sounded before <paramref name="seconds"/> ran out. Blocks; throws if the plugin crashes.</summary>
+    public static bool Run(VstBridge bridge, int pitch, double tempo, int sampleRate, double seconds)
+    {
+        var l = new float[Block];
+        var r = new float[Block];
+        var key = new VstNote[1];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long time = -1_000_000;
+        bool heard = false;
+        int blocks = (int)(seconds * sampleRate / Block);
+        for (int k = 0; k < blocks && !heard; k++, time += Block)
+        {
+            int phase = k % RepeatBlocks, count = phase == 0 || phase == RepeatBlocks - 1 ? 1 : 0;
+            key[0] = new VstNote { Type = phase == 0 ? VstNote.On : VstNote.Off, Pitch = pitch, Velocity = phase == 0 ? 0.8f : 0 };
+            bridge.Render(key.AsSpan(0, count), Block, time, tempo, 0, l, r);
+            for (int i = 0; i < Block && !heard; i++) heard = Math.Abs(l[i]) > Heard || Math.Abs(r[i]) > Heard;
+            double ahead = (k + 1) * Block / (double)sampleRate - sw.Elapsed.TotalSeconds;
+            if (ahead > 0 && !heard) Thread.Sleep(TimeSpan.FromSeconds(ahead));
+        }
+        bridge.Render([], Block, time, tempo, VstBridge.FlagAllNotesOff | VstBridge.FlagReset, l, r);
+        for (int k = (int)(TailSec * sampleRate / Block); k > 0; k--) bridge.Render([], Block, time, tempo, 0, l, r);
+        return heard;
+    }
+}
+
+/// <summary>
 /// The export's side of an instrument plugin: a fresh process with the track's saved state, rendering offline and
 /// waiting for every block (<see cref="VstBridge.Render"/>), so it plays exactly the notes at their time. The plugin's
 /// own latency is taken out by sending the notes that much early, as live.
@@ -257,7 +329,11 @@ public sealed class InstrumentRender : IDisposable
     readonly NoteSequence? notes;
     readonly double tempo;
     readonly VstNote[] buf = new VstNote[VstBridge.MaxEvents];
+    readonly int sampleRate;
     bool started;
+
+    /// <summary>How long the export waits for an instrument to sound (<see cref="InstrumentWarmup"/>).</summary>
+    public const double WarmSec = 10;
 
     /// <param name="offline">Tell the plugin it renders offline (it may use its best quality); false = as live.</param>
     public InstrumentRender(VstInstance instrument, NoteSequence? notes, double tempo, int sampleRate, bool offline = true)
@@ -271,25 +347,11 @@ public sealed class InstrumentRender : IDisposable
         }
         this.notes = notes;
         this.tempo = tempo;
+        this.sampleRate = sampleRate;
     }
 
-    /// <summary>
-    /// Runs it on silence at the speed of real time for up to <paramref name="seconds"/>: some instruments load their
-    /// samples only while they are being processed.
-    /// </summary>
-    public void Warm(double seconds)
-    {
-        var l = new float[VstBridge.MaxBlock];
-        var r = new float[VstBridge.MaxBlock];
-        int block = 1024;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        for (long done = 0; sw.Elapsed.TotalSeconds < seconds; done += block)
-        {
-            bridge.Render([], block, -1_000_000 + done, tempo, 0, l.AsSpan(0, block), r.AsSpan(0, block));
-            double ahead = done / 48000.0 - sw.Elapsed.TotalSeconds;
-            if (ahead > 0) Thread.Sleep(TimeSpan.FromSeconds(ahead));
-        }
-    }
+    /// <summary>Waits for it to sound, for up to <paramref name="seconds"/> (<see cref="InstrumentWarmup"/>), before <see cref="Render"/>.</summary>
+    public bool Warm(double seconds = WarmSec) => InstrumentWarmup.Run(bridge, InstrumentWarmup.Pitch(notes), tempo, sampleRate, seconds);
 
     /// <summary>Renders frames <c>[pos .. pos + n)</c> into <paramref name="l"/> / <paramref name="r"/>, in blocks of at most <see cref="VstBridge.MaxBlock"/>.</summary>
     public void Render(long pos, int n, Span<float> l, Span<float> r)
