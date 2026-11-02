@@ -548,6 +548,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
 ## Automatización (`MainWindow.Automation.cs`, `Controls/TimelineView.Automation.cs`)
 
 - **Crear**: clic derecho sobre el control (fader, paneo y sliders del mixer y el inspector, perillas de efecto, volumen, paneo, M y envíos del encabezado) → "Automatizar …", o menú de la pista → Automatización, que lista todo lo de la pista. Un VST3 ofrece "Último tocado" (lo último movido en su ventana) y "Elegir parámetro…" (lista con búsqueda: pueden ser miles). Hace falta que el plugin esté abierto.
+- **Automatizar en la ventana del plugin** (`MainWindow.AutomationListen.cs`, pedido del usuario): en la barra de la ventana de un instrumento o de un efecto de pista, el botón "Automatizar" escucha ese plugin: el próximo parámetro que se mueva ahí (`VstBridge.Touches`) recibe su carril, recién al soltar el control y con el valor donde quedó; si no, el carril le sacaría el control a la mano. Se apaga solo; otro clic lo cancela, y cerrar la ventana también. Escucha un plugin por vez. Si el parámetro ya tiene carril, lo muestra. Un efecto de bus no tiene barra: los buses no tienen carriles.
 - **Carril hijo**: va justo debajo de su pista, con una rama del color de la pista (`DrawAutoHeader`), nombre y ON. Se pliega con la flecha al pie del encabezado de la pista (`AutomationFolded`, vista, sin deshacer), y va con la pista si se pliega su carpeta o se la arrastra. Su altura se cambia del borde inferior, como una pista. Debajo de la curva, una sombra de los clips.
 - **Bloques** (como los clips MIDI): un carril nuevo trae uno a lo largo de la canción. Doble clic en el carril vacío crea otro de un compás; la tira de arriba lo mueve (con Ctrl, una copia) y los bordes lo recortan. Clic derecho: copiar, duplicar, repetir 2 / 3 / 4 / 8 / 16 veces u otra cantidad, dividir, vaciar, borrar, pegar. Atajos de copiar, pegar, duplicar y Supr sobre el bloque elegido. Entre bloques la curva mantiene el último valor; si dos se pisan, manda el que empieza después. Las copias son independientes.
 - **Puntos**: clic agrega (imantado a la grilla; Alt lo suelta), arrastrar mueve, doble clic borra, Shift+arrastrar dibuja. Cada tramo es recto hasta que se lo dobla: con el puntero sobre el carril aparece un círculo a la mitad de cada tramo; arrastrarlo curva el tramo y doble clic lo endereza ("Quitar curvas" endereza todo el carril). Interruptores (mute, ON de un efecto) van en escalones. Clic derecho: borrar punto, apagar, ocultar (sigue sonando; vuelve desde el menú de la pista), vaciar, borrar.
@@ -983,7 +984,10 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
   usuario cambia en la ventana del plugin se guarda en el proyecto (su estado, en base64) 1,5 s después de tocarla y al
   cerrarla, fuera del deshacer como el tempo. Si no abre (archivo que falta, error) o se cierra de golpe, un toast lo
   dice (con "Abrirlo de nuevo") y la pista vuelve al tono de prueba; no se reintenta solo. Con la transporte parada el
-  instrumento sigue corriendo: las teclas del piano roll suenan a través de él y su cadena.
+  instrumento sigue corriendo: las teclas del piano roll suenan a través de él y su cadena. Con la ventana de un plugin
+  (instrumento o efecto) en primer plano, los atajos del grupo Transporte siguen andando (`MainWindow.PluginKeys.cs`, pedido
+  del usuario): el host se los saca al plugin y se los pasa a la app, salvo mientras el plugin tiene un cursor de texto.
+  Las demás teclas son del plugin. Con el teclado virtual prendido, una tecla que es nota sigue siendo nota.
 - **Efecto VST3** (`MainWindow.VstFx.cs`, `InsertSlot.VstKind`, `VstSlotSettings`): "+ Efecto" (de una pista o un bus)
   tiene dos entradas que se despliegan al pasar el mouse (pedido del usuario: todo junto era una lista larguísima,
   `AddSlotGroup`): **Nativos** (los propios) y **VST3** (los efectos encontrados, cuántos son, y por marca desde 12, cada

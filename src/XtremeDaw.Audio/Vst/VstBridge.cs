@@ -169,6 +169,9 @@ public sealed unsafe class VstBridge : IDisposable
     TaskCompletionSource<IReadOnlyList<VstParamInfo>?>? paramsReply;
     /// <summary>The parameter last moved in the plugin's window, or null: what "Último tocado" automates.</summary>
     public uint? Touched { get; private set; }
+    int touches;
+    /// <summary>How many gestures its window has had: a parameter touched again leaves <see cref="Touched"/> the same.</summary>
+    public int Touches => Volatile.Read(ref touches);
     /// <summary>The plugin's process.</summary>
     public int ProcessId => process.Id;
     /// <summary>Its own latency in frames, as it reported when it loaded.</summary>
@@ -180,7 +183,7 @@ public sealed unsafe class VstBridge : IDisposable
 
     /// <summary>A line from the plugin's process that is not an answer: "dirty", "editor-open", "editor-closed", "latency N"
     /// (after <see cref="Latency"/> changed), "editor-rect left top right bottom" (where its window is, in pixels; alone
-    /// when it is minimized), "editor-active", "editor-inactive", "toolbar id" (a button of its bar), "error …". Raised on a background thread.</summary>
+    /// when it is minimized), "editor-active", "editor-inactive", "toolbar id" (a button of its bar), "transport-key n scan" (a shortcut pressed in its window), "error …". Raised on a background thread.</summary>
     public event Action<string>? Message;
     /// <summary>The process ended (it crashed, or was closed). Raised on a background thread.</summary>
     public event Action? Exited;
@@ -287,7 +290,9 @@ public sealed unsafe class VstBridge : IDisposable
                         paramsReply?.TrySetResult(paramList);
                         break;
                     case "touched":
-                        if (uint.TryParse(arg, out uint touched)) Touched = touched;
+                        if (!uint.TryParse(arg, out uint touched)) break;
+                        Touched = touched;
+                        Interlocked.Increment(ref touches);
                         break;
                     case "latency":
                         if (int.TryParse(arg, out int now)) Latency = Math.Max(0, now);

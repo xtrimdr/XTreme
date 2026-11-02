@@ -50,7 +50,8 @@ directo en el escritorio que abre la última copia de prueba (`probar.ps1 -Abrir
 
 ## Atajos principales
 
-Todos se pueden cambiar en ⚙ Configuración → Atajos de teclado (menos Esc).
+Todos se pueden cambiar en ⚙ Configuración → Atajos de teclado (menos Esc). Con la ventana de un plugin en primer plano
+andan los del grupo Transporte, salvo mientras se escribe en un campo de texto del plugin.
 
 | Tecla | Acción |
 |---|---|

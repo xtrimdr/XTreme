@@ -22,6 +22,7 @@
 //         toolbar-state id=0 id=1...   which buttons are lit
 //         keys-panel <height>   room at the bottom of the window for a panel of the app, at 100 % (this scales it to the
 //                               window's DPI); 0 = none. It answers "editor-panel <hwnd>"
+//         transport-keys <vk>:<mods> ...   the keys that go to the app instead of the plugin (mods: 1 Ctrl, 2 Shift, 4 Alt)
 //         stats                 -> "stats <blocks> <frames> <wall us> <worst wall us> <cpu us>" since the last stats
 //         params                -> "param <id> <value> <steps> <title>" per automatable parameter, then "params-end"
 //         quit
@@ -30,7 +31,8 @@
 //       changed its latency), "editor-open", "editor-closed",
 //       "editor-rect <left> <top> <right> <bottom>" (where its window is now; no numbers = minimized), "editor-active",
 //       "editor-inactive" (it took or lost the keyboard), "toolbar <id>" (a button of the bar was clicked),
-//       "editor-panel <hwnd>" (where the app puts its panel, as a child window).
+//       "editor-panel <hwnd>" (where the app puts its panel, as a child window), "transport-key <n> <scan>" (the n-th of
+//       transport-keys went down; scan = its scan code, 0 for an extended key).
 //   It exits when stdin closes or the app (--parent) goes away.
 
 #include <windows.h>
@@ -250,14 +252,14 @@ public:
     std::vector<std::pair<ParamID, ParamValue>> pending;
     /// Lanes' values the plugin's window hasn't shown yet: its knobs follow them (same lock).
     std::vector<std::pair<ParamID, ParamValue>> toShow;
-    std::atomic<ParamID> lastTouched {kNoParamId};
     std::atomic<ULONGLONG> lastDirty {0};
     /// The plugin said its latency changed: read again before the next block.
     std::atomic<bool> latencyChanged {false};
 
     tresult PLUGIN_API beginEdit(ParamID id) override
     {
-        if (id != lastTouched.exchange(id)) Say("touched " + std::to_string(id));
+        // every gesture, also on the same parameter: the app's listening button waits for the next one
+        Say("touched " + std::to_string(id));
         return kResultOk;
     }
     tresult PLUGIN_API performEdit(ParamID id, ParamValue value) override
@@ -1043,6 +1045,58 @@ struct Host : Vst2Listener
         RedrawBar();
     }
 
+    /// Keys of the app's transport, in the order it listed them.
+    struct TransportKey { int vk, mods; };
+    std::vector<TransportKey> transportKeys;
+    /// Taken on the way down, so the release stays away from the plugin too.
+    bool transportHeld[256] = {};
+
+    void SetTransportKeys(const std::string& arg)
+    {
+        transportKeys.clear();
+        for (size_t at = 0; at < arg.size();)
+        {
+            size_t end = std::min(arg.find(' ', at), arg.size());
+            std::string key = arg.substr(at, end - at);
+            auto colon = key.find(':');
+            if (colon != std::string::npos) transportKeys.push_back({std::atoi(key.c_str()), std::atoi(key.c_str() + colon + 1)});
+            at = end + 1;
+        }
+    }
+
+    /// A text field has the keyboard: a native edit box and JUCE's both keep a caret, so the keys are the plugin's.
+    static bool Typing()
+    {
+        GUITHREADINFO gui {sizeof gui};
+        return GetGUIThreadInfo(GetCurrentThreadId(), &gui) && gui.hwndCaret;
+    }
+
+    /// A key on its way to the plugin's window. True when it is the transport's, which the app gets instead: the window
+    /// is another process's, so the app's shortcuts stop there and the plugin ignores most of them. Before the plugin's
+    /// window, or a plugin that eats every key would keep them.
+    bool TakeKey(const MSG& m)
+    {
+        bool down = m.message == WM_KEYDOWN || m.message == WM_SYSKEYDOWN, up = m.message == WM_KEYUP || m.message == WM_SYSKEYUP;
+        if ((!down && !up) || m.wParam >= 256 || !editor.hwnd || (m.hwnd != editor.hwnd && !IsChild(editor.hwnd, m.hwnd))) return false;
+        if (up)
+        {
+            bool taken = transportHeld[m.wParam];
+            transportHeld[m.wParam] = false;
+            return taken;
+        }
+        int mods = (GetKeyState(VK_CONTROL) < 0 ? 1 : 0) | (GetKeyState(VK_SHIFT) < 0 ? 2 : 0) | (GetKeyState(VK_MENU) < 0 ? 4 : 0);
+        for (size_t i = 0; i < transportKeys.size(); i++)
+        {
+            if (transportKeys[i].vk != static_cast<int>(m.wParam) || transportKeys[i].mods != mods) continue;
+            if (Typing()) return false;
+            bool repeat = (m.lParam & (1 << 30)) != 0, extended = (m.lParam & (1 << 24)) != 0;
+            if (!repeat) Say("transport-key " + std::to_string(i) + " " + std::to_string(extended ? 0 : (m.lParam >> 16) & 0xFF));
+            transportHeld[m.wParam] = true;
+            return true;
+        }
+        return false;
+    }
+
     void SetButtonStates(const std::string& arg)
     {
         for (auto& b : editor.buttons)
@@ -1254,6 +1308,7 @@ struct Host : Vst2Listener
         else if (cmd == "toolbar-track") SetTrack(arg);
         else if (cmd == "toolbar-state") SetButtonStates(arg);
         else if (cmd == "keys-panel") SetPanel(std::atoi(arg.c_str()));
+        else if (cmd == "transport-keys") SetTransportKeys(arg);
         else if (cmd == "state") Say("state " + GetState());
         else if (cmd == "stats") Say(Stats());
         else if (cmd == "params") SayParams();
@@ -1498,6 +1553,7 @@ int HostMain(const std::string& path, const std::string& cid, const std::wstring
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0)
     {
+        if (host.TakeKey(msg)) continue;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }

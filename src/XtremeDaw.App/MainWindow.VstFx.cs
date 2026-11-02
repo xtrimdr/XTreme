@@ -155,6 +155,7 @@ public partial class MainWindow
     void DropEffect(string key)
     {
         if (!effects.Remove(key, out var loaded)) return;
+        StopLaneListen(loaded.Bridge);
         ReapplyOwner(loaded.Owner);
         _ = Task.Run(async () => { await Task.Delay(EffectCloseDelay); loaded.Bridge.Dispose(); });
         EffectsChanged();
@@ -177,7 +178,13 @@ public partial class MainWindow
 
     void EffectSaid(string key, LoadedEffect loaded, string line)
     {
-        if (!effects.TryGetValue(key, out var current) || current != loaded) return;
+        if (!effects.TryGetValue(key, out var current) || current != loaded || PluginKeySaid(line)) return;
+        if (line == "toolbar listen")
+        {
+            if (tracks.FirstOrDefault(t => t.Track.Id == loaded.Owner) is { } track) ToggleLaneListen(loaded.Bridge, track, id => AutoTarget.Vst(loaded.Slot, id));
+            return;
+        }
+        if (line == "editor-closed") StopLaneListen(loaded.Bridge);
         if (line is "dirty" or "editor-closed")
         {
             loaded.StateDue = true;
@@ -262,6 +269,12 @@ public partial class MainWindow
         if (effects.TryGetValue(EffectKey(owner, slotId), out var loaded))
         {
             DressPluginWindow(loaded.Bridge, loaded.Bridge.Name);
+            // a bus's effect has no bar: it can't have lanes
+            if (tracks.FirstOrDefault(t => t.Track.Id == owner) is { } track)
+            {
+                loaded.Bridge.Command($"toolbar {ListenBarButton}");
+                TellPluginTrack(loaded.Bridge, loaded.Bridge.Name, track.Track);
+            }
             loaded.Bridge.OpenEditor(TryGetPlatformHandle()?.Handle ?? 0);
         }
         else if (EffectSlot(owner, slotId)?.Vst?.Plugin is { } plugin)

@@ -56,10 +56,50 @@ public partial class MainWindow
     /// clicked in the mixer), so the key that just played or stopped must not reach it.</summary>
     void OnTransportKeyUp(object? sender, KeyEventArgs e)
     {
+        TellTimelineKeys(e, down: false);
         if (transportKeys.Remove(e.Key)) e.Handled = true;
     }
 
-    void SetTempo(double value) => SetTempo(value, follow: true);
+    /// <summary>The timeline only hears the modifiers with the pointer: this tells it the moment Ctrl goes down or up. The key's own event may not count it yet.</summary>
+    void TellTimelineKeys(KeyEventArgs e, bool down)
+    {
+        var now = e.KeyModifiers;
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl) now = down ? now | KeyModifiers.Control : now & ~KeyModifiers.Control;
+        Timeline.SetModifiers(now);
+    }
+
+    /// <summary>
+    /// A new value in the tempo box. With clips on the timeline it only shows until the box goes still, and then asks
+    /// once whether they stretch (asked by the user), so a drag or the wheel don't ask at every step. Recording, only
+    /// the grid can move, so there is nothing to ask.
+    /// </summary>
+    void TempoEdited(double value)
+    {
+        tempoAskTimer.Stop();
+        if (store == null || store.ReadOnly || restoring) return;
+        if (RecordingBusy || store.Project.Tracks.All(t => t.Clips.Count == 0))
+        {
+            SetTempo(value, follow: true);
+            return;
+        }
+        Tempo.Set(value);
+        tempoAsked = value;
+        tempoAskedIn = store;
+        tempoAskTimer.Start();
+    }
+
+    async void AskTempo()
+    {
+        if (Tempo.Busy) return; // the timer ticks again
+        tempoAskTimer.Stop();
+        if (store is not { } st || st != tempoAskedIn) return;
+        double before = st.Project.Settings.Bpm, value = tempoAsked;
+        if (value == before) return;
+        var choice = await TempoAsk.Ask(Bpm(before), Bpm(value));
+        if (store != st) return;
+        if (choice == Dialogs.TempoDialog.Choice.Cancel) Tempo.Set(before);
+        else SetTempo(value, follow: choice == Dialogs.TempoDialog.Choice.Stretch);
+    }
 
     /// <summary>
     /// The project's tempo. With <paramref name="follow"/> the whole song changes speed and the playhead stays on its

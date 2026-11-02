@@ -33,7 +33,8 @@ Settings are stored in `%APPDATA%\XTreme`.
 
 ## Main shortcuts
 
-All of them can be changed in ⚙ Settings → Keyboard shortcuts (except Esc). The interface itself is in
+All of them can be changed in ⚙ Settings → Keyboard shortcuts (except Esc). With a plugin's window in front, the
+Transport group keeps working, except while typing in one of the plugin's text fields. The interface itself is in
 Spanish by default; the language is chosen in Settings.
 
 | Key | Action |

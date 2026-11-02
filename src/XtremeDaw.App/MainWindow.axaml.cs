@@ -583,6 +583,7 @@ public partial class MainWindow : Window
         ]);
         ApplyShortcutTips();
         Shortcuts.Changed += ApplyShortcutTips;
+        Shortcuts.Changed += PluginKeysChanged;
     }
 
     void ApplyShortcutTips()
@@ -838,6 +839,7 @@ public partial class MainWindow : Window
             t.GrShow = gr < t.GrShow ? gr : t.GrShow + (gr - t.GrShow) * 0.12;
         }
         FollowLanes(pos);
+        TickListen();
         Timeline.SetPlayhead(pos, engine.Playing);
         pianoRoll.SetPlayhead(pos);
         bool newFrame = false;

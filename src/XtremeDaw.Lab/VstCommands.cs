@@ -197,6 +197,7 @@ static class VstCommands
             bridge.Command($"toolbar-track e8743b|Pista de prueba|{plugin.Name}");
             bridge.Command("toolbar-state keys=1 mute=1 solo=0");
             bridge.Command("keys-panel 84");
+            bridge.Command("transport-keys 32:0 36:0"); // Space and Home
             bridge.OpenEditor(0);
         }
         var hostStats = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);

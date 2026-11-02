@@ -396,10 +396,11 @@ public partial class MainWindow
     static string Hex(Avalonia.Media.IBrush brush) => brush is Avalonia.Media.ISolidColorBrush b ? $"{b.Color.R:x2}{b.Color.G:x2}{b.Color.B:x2}" : "000000";
 
     /// <summary>The window of a plugin in the app's colors, before it opens.</summary>
-    static void DressPluginWindow(XtremeDaw.Audio.Vst.VstBridge bridge, string title)
+    void DressPluginWindow(XtremeDaw.Audio.Vst.VstBridge bridge, string title)
     {
         bridge.Command($"look {Hex(Palette.Panel)} {Hex(Palette.Raised)} {Hex(Palette.Fg)} {Hex(Palette.Dim)} {Hex(Palette.Accent)} {Hex(Palette.Line)}");
         bridge.Command($"title {title}");
+        TellPluginKeys(bridge);
     }
 
     /// <summary>The window's title and its bar say whose it is.</summary>
@@ -435,6 +436,9 @@ public partial class MainWindow
         {
             case "keys":
                 VirtualKeysButton.IsChecked = !VirtualKeysOn;
+                break;
+            case "listen" when instruments.TryGetValue(trackId, out var loaded):
+                ToggleLaneListen(loaded.Bridge, t, AutoTarget.Instrument);
                 break;
             case "mute":
                 EditTrack(t, x => x.Channel.Muted = !x.Channel.Muted, "mute");

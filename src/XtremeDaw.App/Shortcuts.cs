@@ -73,6 +73,25 @@ static class Shortcuts
         new("toolHand", Loc.T("sc.group.tools"), Loc.T("sc.toolHand"), [G(Key.D7), G(Key.NumPad7)]),
     ];
 
+    /// <summary>The ones that keep working with a plugin's window in front (<see cref="MainWindow.TellPluginKeys"/>).</summary>
+    public static IEnumerable<Action> Transport => All.Where(a => a.Group == Loc.T("sc.group.transport"));
+
+    /// <summary>The Windows virtual key, for what a plugin's window has to recognize; 0 if it has none here.</summary>
+    public static int VirtualKey(Key k) => k switch
+    {
+        >= Key.A and <= Key.Z => 0x41 + (k - Key.A),
+        >= Key.D0 and <= Key.D9 => 0x30 + (k - Key.D0),
+        >= Key.NumPad0 and <= Key.NumPad9 => 0x60 + (k - Key.NumPad0),
+        >= Key.F1 and <= Key.F24 => 0x70 + (k - Key.F1),
+        Key.Back => 0x08, Key.Tab => 0x09, Key.Enter => 0x0D, Key.Space => 0x20,
+        Key.PageUp => 0x21, Key.PageDown => 0x22, Key.End => 0x23, Key.Home => 0x24,
+        Key.Left => 0x25, Key.Up => 0x26, Key.Right => 0x27, Key.Down => 0x28, Key.Insert => 0x2D, Key.Delete => 0x2E,
+        Key.Multiply => 0x6A, Key.Add => 0x6B, Key.Subtract => 0x6D, Key.Decimal => 0x6E, Key.Divide => 0x6F,
+        Key.OemSemicolon => 0xBA, Key.OemPlus => 0xBB, Key.OemComma => 0xBC, Key.OemMinus => 0xBD, Key.OemPeriod => 0xBE,
+        Key.OemQuestion => 0xBF, Key.OemTilde => 0xC0, Key.OemOpenBrackets => 0xDB, Key.OemPipe => 0xDC, Key.OemCloseBrackets => 0xDD, Key.OemQuotes => 0xDE,
+        _ => 0,
+    };
+
     public sealed record WheelAction(string Id, string Name, KeyModifiers Default);
 
     /// <summary>The wheel's modifiers in the timeline; the plain wheel always scrolls up and down.</summary>

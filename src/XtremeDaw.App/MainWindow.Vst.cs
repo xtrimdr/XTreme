@@ -177,6 +177,7 @@ public partial class MainWindow
     void DropInstrument(string trackId)
     {
         if (!instruments.Remove(trackId, out var loaded)) return;
+        StopLaneListen(loaded.Bridge);
         ForgetPluginWindow(trackId);
         if (tracks.FirstOrDefault(t => t.Track.Id == trackId) is { } live && live.Instrument == loaded.Player) live.Instrument = null;
         _ = Task.Run(async () => { await Task.Delay(200); loaded.Bridge.Dispose(); });
@@ -193,8 +194,9 @@ public partial class MainWindow
 
     void InstrumentSaid(string trackId, LoadedInstrument loaded, string line)
     {
-        if (!instruments.TryGetValue(trackId, out var current) || current != loaded) return;
+        if (!instruments.TryGetValue(trackId, out var current) || current != loaded || PluginKeySaid(line)) return;
         VirtualEditorSaid(trackId, loaded.Bridge.ProcessId, line);
+        if (line == "editor-closed") StopLaneListen(loaded.Bridge);
         if (line is "dirty" or "editor-closed")
         {
             loaded.StateDue = true;
@@ -257,7 +259,8 @@ public partial class MainWindow
         if (instruments.TryGetValue(track.Track.Id, out var loaded))
         {
             DressPluginWindow(loaded.Bridge, loaded.Plugin.Name);
-            loaded.Bridge.Command($"toolbar keys=\uE765:{Loc.T("vst.bar.keys")}|-|mute=:M|solo=:S|-|panic=\uE71A:{Loc.T("vst.bar.panic")}");
+            string listen = ListenBarButton;
+            loaded.Bridge.Command($"toolbar {(listen.Length > 0 ? listen + "|-|" : "")}keys=\uE765:{Loc.T("vst.bar.keys")}|-|mute=:M|solo=:S|-|panic=\uE71A:{Loc.T("vst.bar.panic")}");
             TellPluginTrack(loaded.Bridge, loaded.Plugin.Name, track.Track);
             pluginBars.Remove(track.Track.Id);
             TellPluginPanel(loaded.Bridge);
