@@ -189,7 +189,7 @@ public sealed partial class SettingsDialog
         g.Children.Add(icon);
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
         text.Children.Add(new TextBlock { Text = p.Name, FontSize = 12.5, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-        string details = string.Join(" · ", new[] { p.Vendor, p.Version, p.Categories.Replace("|", ", ") }.Where(s => s.Length > 0));
+        string details = string.Join(" · ", new[] { p.FormatText, p.Vendor, p.Version, p.Categories.Replace("|", ", ") }.Where(s => s.Length > 0));
         text.Children.Add(new TextBlock { Text = details, FontSize = 11, Foreground = Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis });
         ToolTip.SetTip(text, p.Path);
         Grid.SetColumn(text, 1);

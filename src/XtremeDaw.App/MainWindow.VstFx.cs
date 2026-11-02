@@ -364,10 +364,10 @@ public partial class MainWindow
         var found = PluginScan.Visible.Where(p => !p.IsInstrument).ToList();
         if (found.Count == 0) plugins.Add(new MenuItem { IsEnabled = false, Header = new TextBlock { Text = Loc.T("vst.fx.none"), FontSize = 11 } });
         else if (found.Count < ByVendorFrom)
-            foreach (var p in found) plugins.Add(Pick(p, p.Vendor.Length > 0 ? $"{p.Name} · {p.Vendor}" : p.Name));
+            foreach (var p in found) plugins.Add(Pick(p, MenuName(p, p.Vendor.Length > 0 ? $"{p.Name} · {p.Vendor}" : p.Name)));
         else
             foreach (var maker in found.GroupBy(p => p.Vendor.Length > 0 ? p.Vendor : Loc.T("vst.group.noVendor")).OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
-                plugins.Add(new MenuItem { Header = new TextBlock { Text = $"{maker.Key} ({maker.Count()})", FontSize = 12 }, ItemsSource = maker.Select(p => Pick(p, p.Name)).ToList() });
+                plugins.Add(new MenuItem { Header = new TextBlock { Text = $"{maker.Key} ({maker.Count()})", FontSize = 12 }, ItemsSource = maker.Select(p => Pick(p, MenuName(p, p.Name))).ToList() });
         var items = new List<object> { AddSlotGroup(found.Count > 0 ? $"{Loc.T("vst.group.vst")} ({found.Count})" : Loc.T("vst.group.vst"), FxIcon.Vst, plugins) };
         items.Add(new Separator());
         items.Add(MenuAction(Loc.T(found.Count == 0 ? "vst.scan.first" : "vst.scan"), ScanPlugins, enabled: !PluginScan.Running, tip: Loc.T("vst.scan.tip")));

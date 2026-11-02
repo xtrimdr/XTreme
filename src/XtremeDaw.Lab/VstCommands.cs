@@ -6,7 +6,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// VST3 plugins without the window: scan them (the same catalog the app uses), list them, manage what Configuración →
+/// VST3 and VST2 plugins without the window: scan them (the same catalog the app uses), list them, manage what Configuración →
 /// Plugins manages (the folders to look in, the plugins hidden from the lists), and play one offline through
 /// wtvsthost.exe to a WAV, the way the export does, to hear that the bridge works. An effect (<c>vst efecto</c>) goes
 /// through a slot both ways, the export's and live (paced like the driver), to check that live comes exactly one block
@@ -62,11 +62,43 @@ static class VstCommands
                 return Effect(a);
             case "parametros":
                 return Parameters(a);
+            case "estado":
+                return StateCheck(a);
             case "vivo":
                 return LivePlay(a);
             default:
-                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado] | parametros \"nombre\" [--mover \"parámetro\"] [--segundos 2]");
+                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado] | parametros \"nombre\" [--mover \"parámetro\"] [--segundos 2] | estado \"nombre\"");
         }
+    }
+
+    /// <summary>The plugin's saved sound survives: its state, loaded into a new copy, comes back the same (what reopening a project does).</summary>
+    static int StateCheck(Args a)
+    {
+        string name = a.Positional.Skip(1).FirstOrDefault() ?? throw new ArgumentException("vst estado \"nombre del plugin\"");
+        var plugin = PluginCatalog.Find(PluginCatalog.Plugins(PluginCatalog.Load()), name)
+            ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con vst escanear.");
+        string? saved;
+        using (var first = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, 48000, offline: true))
+            saved = first.GetStateAsync().Result;
+        if (saved == null) { Console.WriteLine("No dio su estado."); return 1; }
+        using var second = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, 48000, offline: true);
+        // two untouched copies can already differ (ids, timestamps): then that many bytes prove nothing
+        string? fresh = second.GetStateAsync().Result;
+        bool loaded = second.SetState(saved);
+        string? again = second.GetStateAsync().Result;
+        int noise = Differ(saved, fresh), differ = Differ(saved, again);
+        Console.WriteLine($"{plugin.Name}: estado de {Convert.FromBase64String(saved).Length} bytes, {(loaded ? "cargó" : "no cargó")}, {(differ == 0 ? "volvió igual" : $"volvió con {differ} bytes DISTINTOS")} (dos copias sin tocar difieren en {noise}).");
+        return loaded && differ <= noise ? 0 : 1;
+    }
+
+    /// <summary>How many bytes two saved states differ in.</summary>
+    static int Differ(string a, string? b)
+    {
+        byte[] x = Convert.FromBase64String(a), y = Convert.FromBase64String(b ?? "");
+        int n = Math.Abs(x.Length - y.Length);
+        for (int i = 0; i < Math.Min(x.Length, y.Length); i++)
+            if (x[i] != y[i]) n++;
+        return n;
     }
 
     static void Show(List<PluginCatalog.Entry> entries)
@@ -75,7 +107,7 @@ static class VstCommands
         var hidden = PluginCatalog.Hidden();
         if (plugins.Count == 0) Console.WriteLine("Sin plugins (probá con vst escanear).");
         foreach (var p in plugins)
-            Console.WriteLine($"{(p.IsInstrument ? "instrumento" : "efecto     ")}  {p.Name} · {p.Vendor} · {p.Version} · {p.Categories}{(p.KnowsBuses ? $" · entradas: {p.AudioIns} de audio, {p.EventIns} de notas" : "")}{(hidden.Contains(PluginCatalog.Key(p)) ? "  (oculto)" : "")}");
+            Console.WriteLine($"{(p.IsInstrument ? "instrumento" : "efecto     ")}  {p.Name} · {p.FormatText} · {p.Vendor} · {p.Version} · {p.Categories}{(p.KnowsBuses ? $" · entradas: {p.AudioIns} de audio, {p.EventIns} de notas" : "")}{(hidden.Contains(PluginCatalog.Key(p)) ? "  (oculto)" : "")}");
         foreach (var e in entries.Where(e => e.Error != null))
             Console.WriteLine($"no abrió     {Path.GetFileName(e.Path)}: {e.Error}");
     }

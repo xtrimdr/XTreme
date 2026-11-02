@@ -53,6 +53,8 @@ _Ideas y mejoras para la nativa._
     se oye. Correr `PositionSec` lo que atrasa el master mientras suena.
   - [ ] Clear (Supertone) informa 9406 muestras de latencia pero atrasa 1470 (medido con `wtlab vst efecto`): la PDC
     usa lo que dice el plugin. Ver si otro momento para preguntarla (después de procesar) le da el número bueno.
+  - [ ] VST2: la ventana del plugin no se escala con la pantalla (a 150 % sale chica) y no se puede estirar; `wtvsthost` no le pasa una escala porque el formato no la tiene. Ver si conviene un modo DPI mixto para esa ventana.
+  - [ ] VST2: probar con plugins de 32 bits reales y un shell de Waves (hasta ahora, un VST2 propio de prueba en 32 y 64 bits y Padness 2 Jr).
   - [ ] Un efecto apagado sigue procesando (así prenderlo no corta): ver si conviene pausarlo para ahorrar CPU.
   - [ ] La cola de una reverb VST3 en la exportación: la duración sale de los clips, sin contar cuánto suena el plugin
     después (`--cola` lo mide en el master; probarlo con Supermassive).

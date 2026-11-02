@@ -5,7 +5,7 @@ using XtremeDaw.Audio.Vst;
 namespace XtremeDaw.Projects;
 
 /// <summary>
-/// The VST3 plugins on this computer (native only): what <see cref="VstScanner"/> found, kept in
+/// The VST3 and VST2 plugins on this computer, 64 and 32 bits (native only): what <see cref="VstScanner"/> found, kept in
 /// %APPDATA%\XTreme\plugins.json with each file's date, so a new scan only opens new or changed files (some
 /// plugins take seconds to load). Files that failed are remembered too, with why, so they are not retried every time.
 /// What the user manages in Configuración → Plugins lives in config.json: the folders added to the standard ones

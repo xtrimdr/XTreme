@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- wtvsthost.exe: the VST3 plugin host process (main.cpp). Built by XtremeDaw.App's build with Visual Studio's MSBuild
-     when the C++ tools, the Windows SDK and lib\vst3sdk are there (tools\get-vst3sdk.ps1); see DETALLES.md. Static runtime,
-     so the exe needs no Visual C++ redistributable. -->
+<!-- wtvsthost.exe (x64) and wtvsthost32.exe (Win32, for 32-bit plugins): the plugin host process (main.cpp). Built by
+     XtremeDaw.App's build with Visual Studio's MSBuild when the C++ tools, the Windows SDK and lib\vst3sdk are there
+     (tools\get-vst3sdk.ps1); see DETALLES.md. Static runtime, so the exe needs no Visual C++ redistributable. -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -11,6 +11,14 @@
     <ProjectConfiguration Include="Release|x64">
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -30,8 +38,9 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
     <TargetName>wtvsthost</TargetName>
+    <TargetName Condition="'$(Platform)'=='Win32'">wtvsthost32</TargetName>
     <OutDir>$(MSBuildProjectDirectory)\bin\$(Configuration)\</OutDir>
-    <IntDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\</IntDir>
+    <IntDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\$(Platform)\</IntDir>
     <Vst3Sdk>$(MSBuildProjectDirectory)\..\..\lib\vst3sdk</Vst3Sdk>
   </PropertyGroup>
   <ItemDefinitionGroup>
@@ -45,6 +54,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
+      <LargeAddressAware>true</LargeAddressAware>
       <AdditionalDependencies>ole32.lib;user32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -68,6 +78,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="shared.h" />
+    <ClInclude Include="vst2.h" />
+    <ClInclude Include="vst2plugin.h" />
     <ClCompile Include="main.cpp" />
     <!-- the SDK's hosting pieces (what its sdk_hosting, sdk_common, base and pluginterfaces targets build) -->
     <ClCompile Include="$(Vst3Sdk)\pluginterfaces\base\conststringtable.cpp" />

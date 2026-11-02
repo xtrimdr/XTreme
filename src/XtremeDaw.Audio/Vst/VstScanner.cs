@@ -1,18 +1,25 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Win32;
 
 namespace XtremeDaw.Audio.Vst;
 
 /// <summary>
-/// A plugin class found in a .vst3 file: what wtvsthost --scan says about it. <see cref="AudioIns"/> and
+/// A plugin class found in a VST3 or VST2 file: what the host's --scan says about it. <see cref="AudioIns"/> and
 /// <see cref="EventIns"/> are its main audio inputs and its note inputs (null when the scan couldn't ask, or was made
 /// before it did): what it really takes decides whether it is an instrument or an effect, because plenty of plugins
-/// say the wrong sub-category (or none).
+/// say the wrong sub-category (or none). <see cref="Bits"/> says which host opens it.
 /// </summary>
 public sealed record VstPluginInfo(string Path, string ClassId, string Name, string Vendor, string Categories, string Version,
-    int? AudioIns = null, int? EventIns = null)
+    int? AudioIns = null, int? EventIns = null, int Bits = 64)
 {
+    /// <summary>"VST2" or "VST3", to tell apart two versions of the same plugin.</summary>
+    public string Format => PluginFile.IsVst2Path(Path) ? "VST2" : "VST3";
+
+    /// <summary>The format and, when it isn't the usual, its bits: "VST3", "VST2 · 32 bits".</summary>
+    public string FormatText => Bits == 32 ? Format + " · 32 bits" : Format;
+
     /// <summary>
     /// It plays notes: it takes notes and no audio, whatever it says; it takes audio and no notes, an effect, whatever it
     /// says; both (a synth with a sidechain, a vocoder) or neither, its sub-categories decide ("Instrument", or no "Fx"
@@ -32,19 +39,42 @@ public sealed record VstPluginInfo(string Path, string ClassId, string Name, str
 }
 
 /// <summary>
-/// Finds VST3 plugins: the .vst3 files and bundles in the standard folders, and what each one holds, asked to
-/// wtvsthost.exe one file at a time (a plugin that crashes while loading takes only that process down).
+/// Finds plugins: the .vst3 files and bundles and the VST2 DLLs in the standard folders, and what each one holds, asked
+/// to the host of its bits one file at a time (a plugin that crashes while loading takes only that process down).
 /// </summary>
 public static class VstScanner
 {
-    /// <summary>Where Windows installs VST3 plugins: the common folder and the per-user one.</summary>
-    public static IEnumerable<string> DefaultFolders =>
-    [
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles), "VST3"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Common", "VST3"),
-    ];
+    /// <summary>Where Windows installs plugins: VST3 has fixed folders, 64 and 32 bits; VST2 never had, so the usual ones and what the registry says.</summary>
+    public static IEnumerable<string> DefaultFolders
+    {
+        get
+        {
+            string files = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                files32 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                common = Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles),
+                common32 = Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFilesX86);
+            List<string> list =
+            [
+                Path.Combine(common, "VST3"),
+                Path.Combine(common32, "VST3"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Common", "VST3"),
+                Path.Combine(files, "VSTPlugins"),
+                Path.Combine(files32, "VSTPlugins"),
+                Path.Combine(files, "Steinberg", "VSTPlugins"),
+                Path.Combine(files32, "Steinberg", "VSTPlugins"),
+                Path.Combine(common, "VST2"),
+                Path.Combine(common32, "VST2"),
+                Path.Combine(common, "Steinberg", "VST2"),
+                Path.Combine(common32, "Steinberg", "VST2"),
+            ];
+            foreach (var key in (string[])[@"SOFTWARE\VST", @"SOFTWARE\WOW6432Node\VST"])
+                if (Registry.GetValue(@"HKEY_LOCAL_MACHINE\" + key, "VSTPluginsPath", null) is string { Length: > 0 } dir)
+                    list.Add(dir.TrimEnd('\\'));
+            return list.Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
-    /// <summary>Every .vst3 under the folders: files, and bundle folders as one plugin (their insides are not searched).</summary>
+    /// <summary>Every plugin under the folders: .vst3 files, bundle folders as one plugin (their insides are not searched) and the DLLs that are VST2.</summary>
     public static List<string> FindFiles(IEnumerable<string> folders)
     {
         var found = new List<string>();
@@ -59,18 +89,20 @@ public static class VstScanner
                 bool isDir = Directory.Exists(e);
                 if (e.EndsWith(".vst3", StringComparison.OrdinalIgnoreCase)) found.Add(e);
                 else if (isDir) Walk(e, depth + 1);
+                else if (PluginFile.IsVst2Path(e) && PluginFile.IsVst2(e)) found.Add(e);
             }
         }
         foreach (var f in folders.Where(Directory.Exists)) Walk(f, 0);
-        return found;
+        return [.. found.Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
-    /// <summary>The plugin classes in one .vst3 (empty if it has none or failed to load; <paramref name="error"/> says why).</summary>
+    /// <summary>The plugin classes in one file (empty if it has none or failed to load; <paramref name="error"/> says why).</summary>
     public static List<VstPluginInfo> ScanFile(string path, out string? error, int timeoutMs = 30000)
     {
         error = null;
-        string? exe = VstHost.Find();
-        if (exe == null) { error = Texts.T("err.vst.noHost", "Falta wtvsthost.exe."); return []; }
+        string? exe = VstHost.Find(path);
+        if (exe == null) { error = VstHost.Missing(path); return []; }
+        int bits = PluginFile.Bits(path);
         var psi = new ProcessStartInfo(exe)
         {
             UseShellExecute = false,
@@ -101,7 +133,7 @@ public static class VstScanner
                 var r = doc.RootElement;
                 string S(string k) => r.TryGetProperty(k, out var v) ? v.GetString() ?? "" : "";
                 int? N(string k) => r.TryGetProperty(k, out var v) && v.TryGetInt32(out int n) ? n : null;
-                list.Add(new VstPluginInfo(path, S("cid"), S("name"), S("vendor"), S("sub"), S("version"), N("ins"), N("events")));
+                list.Add(new VstPluginInfo(path, S("cid"), S("name"), S("vendor"), S("sub"), S("version"), N("ins"), N("events"), bits));
             }
             catch (JsonException) { }
         }

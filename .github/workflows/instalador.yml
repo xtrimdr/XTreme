@@ -56,6 +56,7 @@ jobs:
         run: |
           ./tools/make-installer.ps1
           if (-not (Test-Path artifacts/publish/wtvsthost.exe)) { throw 'Falta wtvsthost.exe: no compiló el puente de VST3' }
+          if (-not (Test-Path artifacts/publish/wtvsthost32.exe)) { throw 'Falta wtvsthost32.exe: no compiló el puente de 32 bits' }
 
       - name: Subir el instalador sin firmar
         id: unsigned

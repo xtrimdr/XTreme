@@ -15,9 +15,9 @@ Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `wtlab`. Lo g
   carpeta `bin`). El build los copia a `ffmpeg\` junto al exe. Sin ellos la preview usa ffmpeg.exe, que tarda más
   en cada salto.
 - [.NET 10 SDK](https://dotnet.microsoft.com/) para compilar.
-- Para los plugins VST3 (opcional): Visual Studio con **Desarrollo para el escritorio con C++** y el **Windows 11 SDK**,
+- Para los plugins VST3 y VST2 (opcional): Visual Studio con **Desarrollo para el escritorio con C++** y el **Windows 11 SDK**,
   y el SDK de VST3 de Steinberg (licencia MIT) en `lib\vst3sdk`, que baja `tools\get-vst3sdk.ps1` (unos 21 MB, fuera de
-  git). Con eso, `dotnet build` también compila `wtvsthost.exe` (`src\XtremeDaw.VstHost`, C++) y lo copia junto al exe;
+  git). Con eso, `dotnet build` también compila `wtvsthost.exe` y `wtvsthost32.exe` (`src\XtremeDaw.VstHost`, C++) y los copia junto al exe;
   sin eso la app compila igual y las pistas MIDI suenan con el tono de prueba.
 - Para **Extraer MIDI**: el modelo de Basic Pitch (Spotify, Apache 2.0, ~230 KB) en `lib\basic-pitch`, que baja
   `tools\get-basic-pitch.ps1` (fuera de git). El build lo copia a `basic-pitch\` junto al exe; sin él, "Extraer MIDI"
@@ -118,7 +118,7 @@ src/
   XtremeDaw.Projects   modelo del proyecto, guardado atómico, historial, gestor de proyectos
   XtremeDaw.App        la ventana (Avalonia 11.3)
   XtremeDaw.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana
-  XtremeDaw.VstHost    wtvsthost.exe (C++): abre un plugin VST3 en su propio proceso
+  XtremeDaw.VstHost    wtvsthost.exe y wtvsthost32.exe (C++): abren un plugin VST3 o VST2 en su propio proceso
 tools/                 ícono, acceso directo y utilidades de verificación
 ```
 
@@ -167,7 +167,8 @@ la consola, sin abrir la ventana.
 | `midi escuchar [--entrada nombre] [--segundos 10]` | abre las entradas como la ventana e imprime lo que llega y lo que toma el motor (canal y curva de velocidad aplicados) |
 | `midi teclas [--segundos 10]` | las teclas físicas de la computadora como las lee el teclado virtual, por Raw Input |
 | `midi instrumento carpeta [--pista n] --plugin "nombre" \| --quitar` | el instrumento VST3 que toca la pista; `mezclar carpeta` lo renderiza con el plugin, como la exportación |
-| `vst escanear [--todo] [--archivo X]` / `vst lista` | busca los plugins VST3 (cada archivo en su propio proceso; los recuerda en `plugins.json`; `--archivo` reintenta uno) / los lista |
+| `vst estado "nombre"` | carga el estado del plugin en una copia nueva y comprueba que vuelve igual, como al reabrir un proyecto |
+| `vst escanear [--todo] [--archivo X]` / `vst lista` | busca los plugins VST3 y VST2, de 64 y 32 bits (cada archivo en su propio proceso; los recuerda en `plugins.json`; `--archivo` reintenta uno) / los lista |
 | `vst carpetas [--agregar X] [--sacar X]` / `vst ocultar\|mostrar "nombre"` | dónde se buscan los plugins y cuáles salen en los menús (lo mismo que Configuración → Plugins) |
 | `vst probar "nombre" [--segundos 4] [--ventana] [--espera s] [--tiempo-real]` | toca un acorde (o un ritmo, si es una batería) con el plugin a un WAV, por el mismo puente que la exportación; `--ventana` abre antes su ventana y `--espera` limita cuánto espera a que suene (10 s, como la exportación; 0 = no espera). Con la variable `GCVST_DEBUG=1`, el puente cuenta sus salidas y cada bloque |
 | `colas [--proyecto carpeta] [--bloque 192] [--segundos 3] [--silencio 120] [--paso 5] [--nivel 0.1] [--caida dB/s]` | lo que cuestan por bloque los buses y el master mientras se apagan sus colas; `--caida` apaga la entrada de a poco, como la cola de un instrumento |

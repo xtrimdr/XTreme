@@ -1,10 +1,11 @@
-// wtvsthost.exe: hosts one VST3 plugin for XTreme in its own process, so a plugin that hangs or crashes never takes
-// a recording down with it (the user's call). The app starts one per plugin instance.
+// wtvsthost.exe: hosts one VST3 or VST2 plugin for XTreme in its own process, so a plugin that hangs or crashes never
+// takes a recording down with it (the user's call). The app starts one per plugin instance. This same source builds
+// wtvsthost32.exe, which the app starts for a 32-bit plugin; a .dll is a VST2 (vst2plugin.h), anything else a VST3.
 //
-//   wtvsthost --scan <file.vst3>
+//   wtvsthost --scan <file>
 //       prints one JSON line per audio class of the file (with its main audio and event inputs, to tell instruments
 //       from effects) and exits (scanning runs out of process too).
-//   wtvsthost --host <file.vst3> --cid <32 hex> --shm <name> --sr 48000 [--block <frames>] [--offline] [--parent <pid>]
+//   wtvsthost --host <file> --cid <class id> --shm <name> --sr 48000 [--block <frames>] [--offline] [--parent <pid>]
 //       loads that class and processes blocks through the shared memory <name> (shared.h), woken by the event
 //       <name>.req and answering on <name>.done. --block is the largest block the plugin is told about (the driver's):
 //       plugins size their internals by it (the partitions of a convolution reverb, say), so telling it more than it
@@ -37,6 +38,7 @@
 #include <shellapi.h>
 
 #include "shared.h"
+#include "vst2plugin.h"
 
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
@@ -58,6 +60,7 @@
 #include <cstring>
 #include <cstdio>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -172,8 +175,49 @@ std::string Buses(const VST3::Hosting::PluginFactory& factory, const VST3::Hosti
     return ",\"ins\":" + std::to_string(mainIns) + ",\"events\":" + std::to_string(eventIns);
 }
 
+bool IsVst2(const std::string& path)
+{
+    return path.size() > 4 && _stricmp(path.c_str() + path.size() - 4, ".dll") == 0;
+}
+
+/// One VST2 class's line. Its id is the shell's, when it comes from one.
+void SayVst2(Vst2Plugin& p, int32_t id, const std::string& shellName)
+{
+    char cid[16];
+    std::snprintf(cid, sizeof cid, "%08X", static_cast<uint32_t>(id));
+    bool notes = p.TakesNotes();
+    Say("{\"cid\":" + Json(cid) + ",\"name\":" + Json(shellName.empty() ? p.Name() : shellName) + ",\"vendor\":" + Json(p.Vendor()) +
+        ",\"sub\":" + Json(p.IsSynth() ? "Instrument" : "Fx") + ",\"version\":" + Json(std::to_string(p.Version())) +
+        ",\"ins\":" + std::to_string(p.effect->numInputs > 0 ? 1 : 0) + ",\"events\":" + std::to_string(notes ? 1 : 0) + "}");
+}
+
+int ScanVst2(const std::string& path)
+{
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    Vst2Plugin plugin;
+    std::string error;
+    if (!plugin.Open(Wide(path), error)) { Say("error " + error); return 1; }
+    if (plugin.Category() != vst2::CategoryShell)
+    {
+        SayVst2(plugin, plugin.effect->uniqueId, "");
+        return 0;
+    }
+    // a shell holds many plugins: each one is asked for by its id
+    std::vector<std::pair<int32_t, std::string>> classes;
+    std::string name;
+    while (int32_t id = plugin.NextInShell(name)) classes.emplace_back(id, name);
+    for (auto& [id, className] : classes)
+    {
+        Vst2Plugin one;
+        one.wantedId = static_cast<uint32_t>(id);
+        if (one.Open(Wide(path), error)) SayVst2(one, id, className);
+    }
+    return 0;
+}
+
 int Scan(const std::string& path)
 {
+    if (IsVst2(path)) return ScanVst2(path);
     std::string error;
     auto module = VST3::Hosting::Module::create(path, error);
     if (!module) { Say("error " + error); return 1; }
@@ -326,8 +370,10 @@ constexpr int BarMargin = 12, ChipHeight = 30, ChipGap = 4, GroupGap = 17, Label
 constexpr float ChipRadius = 6;
 constexpr COLORREF Amber = RGB(0xf5, 0x9e, 0x0b);
 
-struct Host
+struct Host : Vst2Listener
 {
+    /// The plugin, when it is a VST2: then nothing of VST3 below is set.
+    std::unique_ptr<Vst2Plugin> vst2;
     VST3::Hosting::Module::Ptr module;
     IPtr<PlugProvider> provider;
     IPtr<IComponent> component;
@@ -354,8 +400,37 @@ struct Host
     std::atomic<int64_t> statBlocks {0}, statFrames {0}, statWall {0}, statWorst {0}, statCycles {0};
     HWND messages = nullptr;
 
+    bool LoadVst2(const std::string& path, const std::string& cid, int32 sampleRate, bool offline, int32 maxBlock)
+    {
+        vst2 = std::make_unique<Vst2Plugin>();
+        vst2->wantedId = static_cast<uint32_t>(std::strtoul(cid.c_str(), nullptr, 16));
+        vst2->listener = this;
+        setupBlock = std::clamp(maxBlock, 1, gcvst::MaxBlock);
+        std::string error;
+        if (!vst2->Open(Wide(path), error) || !vst2->Start(sampleRate, setupBlock, offline, error)) return Fail(error);
+        name = vst2->Name();
+        int outputs = vst2->effect->numOutputs, instrument = vst2->TakesNotes() ? 1 : 0;
+        shared->latency = vst2->effect->initialDelay;
+        shared->outputs = outputs;
+        shared->instrument = instrument;
+        shared->status = gcvst::Ready;
+        SetTimer(messages, Vst2IdleTimer, Vst2IdleMs, nullptr);
+        Say("ready " + std::to_string(shared->latency) + " " + std::to_string(outputs) + " " + std::to_string(instrument));
+        return true;
+    }
+
+    void Vst2Edited() override { handler.Dirty(); }
+
+    void Vst2Touched(int32_t index) override { Say("touched " + std::to_string(index)); }
+
+    void Vst2Resized(int width, int height) override
+    {
+        if (editor.hwnd) FitEditor(width, height);
+    }
+
     bool Load(const std::string& path, const std::string& cid, int32 sampleRate, bool offline, int32 maxBlock)
     {
+        if (IsVst2(path)) return LoadVst2(path, cid, sampleRate, offline, maxBlock);
         std::string error;
         module = VST3::Hosting::Module::create(path, error);
         if (!module) return Fail(error.empty() ? "no pude abrir el archivo del plugin" : error);
@@ -453,8 +528,62 @@ struct Host
         }
     }
 
+    /// A VST2's block, in the same order as <see cref="Process"/>. Its window already moves with setParameter.
+    void ProcessVst2(gcvst::Slot& s)
+    {
+        int32 n = std::max(1, std::min<int32>(s.frames, gcvst::MaxBlock));
+        std::unique_lock<std::mutex> gate(vst2->stateLock, std::try_to_lock);
+        if (!gate.owns_lock())
+        {
+            std::memset(s.out[0], 0, n * sizeof(float));
+            std::memset(s.out[1], 0, n * sizeof(float));
+            return;
+        }
+        vst2->ClearNotes();
+        if (s.flags & gcvst::Reset) vst2->Reset();
+        if (vst2->latencyChanged.exchange(false) && vst2->effect->initialDelay != shared->latency)
+        {
+            shared->latency = vst2->effect->initialDelay;
+            Say("latency " + std::to_string(shared->latency));
+        }
+        if (s.flags & gcvst::AllNotesOff)
+            for (int p = 0; p < 128; p++)
+                if (active[p]) { vst2->AddNote(false, 0, p, 0); active[p] = false; }
+        for (int32 i = 0, automated = std::min(s.numParams, gcvst::MaxParams); i < automated; i++)
+            if (static_cast<int32>(s.params[i].id) < vst2->effect->numParams)
+                vst2->effect->setParameter(vst2->effect, static_cast<int32>(s.params[i].id), s.params[i].value);
+
+        auto& t = vst2->time;
+        t.tempo = s.tempo > 0 ? s.tempo : 120;
+        t.timeSigNumerator = 4;
+        t.timeSigDenominator = 4;
+        t.flags = vst2::TimeTempoValid | vst2::TimePpqValid | vst2::TimeBarsValid | vst2::TimeSigValid | ((s.flags & gcvst::Playing) ? vst2::TimePlaying : 0);
+
+        int32 count = std::min(s.numEvents, gcvst::MaxEvents), next = 0;
+        for (int32 at = 0; at < n;)
+        {
+            int32 len = std::min(n - at, setupBlock);
+            bool last = at + len >= n;
+            for (; next < count && (last || s.events[next].offset < at + len); next++)
+            {
+                auto& e = s.events[next];
+                if (e.pitch < 0 || e.pitch > 127) continue;
+                bool on = e.type == gcvst::NoteOn;
+                vst2->AddNote(on, std::clamp(e.offset - at, 0, len - 1), e.pitch, e.velocity);
+                active[e.pitch] = on;
+            }
+            t.samplePos = static_cast<double>(s.timeSamples + at);
+            t.ppqPos = t.samplePos / t.sampleRate * t.tempo / 60.0;
+            t.barStartPos = std::floor(t.ppqPos / 4) * 4;
+            vst2->Process(s.in[0] + at, s.in[1] + at, s.out[0] + at, s.out[1] + at, len);
+            vst2->ClearNotes();
+            at += len;
+        }
+    }
+
     void Process(gcvst::Slot& s)
     {
+        if (vst2) { ProcessVst2(s); return; }
         int32 n = std::max(1, std::min<int32>(s.frames, gcvst::MaxBlock));
         events.clear();
         params.clearQueue();
@@ -582,6 +711,13 @@ struct Host
     /// Lists what a host can automate: the plugin's own flags say which, and hidden ones stay hidden.
     void SayParams()
     {
+        if (vst2)
+            for (int32 i = 0; i < vst2->effect->numParams; i++)
+            {
+                char head[96];
+                std::snprintf(head, sizeof head, "param %d %.6f 0 ", i, vst2->effect->getParameter(vst2->effect, i));
+                Say(head + vst2->ParamName(i));
+            }
         if (controller)
             for (int32 i = 0, n = controller->getParameterCount(); i < n; i++)
             {
@@ -651,6 +787,7 @@ struct Host
 
     std::string GetState()
     {
+        if (vst2) return ToBase64(vst2->GetState());
         MemoryStream a, b;
         component->getState(&a);
         if (controller) controller->getState(&b);
@@ -668,6 +805,7 @@ struct Host
     bool SetState(const std::string& b64)
     {
         auto blob = FromBase64(b64);
+        if (vst2) return vst2->SetState(blob);
         size_t at = 0;
         auto take = [&blob, &at](MemoryStream& m) {
             if (at + 4 > blob.size()) return false;
@@ -694,6 +832,40 @@ struct Host
 
     // --- the plugin's window ---
 
+    /// How often a VST2 gets its idle call, from the window's thread.
+    static constexpr UINT_PTR Vst2IdleTimer = 1;
+    static constexpr UINT Vst2IdleMs = 30;
+
+    /// The window around a plugin of that size.
+    void FitEditor(int width, int height)
+    {
+        auto size = editor.WindowFor(width, height, GetWindowLong(editor.hwnd, GWL_STYLE), GetWindowLong(editor.hwnd, GWL_EXSTYLE));
+        SetWindowPos(editor.hwnd, nullptr, 0, 0, size.cx, size.cy, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    /// A VST2 only says its size for sure once it is open, and it can't be resized from here.
+    void OpenEditorVst2(HWND owner)
+    {
+        if (!vst2->HasEditor()) { Say("error el plugin no tiene ventana propia"); return; }
+        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN;
+        std::wstring title = !editor.title.empty() ? editor.title : Wide(name);
+        editor.hwnd = CreateWindowExW(0, L"WtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
+            640, 480, owner, nullptr, GetModuleHandleW(nullptr), this);
+        editor.host = this;
+        editor.dpi = GetDpiForWindow(editor.hwnd);
+        DressWindow();
+        editor.plug = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, editor.Bar(), 640, 480,
+            editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        if (editor.panelUnits > 0) MakePanelHost();
+        vst2->OpenEditor(editor.plug);
+        int width = 0, height = 0;
+        vst2->EditorSize(width, height);
+        FitEditor(std::max(width, 100), std::max(height, 60));
+        ShowWindow(editor.hwnd, SW_SHOWNORMAL);
+        SetForegroundWindow(editor.hwnd);
+        Say("editor-open");
+    }
+
     void OpenEditor(HWND owner)
     {
         if (editor.hwnd)
@@ -702,6 +874,7 @@ struct Host
             SetForegroundWindow(editor.hwnd);
             return;
         }
+        if (vst2) { OpenEditorVst2(owner); return; }
         if (!controller) { Say("error el plugin no tiene ventana"); return; }
         editor.view = owned(controller->createView(ViewType::kEditor));
         if (!editor.view || editor.view->isPlatformTypeSupported(kPlatformTypeHWND) != kResultTrue)
@@ -753,10 +926,17 @@ struct Host
     void DpiChanged(int dpi, const RECT& suggested)
     {
         editor.dpi = dpi;
-        TellScale();
-        ViewRect r {};
-        editor.view->getSize(&r);
-        auto size = editor.WindowFor(r.getWidth(), r.getHeight(), GetWindowLong(editor.hwnd, GWL_STYLE), GetWindowLong(editor.hwnd, GWL_EXSTYLE));
+        int width = 0, height = 0;
+        if (vst2) vst2->EditorSize(width, height);
+        else
+        {
+            TellScale();
+            ViewRect r {};
+            editor.view->getSize(&r);
+            width = r.getWidth();
+            height = r.getHeight();
+        }
+        auto size = editor.WindowFor(width, height, GetWindowLong(editor.hwnd, GWL_STYLE), GetWindowLong(editor.hwnd, GWL_EXSTYLE));
         SetWindowPos(editor.hwnd, nullptr, suggested.left, suggested.top, size.cx, size.cy, SWP_NOZORDER | SWP_NOACTIVATE);
         InvalidateRect(editor.hwnd, nullptr, FALSE);
     }
@@ -1088,6 +1268,7 @@ struct Host
     {
         quit = true;
         CloseEditor();
+        if (vst2) vst2->Close();
         if (processor) processor->setProcessing(false);
         if (component) component->setActive(false);
         if (controller) controller->setComponentHandler(nullptr);
@@ -1199,11 +1380,15 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         break;
     case WM_DESTROY:
-        if (host && host->editor.view)
+        if (host && (host->editor.view || host->vst2))
         {
-            host->editor.view->setFrame(nullptr);
-            host->editor.view->removed();
-            host->editor.view = nullptr;
+            if (host->vst2) host->vst2->CloseEditor();
+            else
+            {
+                host->editor.view->setFrame(nullptr);
+                host->editor.view->removed();
+                host->editor.view = nullptr;
+            }
             host->editor.hwnd = nullptr;
             host->editor.plug = nullptr;
             host->editor.panelHost = nullptr;
@@ -1221,6 +1406,11 @@ LRESULT CALLBACK MessageProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     {
         std::unique_ptr<std::string> line(reinterpret_cast<std::string*>(lp));
         if (gHost) gHost->Command(*line);
+        return 0;
+    }
+    if (msg == WM_TIMER && gHost && gHost->vst2)
+    {
+        gHost->vst2->Idle();
         return 0;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
@@ -1347,6 +1537,6 @@ int wmain(int argc, wchar_t** argv)
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     if (!scan.empty()) return Scan(scan);
     if (!path.empty() && !shm.empty()) return HostMain(path, cid, shm, sampleRate, offline, maxBlock, parent);
-    Say("error uso: wtvsthost --scan archivo.vst3 | --host archivo.vst3 --cid id --shm nombre [--sr 48000] [--block n] [--offline] [--parent pid]");
+    Say("error uso: wtvsthost --scan archivo | --host archivo --cid id --shm nombre [--sr 48000] [--block n] [--offline] [--parent pid]");
     return 1;
 }

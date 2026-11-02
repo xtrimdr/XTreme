@@ -313,6 +313,7 @@ static class Program
                                            toca un acorde con ese plugin a un WAV, como la exportación (--ventana abre
                                            antes su ventana y usa lo que dejes)
               vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado]
+              vst estado "nombre"          carga el estado del plugin en una copia nueva y comprueba que vuelve igual
               vst parametros "nombre" [--mover "parámetro"] [--segundos 2]
                                            pasa audio (o acordes de prueba) por un efecto como la exportación y en vivo
                                            en bloques del driver; comprueba que en vivo llega justo un bloque después

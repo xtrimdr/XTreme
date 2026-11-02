@@ -1,14 +1,19 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Text;
 
 namespace XtremeDaw.Audio.Vst;
 
-/// <summary>Where wtvsthost.exe is (the VST3 host process, src/XtremeDaw.VstHost): next to the app or wtlab.</summary>
+/// <summary>
+/// Where the plugin host processes are (src/XtremeDaw.VstHost), next to the app or wtlab: wtvsthost.exe, and
+/// wtvsthost32.exe because a 32-bit plugin can only load in a 32-bit process.
+/// </summary>
 public static class VstHost
 {
-    public const string ExeName = "wtvsthost.exe";
-    /// <summary>Set it to use another one; null = the one next to the program.</summary>
+    public const string ExeName = "wtvsthost.exe", Exe32Name = "wtvsthost32.exe";
+    /// <summary>Set it to use another one for 64-bit plugins; null = the one next to the program.</summary>
     public static string? ExePath { get; set; }
 
     public static string? Find()
@@ -16,6 +21,78 @@ public static class VstHost
         if (ExePath != null) return File.Exists(ExePath) ? ExePath : null;
         string here = Path.Combine(AppContext.BaseDirectory, ExeName);
         return File.Exists(here) ? here : null;
+    }
+
+    /// <summary>The host for that plugin file, by its bits.</summary>
+    public static string? Find(string pluginPath)
+    {
+        if (PluginFile.Bits(pluginPath) != 32) return Find();
+        string here = Path.Combine(AppContext.BaseDirectory, Exe32Name);
+        return File.Exists(here) ? here : null;
+    }
+
+    /// <summary>Why no host opens that plugin file.</summary>
+    public static string Missing(string pluginPath) => PluginFile.Bits(pluginPath) == 32
+        ? Texts.T("err.vst.noHost32", "Falta wtvsthost32.exe: no se pueden abrir plugins de 32 bits.")
+        : Texts.T("err.vst.noHost", "Falta wtvsthost.exe.");
+}
+
+/// <summary>
+/// What a plugin file is, read from its PE headers without loading it: a DLL only runs inside a process of its own
+/// bits, and a folder of VST2 plugins is full of DLLs that aren't plugins.
+/// </summary>
+public static class PluginFile
+{
+    /// <summary>What a VST2 exports for the host to call.</summary>
+    static readonly string[] Vst2Entries = ["VSTPluginMain", "main", "MAIN"];
+
+    public static bool IsVst2Path(string path) => path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>32 or 64: a .vst3 bundle by what its Contents folder has (64 when it has both). Unreadable counts as 64.</summary>
+    public static int Bits(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            string contents = Path.Combine(path, "Contents");
+            return !Directory.Exists(Path.Combine(contents, "x86_64-win")) && Directory.Exists(Path.Combine(contents, "x86-win")) ? 32 : 64;
+        }
+        try
+        {
+            using var pe = new PEReader(File.OpenRead(path));
+            return pe.PEHeaders.CoffHeader.Machine == Machine.I386 ? 32 : 64;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or BadImageFormatException) { return 64; }
+    }
+
+    /// <summary>The DLL exports a VST2 entry point.</summary>
+    public static bool IsVst2(string path)
+    {
+        try
+        {
+            using var pe = new PEReader(File.OpenRead(path));
+            var header = pe.PEHeaders.PEHeader;
+            if (header == null || header.ExportTableDirectory.Size == 0) return false;
+            var table = pe.GetSectionData(header.ExportTableDirectory.RelativeVirtualAddress).GetReader();
+            table.Offset = 24; // the export directory's NumberOfNames
+            int count = table.ReadInt32();
+            table.Offset = 32; // AddressOfNames
+            var names = pe.GetSectionData(table.ReadInt32()).GetReader();
+            for (int i = 0; i < count; i++)
+            {
+                var name = pe.GetSectionData(names.ReadInt32()).GetReader();
+                if (Vst2Entries.Contains(name.ReadUTF8(name.GetUtf8Length()))) return true;
+            }
+            return false;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or BadImageFormatException or ArgumentOutOfRangeException or InvalidOperationException) { return false; }
+    }
+
+    static int GetUtf8Length(this ref System.Reflection.Metadata.BlobReader reader)
+    {
+        int at = reader.Offset, n = 0;
+        while (reader.RemainingBytes > 0 && reader.ReadByte() != 0) n++;
+        reader.Offset = at;
+        return n;
     }
 }
 
@@ -44,7 +121,7 @@ public struct VstNote
 }
 
 /// <summary>
-/// One VST3 plugin running in its own wtvsthost.exe (the user's call: a plugin that hangs or crashes never takes a
+/// One VST3 or VST2 plugin running in its own host process (the user's call: a plugin that hangs or crashes never takes a
 /// recording down). They talk through shared memory laid out as in <c>src/XtremeDaw.VstHost/shared.h</c> (the offsets
 /// below mirror it), two events to wake each other, and text lines on the process's stdin/stdout for what is not audio
 /// (state, the plugin's window).
@@ -116,7 +193,7 @@ public sealed unsafe class VstBridge : IDisposable
     {
         Name = name;
         SampleRate = sampleRate;
-        string exe = VstHost.Find() ?? throw new FileNotFoundException(Texts.T("err.vst.noHost", "Falta wtvsthost.exe."));
+        string exe = VstHost.Find(pluginPath) ?? throw new FileNotFoundException(VstHost.Missing(pluginPath));
         string id = $"WtVst-{Environment.ProcessId}-{Guid.NewGuid():N}";
         map = MemoryMappedFile.CreateNew(id, TotalSize);
         view = map.CreateViewAccessor(0, TotalSize);

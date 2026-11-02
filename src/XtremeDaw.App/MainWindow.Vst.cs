@@ -289,6 +289,9 @@ public partial class MainWindow
 
     static bool SamePlugin(PluginRef? r, VstPluginInfo p) => r != null && r.Path.Equals(p.Path, StringComparison.OrdinalIgnoreCase) && r.ClassId == p.ClassId;
 
+    /// <summary>A plugin's entry in a menu: a VST2 or a 32-bit one says so, since the same plugin often comes in two formats.</summary>
+    static string MenuName(VstPluginInfo p, string label) => p.FormatText == "VST3" ? label : $"{label} · {p.FormatText}";
+
     /// <summary>The instruments a track can pick: the ones not hidden in Configuración → Plugins, plus the one it uses even if hidden.</summary>
     static List<VstPluginInfo> InstrumentChoices(PluginRef? current)
     {
@@ -335,7 +338,7 @@ public partial class MainWindow
         var found = InstrumentChoices(current);
         if (found.Count == 0) items.Add(new MenuItem { IsEnabled = false, Header = new TextBlock { Text = Loc.T("vst.group.none"), FontSize = 11 } });
         else if (found.Count < ByVendorFrom)
-            foreach (var p in found) items.Add(Pick(p, p.Vendor.Length > 0 ? $"{p.Name} · {p.Vendor}" : p.Name));
+            foreach (var p in found) items.Add(Pick(p, MenuName(p, p.Vendor.Length > 0 ? $"{p.Name} · {p.Vendor}" : p.Name)));
         else
             foreach (var maker in found.GroupBy(p => p.Vendor.Length > 0 ? p.Vendor : Loc.T("vst.group.noVendor")).OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
             {
@@ -343,7 +346,7 @@ public partial class MainWindow
                 string Check() => maker.Any(p => SamePlugin(track.Track.Instrument, p)) ? "" : " ";
                 var lead = new TextBlock { Classes = { "icon" }, Text = Check(), FontSize = 12, Width = 12, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
                 refresh.Add(() => lead.Text = Check());
-                items.Add(new MenuItem { Header = MenuHeader($"{maker.Key} ({maker.Count()})", lead), ItemsSource = maker.Select(p => Pick(p, p.Name)).ToList() });
+                items.Add(new MenuItem { Header = MenuHeader($"{maker.Key} ({maker.Count()})", lead), ItemsSource = maker.Select(p => Pick(p, MenuName(p, p.Name))).ToList() });
             }
         items.Add(new Separator());
         items.Add(MenuAction(Loc.T(found.Count == 0 ? "vst.scan.first" : "vst.scan"), ScanPlugins,
