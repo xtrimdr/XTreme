@@ -15,10 +15,10 @@
 
 <p align="center">
   <a href="https://github.com/xtrimdr/XTreme/releases/latest/download/XTreme-Setup.exe">
-    <img src="https://img.shields.io/github/v/release/xtrimdr/XTreme?style=for-the-badge&label=Download%20for%20Windows&color=22d3ee&labelColor=18181b" alt="Download for Windows" height="56">
+    <img src="docs/descargar-en.svg" alt="Download for Windows: free installer for 64-bit Windows 10 and 11" width="424">
   </a>
   <br>
-  <sub>Windows 10/11, 64-bit · self-contained installer, no .NET install needed</sub>
+  <sub>Brings everything it needs, no .NET install · <a href="https://github.com/xtrimdr/XTreme/releases">All versions</a></sub>
 </p>
 
 **XTreme** is a DAW for any instrument and any style: guitar, bass, vocals, keys, drums, a whole band or a
@@ -41,16 +41,11 @@ It used to be called **GuitarCam Studio Native**: when you update, your settings
 More details in [Requirements](DETALLES_EN.md#requirements).
 </details>
 
-![Audio only: audio and MIDI tracks in folders, VST3 instruments and the piano roll below](docs/screenshots/piano-en.png)
+![The timeline: audio and MIDI tracks in folders, markers and VST3 instruments](docs/screenshots/xtreme-timeline-en.png)
 
-| | |
-|---|---|
-| ![The mixer while playing: folders, reverb and delay buses and the master](docs/screenshots/mixer-en.png) | ![The Mastering view: the master chain from left to right and the output loudness](docs/screenshots/master-en.png) |
-| **Mixer**: one strip per track, folders, buses and the master. | **Mastering**: look, cleanup, multiband, color, tape, width, soft clip and limiter, with a loudness target and "Suggest". |
-| ![The timeline in Video mode: one panel per take, colored track folders and the color tab](docs/screenshots/timeline-en.png) | ![Vertical 9:16 with the Vertical layout: the video full height, the timeline and mixer beside it](docs/screenshots/vertical-en.png) |
-| **Video mode**: one panel per take and the color tab. | **Vertical 9:16** for Reels, Shorts and TikTok, with the Vertical layout. |
+![The mixer while playing: effects, sends, folders, reverb and delay buses and the master](docs/screenshots/xtreme-mixer-en.png)
 
-*The screenshots show the demo project; the panel images are photos from [Unsplash](https://unsplash.com).*
+*The screenshots show a demo project.*
 
 ## What it does
 
@@ -90,6 +85,7 @@ More details in [Requirements](DETALLES_EN.md#requirements).
   Instrument, or the piano roll button, which also opens the plugin window) or, with no plugin, a test tone.
 - **VST3 effects** on channels and buses (amps, pedals, third-party reverbs): "+ Effect" → VST3, in any order
   alongside the built-in ones; "Open" shows its window and what you set there is saved in the project.
+- It also opens **VST2** and **32-bit** plugins: it finds them on its own and marks them in the list.
 - Each plugin runs in its own process: if one hangs, only that one goes quiet and the rest keeps playing. Plugin
   latency is compensated across the whole mix, the click and the takes you record on top (PDC), and the export runs
   through the same plugins.
@@ -97,7 +93,7 @@ More details in [Requirements](DETALLES_EN.md#requirements).
 ### Mix
 
 - A per-channel effects chain, in any order: saturation (**Vida**, tube or tape), a **compressor** with presets
-  (Strumming / Arpeggio / Lead), a **7-band EQ** with live spectrum, dynamic bands and a large view and a **noise gate**, plus pan templates, a
+  by category (vocals, guitars, bass, drums, percussion and more), a **7-band EQ** with live spectrum, dynamic bands and a large view and a **noise gate**, plus pan templates, a
   **MONO** button to check the mix and **FX** to hear it without effects.
 - **Transpose** per track (−12 to +12 semitones) without changing the length: it is computed in the background
   (about 4 s per 3 min) with a high-quality phase vocoder, progress shows on the clips and the result is kept in

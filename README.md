@@ -15,10 +15,10 @@
 
 <p align="center">
   <a href="https://github.com/xtrimdr/XTreme/releases/latest/download/XTreme-Setup.exe">
-    <img src="https://img.shields.io/github/v/release/xtrimdr/XTreme?style=for-the-badge&label=Descargar%20para%20Windows&color=22d3ee&labelColor=18181b" alt="Descargar para Windows" height="56">
+    <img src="docs/descargar-es.svg" alt="Descargar para Windows: instalador gratis para Windows 10 y 11 de 64 bits" width="440">
   </a>
   <br>
-  <sub>Windows 10/11 de 64 bits · instalador autocontenido, sin instalar .NET</sub>
+  <sub>Trae todo lo que necesita, sin instalar .NET · <a href="https://github.com/xtrimdr/XTreme/releases">Todas las versiones</a></sub>
 </p>
 
 **XTreme** es un DAW para cualquier instrumento y cualquier estilo: guitarra, bajo, voz, teclados, batería, una
@@ -33,7 +33,7 @@ Antes se llamaba **GuitarCam Studio Native**: al actualizar, tus ajustes y proye
 <details>
 <summary><b>Antes de instalar</b></summary>
 
-- **FFmpeg** y **ffprobe** en el `PATH`, para la cámara, el video y la exportación. Si no están, XTreme te avisa
+- **FFmpeg** y **ffprobe** en el `PATH` o instalados con winget, para la cámara, el video y la exportación. Si no están, XTreme te avisa
   al abrir y lo instala con un clic (winget), o te lleva a la página para bajarlo.
 - Una interfaz de audio con driver **ASIO**, para grabar.
 - El instalador no está firmado: si Windows SmartScreen avisa, elegí **Más información → Ejecutar de todas formas**.
@@ -41,16 +41,11 @@ Antes se llamaba **GuitarCam Studio Native**: al actualizar, tus ajustes y proye
 Más detalles en [Requisitos](DETALLES.md#requisitos).
 </details>
 
-![Solo audio: pistas de audio y MIDI en carpetas, instrumentos VST3 y el piano roll abajo](docs/screenshots/piano-es.png)
+![El timeline: pistas de audio y MIDI en carpetas, marcadores e instrumentos VST3](docs/screenshots/xtreme-timeline-es.png)
 
-| | |
-|---|---|
-| ![El mixer sonando: carpetas, buses de reverb y delay y el master](docs/screenshots/mixer-es.png) | ![La vista Mastering: la cadena del master de izquierda a derecha y el volumen de salida](docs/screenshots/master-es.png) |
-| **Mixer**: una tira por pista, carpetas, buses y el master. | **Mastering**: Look, limpieza, multibanda, color, Cinta, Ancho, soft clip y limitador, con Destino de volumen y "Sugerime". |
-| ![El timeline en modo Video: un panel por toma, carpetas de pistas con su color y la pestaña de color](docs/screenshots/timeline-es.png) | ![Formato vertical 9:16 con el diseño Vertical: el video a lo alto y el timeline y el mixer al lado](docs/screenshots/vertical-es.png) |
-| **Modo Video**: un panel por toma y la pestaña de color. | **Vertical 9:16** para Reels, Shorts y TikTok, con el diseño Vertical. |
+![El mixer sonando: efectos, envíos, carpetas, buses de reverb y delay y el master](docs/screenshots/xtreme-mixer-es.png)
 
-*Las capturas son del proyecto de demo; las imágenes de los paneles son fotos de [Unsplash](https://unsplash.com).*
+*Las capturas son de un proyecto de demo.*
 
 ## Qué hace
 
@@ -91,6 +86,7 @@ Más detalles en [Requisitos](DETALLES.md#requisitos).
   Instrumento, o el botón del piano roll, que también abre la ventana del plugin) o, sin plugin, con un tono de prueba.
 - **Efectos VST3** en los canales y los buses (amps, pedales, reverbs de terceros): "+ Efecto" → VST3, en cualquier
   orden junto con los propios; "Abrir" abre su ventana y lo que ajustes ahí queda en el proyecto.
+- También abre plugins **VST2** y de **32 bits**: los encuentra solos y los marca en la lista.
 - Cada plugin corre en su propio proceso: si se cuelga, se calla ese y el resto sigue sonando. Lo que un plugin
   atrasa se compensa en toda la mezcla, el click y las tomas que grabás encima (PDC), y la exportación pasa por los
   mismos plugins.
@@ -98,7 +94,7 @@ Más detalles en [Requisitos](DETALLES.md#requisitos).
 ### Mezclar
 
 - Cadena de efectos por canal, en el orden que quieras: saturación (**Vida**, válvula o cinta), **compresor** con
-  presets (Rasgueo / Arpegio / Punteo), **EQ de 7 bandas** con espectro en vivo, bandas dinámicas y vista grande y **puerta de ruido**, más paneo
+  presets por categoría (voces, guitarras, bajo, batería, percusión y más), **EQ de 7 bandas** con espectro en vivo, bandas dinámicas y vista grande y **puerta de ruido**, más paneo
   con plantillas, botón **MONO** para chequear la mezcla y **FX** para escucharla sin efectos.
 - **Transponer** por pista (−12 a +12 semitonos) sin cambiar el largo: se calcula en segundo plano (unos 4 s por
   3 min) con un vocoder de fase de alta calidad, se ve el progreso sobre los clips y queda guardada en `cache/`.
