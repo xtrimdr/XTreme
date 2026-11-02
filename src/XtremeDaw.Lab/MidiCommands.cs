@@ -22,7 +22,7 @@ static class MidiCommands
         if (sub == "escuchar") return Listen(a.Get("entrada"), a.Double("segundos", 10));
         if (sub == "teclas") return RawKeyList(a.Double("segundos", 10));
         string? dir = a.Positional.Skip(1).FirstOrDefault();
-        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|cuantizar|velocidad|humanizar|quitar|instrumento|patron|patron-insertar|patron-unico|patron-disolver|patron-borrar <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
+        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|acorde|escala|ajustar-escala|cuantizar|velocidad|humanizar|quitar|instrumento|patron|patron-insertar|patron-unico|patron-disolver|patron-borrar <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
         using var store = ProjectStore.Open(Path.GetFullPath(dir));
         var p = store.Project;
         if (sub != "ver" && store.ReadOnly) throw new IOException(store.ReadOnlyReason);
@@ -62,10 +62,41 @@ static class MidiCommands
             case "quitar":
                 MidiEditing.RemoveClip(p, a.Get("clip") ?? throw new ArgumentException("Falta --clip."));
                 break;
+            case "escala":
+            {
+                // no --escala: none. --raiz takes a note name, whatever its octave
+                string? id = a.Get("escala");
+                int root = MidiNote.Parse(a.Get("raiz", "C4")) ?? throw new ArgumentException("--raiz: una nota como C4 o F#2.");
+                if (id != null && MusicScale.Find(root, id) == null) throw new ArgumentException($"--escala: {string.Join(", ", MusicScale.Kinds.Select(k => k.Id))}.");
+                p.Settings.Scale = id;
+                p.Settings.ScaleRoot = root % 12;
+                break;
+            }
+            case "ajustar-escala":
+            {
+                string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip.");
+                var c = MidiEditing.Find(p, clip).Clip;
+                var scale = MusicScale.Find(p.Settings.ScaleRoot, p.Settings.Scale) ?? throw new ArgumentException("El proyecto no tiene escala: elegila con midi escala.");
+                var notes = c.Notes.Select(n => n.Copy()).ToList();
+                Console.WriteLine($"{MidiEditing.FitScale(notes, scale)} notas llevadas a la escala.");
+                MidiEditing.SetNotes(p, clip, notes);
+                break;
+            }
+            case "acorde":
+            {
+                string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip.");
+                int root = MidiNote.Parse(a.Get("raiz", "C4")) ?? throw new ArgumentException("--raiz: una nota como C4 o F#2.");
+                string kind = a.Get("tipo", Chords.InScale);
+                if (!Chords.Kinds.Any(k => k.Id == kind)) throw new ArgumentException($"--tipo: {string.Join(", ", Chords.Kinds.Select(k => k.Id))}.");
+                var scale = MusicScale.Find(p.Settings.ScaleRoot, p.Settings.Scale);
+                foreach (int pitch in Chords.Invert(Chords.Build(kind, root, scale), a.Int("inversion", 0)))
+                    MidiEditing.AddNote(p, clip, pitch, a.Double("pulso", 0), a.Double("largo", 1), a.Int("vel", MidiNote.DefaultVelocity));
+                break;
+            }
             case "cuantizar":
             {
                 string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip.");
-                double grid = Grid(a.Get("grilla", "1/16")) ?? throw new ArgumentException("--grilla: 1/4, 1/8, 1/16, 1/32 o 1/8T.");
+                double grid = Grid(a.Get("grilla", "1/16")) ?? throw new ArgumentException("--grilla: bar, 1/2, 1/4, 1/8, 1/8T, 1/16, 1/32, 1/64, 1/4beat, 1/6beat, 1/3step o 1/6step.");
                 Console.WriteLine($"{MidiEditing.Quantize(p, clip, grid)} notas movidas a {a.Get("grilla", "1/16")}.");
                 break;
             }

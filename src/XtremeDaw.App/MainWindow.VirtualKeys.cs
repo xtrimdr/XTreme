@@ -46,10 +46,12 @@ public partial class MainWindow
         public readonly ValueBar Range = new(VirtualKeyboardView.MinOctaves, VirtualKeyboardView.MaxOctaves, VirtualKeyboardView.DefaultOctaves, v => v.ToString()) { Width = 64, Height = 26 };
         public readonly Avalonia.Controls.Primitives.ToggleButton Sustain = new() { Classes = { "chip" }, Height = 26, MinHeight = 0, Padding = new Thickness(8, 0), Focusable = false };
         public readonly TextBlock SustainState = new() { FontSize = 12, Width = 24, VerticalAlignment = VerticalAlignment.Center };
+        public readonly Button Scale = new() { Classes = { "chip" }, Height = 26, MinHeight = 0, Padding = new Thickness(8, 0), Focusable = false, MaxWidth = 170 };
+        public readonly Avalonia.Controls.Primitives.ToggleButton Chords = new() { Classes = { "chip" }, Height = 26, MinHeight = 0, Padding = new Thickness(8, 0), Focusable = false };
     }
 
     /// <summary>Under this width (of the plugin's window) the panel inside it is only the keys.</summary>
-    const double VirtualSettingsWidth = 880;
+    const double VirtualSettingsWidth = 1100;
     /// <summary>The panel's height, the same as <c>VirtualKeysHost</c>'s in the window.</summary>
     const double VirtualHeight = 84;
 
@@ -85,7 +87,8 @@ public partial class MainWindow
         if (int.TryParse(AppConfig.Get("virtualVelocity"), out int velocity)) virtualKeys.Velocity = velocity;
         if (int.TryParse(AppConfig.Get("virtualTranspose"), out int transpose)) virtualKeys.Transpose = transpose;
         if (int.TryParse(AppConfig.Get("virtualRange"), out int range)) virtualRange = Math.Clamp(range, VirtualKeyboardView.MinOctaves, VirtualKeyboardView.MaxOctaves);
-        VirtualKeysHost.Child = NewVirtualPanel().Root;
+        virtualKeys.PlayChords = AppConfig.Get("virtualChords") == "true";
+        VirtualKeysHost.Child = NewVirtualPanel(canPick: true).Root;
         // issue #2: the whole window growing, with nothing in the app that scales it
         ScalingChanged += (_, _) => SessionLog.Write($"escala de la ventana {RenderScaling:0.###}  tamaño {ClientSize.Width:0}x{ClientSize.Height:0}  teclado {VirtualKeysOn}{Environment.NewLine}{new StackTrace(1, false)}");
 
@@ -116,7 +119,9 @@ public partial class MainWindow
 
     int virtualRange = VirtualKeyboardView.MinOctaves;
 
-    VirtualPanel NewVirtualPanel()
+    /// <param name="canPick">The scale can be changed from here. Not from the panel inside a plugin's window: it never
+    /// takes the focus, which a picker needs to close.</param>
+    VirtualPanel NewVirtualPanel(bool canPick)
     {
         var strip = new VirtualKeyboardView(virtualKeys) { Octaves = virtualRange };
         var settings = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
@@ -156,6 +161,26 @@ public partial class MainWindow
         {
             Spacing = 3, VerticalAlignment = VerticalAlignment.Center,
             Children = { new TextBlock { Text = Loc.T("vkeys.sustain"), Classes = { "label" } }, panel.Sustain },
+        });
+        // the scale: the same choice as the piano roll's, and with it the keys that play whole chords
+        panel.Scale.IsEnabled = canPick;
+        ToolTip.SetTip(panel.Scale, Loc.T(canPick ? "scale.pick.tip" : "scale.pick.main"));
+        panel.Scale.Click += (_, _) => ShowScalePicker(panel.Scale);
+        panel.Chords.Content = Loc.T("vkeys.chords");
+        ToolTip.SetTip(panel.Chords, Loc.T("vkeys.chords.tip"));
+        panel.Chords.Click += (_, _) =>
+        {
+            virtualKeys.PlayChords = panel.Chords.IsChecked == true;
+            SaveViewPref("virtualChords", virtualKeys.PlayChords ? "true" : "false");
+        };
+        settings.Children.Add(new StackPanel
+        {
+            Spacing = 3, VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                new TextBlock { Text = Loc.T("vkeys.scale"), Classes = { "label" } },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { panel.Scale, panel.Chords } },
+            },
         });
         DockPanel.SetDock(settings, Dock.Left);
         root.Children.Add(settings);
@@ -226,6 +251,9 @@ public partial class MainWindow
         p.Velocity.Value = virtualKeys.Velocity;
         p.Transpose.Value = virtualKeys.Transpose;
         p.Range.Value = virtualRange;
+        p.Scale.Content = ScaleLabel();
+        p.Chords.IsChecked = virtualKeys.PlayChords;
+        p.Chords.IsEnabled = virtualKeys.Scale != null;
     }
 
     int savedOctave = int.MinValue, savedVelocity, savedTranspose;
@@ -319,7 +347,7 @@ public partial class MainWindow
     void EmbedPanel(string trackId, nint container)
     {
         ClosePluginPanel(trackId);
-        var panel = NewVirtualPanel();
+        var panel = NewVirtualPanel(canPick: false);
         var window = new Window
         {
             SystemDecorations = SystemDecorations.None, CanResize = false, ShowInTaskbar = false, ShowActivated = false, Focusable = false,
@@ -485,6 +513,7 @@ public partial class MainWindow
     static char VirtualChar(PhysicalKey key) => key switch
     {
         >= PhysicalKey.A and <= PhysicalKey.Z => (char)('a' + (key - PhysicalKey.A)),
+        PhysicalKey.Comma => ',',
         PhysicalKey.Semicolon => ';',
         PhysicalKey.Quote => '\'',
         PhysicalKey.BracketRight => ']',

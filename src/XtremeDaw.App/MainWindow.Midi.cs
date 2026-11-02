@@ -150,6 +150,7 @@ public partial class MainWindow
         snapRow.Children.Add(help);
         // groups that don't fit next to the title go down a row instead of drawing over it
         row.Children.Add(title);
+        row.Children.Add(BuildPianoScaleTools());
         row.Children.Add(BuildPianoVelocityTools());
         row.Children.Add(snapRow);
         return row;
@@ -480,6 +481,7 @@ public partial class MainWindow
     /// </summary>
     void RefreshPiano(PianoRollView.Frame frame = PianoRollView.Frame.Keep)
     {
+        ApplyScale();
         var p = store?.Project;
         var clip = p == null ? null : MidiEditing.TryFind(p, pianoClipId);
         if (clip == null) pianoClipId = null;

@@ -12,6 +12,12 @@ namespace XtremeDaw.Audio.Midi;
 /// started when the octave moves. A note held from two places (a key and a click on the strip) ends with the last one.
 /// Any thread: the keys come from <see cref="RawKeys"/>, the clicks from the window; <see cref="Changed"/> comes on the
 /// caller's, so whoever draws has to go back to its own.
+/// <para>
+/// With a <see cref="Scale"/> the three letter rows are three octaves of it (asked by the user): each row starts on the
+/// root and goes up the scale from left to right, A's on <see cref="Octave"/>, Z's one below, Q's one above. Nothing
+/// sounds out of the scale. Z, X, C and V are notes then, so O / P move the octave and L / Ñ the velocity.
+/// <see cref="PlayChords"/> makes every key the chord of its degree.
+/// </para>
 /// </summary>
 public sealed class VirtualKeyboard(MidiInputs inputs)
 {
@@ -21,13 +27,24 @@ public sealed class VirtualKeyboard(MidiInputs inputs)
     static readonly int[] Scans = [0x1E, 0x11, 0x1F, 0x12, 0x20, 0x21, 0x14, 0x22, 0x15, 0x23, 0x16, 0x24, 0x25, 0x18, 0x26, 0x19, 0x27, 0x28, 0x1B];
     const string Controls = "zxcv";
     static readonly int[] ControlScans = [0x2C, 0x2D, 0x2E, 0x2F];
+    /// <summary>The rows with a scale, lowest first, and their physical keys. Seven keys each; the eighth only plays on a scale of eight notes.</summary>
+    static readonly string[] ScaleRows = ["zxcvbnm,", "asdfghjk", "qwertyui"];
+    static readonly int[][] ScaleScans =
+    [
+        [0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33],
+        [0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+        [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17],
+    ];
+    const int RowKeys = 7, HomeRow = 1, ChordSize = 3;
+    /// <summary>Octave and velocity with a scale, named in the order down, up, down, up.</summary>
+    const string ScaleControls = "opl;";
     const int LeftShift = 0x2A, RightShift = 0x36;
     /// <summary>The pedal's bits: each Shift, and left down by <see cref="ToggleSustain"/>.</summary>
     const int LeftBit = 1, RightBit = 2, LatchBit = 4;
     public const int MinOctave = 0, MaxOctave = 8, DefaultOctave = 4, DefaultVelocity = 100, VelocityStep = 10, MaxTranspose = 6;
 
     readonly object gate = new();
-    readonly Dictionary<char, int> held = [];
+    readonly Dictionary<char, int[]> held = [];
     readonly HashSet<char> pressed = [];
     readonly int[] down = new int[128];
     /// <summary>What each held key sent: its end has to be that note, even if the transposition moved meanwhile.</summary>
@@ -70,6 +87,35 @@ public sealed class VirtualKeyboard(MidiInputs inputs)
         }
     }
 
+    /// <summary>The scale the rows play (null = the white and black keys). Keys held keep their notes.</summary>
+    public MusicScale? Scale
+    {
+        get;
+        set
+        {
+            lock (gate) field = value;
+            Changed?.Invoke();
+        }
+    }
+
+    /// <summary>With a <see cref="Scale"/>, each key plays the chord of its degree.</summary>
+    public bool PlayChords
+    {
+        get;
+        set
+        {
+            lock (gate) field = value;
+            Changed?.Invoke();
+        }
+    }
+
+    /// <summary>The note of a key with a scale: <paramref name="row"/> counts from Z's, <paramref name="key"/> from the left.</summary>
+    public int ScalePitch(MusicScale scale, int row, int key) =>
+        scale.Move(BasePitch + scale.Root + (row - HomeRow) * 12, key);
+
+    /// <summary>Keys that play on each row: seven, or as many notes as the scale has.</summary>
+    static int KeysOn(MusicScale scale) => Math.Max(RowKeys, scale.Count);
+
     /// <summary>The pitch of the first key (octave 4 = C4 = 60).</summary>
     public int BasePitch => 12 * (Octave + 1);
 
@@ -85,13 +131,39 @@ public sealed class VirtualKeyboard(MidiInputs inputs)
     /// <summary>The physical key that plays this many semitones above <see cref="BasePitch"/>, by scan code; 0 = none.</summary>
     public static int ScanOf(int semitone) => semitone >= 0 && semitone < Scans.Length ? Scans[semitone] : 0;
 
+    /// <summary>The physical key that sounds <paramref name="pitch"/> now, by scan code; 0 = none. Where two keys land on one note, the lowest row's.</summary>
+    public int ScanOfPitch(int pitch)
+    {
+        int sounds = pitch - Transpose;
+        if (Scale is not { } scale) return ScanOf(sounds - BasePitch);
+        for (int row = 0; row < ScaleRows.Length; row++)
+            for (int key = 0, n = KeysOn(scale); key < n; key++)
+                if (ScalePitch(scale, row, key) == sounds) return ScaleScans[row][key];
+        return 0;
+    }
+
     /// <summary>The keyboard's name for a scan code; '\0' = not one of its keys.</summary>
     public static char CharOf(int scan)
     {
         int i = Array.IndexOf(Scans, scan);
         if (i >= 0) return Layout[i];
         i = Array.IndexOf(ControlScans, scan);
-        return i >= 0 ? Controls[i] : '\0';
+        if (i >= 0) return Controls[i];
+        for (int row = 0; row < ScaleRows.Length; row++)
+            if (Array.IndexOf(ScaleScans[row], scan) is >= 0 and var key) return ScaleRows[row][key];
+        return '\0';
+    }
+
+    /// <summary>Where a key is in the rows of <paramref name="scale"/>; false when it plays nothing on it.</summary>
+    static bool FindKey(MusicScale scale, char key, out int row, out int index)
+    {
+        for (row = 0; row < ScaleRows.Length; row++)
+        {
+            index = ScaleRows[row].IndexOf(key);
+            if (index >= 0 && index < KeysOn(scale)) return true;
+        }
+        index = -1;
+        return false;
     }
 
     /// <summary>True for <see cref="LeftShift"/> and <see cref="RightShift"/>.</summary>
@@ -130,7 +202,9 @@ public sealed class VirtualKeyboard(MidiInputs inputs)
     }
 
     /// <summary>A key of the keyboard: with Shift held, the ones that aren't notes are shortcuts.</summary>
-    public bool IsKey(char key) => Layout.Contains(key) || !Sustain && Controls.Contains(key);
+    public bool IsKey(char key) => Scale is { } scale
+        ? FindKey(scale, key, out _, out _) || !Sustain && ScaleControls.Contains(key)
+        : Layout.Contains(key) || !Sustain && Controls.Contains(key);
 
     /// <summary>A key went down. True when it is one of the keyboard's, so it isn't a shortcut.</summary>
     public bool KeyDown(char key)
@@ -139,7 +213,8 @@ public sealed class VirtualKeyboard(MidiInputs inputs)
         lock (gate)
         {
             if (!pressed.Add(key)) return true;
-            switch (key)
+            if (Scale is { } scale) ScaleKeyDown(scale, key);
+            else switch (key)
             {
                 case 'z': Octave--; break;
                 case 'x': Octave++; break;
@@ -148,12 +223,28 @@ public sealed class VirtualKeyboard(MidiInputs inputs)
                 default:
                     int pitch = BasePitch + Layout.IndexOf(key);
                     if (pitch > 127) break;
-                    held[key] = pitch;
+                    held[key] = [pitch];
                     Press(pitch);
                     break;
             }
         }
         return true;
+    }
+
+    void ScaleKeyDown(MusicScale scale, char key)
+    {
+        switch (key)
+        {
+            case 'o': Octave--; return;
+            case 'p': Octave++; return;
+            case 'l': Velocity -= VelocityStep; return;
+            case ';': Velocity += VelocityStep; return;
+        }
+        FindKey(scale, key, out int row, out int index);
+        int pitch = ScalePitch(scale, row, index);
+        int[] notes = [.. (PlayChords ? Chords.Stack(scale, pitch, ChordSize) : [pitch]).Where(p => p <= 127)];
+        held[key] = notes;
+        foreach (int p in notes) Press(p);
     }
 
     /// <summary>A key went up. True when it was one of the keyboard's.</summary>
@@ -162,7 +253,8 @@ public sealed class VirtualKeyboard(MidiInputs inputs)
         lock (gate)
         {
             if (!pressed.Remove(key)) return false;
-            if (held.Remove(key, out int pitch)) Release(pitch);
+            if (held.Remove(key, out var notes))
+                foreach (int pitch in notes) Release(pitch);
         }
         return true;
     }

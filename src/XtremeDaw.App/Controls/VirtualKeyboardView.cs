@@ -13,15 +13,16 @@ namespace XtremeDaw.App.Controls;
 /// view alone, and the notes sounding light up in the accent. A click plays and dragging slides over the keys; the right
 /// button dragged moves along the keyboard and the wheel scales it smoothly around the mouse, any size in between
 /// (asked by the user: a scale, not jumps). Redrawn only when something changed or while the scale settles. It never
-/// takes the focus, so the computer's keys keep playing.
+/// takes the focus, so the computer's keys keep playing. With a musical scale chosen its notes stand out, the root with a
+/// mark in the accent, and the letters sit on them; the rest stay playable with the mouse, darker.
 /// </summary>
 public sealed class VirtualKeyboardView : Control
 {
     public const int MinOctaves = 1, MaxOctaves = 7, DefaultOctaves = 2;
     /// <summary>The white keys by semitone within the octave; -1 = a black key.</summary>
     static readonly int[] WhiteAt = [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6];
-    /// <summary>The computer's key of each semitone, as this layout names it.</summary>
-    static readonly string[] Letters = [.. Enumerable.Range(0, VirtualKeyboard.KeyCount).Select(s => RawKeys.Label(VirtualKeyboard.ScanOf(s)))];
+    /// <summary>The computer's keys as this layout names them, by scan code, read once each.</summary>
+    static readonly Dictionary<int, string> Letters = [];
     /// <summary>"C4" and so on, by octave counted from pitch 0.</summary>
     static readonly string[] OctaveNames = [.. Enumerable.Range(0, 11).Select(o => "C" + (o - 1))];
     const double BlackWidth = 0.62, BlackHeight = 0.6, Gap = 1;
@@ -36,6 +37,8 @@ public sealed class VirtualKeyboardView : Control
     const double LetterWidth = 18, OctaveNameWidth = 20;
     /// <summary>The box around a letter.</summary>
     const double BadgeSize = 16, BadgeRadius = 4;
+    /// <summary>The root's mark, along the bottom of its key.</summary>
+    const double RootMarkH = 3;
 
     readonly VirtualKeyboard keyboard;
     readonly Action<TimeSpan> nextFrame;
@@ -67,6 +70,13 @@ public sealed class VirtualKeyboardView : Control
     public void Detach() => keyboard.Changed -= changed;
 
     static double Whites(int octaves) => 7 * octaves + 1;
+
+    /// <summary>Scrolls so this pitch's key is at the left edge.</summary>
+    public void ShowFrom(int pitch)
+    {
+        Left = WhiteOf(Math.Clamp(pitch, 0, TopPitch));
+        anchorKey = left + anchorAcross * shown;
+    }
 
     /// <summary>The wheel took it to another whole number of octaves.</summary>
     public event Action<int>? Zoomed;
@@ -155,20 +165,26 @@ public sealed class VirtualKeyboardView : Control
     /// <summary>The computer's key that sounds this note; "" = none.</summary>
     string LetterOf(int pitch)
     {
-        int semitone = pitch - keyboard.BasePitch - keyboard.Transpose;
-        return semitone >= 0 && semitone < Letters.Length ? Letters[semitone] : "";
+        int scan = keyboard.ScanOfPitch(pitch);
+        if (scan == 0) return "";
+        if (!Letters.TryGetValue(scan, out var letter)) Letters[scan] = letter = RawKeys.Label(scan);
+        return letter;
     }
 
     public override void Render(DrawingContext ctx)
     {
         double w = WhiteW, h = Bounds.Height, width = Bounds.Width;
+        // what the keys are worth is the note they play: the transposition moves the scale with the letters
+        var scale = keyboard.Scale;
+        int transpose = keyboard.Transpose;
         for (int k = 0; k <= TopPitch; k++)
         {
             double x = KeyX(k);
             if (IsBlack(k) || x + w <= 0 || x >= width) continue;
-            bool on = keyboard.IsSounding(k);
-            ctx.FillRectangle(on ? Palette.Accent : Palette.Dim, new Rect(x, 0, Math.Max(1, w - Gap), h), 3);
-            var ink = on ? Palette.AccentFg : Palette.App;
+            bool on = keyboard.IsSounding(k), outside = scale != null && !scale.Contains(k - transpose);
+            ctx.FillRectangle(on ? Palette.Accent : outside ? Palette.Raised : Palette.Dim, new Rect(x, 0, Math.Max(1, w - Gap), h), 3);
+            if (!on && scale != null && scale.IsRoot(k - transpose)) ctx.FillRectangle(Palette.Accent, new Rect(x, h - RootMarkH, Math.Max(1, w - Gap), RootMarkH), 1);
+            var ink = on ? Palette.AccentFg : outside ? Palette.Faint : Palette.App;
             if (k % 12 == 0 && w >= OctaveNameWidth) ctx.DrawText(Palette.Text(OctaveNames[k / 12], 10.5, ink), new Point(x + 4, h - 16));
             if (w >= LetterWidth && LetterOf(k) is { Length: > 0 } letter) DrawLetter(ctx, letter, x + (w - Gap) / 2, h - 36, on);
         }
@@ -177,8 +193,9 @@ public sealed class VirtualKeyboardView : Control
         {
             double x = KeyX(k);
             if (!IsBlack(k) || x + bw <= 0 || x >= width) continue;
-            bool on = keyboard.IsSounding(k);
-            ctx.FillRectangle(on ? Palette.Accent : Palette.App, new Rect(x, 0, bw, h * BlackHeight), 3);
+            bool on = keyboard.IsSounding(k), inside = scale != null && scale.Contains(k - transpose);
+            ctx.FillRectangle(on ? Palette.Accent : inside ? Palette.Faint : Palette.App, new Rect(x, 0, bw, h * BlackHeight), 3);
+            if (!on && inside && scale!.IsRoot(k - transpose)) ctx.FillRectangle(Palette.Accent, new Rect(x, h * BlackHeight - RootMarkH, bw, RootMarkH), 1);
             if (w >= LetterWidth && LetterOf(k) is { Length: > 0 } letter) DrawLetter(ctx, letter, x + bw / 2, h * BlackHeight - BadgeSize - 4, on);
         }
     }

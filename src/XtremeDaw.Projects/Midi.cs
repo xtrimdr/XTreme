@@ -1,4 +1,5 @@
 using XtremeDaw.Audio;
+using XtremeDaw.Audio.Midi;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -357,6 +358,23 @@ public static class MidiEditing
             double beat = Math.Max(0, snapped - clipBeat);
             if (Math.Abs(beat - n.Beat) < 1e-9) continue;
             n.Beat = beat;
+            moved++;
+        }
+        return moved;
+    }
+
+    /// <summary>
+    /// Takes the notes out of the scale to its nearest note. Only <paramref name="which"/> (null = all). Returns how many moved.
+    /// </summary>
+    public static int FitScale(IList<MidiNote> notes, MusicScale scale, IReadOnlyCollection<MidiNote>? which = null)
+    {
+        int moved = 0;
+        foreach (var n in notes)
+        {
+            if (which != null && !which.Contains(n) || scale.Contains(n.Pitch)) continue;
+            int pitch = scale.Nearest(n.Pitch);
+            if (pitch is < MidiNote.MinPitch or > MidiNote.MaxPitch) continue;
+            n.Pitch = pitch;
             moved++;
         }
         return moved;

@@ -699,6 +699,9 @@ public partial class MainWindow : Window
             case "arm" when sel != null:
                 ToggleArm(sel);
                 break;
+            case "chordTool":
+                SetChordTool(!pianoRoll.ChordTool);
+                break;
             case "quantize":
                 await Quantize();
                 break;

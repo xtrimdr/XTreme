@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
+using XtremeDaw.Audio.Midi;
 using XtremeDaw.Projects;
 
 namespace XtremeDaw.App.Controls;
@@ -43,6 +44,13 @@ namespace XtremeDaw.App.Controls;
 /// other clips are marked on the ruler and in the grid with their notes faint, and a click inside one of them makes it
 /// the one being edited (<see cref="ClipPicked"/>) and goes on as a click there. The grid and the magnet count from the
 /// timeline's start, so they line up with the timeline's.
+/// </para>
+/// <para>
+/// With a <see cref="Scale"/> the rows of its notes stand out and the root's are lit, notes written or moved land on it
+/// and moving goes along it (a chord stays in key), the ↑ ↓ keys too; Alt is free. A note outside it is drawn hollow.
+/// With <see cref="ChordTool"/> a click writes a whole chord, previewed under the pointer. Any stack of selected notes
+/// that makes a chord gets a small bar over it with its name and its inversions (<see cref="DrawChordBar"/>), keys 1 to
+/// 4 too, so a chord written long ago can be turned just the same, and the next one drawn comes in that inversion.
 /// </para>
 /// <para>
 /// A pattern's clip opens the pattern itself (asked by the user: editing a pattern is that pattern and nothing else): one
@@ -87,6 +95,9 @@ public sealed class PianoRollView : Control
     /// <summary>Room left before the first clip (or the playhead's margin) when the view is framed.</summary>
     const double FrameMargin = 12;
     const int Pitches = 128;
+    /// <summary>The chord bar: its height, each inversion's box and the room for the chord's name; the most notes a chord can have to get one.</summary>
+    const double ChordBarH = 28, ChordChipW = 34, ChordBarPad = 3;
+    const int MaxChordNotes = 6;
 
     static readonly string[] PitchNames = [.. Enumerable.Range(0, Pitches).Select(MidiNote.Name)];
 
@@ -136,6 +147,29 @@ public sealed class PianoRollView : Control
     /// <summary>The length and velocity the next written note gets: the last note touched.</summary>
     double lastBeats = 1;
     int lastVelocity = MidiNote.DefaultVelocity;
+
+    MusicScale? scale;
+    string chordKind = Chords.InScale;
+    bool chordTool;
+    /// <summary>The inversion the next chord comes in: the last one picked.</summary>
+    int chordInversion;
+    /// <summary>The preview under the pointer: its root (-1 = make it again), notes and name.</summary>
+    int ghostRoot = -1;
+    int[] ghost = [];
+    string ghostName = "";
+    /// <summary>The chord bar over the selection: its notes (lowest first), each inversion's pitches, the one it is in, and what it was read from.</summary>
+    readonly List<MidiNote> chordNotes = [];
+    int[][] chordVoicings = [];
+    int chordAt;
+    string chordName = "";
+    long chordRead;
+
+    /// <summary>The song's scale (null = none).</summary>
+    public MusicScale? Scale { get => scale; set { scale = value; ghostRoot = -1; InvalidateVisual(); } }
+    /// <summary>A click on the grid writes a chord instead of a note.</summary>
+    public bool ChordTool { get => chordTool; set { chordTool = value; InvalidateVisual(); } }
+    /// <summary>What the chord tool writes: an id of <see cref="Chords.Kinds"/>.</summary>
+    public string ChordKind { get => chordKind; set { chordKind = value; ghostRoot = -1; InvalidateVisual(); } }
 
     /// <summary>The clip's id and its notes after an edit (one undo step).</summary>
     public event Action<string, List<MidiNote>>? NotesCommitted;
@@ -217,6 +251,8 @@ public sealed class PianoRollView : Control
         var keep = same ? selected.Select(n => (n.Pitch, n.Beat, n.Beats)).ToHashSet() : [];
         CancelGesture();
         clipId = clip?.Id;
+        // the notes are copied again: the chord bar's would be the old ones
+        chordRead = -1;
         bpm = tempo;
         color = trackColor ?? Palette.AccentColor;
         notes.Clear();
@@ -409,7 +445,13 @@ public sealed class PianoRollView : Control
             {
                 double y = Y(p);
                 if (y + rowH < RulerH || y > gb) continue;
-                if (MidiNote.IsBlack(p)) ctx.FillRectangle(Palette.Panel, new Rect(KeyW, y, W - KeyW, rowH));
+                if (scale != null)
+                {
+                    // the scale's rows lifted and the root's lit, the rest left on the background
+                    if (scale.IsRoot(p)) ctx.FillRectangle(Palette.Alpha(Palette.AccentColor, 0.14), new Rect(KeyW, y, W - KeyW, rowH));
+                    else if (scale.Contains(p)) ctx.FillRectangle(Palette.Raised, new Rect(KeyW, y, W - KeyW, rowH));
+                }
+                else if (MidiNote.IsBlack(p)) ctx.FillRectangle(Palette.Panel, new Rect(KeyW, y, W - KeyW, rowH));
                 if (p % 12 == 0) ctx.DrawLine(line, new Point(KeyW, y + rowH - 0.5), new Point(W, y + rowH - 0.5));
             }
             DrawColumns(ctx, RulerH, gb, W);
@@ -418,7 +460,10 @@ public sealed class PianoRollView : Control
             foreach (var n in notes) DrawNote(ctx, n, W, gb);
             if (gesture == "box" && moved)
                 ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.08), Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.7)), BoxRect());
+            DrawGhost(ctx, W);
             DrawPlayhead(ctx, RulerH, gb);
+            SyncChordBar();
+            if (gesture == null) DrawChordBar(ctx);
         }
 
         if (velShown) DrawVelocity(ctx, gb + VelGap, W, H);
@@ -509,7 +554,9 @@ public sealed class PianoRollView : Control
         bool past = n.Beat >= clipBeats;
         double a = (0.55 + 0.45 * n.Velocity / 127.0) * (past ? 0.35 : 1);
         double rad = NoteRadius(r);
-        ctx.DrawRectangle(Palette.Alpha(color, a), sel ? Palette.Pen(Palette.Fg, 1.5) : Palette.Pen(Palette.Alpha(Palette.AppColor, 0.6)), r, rad, rad);
+        // out of the scale: hollow, so it reads as a question and not as an error
+        bool outside = scale != null && !scale.Contains(n.Pitch);
+        ctx.DrawRectangle(Palette.Alpha(color, outside ? a * 0.25 : a), sel ? Palette.Pen(Palette.Fg, 1.5) : outside ? Palette.Pen(Palette.Alpha(color, 0.9)) : Palette.Pen(Palette.Alpha(Palette.AppColor, 0.6)), r, rad, rad);
         // the velocity at a glance (asked by the user): a gauge along the bottom, full at 127
         if (r.Width >= 10 && r.Height >= 8)
         {
@@ -519,6 +566,145 @@ public sealed class PianoRollView : Control
         }
         if (r.Width >= 26 && rowH >= 11)
             ctx.DrawText(PitchNames[n.Pitch], 9.5, Palette.AccentFg, new Point(r.X + 3, r.Y + (r.Height - 15) / 2), Palette.UiBold);
+    }
+
+    // --- chords -----------------------------------------------------------------------------------
+
+    /// <summary>"Sol m7": a chord's name.</summary>
+    static string ChordLabel(int root, ChordKind kind) => Loc.T("piano.chord.name", TunerView.NoteName((root % 12 + 12) % 12), kind.Suffix).TrimEnd();
+
+    /// <summary>The chord tool's notes on this root, in the last inversion (or the highest it has); none that leave MIDI's range.</summary>
+    int[] ChordOn(int root)
+    {
+        int[] rootPosition = Chords.Build(chordKind, root, scale);
+        int inversion = Math.Min(chordInversion, rootPosition.Length - 1);
+        return [.. Chords.Invert(rootPosition, inversion).Where(p => p is >= MidiNote.MinPitch and <= MidiNote.MaxPitch)];
+    }
+
+    /// <summary>The note a click writes on this row: on the scale, unless Alt is down.</summary>
+    int WritePitch(double y)
+    {
+        int pitch = PitchAt(y);
+        return scale == null || (modifiers & KeyModifiers.Alt) != 0 ? pitch : Math.Clamp(scale.Nearest(pitch), MidiNote.MinPitch, MidiNote.MaxPitch);
+    }
+
+    /// <summary>The chord a click would write, faint under the pointer, with its name.</summary>
+    void DrawGhost(DrawingContext ctx, double W)
+    {
+        if (!chordTool || gesture != null || !IsPointerOver) return;
+        var p = lastPointer;
+        double at = Beat(p.X);
+        if (p.X < KeyW || p.Y < RulerH || p.Y >= GridBottom || at < 0 || at >= clipBeats || NoteAt(p) != null || ChordChipAt(p) >= 0) return;
+        int root = WritePitch(p.Y);
+        if (root != ghostRoot)
+        {
+            ghostRoot = root;
+            ghost = ChordOn(root);
+            ghostName = Chords.Read(ghost.Order().ToList()) is { } read ? ChordLabel(read.Root[0], read.Kind) : "";
+        }
+        double x = X(Math.Max(0, Snap(at, floor: true))), width = Math.Max(3, lastBeats * beatW - 1);
+        var fill = Palette.Alpha(color, 0.4);
+        var outline = Palette.Pen(Palette.Alpha(color, 0.9));
+        foreach (int pitch in ghost)
+        {
+            var r = new Rect(x, Y(pitch) + 1, width, rowH - 2);
+            double rad = NoteRadius(r);
+            ctx.DrawRectangle(fill, outline, r, rad, rad);
+        }
+        if (ghost.Length > 0 && ghostName.Length > 0)
+            ctx.DrawText(Palette.Text(ghostName, 11, Palette.Fg, Palette.UiBold), new Point(x + width + 6, Y(ghost[^1]) - 2));
+    }
+
+    /// <summary>
+    /// Keeps the chord bar on what is selected: notes starting together that make a known chord. Read again only when the
+    /// selection changed, so a render normally costs a sum.
+    /// </summary>
+    void SyncChordBar()
+    {
+        long read = 0;
+        double beat = -1;
+        bool together = selected.Count is >= 2 and <= MaxChordNotes;
+        if (together)
+            foreach (var n in selected)
+            {
+                if (beat < 0) beat = n.Beat;
+                else if (Math.Abs(n.Beat - beat) > 1e-9) { together = false; break; }
+                read += (long)n.Pitch * n.Pitch * n.Pitch + 1;
+            }
+        if (!together) read = 0;
+        else read = read * 31 + (long)(beat * 960);
+        if (read == chordRead) return;
+        chordRead = read;
+        chordNotes.Clear();
+        chordVoicings = [];
+        if (!together) return;
+        var stack = selected.OrderBy(n => n.Pitch).ToList();
+        if (Chords.Read(stack.ConvertAll(n => n.Pitch)) is not { } chord) return;
+        chordNotes.AddRange(stack);
+        chordVoicings = [.. Enumerable.Range(0, stack.Count).Select(i => Chords.Invert(chord.Root, i))];
+        chordAt = chord.Inversion;
+        chordName = ChordLabel(chord.Root[0], chord.Kind);
+    }
+
+    /// <summary>The bar's box: over the chord, always inside the grid. Null when there is no bar.</summary>
+    Rect? ChordBarRect()
+    {
+        if (chordVoicings.Length == 0 || chordNotes.Count == 0) return null;
+        double name = Palette.Text(chordName, 11.5, Palette.Fg, Palette.UiBold).Width + 12;
+        double width = name + chordVoicings.Length * ChordChipW + ChordBarPad;
+        double x = Math.Clamp(X(chordNotes[0].Beat), KeyW + 2, Math.Max(KeyW + 2, Bounds.Width - width - 2));
+        double y = Math.Clamp(Y(chordNotes[^1].Pitch) - ChordBarH - 4, RulerH + 2, Math.Max(RulerH + 2, GridBottom - ChordBarH - 2));
+        return new Rect(x, y, width, ChordBarH);
+    }
+
+    Rect ChordChip(Rect bar, int i) => new(bar.Right - ChordBarPad - (chordVoicings.Length - i) * ChordChipW, bar.Y + ChordBarPad, ChordChipW - 2, ChordBarH - 2 * ChordBarPad);
+
+    /// <summary>The inversion's box under the pointer, or -1.</summary>
+    int ChordChipAt(Point p)
+    {
+        if (gesture != null || ChordBarRect() is not { } bar || !bar.Contains(p)) return -1;
+        for (int i = 0; i < chordVoicings.Length; i++)
+            if (ChordChip(bar, i).Contains(p)) return i;
+        return -1;
+    }
+
+    /// <summary>The chord's name and its inversions, each box with its number and a little picture of where its notes go.</summary>
+    void DrawChordBar(DrawingContext ctx)
+    {
+        if (ChordBarRect() is not { } bar) return;
+        ctx.DrawRectangle(Palette.Raised, Palette.Pen(Palette.Line), bar, 6, 6);
+        var name = Palette.Text(chordName, 11.5, Palette.Fg, Palette.UiBold);
+        ctx.DrawText(name, new Point(bar.X + 7, bar.Y + (ChordBarH - name.Height) / 2));
+        int low = chordVoicings[0][0], span = Math.Max(1, chordVoicings[^1][^1] - low);
+        for (int i = 0; i < chordVoicings.Length; i++)
+        {
+            var chip = ChordChip(bar, i);
+            bool on = i == chordAt, hot = chip.Contains(lastPointer);
+            ctx.DrawRectangle(on ? Palette.AccentSoft : hot ? Palette.Hover : Palette.Panel, on ? Palette.Pen(Palette.Accent) : null, chip, 4, 4);
+            var mark = Palette.Text(Loc.T($"piano.chord.inv.{i}"), 10, on ? Palette.Accent : Palette.Dim, Palette.UiBold);
+            ctx.DrawText(mark, new Point(chip.X + 4, chip.Y + (chip.Height - mark.Height) / 2));
+            foreach (int pitch in chordVoicings[i])
+            {
+                double y = chip.Bottom - 4 - (chip.Height - 8) * (pitch - low) / span;
+                ctx.FillRectangle(on ? Palette.Accent : Palette.Dim, new Rect(chip.Right - 14, Math.Round(y) - 1, 10, 2));
+            }
+        }
+    }
+
+    /// <summary>Puts the chord in the bar in this inversion, which the next chord drawn takes too.</summary>
+    void SetInversion(int inversion)
+    {
+        if (inversion < 0 || inversion >= chordVoicings.Length || chordNotes.Count != chordVoicings[inversion].Length) return;
+        chordInversion = inversion;
+        ghostRoot = -1;
+        if (inversion == chordAt || !Chords.InRange(chordVoicings[inversion])) return;
+        for (int i = 0; i < chordNotes.Count; i++)
+        {
+            chordNotes[i].Pitch = chordVoicings[inversion][i];
+            NoteAuditioned?.Invoke(chordNotes[i].Pitch, chordNotes[i].Velocity);
+        }
+        Commit();
+        InvalidateVisual();
     }
 
     /// <summary>
@@ -568,8 +754,12 @@ public sealed class PianoRollView : Control
                 // the line between two white keys (E–F and B–C have no black key between them)
                 if (!MidiNote.IsBlack(p + 1)) ctx.DrawLine(line, new Point(0, y + 0.5), new Point(KeyW, y + 0.5));
             }
-            if (p % 12 == 0 && rowH >= 9)
-                ctx.DrawText(PitchNames[p], 9.5, Palette.App, new Point(KeyW - 24, y + (rowH - 12) / 2), Palette.Ui);
+            // with a scale: what isn't in it goes dark, its root gets a mark and every note its name
+            bool inScale = scale == null || scale.Contains(p);
+            if (!inScale && !lit) ctx.FillRectangle(Palette.Alpha(Palette.AppColor, 0.6), new Rect(0, y, KeyW, rowH));
+            if (scale != null && scale.IsRoot(p)) ctx.FillRectangle(Palette.Accent, new Rect(KeyW - 4, y, 4, rowH));
+            if (rowH >= 9 && (scale == null ? p % 12 == 0 : inScale && rowH >= 11 || scale.IsRoot(p)))
+                ctx.DrawText(PitchNames[p], 9.5, MidiNote.IsBlack(p) && scale != null ? Palette.Fg : Palette.App, new Point(KeyW - 28, y + (rowH - 12) / 2), Palette.Ui);
         }
     }
 
@@ -724,6 +914,12 @@ public sealed class PianoRollView : Control
         downScrollX = scrollX;
         downScrollY = scrollY;
         if (props.IsMiddleButtonPressed) { Start("pan", e); return; }
+        if (props.IsLeftButtonPressed && ChordChipAt(p) is >= 0 and var inversion)
+        {
+            SetInversion(inversion);
+            e.Handled = true;
+            return;
+        }
         // inside another clip of the track (not on a note of this one): that clip is the one edited from here on
         if (p.Y >= RulerH && p.Y < GridBottom && p.X >= KeyW && NoteAt(p) == null)
         {
@@ -831,10 +1027,23 @@ public sealed class PianoRollView : Control
                 return;
             }
             // FL's pencil: a note in the cell under the pointer, with the last length, and it follows the drag
-            hit = new MidiNote { Pitch = PitchAt(p.Y), Beat = Math.Max(0, Snap(at, floor: true)), Beats = lastBeats, Velocity = lastVelocity };
-            notes.Add(hit);
+            double beat = Math.Max(0, Snap(at, floor: true));
             selected.Clear();
             changed = true;
+            if (chordTool && ChordOn(WritePitch(p.Y)) is { Length: > 0 } chord)
+            {
+                // the chord is selected, so it moves as one and its bar comes up as soon as it lands
+                var added = chord.Order().Select(pitch => new MidiNote { Pitch = pitch, Beat = beat, Beats = lastBeats, Velocity = lastVelocity }).ToList();
+                notes.AddRange(added);
+                selected.UnionWith(added);
+                hit = added[0];
+                foreach (var n in added.Skip(1)) NoteAuditioned?.Invoke(n.Pitch, n.Velocity);
+            }
+            else
+            {
+                hit = new MidiNote { Pitch = WritePitch(p.Y), Beat = beat, Beats = lastBeats, Velocity = lastVelocity };
+                notes.Add(hit);
+            }
         }
         else if (ctrl)
         {
@@ -963,21 +1172,34 @@ public sealed class PianoRollView : Control
     {
         if (held == null) return;
         var (p0, b0, _) = from[held];
-        int dp = PitchAt(lastPointer.Y) - p0;
+        int rowFrom = PitchAt(down.Y), rowTo = PitchAt(lastPointer.Y);
         double db = Snap(b0 + (lastPointer.X - down.X) / beatW) - b0;
-        // the group stays inside the keyboard and never before the clip's start
-        foreach (var (n, f) in from)
-        {
-            dp = Math.Clamp(dp, MidiNote.MinPitch - f.Pitch, MidiNote.MaxPitch - f.Pitch);
-            db = Math.Max(db, -f.Beat);
-        }
+        // never before the clip's start
+        foreach (var (_, f) in from) db = Math.Max(db, -f.Beat);
         int before = held.Pitch;
-        foreach (var (n, f) in from)
+        if (scale is { } key && (modifiers & KeyModifiers.Alt) == 0)
         {
-            n.Pitch = f.Pitch + dp;
-            n.Beat = f.Beat + db;
+            // along the scale, each note by the same degrees: a chord stays in key. Only sideways, nothing changes pitch
+            int degrees = key.Degree(rowTo) - key.Degree(rowFrom);
+            bool fits = from.All(x => degrees == 0 || key.Move(x.Value.Pitch, degrees) is >= MidiNote.MinPitch and <= MidiNote.MaxPitch);
+            foreach (var (n, f) in from)
+            {
+                if (fits) n.Pitch = degrees == 0 ? f.Pitch : key.Move(f.Pitch, degrees);
+                n.Beat = f.Beat + db;
+            }
         }
-        changed |= dp != 0 || db != 0;
+        else
+        {
+            // the group stays inside the keyboard
+            int dp = rowTo - rowFrom;
+            foreach (var (_, f) in from) dp = Math.Clamp(dp, MidiNote.MinPitch - f.Pitch, MidiNote.MaxPitch - f.Pitch);
+            foreach (var (n, f) in from)
+            {
+                n.Pitch = f.Pitch + dp;
+                n.Beat = f.Beat + db;
+            }
+        }
+        changed |= held.Pitch != p0 || db != 0;
         if (held.Pitch != before) { heardPitch = held.Pitch; NoteAuditioned?.Invoke(held.Pitch, held.Velocity); }
     }
 
@@ -1206,6 +1428,20 @@ public sealed class PianoRollView : Control
     /// <summary>The notes the velocity tools change: the selected ones, or every note of the clip.</summary>
     public int ToolTargets => selected.Count > 0 ? selected.Count : notes.Count;
 
+    /// <summary>
+    /// Takes the selected notes (all of them with none selected) to the nearest note of the scale, as one edit
+    /// (<see cref="MidiEditing.FitScale"/>). Returns how many moved; -1 with no clip or no scale.
+    /// </summary>
+    public int FitToScale()
+    {
+        if (clipId == null || scale == null) return -1;
+        CancelGesture();
+        int moved = MidiEditing.FitScale(notes, scale, selected.Count > 0 ? selected : null);
+        if (moved > 0) Commit();
+        InvalidateVisual();
+        return moved;
+    }
+
     void Commit()
     {
         if (clipId == null) return;
@@ -1217,7 +1453,8 @@ public sealed class PianoRollView : Control
     {
         var p = lastPointer;
         var c = StandardCursorType.Arrow;
-        if (clipId != null && p.X >= KeyW && p.Y >= RulerH && p.Y < GridBottom)
+        if (clipId != null && ChordChipAt(p) >= 0) c = StandardCursorType.Hand;
+        else if (clipId != null && p.X >= KeyW && p.Y >= RulerH && p.Y < GridBottom)
             c = NoteAt(p) is { } n ? (OnEdge(n, p) ? StandardCursorType.RightSide : StandardCursorType.SizeAll)
                 : Beat(p.X) >= 0 && Beat(p.X) < clipBeats || OtherAt(BeatA(p.X)) != null ? StandardCursorType.Cross : StandardCursorType.Arrow;
         else if (p.X < KeyW && p.Y >= RulerH && p.Y < GridBottom) c = StandardCursorType.Hand;
@@ -1268,6 +1505,13 @@ public sealed class PianoRollView : Control
     {
         base.OnSizeChanged(e);
         ClampScroll();
+    }
+
+    // the chord's preview leaves with the pointer
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        InvalidateVisual();
     }
 
     /// <summary>
@@ -1336,10 +1580,16 @@ public sealed class PianoRollView : Control
                 Commit();
                 return true;
             }
+            case >= Key.D1 and <= Key.D4 when e.KeyModifiers == KeyModifiers.None && chordVoicings.Length > 0:
+                SetInversion(e.Key - Key.D1);
+                return true;
             case Key.Up or Key.Down when selected.Count > 0:
-                int step = (e.Key == Key.Up ? 1 : -1) * (ctrl ? 12 : 1);
-                if (selected.Any(n => n.Pitch + step is < MidiNote.MinPitch or > MidiNote.MaxPitch)) return true;
-                foreach (var n in selected) n.Pitch += step;
+                int sign = e.Key == Key.Up ? 1 : -1, step = sign * (ctrl ? 12 : 1);
+                // a semitone is a note of the scale when there is one; the octave is the octave
+                var key = ctrl ? null : scale;
+                int Target(int pitch) => key?.Move(pitch, sign) ?? pitch + step;
+                if (selected.Any(n => Target(n.Pitch) is < MidiNote.MinPitch or > MidiNote.MaxPitch)) return true;
+                foreach (var n in selected) n.Pitch = Target(n.Pitch);
                 if (selected.Count == 1) NoteAuditioned?.Invoke(selected.First().Pitch, selected.First().Velocity);
                 Commit();
                 return true;

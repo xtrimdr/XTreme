@@ -274,6 +274,10 @@ static class Program
               midi nota carpeta --clip id [--altura C4|60] [--pulso 0] [--largo 1] [--vel 100]
                                            una nota en el clip (pulso y largo en tiempos desde su comienzo)
               midi acordes carpeta --clip id   reemplaza sus notas por Do, Sol, Lam, Fa (un compás cada uno)
+              midi acorde carpeta --clip id [--raiz C4] [--tipo scale] [--inversion 0] [--pulso 0] [--largo 1] [--vel 100]
+                                           un acorde en el clip; scale y scale7 lo sacan de la escala del proyecto
+              midi escala carpeta [--raiz C4] [--escala minor]   la escala del proyecto; sin --escala, ninguna
+              midi ajustar-escala carpeta --clip id   lleva a la escala del proyecto las notas que quedaron afuera
               midi quitar carpeta --clip id    saca el clip MIDI
               midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]   hace del clip un patrón; --repetir, cuántas vueltas dura
               midi patron-insertar carpeta --clip id --pista n [--en segundos]   un clip más del patrón de ese clip

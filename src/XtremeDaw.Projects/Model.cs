@@ -79,6 +79,13 @@ public sealed class ProjectSettings
     /// </summary>
     public double TimeScale { get; set; } = 1;
     /// <summary>
+    /// The song's scale, which the piano roll and the virtual keyboard follow: an id of <see cref="XtremeDaw.Audio.Midi.MusicScale.Kinds"/>
+    /// (null = none) and its root, 0 = C. It goes with the project, as the tempo does (decision of the user's request:
+    /// a scale is of the song, not of the machine).
+    /// </summary>
+    public string? Scale { get; set; }
+    public int ScaleRoot { get; set; }
+    /// <summary>
     /// video | audio (native only). Audio hides the stage and the camera and exports the mix instead of an MP4;
     /// nothing is deleted, so switching back to video shows everything again.
     /// </summary>
@@ -150,6 +157,8 @@ public sealed class ProjectSettings
     {
         if (!(Bpm is >= 20 and <= 400)) Bpm = 110;
         if (!double.IsFinite(TimeScale) || TimeScale <= 0) TimeScale = 1;
+        ScaleRoot = (ScaleRoot % 12 + 12) % 12;
+        if (XtremeDaw.Audio.Midi.MusicScale.Find(ScaleRoot, Scale) == null) Scale = null;
         Mode = Mode == "audio" ? Mode : "video";
         Layout = Layout == "top-to-bottom" ? Layout : "side-by-side";
         Aspect ??= "16:9";
