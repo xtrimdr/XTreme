@@ -64,10 +64,14 @@ Todos se pueden cambiar en ⚙ Configuración → Atajos de teclado (menos Esc).
 | C / Shift+C / T | click / cuenta previa / tap tempo |
 | A | afinador |
 | M / S | mute / solo de la pista |
-| Ctrl+K | teclado virtual: con él prendido, la fila de A son las blancas, la de arriba las negras, Z / X la octava, C / V la velocidad y Shift el sustain |
+| Ctrl+K | teclado virtual: con él prendido, la fila de A son las blancas, la de arriba las negras, Z / X la octava, C / V la velocidad y Shift el sustain. Con escala, las filas de Z, A y Q son tres octavas de la escala, O / P la octava y L / Ñ la velocidad |
+| H | acordes en el piano roll: un clic escribe un acorde; 1 a 4 eligen la inversión del acorde elegido |
 | F | ver todo |
 | X | timeline / mixer |
-| Alt+X / D | dividir el clip en el cabezal / duplicarlo (o los marcados, en bloque) |
+| Alt+X o Insert / D o Ctrl+B | dividir el clip en el cabezal / duplicarlo (o los marcados, en bloque) |
+| Shift+arrastrar un clip | copiarlo: el original queda en su lugar |
+| Shift+Q | alinear los clips elegidos a la grilla |
+| Ctrl+A / Ctrl+D | marcar todos los clips / sacar la selección |
 | Q | cuantizar al imán del piano roll: las notas elegidas (o todas) en el piano roll, o los clips MIDI elegidos |
 | Ctrl+C / Ctrl+X / Ctrl+V | copiar / cortar los clips elegidos (tomas y clips MIDI) / pegarlos en el cabezal, desde la pista elegida |
 | Supr | quitar el clip (o los marcados, o la pista vacía); con un rango, borrarlo |
@@ -90,7 +94,7 @@ doble clic los saca.
 En la franja de arriba de la regla, arrastrar marca el rango A–B (y prende el loop); sus bordes y el rango entero se
 arrastran. Doble clic agrega un marcador; los marcadores se arrastran, un clic salta ahí y doble clic los renombra.
 Clic derecho en la franja: agregar marcador, empezar o terminar el rango ahí, sacarlo, y en un marcador ponerle un
-nombre de la lista o repetir hasta el siguiente. Un rango marcado con Shift+arrastrar (o con la herramienta Rango),
+nombre de la lista o repetir hasta el siguiente. Un rango marcado con Shift+arrastrar desde fuera de un clip (o con la herramienta Rango),
 en una pista o en varias, también se puede repetir desde su menú.
 
 Las herramientas del timeline están en el centro de la barra del proyecto: **Seleccionar** (lo de siempre), **Rango**

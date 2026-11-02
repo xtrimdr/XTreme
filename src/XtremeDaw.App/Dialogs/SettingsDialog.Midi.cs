@@ -61,7 +61,8 @@ public sealed partial class SettingsDialog
         filling = true;
         quantizeSwitch.IsChecked = MidiSetup.Settings.QuantizeOnRecord;
         string snap = AppConfig.Get("pianoSnap") ?? "1/16";
-        quantizeHelp.Text = snap == "off" ? Loc.T("set.midi.quantize.free") : Loc.T("set.midi.quantize.help", snap);
+        if (snap == "main") snap = AppConfig.Get("timelineSnap") ?? "1/4";
+        quantizeHelp.Text = SnapChoices.IsFixed(snap) ? Loc.T("set.midi.quantize.help", SnapChoices.Label(snap).ToLowerInvariant()) : Loc.T("set.midi.quantize.free");
         filling = false;
         FillMidiRows();
         midiTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background, (_, _) => TickMidi());

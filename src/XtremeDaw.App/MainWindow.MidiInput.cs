@@ -203,18 +203,19 @@ public partial class MainWindow
     }
 
     /// <summary>The grid a recording is quantized to: the piano roll's magnet when "Cuantizar al grabar" is on; 0 = as played.</summary>
-    double RecordQuantizeBeats => MidiSetup.Settings.QuantizeOnRecord ? pianoRoll.SnapBeats : 0;
+    double RecordQuantizeBeats => MidiSetup.Settings.QuantizeOnRecord ? pianoRoll.QuantizeBeats : 0;
 
     // --- quantize -----------------------------------------------------------------------------------
 
     /// <summary>
     /// Quantize (Q, or a MIDI clip's menu): in the piano roll with the focus, its selected notes (all of them with none
-    /// selected); in the timeline, the selected MIDI clips. To the piano roll's magnet; in Libre it says why it can't.
+    /// selected); in the timeline, the selected MIDI clips. To the piano roll's magnet; without a fixed step (off, Línea,
+    /// Celda: a result that changes with the zoom is not one to trust) it says why it can't.
     /// </summary>
     async Task Quantize(IReadOnlyList<string>? clipIds = null)
     {
         if (store == null || store.ReadOnly || restoring || RecordingBusy) return;
-        double grid = pianoRoll.SnapBeats;
+        double grid = pianoRoll.QuantizeBeats;
         if (grid <= 0)
         {
             Toast(Loc.T("midi.quantize.free"));
@@ -246,6 +247,6 @@ public partial class MainWindow
         Status(Loc.T("midi.quantize.done", moved, PianoSnapLabel()));
     }
 
-    /// <summary>The magnet's step as its button says it ("1/16").</summary>
-    string PianoSnapLabel() => PianoSnaps.FirstOrDefault(s => Math.Abs(s.Beats - pianoRoll.SnapBeats) < 1e-9).Id ?? "";
+    /// <summary>The magnet's step as its menu says it, to go inside a sentence ("paso", "1/3 tiempo").</summary>
+    string PianoSnapLabel() => SnapChoices.Label(pianoRoll.ActiveSnap).ToLowerInvariant();
 }

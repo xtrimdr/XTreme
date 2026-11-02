@@ -36,9 +36,6 @@ public partial class MainWindow
     /// <summary>The piano roll is on screen.</summary>
     bool PianoShown => pianoView && mixerView;
 
-    /// <summary>The magnet choices of the piano roll (its own, saved apart from the timeline's): label key and beats.</summary>
-    static readonly (string Id, double Beats)[] PianoSnaps = [("1/4", 1), ("1/8", 0.5), ("1/16", 0.25), ("1/32", 0.125), ("1/8T", 1.0 / 3), ("off", 0)];
-
     void InitPiano()
     {
         var header = new Border
@@ -79,12 +76,14 @@ public partial class MainWindow
         {
             if (store == null) return;
             string? trackId = null;
+            var clones = Timeline.TakeClones();
             await EditTimeline(p =>
             {
+                MidiEditing.LeaveCopies(p, clones);
                 MidiEditing.Place(p, clipId, atSec, beats);
                 if (toTrack != null) MidiEditing.MoveToTrack(p, clipId, toTrack);
                 return trackId = MidiEditing.Find(p, clipId).Track.Id;
-            }, "midi-clip-moved");
+            }, clones.Count > 0 ? "midi-clip-duplicated" : "midi-clip-moved");
             Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
         };
         Timeline.MidiClipOpenRequested += (_, clipId) => OpenInPiano(clipId);
@@ -133,27 +132,12 @@ public partial class MainWindow
         title.Children.Add(pianoInstrumentButton);
         title.Children.Add(pianoOpenButton);
 
-        // the magnet: its own steps, remembered apart from the timeline's (notes want finer ones than takes)
-        string saved = AppConfig.Get("pianoSnap") ?? "1/16";
-        var snaps = new StackPanel { Orientation = Orientation.Horizontal };
-        var buttons = new List<ToggleButton>();
-        foreach (var (id, beats) in PianoSnaps)
-        {
-            var b = new ToggleButton { Classes = { "seg" }, Content = id == "off" ? Loc.T("piano.snap.off") : id, FontSize = 12, IsChecked = id == saved };
-            ToolTip.SetTip(b, id == "off" ? Loc.T("piano.snap.off.tip") : Loc.T("piano.snap.tip", id));
-            b.Click += (_, _) =>
-            {
-                pianoRoll.SnapBeats = beats;
-                foreach (var o in buttons) o.IsChecked = o == b;
-                SaveViewPref("pianoSnap", id);
-            };
-            buttons.Add(b);
-            snaps.Children.Add(b);
-            if (id == saved) pianoRoll.SnapBeats = beats;
-        }
+        // the magnet: its own choice, remembered apart from the timeline's (notes want finer steps than takes)
+        pianoRoll.SnapMode = AppConfig.Get("pianoSnap") is { } saved && SnapChoices.PianoIds.Contains(saved) ? saved : "1/16";
+        pianoSnapButton.Click += (_, _) => ShowPianoSnapMenu();
+        ShowPianoSnap();
         var snapRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        snapRow.Children.Add(new TextBlock { Text = Loc.T("piano.snap"), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center });
-        snapRow.Children.Add(new Border { Classes = { "seg" }, Child = snaps, VerticalAlignment = VerticalAlignment.Center });
+        snapRow.Children.Add(pianoSnapButton);
         // the grid: the magnet's steps, or its own (the same choices as the timeline's ruler menu)
         pianoRoll.GridMode = AppConfig.Get("pianoGrid") is { } grid && GridIds.Contains(grid) ? grid : "snap";
         pianoGridButton.Click += (_, _) => ShowPianoGridMenu(pianoGridButton);
@@ -347,6 +331,36 @@ public partial class MainWindow
     }
 
     readonly Button pianoGridButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+    readonly Button pianoSnapButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+
+    void ShowPianoSnap()
+    {
+        pianoSnapButton.Content = Loc.T("piano.snap.tip", SnapChoices.Label(pianoRoll.SnapMode));
+        ToolTip.SetTip(pianoSnapButton, SnapChoices.Hint(pianoRoll.SnapMode));
+    }
+
+    /// <summary>
+    /// The piano roll's magnet menu: the timeline's choices, saved apart ("pianoSnap"), plus following the timeline's.
+    /// The right button picks and leaves the menu open, like every options menu.
+    /// </summary>
+    void ShowPianoSnapMenu()
+    {
+        var refresh = new List<Action>();
+        var list = new List<object> { new MenuItem { Header = Loc.T("piano.snap"), IsEnabled = false, FontSize = 11 } };
+        foreach (var id in SnapChoices.PianoIds)
+        {
+            if (id == "line" || SnapChoices.Breaks.Contains(Array.IndexOf(SnapChoices.Ids, id))) list.Add(new Separator());
+            list.Add(MenuCheck(SnapChoices.Label(id), () => pianoRoll.SnapMode == id, () =>
+            {
+                pianoRoll.SnapMode = id;
+                ShowPianoSnap();
+                SaveViewPref("pianoSnap", id);
+            }, refresh, tip: SnapChoices.Hint(id)));
+        }
+        var menu = Popup(list, 220);
+        menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
+        OpenAnchoredMenu(menu, pianoSnapButton);
+    }
 
     static string GridLabel(string id) => id switch
     {
@@ -617,7 +631,7 @@ public partial class MainWindow
             MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")),
             MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled),
             MenuAction(Loc.T("midi.quantize.menu", PianoSnapLabel()), () => Quantize(boxed.Count > 1 ? boxed : [clipId]), Shortcuts.Label("quantize"),
-                enabled && pianoRoll.SnapBeats > 0, tip: pianoRoll.SnapBeats > 0 ? null : Loc.T("midi.quantize.free")),
+                enabled && pianoRoll.QuantizeBeats > 0, tip: pianoRoll.QuantizeBeats > 0 ? null : Loc.T("midi.quantize.free")),
             new Separator(),
         };
         list.AddRange(PatternItems(clipId, enabled, point));

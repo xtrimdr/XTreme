@@ -259,6 +259,10 @@ public sealed partial class TimelineView : Control
     /// <summary>The other boxed clips carried along with the grabbed one: each one as it was, and where it would land.</summary>
     readonly List<(LiveClip Clip, Clip Original)> carriedAlong = [];
     readonly Dictionary<LiveClip, Clip> carriedPreview = [];
+    /// <summary>Shift+drag on a clip's body clones it (like FL Studio): the gesture is a move, and on release a copy stays where it was.</summary>
+    bool cloning;
+    /// <summary>The clips the gesture just cloned; the handler of the move that ends it reads them with <see cref="TakeClones"/>.</summary>
+    List<string> clones = [];
     /// <summary>The other clip's edge the dragged one is stuck to (snap to other clips), drawn as a guide; null = none.</summary>
     double? stuckTo;
     /// <summary>
@@ -598,6 +602,32 @@ public sealed partial class TimelineView : Control
             foreach (var c in t.Clips)
                 if (c != grabbed && boxed.Contains(c.Clip.Id) && !ClipEditing.IsLocked(t.Track, c.Clip)) carriedAlong.Add((c, ClipEditing.Copy(c.Clip)));
         StartMidiCarry();
+    }
+
+    /// <summary>True on a part of a clip that a Shift+drag clones: its body, not its handles, and not a locked one.</summary>
+    bool OnClipBody(int i, Point p)
+    {
+        if (tracks[i].Track.IsMidi) return !tracks[i].Track.Locked && MidiClipAt(i, p.X) is { } m && !OnMidiEdge(m, p.X);
+        return ClipAt(i, p.X) is { } c && !ClipEditing.IsLocked(tracks[i].Track, c.Clip) && HitHandle(c, p) == ClipEditMode.Move;
+    }
+
+    /// <summary>The ids of what a Shift+drag carried; a copy of each stays where it was.</summary>
+    List<string> CloneIds(string kind)
+    {
+        List<string> ids = [];
+        if (kind == "clip" && dragged != null) ids.Add(dragged.Clip.Id);
+        if (kind == "midi" && midiHeld != null && !midiCarrying) ids.Add(midiHeld.Id);
+        ids.AddRange(carriedAlong.Select(c => c.Item1.Clip.Id));
+        ids.AddRange(midiCarried.Keys.Select(c => c.Id));
+        return ids;
+    }
+
+    /// <summary>The clips the gesture that just ended cloned, once.</summary>
+    public List<string> TakeClones()
+    {
+        var taken = clones;
+        clones = [];
+        return taken;
     }
 
     /// <summary>The grabbed clip moved (and snapped): the carried ones move by the same time, none ending before 0.</summary>
@@ -1070,10 +1100,14 @@ public sealed partial class TimelineView : Control
 
     /// <summary>The folders in drawing order: the lifted one last.</summary>
     IEnumerable<Folder> FolderOrder() => folders.Where(f => f.Id != liftedId).Concat(folders.Where(f => f.Id == liftedId));
-    double Grid => ClipEditing.GridSeconds(snapMode, Bpm);
+    SnapGrid Grid => new(snapMode is "line" or "cell" ? LineStep : FixedSnap, snapMode == "cell");
+    /// <summary>The magnet's lines in seconds, whatever kind it is (0 = off).</summary>
+    public double SnapSec => Grid.Step;
+    /// <summary>The magnet's length when it has a fixed one, or 0.</summary>
+    double FixedSnap => ClipEditing.GridSeconds(snapMode, Bpm);
     double ViewSec => Math.Max(8, Math.Max(LengthSec, Playhead + 2));
     double MinPps => Math.Max(0.01, (Bounds.Width - HeaderW) / Math.Max(600, ViewSec * 8));
-    void ClampScroll() => scrollY = Math.Clamp(scrollY, 0, Math.Max(0, contentH + ExtraRows * laneH + AddH + FooterH - (Bounds.Height - RulerH)));
+    void ClampScroll() => scrollY = Math.Clamp(scrollY, 0, Math.Max(0, contentH + ExtraRows * laneH + TailH + FooterH - (Bounds.Height - RulerH)));
     public void SetTrackHeight(double height)
     {
         double next = Math.Clamp(Math.Round(height / 2) * 2, MinTrackH, MaxTrackH); // the web's slider steps by 2 px
@@ -1268,6 +1302,7 @@ public sealed partial class TimelineView : Control
             ctx.DrawText(Loc.T("timeline.empty.a"), 12,
                 Palette.Faint, new Point(HeaderW + 24, RulerH + 90));
         }
+        if (cloning && moved) DrawLeftBehind(ctx, W, H);
         if (dragged != null && preview != null && overIndex >= 0 && overIndex != fromIndex && !swapping)
             DrawGhost(ctx, W, H);
         else if (dragged != null && overIndex >= 0 && overIndex != fromIndex)
@@ -1726,7 +1761,19 @@ public sealed partial class TimelineView : Control
     /// <summary>Px under which a fixed grid's lines are too close together to draw.</summary>
     const double MinGridPx = 6;
     /// <summary>The grid's fixed spacing in seconds (a subdivision, or the snap's when linked), or 0 when it follows the zoom.</summary>
-    double FixedGrid => gridMode switch { "auto" => 0, "snap" => Grid, _ => ClipEditing.GridSeconds(gridMode, Bpm) };
+    double FixedGrid => gridMode switch { "auto" => 0, "snap" => FixedSnap, _ => ClipEditing.GridSeconds(gridMode, Bpm) };
+
+    /// <summary>The spacing of the lines drawn at this zoom, what Línea and Celda snap to: a fixed grid's own or the finest
+    /// tick, doubling up to whole bars while they are too close together to draw.</summary>
+    double LineStep
+    {
+        get
+        {
+            double beat = BeatSec, g = FixedGrid, step = g >= beat ? g : FineTick(beat);
+            while (step * pps < MinGridPx) step *= 2;
+            return step;
+        }
+    }
 
     /// <summary>Bars mode, one label per bar: the length of the finest minor tick (a beat, or a half of a half…).</summary>
     double FineTick(double beat)
@@ -2989,9 +3036,9 @@ public sealed partial class TimelineView : Control
             if (e.ClickCount == 2) ChannelRequested?.Invoke(tracks[i], null, 0);
             else { originalPan = tracks[i].Channel.Pan; StartGesture("pan-knob", e); }
         }
-        else if (p.X >= HeaderW && (modifiers & KeyModifiers.Shift) != 0 && e.ClickCount == 1)
+        else if (p.X >= HeaderW && (modifiers & KeyModifiers.Shift) != 0 && e.ClickCount == 1 && !OnClipBody(i, p))
         {
-            // Shift+drag over a lane selects a range, like the Rango tool (native only)
+            // Shift+drag over a lane selects a range, like the Rango tool (native only); on a clip it clones the clip
             StartRange(i, p, e);
         }
         else if (p.X >= HeaderW && tracks[i].Track.IsMidi) MidiPressed(i, p, e);
@@ -3018,19 +3065,20 @@ public sealed partial class TimelineView : Control
                 StartBox(e);
                 return;
             }
-            if (HitHandle(clip, p) == ClipEditMode.Move && CurvePointAt(i, clip, p) is var point and >= 0)
+            cloning = (modifiers & KeyModifiers.Shift) != 0 && e.ClickCount == 1 && OnClipBody(i, p);
+            if (!cloning && HitHandle(clip, p) == ClipEditMode.Move && CurvePointAt(i, clip, p) is var point and >= 0)
             {
                 StartCurve(i, clip, point, e);
                 return;
             }
-            if (HitHandle(clip, p) == ClipEditMode.Move && OnCurve(i, clip, p))
+            if (!cloning && HitHandle(clip, p) == ClipEditMode.Move && OnCurve(i, clip, p))
             {
                 StartCurve(i, clip, -1, e);
                 return;
             }
-            dragMode = HitHandle(clip, p);
-            // a locked clip is selected but neither moved nor trimmed; its fades still drag
-            if (ClipEditing.IsLocked(tracks[i].Track, clip.Clip) && dragMode is ClipEditMode.Move or ClipEditMode.TrimStart or ClipEditMode.TrimEnd)
+            dragMode = cloning ? ClipEditMode.Move : GrabMode(clip, p);
+            // a locked clip is selected but neither moved, trimmed nor stretched; its fades still drag
+            if (ClipEditing.IsLocked(tracks[i].Track, clip.Clip) && dragMode is ClipEditMode.Move or ClipEditMode.TrimStart or ClipEditMode.TrimEnd or ClipEditMode.StretchStart or ClipEditMode.StretchEnd)
             {
                 SelectClip(i, clip.Clip.Id);
                 LockedTouched?.Invoke(tracks[i], clip);
@@ -3221,6 +3269,16 @@ public sealed partial class TimelineView : Control
         InvalidateVisual();
     }
 
+    /// <summary>A key changed the modifiers with the pointer still (the window listens to the keys): the cursor and the handles say what a press does now.</summary>
+    public void SetModifiers(KeyModifiers now)
+    {
+        if (now == modifiers) return;
+        modifiers = now;
+        if (gesture != null || !IsPointerOver) return;
+        UpdateCursor();
+        InvalidateVisual();
+    }
+
     /// <summary>The pointer left: the header buttons stop glowing (no gesture holds it outside).</summary>
     protected override void OnPointerExited(PointerEventArgs e)
     {
@@ -3363,7 +3421,7 @@ public sealed partial class TimelineView : Control
                 // Ctrl over another track swaps with the clip under the pointer, as in the web (the time stays); without
                 // it the clip lands on that track at the time under the pointer, shown by a ghost (native only).
                 // a take dropped on a MIDI track gives its notes there ("Extraer MIDI"): nothing to swap with
-                swapping = overIndex != fromIndex && (modifiers & KeyModifiers.Control) != 0 && !tracks[overIndex].Track.IsMidi;
+                swapping = !cloning && overIndex != fromIndex && (modifiers & KeyModifiers.Control) != 0 && !tracks[overIndex].Track.IsMidi;
                 swapId = swapping ? ClipAt(overIndex, lastPointer.X)?.Clip.Id : null;
                 stuckTo = null;
                 if (swapping) preview = ClipEditing.Copy(original);
@@ -3401,6 +3459,8 @@ public sealed partial class TimelineView : Control
         var midiMoves = together != null ? MidiMoves() : [];
         string? grabbedId = kind == "midi" ? midiHeld?.Id : dragged?.Clip.Id;
         var midi = kind == "midi" && !midiCarry ? MidiResult() : null;
+        bool stayed = kind == "clip" ? value?.AtSec == original?.AtSec && target == null : midiCarry ? carryShift == 0 : midi == null;
+        clones = cloning && changed && !stayed && extractTo.Clip == null ? CloneIds(kind) : [];
         var toggle = toggleBase;
         // the new height is applied while the dragged one still holds: applied after, the rows below went back to the
         // old height for a moment and glided from there, so everything jumped on release
@@ -3481,6 +3541,7 @@ public sealed partial class TimelineView : Control
         capturedPointer = null;
         dragged = null;
         original = preview = null;
+        cloning = false;
         toggleBase = null;
         ClearMidiGesture();
         carriedAlong.Clear();

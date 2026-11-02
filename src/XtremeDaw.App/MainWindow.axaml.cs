@@ -731,6 +731,16 @@ public partial class MainWindow : Window
             case "duplicate":
                 await DuplicateSelection();
                 break;
+            case "alignGrid":
+                await AlignClips(PickedClipIds());
+                break;
+            case "selectAll" when store != null:
+                Timeline.BoxClips([.. store.Project.Tracks.SelectMany(t => t.Clips.Select(c => c.Id).Concat((t.MidiClips ?? []).Select(c => c.Id)))]);
+                break;
+            case "deselect":
+                Timeline.BoxClips([]);
+                Timeline.SelectClip(Timeline.Selected, null);
+                break;
             case "copy" or "cut":
                 await CopySelection(cut: action == "cut");
                 break;

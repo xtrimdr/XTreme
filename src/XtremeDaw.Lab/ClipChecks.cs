@@ -25,13 +25,21 @@ static class ClipChecks
         Check(Near(moved.AtSec, 1.42) && Near(ClipEditing.Window(moved, media).Anchor, 1.5), "el anclaje cae en grilla y conserva 80 ms de sincronía");
         Check(Near(original.AtSec, 0.92) && media.SyncMs == -80, "calcular un gesto no muta el clip ni la grabación");
         var offGrid = Drag(new Clip { MediaId = media.Id, AtSec = 0.72 }, ClipEditMode.Move, 0.41);
-        Check(Near(offGrid.AtSec, 1.22) && Near(ClipEditing.Window(offGrid, media).Anchor, 1.3), "fuera de grilla, se mueve un paso y conserva su desfasaje");
+        Check(Near(offGrid.AtSec, 0.92) && Near(ClipEditing.Window(offGrid, media).Anchor, 1), "fuera de grilla, el comienzo cae en la línea más cercana");
+        Check(Near(Drag(new Clip { MediaId = media.Id, AtSec = 0.72 }, ClipEditMode.Move, 0.03).AtSec, 0.92), "un arrastre corto ya lo vuelve a la grilla");
+        var trimmedOff = new Clip { MediaId = media.Id, AtSec = 0.5, TrimStartSec = 0.33 };
+        Check(Near(ClipEditing.Window(Drag(trimmedOff, ClipEditMode.Move, 1), media).Anchor, 2), "recortado, cae en la línea lo que se ve del comienzo");
         Check(Near(Drag(original, ClipEditMode.Move, 0.413, true).AtSec, 1.333), "Alt evita todos los imanes");
         Check(Math.Abs(Drag(original, ClipEditMode.Move, 0.0002, true).AtSec - 0.9202) < 1.0 / 48000, "Alt mueve más fino que un milisegundo (de a muestra)");
         var loose = new Project { Media = [media], Tracks = [new Track { Clips = [new Clip { MediaId = media.Id, AtSec = 0.72 }] }] };
         string looseId = loose.Tracks[0].Clips[0].Id;
         ClipEditing.AlignToGrid(loose, looseId, 0.25);
         Check(Near(ClipEditing.Window(loose.Tracks[0].Clips[0], media).Anchor, 0.75), "alinear pone el anclaje en la línea del imán más cercana");
+        var cloned = new Project { Media = [media], Tracks = [new Track { Clips = [new Clip { MediaId = media.Id, AtSec = 2 }] }] };
+        var clonedClip = cloned.Tracks[0].Clips[0];
+        MidiEditing.LeaveCopies(cloned, [clonedClip.Id]);
+        Check(cloned.Tracks[0].Clips.Count == 2 && ReferenceEquals(cloned.Tracks[0].Clips[1], clonedClip) && cloned.Tracks[0].Clips[0].Id != clonedClip.Id
+            && Near(cloned.Tracks[0].Clips[0].AtSec, 2), "Shift+arrastrar deja una copia en su lugar, debajo del clip que se mueve");
         var other = ClipEnvelope.Window(3, 4.05);
         Check(Near(Magnet(0.03, 0, null).AtSec, 0.95), "sin imán no se pega a nada: ni al cero, ni al cabezal");
         Check(Near(Magnet(3.1, 0, other).AtSec, 4.05), "con imán a otros clips, el borde visible se pega al borde de otro clip");
@@ -41,7 +49,7 @@ static class ClipChecks
         Check(Near(gridNearer.AtSec, 3.92) && gridStuck == null, "con grilla, el borde no tira si el clip ya ubicado queda lejos");
         // the video's case: a bar's step, the pointer next to an edge but the clip a quarter of a step away: no leap
         var barStep = ClipEditing.Drag(original, media, ClipEditMode.Move, 2.6, 2, false, out var barStuck, null, [ClipEnvelope.Window(3, 3.47)], SnapEdges.Both, 100);
-        Check(Near(barStep.AtSec, 2.92) && barStuck == null, "con pasos grandes, un borde cerca del mouse no hace saltar al clip");
+        Check(Near(barStep.AtSec, 3.92) && barStuck == null, "con pasos grandes, un borde cerca del mouse no hace saltar al clip");
         Check(Near(ClipEditing.Drag(original, media, ClipEditMode.Move, 3.1, 0, false, null, [other], SnapEdges.End, 100).AtSec, 4.02),
             "con imán solo al final, el comienzo no se pega");
         var trimmedOther = ClipEnvelope.Window(3, 3.55, 0.5);

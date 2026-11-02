@@ -24,10 +24,6 @@ public partial class MainWindow
     /// <summary>The control a menu opened from (the input chip) and the one whose press just dismissed it, so a second
     /// press on the same chip closes its menu instead of opening it again.</summary>
     Control? menuAnchor, menuDismissedBy;
-    static readonly string[] SnapIds = ["off", "bar", "1/2", "1/4", "1/8", "1/8T", "1/16", "1/32", "1/64"];
-    static readonly string[] SnapLabels = [Loc.T("snap.label.0"), Loc.T("snap.label.1"), "1/2", "1/4", "1/8", "1/8T", "1/16", "1/32", "1/64"];
-    /// <summary>What each grid snaps to, in musician's words: the snap box's tooltip and the hint of each option.</summary>
-    static readonly string[] SnapHints = [.. Enumerable.Range(0, 9).Select(i => Loc.T($"snap.hint.{i}"))];
     /// <summary>The snap to other clips: which edges of a moved clip stick (stored by these ids in config.json).</summary>
     static readonly string[] ClipSnapIds = ["off", "start", "end", "both"];
     static readonly SnapEdges[] ClipSnapValues = [SnapEdges.None, SnapEdges.Start, SnapEdges.End, SnapEdges.Both];
@@ -91,14 +87,14 @@ public partial class MainWindow
     /// plain with "Sin imán" when it is off; the tooltip says what it snaps to right now.</summary>
     void ShowSnap()
     {
-        int i = Math.Max(0, Array.IndexOf(SnapIds, Timeline.SnapMode));
-        bool on = i > 0;
+        string mode = Timeline.SnapMode;
+        bool on = mode != "off";
         SnapIcon.Foreground = on ? Palette.Accent : Palette.Faint;
         SnapBox.Foreground = on ? Palette.Accent : Palette.Dim;
         SnapBox.Background = on ? Palette.AccentSoft : Palette.Raised;
         SnapBox.BorderBrush = on ? (Avalonia.Media.IBrush)this.FindResource("Accent40")! : Palette.Line;
         ToolTip.SetTip(SnapPanel, on
-            ? Loc.T("snap.on.tip", SnapLabels[i], SnapHints[i].ToLowerInvariant())
+            ? Loc.T("snap.on.tip", SnapChoices.Label(mode), SnapChoices.Hint(mode).ToLowerInvariant())
             : Loc.T("snap.off.tip"));
         // the snap to other clips, lit the same way while it is on
         int k = Array.IndexOf(ClipSnapValues, Timeline.SnapToClips);
@@ -144,10 +140,10 @@ public partial class MainWindow
 
     void InitTimelineEditing()
     {
-        SnapBox.SetItems(SnapLabels, SnapHints);
-        string snap = AppConfig.Get("timelineSnap") ?? "1/4";
-        SnapBox.SelectedIndex = Math.Max(0, Array.IndexOf(SnapIds, snap));
-        Timeline.SnapMode = SnapIds[SnapBox.SelectedIndex];
+        SnapBox.SetItems([.. SnapChoices.Ids.Select(SnapChoices.Label)], [.. SnapChoices.Ids.Select(SnapChoices.Hint)]);
+        SnapBox.BreaksBefore = SnapChoices.Breaks;
+        SnapBox.SelectedIndex = SnapChoices.Index(AppConfig.Get("timelineSnap") ?? "1/4");
+        pianoRoll.MainSnap = Timeline.SnapMode = SnapChoices.Ids[SnapBox.SelectedIndex];
         SnapClipsBox.SetItems(ClipSnapLabels, ClipSnapHints);
         // "true" was the on/off toggle before the selector: both edges
         string clipSnap = AppConfig.Get("snapToClips") is "true" ? "both" : AppConfig.Get("snapToClips") ?? "off";
@@ -197,7 +193,7 @@ public partial class MainWindow
         SnapBox.Selected += i =>
         {
             SnapBox.SelectedIndex = i;
-            Timeline.SnapMode = SnapIds[Math.Clamp(i, 0, SnapIds.Length - 1)];
+            pianoRoll.MainSnap = Timeline.SnapMode = SnapChoices.Ids[Math.Clamp(i, 0, SnapChoices.Ids.Length - 1)];
             ShowSnap();
             Prefs();
         };
@@ -279,21 +275,28 @@ public partial class MainWindow
         };
         if (double.TryParse(AppConfig.Get("headerWidth"), CultureInfo.InvariantCulture, out double headerW))
             Timeline.SetHeaderWidth(headerW);
-        Timeline.ClipEditCommitted += async (clip, target, swap) => await EditTimeline(p =>
+        Timeline.ClipEditCommitted += async (clip, target, swap) =>
         {
-            ClipEditing.Replace(p, clip);
-            if (target != null) return ClipEditing.MoveToTrack(p, clip.Id, target, swap);
-            return ClipEditing.Find(p, clip.Id).Track.Id;
-        }, "clip-edited", clip.Id);
+            var clones = Timeline.TakeClones();
+            await EditTimeline(p =>
+            {
+                MidiEditing.LeaveCopies(p, clones);
+                ClipEditing.Replace(p, clip);
+                if (target != null) return ClipEditing.MoveToTrack(p, clip.Id, target, swap);
+                return ClipEditing.Find(p, clip.Id).Track.Id;
+            }, clones.Count > 0 ? "clip-duplicated" : "clip-edited", clip.Id);
+        };
         Timeline.ClipsMoved += async (clips, midi) =>
         {
             var ids = Timeline.BoxedClipIds.ToList();
+            var clones = Timeline.TakeClones();
             await EditTimeline(p =>
             {
+                MidiEditing.LeaveCopies(p, clones);
                 foreach (var c in clips) ClipEditing.Replace(p, c);
                 foreach (var (id, at) in midi) MidiEditing.Move(p, id, at);
                 return clips.Count > 0 ? ClipEditing.Find(p, clips[0].Id).Track.Id : MidiEditing.Find(p, midi[0].Id).Track.Id;
-            }, "clips-moved", clips.Count > 0 ? clips[0].Id : null);
+            }, clones.Count > 0 ? "clips-duplicated" : "clips-moved", clips.Count > 0 ? clips[0].Id : null);
             // the moved clips stay selected together
             Timeline.BoxClips(ids);
         };
@@ -539,6 +542,24 @@ public partial class MainWindow
         if (kept != null && store != null && MidiEditing.TryFind(store.Project, kept) != null) Timeline.SelectMidiClip(Timeline.Selected, kept);
         else Timeline.SelectClip(Timeline.Selected, kept);
         Timeline.BoxClips(copies);
+    }
+
+    /// <summary>"Alinear a la grilla" (Shift+Q, like FL Studio's quick quantize): each clip's start on the nearest line of
+    /// the magnet. MIDI and locked clips stay where they are.</summary>
+    async Task AlignClips(List<string> ids)
+    {
+        double grid = Timeline.SnapSec;
+        if (grid <= 0) { Status(Loc.T("menu.alignGrid.off")); return; }
+        if (sel == null || ids.Count == 0) return;
+        string trackId = sel.Track.Id;
+        var lengths = LiveLengths();
+        await EditTimeline(p =>
+        {
+            foreach (var b in ids.Where(b => MidiEditing.TryFind(p, b) == null && !ClipEditing.IsLocked(p, b)))
+                ClipEditing.AlignToGrid(p, b, grid, lengths(ClipEditing.Find(p, b).Clip));
+            return trackId;
+        }, "clip-aligned", Timeline.SelectedClipId);
+        Timeline.BoxClips(ids);
     }
 
     /// <summary>The clips Ctrl+C / Ctrl+X took, for Ctrl+V (in memory only, like any app's clipboard).</summary>
@@ -810,17 +831,9 @@ public partial class MainWindow
             bool covered = track.Clips.SkipWhile(o => o != clip).Skip(1).Any(o => o.ClipStartSec < clip.ClipEndSec && o.ClipEndSec > clip.ClipStartSec);
             list.Add(MenuAction(Loc.T("menu.toFront"), () => Command(p => ClipEditing.BringToFront(p, id), "clip-to-front"),
                 enabled: enabled && covered, tip: Loc.T("menu.toFront.tip")));
-            double grid = ClipEditing.GridSeconds(Timeline.SnapMode, Timeline.Bpm);
-            list.Add(MenuAction(Loc.T(boxed.Count > 1 ? "menu.alignGrid.many" : "menu.alignGrid", boxed.Count), async () =>
-            {
-                await EditTimeline(p =>
-                {
-                    foreach (var b in boxed.Where(b => MidiEditing.TryFind(p, b) == null && !ClipEditing.IsLocked(p, b)))
-                        ClipEditing.AlignToGrid(p, b, grid, tracks.SelectMany(t => t.Clips).FirstOrDefault(c => c.Clip.Id == b)?.LengthSec);
-                    return track.Track.Id;
-                }, "clip-aligned", id);
-                Timeline.BoxClips(boxed);
-            }, enabled: enabled && grid > 0 && (free || boxed.Count > 1), tip: grid > 0 ? Loc.T("menu.alignGrid.tip", Timeline.SnapMode == "bar" ? Loc.T("snap.label.1") : Timeline.SnapMode) : Loc.T("menu.alignGrid.off")));
+            double grid = Timeline.SnapSec;
+            list.Add(MenuAction(Loc.T(boxed.Count > 1 ? "menu.alignGrid.many" : "menu.alignGrid", boxed.Count), () => AlignClips(boxed), Shortcuts.Label("alignGrid"),
+                enabled && grid > 0 && (free || boxed.Count > 1), tip: grid > 0 ? Loc.T("menu.alignGrid.tip", SnapChoices.Label(Timeline.SnapMode)) : Loc.T("menu.alignGrid.off")));
             list.Add(ClipLockItem(track, clip, enabled));
             list.Add(new Separator());
             var w = ClipEditing.Window(clip.Clip, clip.Media, clip.LengthSec);

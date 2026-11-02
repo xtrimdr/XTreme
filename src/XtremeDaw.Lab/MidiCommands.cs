@@ -144,10 +144,7 @@ static class MidiCommands
     }
 
     /// <summary>The piano roll's magnet steps in beats: "1/16" = 0.25, "1/8T" = a third.</summary>
-    static double? Grid(string s) => s.ToLowerInvariant() switch
-    {
-        "1/4" => 1, "1/8" => 0.5, "1/16" => 0.25, "1/32" => 0.125, "1/8t" => 1.0 / 3, _ => null,
-    };
+    static double? Grid(string s) => ClipEditing.GridSeconds(s.Replace("1/8t", "1/8T"), 60) is > 0 and var beats ? beats : null;
 
     /// <summary>The MIDI inputs Windows has, with what Configuración → MIDI says of each one.</summary>
     static int Inputs()
@@ -593,6 +590,64 @@ static class MidiCommands
         bool quantOk = moved == 2 && Math.Abs(q[0].Beat - 0) < 1e-9 && Math.Abs(q[1].Beat - 0.5) < 1e-9 && q[0].Beats == 0.4
             && MidiEditing.Quantize(q, 0, 120, 0) == 0;
         Show("Teclado: cuantizar a la grilla", $"{moved} movidas", "2", quantOk);
+
+        // the magnet: fractions of a step (a sixteenth) and of a beat; Line and Cell have no length of their own, and a
+        // cell goes to its start where the other lines go to the nearest
+        static bool Near(double a, double b) => Math.Abs(a - b) < 1e-9;
+        bool snapOk = Near(ClipEditing.GridSeconds("1/6step", 60), 1.0 / 24) && Near(ClipEditing.GridSeconds("1/3step", 60), 1.0 / 12)
+            && Near(ClipEditing.GridSeconds("1/4beat", 60), ClipEditing.GridSeconds("1/16", 60)) && Near(ClipEditing.GridSeconds("1/6beat", 60), 1.0 / 6)
+            && ClipEditing.GridSeconds("line", 60) == 0 && ClipEditing.GridSeconds("cell", 60) == 0
+            && Near(ClipEditing.Snap(0.9, 1, false), 1) && Near(ClipEditing.Snap(0.9, new SnapGrid(1, true), false), 0)
+            && Near(ClipEditing.Snap(5.0 / 24, new SnapGrid(1.0 / 24, true), false), 5.0 / 24) && Near(ClipEditing.Snap(0.9, new SnapGrid(1, true), true), 0.9);
+        Show("Imán: pasos, tiempos y celda", snapOk ? "bien" : "mal", "bien", snapOk);
+
+        // scales: G natural minor, degrees past the octave, notes out of it and a scale without seven notes
+        var gMinor = MusicScale.Find(7, "minor")!;
+        var cPenta = MusicScale.Find(0, "major-pentatonic")!;
+        bool degreesOk = MusicScale.Kinds.All(k => k.Steps[0] == 0 && k.Steps.SequenceEqual(k.Steps.Order().Distinct()) && k.Steps[^1] < 12)
+            && gMinor.Contains(70) && !gMinor.Contains(71) && gMinor.IsRoot(67) && gMinor.Nearest(71) == 70 && gMinor.Move(67, 7) == 79 && gMinor.Move(67, -1) == 65
+            && cPenta.Move(60, 5) == 72 && cPenta.Nearest(61) == 60 && cPenta.Nearest(71) == 72
+            && MusicScale.Kinds.All(k => Enumerable.Range(0, 128).All(p => new MusicScale(0, k) is var s && s.Contains(s.Nearest(p)) && (!s.Contains(p) || s.Nearest(p) == p)));
+        Show("Escalas: grados y nota más cercana", degreesOk ? "bien" : "mal", "bien", degreesOk);
+
+        // chords: each degree its own, every inversion read back to the same root, and what isn't a chord stays unread
+        int[] aMinor = Chords.Build(Chords.InScale, 69, MusicScale.Find(0, "major")), cMaj7 = Chords.Build("maj7", 60, null);
+        bool chordOk = Chords.Build(Chords.InScale, 69, gMinor).SequenceEqual([69, 72, 75]) && Chords.Build(Chords.InScale7, 67, gMinor).SequenceEqual([67, 70, 74, 77])
+            && aMinor.SequenceEqual([69, 72, 76]) && Chords.Build(Chords.InScale, 61, null).SequenceEqual([61, 65, 68])
+            && Chords.Invert(cMaj7, 3).SequenceEqual([71, 72, 76, 79])
+            && Enumerable.Range(0, 4).All(i => Chords.Read(Chords.Invert(cMaj7, i)) is { } c && c.Inversion == i && c.Root.SequenceEqual(cMaj7) && c.Kind.Id == "maj7")
+            && Chords.Read([60, 61, 62]) == null && Chords.Read([60, 76, 79]) == null;
+        Show("Acordes: de la escala e inversiones", chordOk ? "bien" : "mal", "bien", chordOk);
+
+        // scale fit: only what is out of it, only the notes asked for
+        var fit = new List<MidiNote> { new() { Pitch = 61 }, new() { Pitch = 62 }, new() { Pitch = 66 } };
+        bool fitOk = MidiEditing.FitScale(fit, MusicScale.Find(0, "major")!, [fit[0], fit[1]]) == 1 && fit[0].Pitch == 60 && fit[1].Pitch == 62 && fit[2].Pitch == 66;
+        Show("Escalas: llevar las notas", fitOk ? "bien" : "mal", "bien", fitOk);
+
+        // the keyboard with a scale: three rows of seven, an octave apart, each from the root; Z is a note, O the octave
+        var rowInputs = new MidiInputs();
+        var rows = new VirtualKeyboard(rowInputs) { Scale = gMinor };
+        bool ZSounds()
+        {
+            rows.KeyDown('z');
+            bool on = rows.IsSounding(55);
+            rows.KeyUp('z');
+            return on;
+        }
+        int octave = rows.Octave;
+        bool rowsOk = rows.ScalePitch(gMinor, 1, 0) == 67 && rows.ScalePitch(gMinor, 0, 0) == 55 && rows.ScalePitch(gMinor, 2, 0) == 79 && rows.ScalePitch(gMinor, 1, 6) == 77
+            && rows.ScanOfPitch(67) == 0x1E && rows.ScanOfPitch(68) == 0 && rows.IsKey('q') && rows.IsKey('m') && !rows.IsKey(',') && ZSounds() && rows.KeyDown('o') && rows.Octave == octave - 1;
+        rows.KeyUp('o');
+        rows.PlayChords = true;
+        rows.KeyDown('a');
+        rowsOk = rowsOk && !rows.IsSounding(66) && rows.Octave == octave - 1 && rows.IsSounding(55) && rows.IsSounding(58) && rows.IsSounding(62);
+        rows.KeyUp('a');
+        rowsOk = rowsOk && !rows.IsSounding(55) && !rows.IsSounding(58) && !rows.IsSounding(62);
+        rows.Scale = MusicScale.Find(0, "diminished");
+        rowsOk = rowsOk && rows.IsKey(',') && rows.IsKey('k');
+        rows.Scale = null;
+        rowsOk = rowsOk && !rows.IsKey('q') && rows.IsKey('z');
+        Show("Teclado: filas por escala", rowsOk ? "bien" : "mal", "bien", rowsOk);
 
         // velocity: scaled around the average (50% halves the distance, 0% evens it), humanized inside the range
         var vel = new List<MidiNote> { new() { Velocity = 80 }, new() { Velocity = 100 }, new() { Velocity = 120 } };

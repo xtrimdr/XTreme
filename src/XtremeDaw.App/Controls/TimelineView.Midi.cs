@@ -245,6 +245,7 @@ public sealed partial class TimelineView
             return;
         }
         midiEdge = OnMidiEdge(c, p.X);
+        cloning = (modifiers & KeyModifiers.Shift) != 0 && !midiEdge;
         // a boxed clip grabbed by its body carries the other boxed ones; its edge resizes it alone
         midiCarrying = boxed.Count > 1 && boxed.Contains(c.Id) && !midiEdge;
         SelectedMidiId = c.Id;
@@ -280,12 +281,11 @@ public sealed partial class TimelineView
         if (!moved && Math.Abs(dxPx) < 3 && Math.Abs(lastPointer.Y - down.Y) < 3) return;
         moved = true;
         bool free = (modifiers & KeyModifiers.Alt) != 0;
-        double grid = Grid;
+        var grid = Grid;
         if (midiCarrying)
         {
-            // everything boxed moves by the same snapped time, each on its own track, none before 0
-            double dt = dxPx / pps;
-            if (!free && grid > 0) dt = Math.Round(dt / grid) * grid;
+            // everything boxed moves by the same time, the grabbed clip landing on a line, each on its own track, none before 0
+            double dt = ClipEditing.Snap(midiFromSec + dxPx / pps, grid, free) - midiFromSec;
             foreach (double from in midiCarried.Values) dt = Math.Max(dt, -from);
             foreach (var (lc, o) in carriedAlong) dt = Math.Max(dt, ClipEnvelope.MinClipSec - Window(lc, o).End);
             carryShift = dt;
@@ -299,16 +299,14 @@ public sealed partial class TimelineView
         else if (midiEdge)
         {
             // the length goes by grid steps (a sixteenth when the magnet is off), never under a sixteenth
-            double step = free || grid <= 0 ? MidiClip.MinBeats : Math.Max(MidiClip.MinBeats, grid / BeatSec);
+            double step = free || grid.Step <= 0 ? MidiClip.MinBeats : Math.Max(MidiClip.MinBeats, grid.Step / BeatSec);
             double beats = midiFromBeats + dxPx / pps / BeatSec;
             midiBeats = Math.Clamp(Math.Round(beats / step) * step, MidiClip.MinBeats, MidiClip.MaxBeats);
         }
         else
         {
-            // whole grid steps from where it was, like a take: a clip off the grid stays as far off
-            double dt = dxPx / pps;
-            if (!free && grid > 0) dt = Math.Round(dt / grid) * grid;
-            midiAtSec = Math.Max(0, midiFromSec + dt);
+            // lands on a line, like a take
+            midiAtSec = Math.Max(0, ClipEditing.Snap(midiFromSec + dxPx / pps, grid, free));
             int over = HitTrack(lastPointer.Y);
             if (over >= 0 && over < tracks.Count && tracks[over].Track.IsMidi) midiOver = over;
         }

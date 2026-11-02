@@ -48,10 +48,14 @@ Spanish by default; the language is chosen in Settings.
 | C / Shift+C / T | click / count-in / tap tempo |
 | A | tuner |
 | M / S | mute / solo the track |
-| Ctrl+K | virtual keyboard: while on, the A row is the white keys, the row above the black ones, Z / X the octave, C / V the velocity and Shift the sustain |
+| Ctrl+K | virtual keyboard: while on, the A row is the white keys, the row above the black ones, Z / X the octave, C / V the velocity and Shift the sustain. With a scale, the Z, A and Q rows are three octaves of it, O / P the octave and L / ; the velocity |
+| H | chords in the piano roll: a click writes a chord; 1 to 4 pick the selected chord's inversion |
 | F | fit all |
 | X | timeline / mixer |
-| Alt+X / D | split the clip at the playhead / duplicate it |
+| Alt+X or Insert / D or Ctrl+B | split the clip at the playhead / duplicate it |
+| Shift+drag a clip | copy it: the original stays where it was |
+| Shift+Q | align the selected clips to the grid |
+| Ctrl+A / Ctrl+D | select all clips / clear the selection |
 | Del | remove the clip (or the empty track); with a range, delete it |
 | Shift+Del | delete the range and close the gap (what follows slides left) |
 | 1 to 7 | tools: Select / Range / Split / Erase / Listen / Zoom / Hand |

@@ -365,19 +365,26 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   la exportación (`ExportTakeSpec.Panel`).
 - **Arrastrar a otra pista** cambia la pista **y el tiempo** a la vez: el original queda atenuado y un fantasma
   punteado marca dónde cae (`DrawGhost`). Con Ctrl se intercambia con el clip de abajo.
-- **Grilla e imán** (pedido del usuario): el imán va de Compás a 1/64 (y 1/8T). El clic derecho en los números de la
+- **Grilla e imán** (pedido del usuario): el imán lleva la lista de FL Studio (`SnapChoices`, la misma en el piano roll):
+  **Línea** (la línea dibujada más cercana, cambia con el zoom), **Celda** (el comienzo de la celda donde cae,
+  `SnapGrid.Cell`), Sin imán, 1/6 a 1/2 paso, Paso (una semicorchea), 1/6 a 1/2 tiempo, Tiempo, 2 tiempos (no está en FL:
+  ya estaba acá) y Compás. Los valores que ya existían conservan su id en config.json ("1/16" es Paso). El clic derecho en los números de la
   regla elige cómo se dibuja la grilla (`TimelineView.GridMode`, `timelineGrid` en config.json): **Auto** (por
   defecto) se afina con el zoom, **Igual que el imán** dibuja sus pasos y una subdivisión fija mantiene ese espaciado
   con cualquier zoom; las líneas a menos de 6 px no se dibujan (`MinGridPx`, `FixedGrid`, `BarSubs`).
-- **Mover con grilla** (uno o varios): el clip avanza de a pasos enteros de la grilla y **conserva su desfasaje**: uno
-  que no está justo en el tiempo cae igual de corrido un compás (o un tiempo) más allá, como se tocó
-  (`ClipEditing.Drag`). **Imán a otros clips**: el selector al lado del imán (`SnapClipsBox`: No / Inicio / Final /
+- **Mover con grilla** (uno o varios; pedido del usuario, 2026-11-02, antes conservaba el desfasaje): el comienzo del
+  clip **cae en una línea** de la grilla, así que moverlo lo vuelve a poner en tiempo (`ClipEditing.Drag`; con varios,
+  cae el agarrado y los demás lo siguen). Para no perder el tiempo de una toma tocada, Alt. Lo mismo en clips MIDI.
+- **Shift+arrastrar el cuerpo de un clip lo copia** (pedido del usuario, como FL Studio; uno o varios, también a otra
+  pista): el gesto es el de mover y al soltar queda una copia donde estaba (`cloning`, `DrawLeftBehind`, el contorno
+  punteado; `MidiEditing.LeaveCopies`). Un clip bloqueado no se copia así. Fuera del cuerpo, Shift sigue marcando rangos.
+- **Imán a otros clips**: el selector al lado del imán (`SnapClipsBox`: No / Inicio / Final /
   Ambos, `snapToClips` en config.json, No de entrada) elige qué borde visible del clip que movés se pega a los bordes
   visibles de los otros, a menos de 8 px (`EdgePullPx`, `SnapEdges`). Con los dos imanes la grilla ubica el clip y el borde
   solo lo corrige si el clip ya ubicado queda a menos de 8 px: nunca salta más que eso. Mientras está pegado, una línea de acento
   cruza las pistas en ese borde (`stuckTo`, la guía). Anda también con la grilla en "Sin imán". Nada más tira: ni el cabezal ni el cero. Con los dos apagados, o con Alt, se mueve libre, de a muestra
   (`ClipEditing.ToSample`: el milisegundo eran 96 px al zoom máximo). Para volver a ponerlo en sincro, el clic derecho
-  tiene **"Alinear a la grilla"**: lleva el comienzo de la toma a la línea más cercana con la subdivisión del imán
+  tiene **"Alinear a la grilla"** (Shift+Q, `AlignClips`): lleva el comienzo de la toma a la línea más cercana con la subdivisión del imán
   (`ClipEditing.AlignToGrid`; deshabilitada con el imán apagado). Sobre un clip marcado, alinea o quita todos los marcados.
 - **Detectar tempo** (clic derecho en un clip de audio, pedido del usuario): escucha lo que suena del clip (lo recortado
   no cuenta) en segundo plano con `TempoDetector` (el clip muestra la barra y "Escuchando el tempo… N%", como al
@@ -420,7 +427,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   intercambiando con el clip de otra pista; `ToggleBoxed`). Agarrar
   uno marcado por el cuerpo mueve todos el mismo tiempo, cada uno en su pista (`StartCarry`, `DragCarried`, evento `ClipsMoved`: un solo paso para deshacer); sus bordes recortan solo ese. Supr los saca a
   todos. Un clic sin mover, o cualquier selección común, deja uno solo.
-- **Rango**: la herramienta Rango, o Shift+arrastrar con Seleccionar, marca un tramo; arrastrando hacia arriba o abajo
+- **Rango**: la herramienta Rango, o Shift+arrastrar con Seleccionar desde fuera de un clip, marca un tramo; arrastrando hacia arriba o abajo
   suma las pistas visibles que cruza (`rangeTracks`). Supr o "Borrar el rango" del clic derecho lo saca de sus clips
   (`ClipEditing.DeleteRange`) dejando el hueco; Shift+Supr o "Borrar y cerrar el hueco" además corre lo de después en
   esas pistas (`ClipEditing.DeleteRangeClosing`; las otras pistas y el A–B no se mueven; los marcadores, solo si el rango abarca todas las pistas). "Repetir este
@@ -894,8 +901,8 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
 - **Piano roll**: una vista más en el lugar del mixer (botón "Piano roll" del transporte, justo después de
   Timeline, pedido del usuario; o doble clic en un clip),
   como Mastering: misma altura y lugar que el mixer, con la mini timeline arriba en Clásico. Arriba, el nombre de la
-  pista con el largo y la cantidad de notas, el **imán** propio (1/4 · 1/8 · 1/16 · 1/32 · 1/8T · Libre, `pianoSnap`
-  en config.json, 1/16 de entrada), la **grilla** ("Grilla: …", también con clic derecho en la regla; pedido del
+  pista con el largo y la cantidad de notas, el **imán** propio (chip "Imán: …" con la lista del timeline más **Igual
+  que el timeline**, `SnapChoices.PianoIds`, `pianoSnap` en config.json, Paso de entrada), la **grilla** ("Grilla: …", también con clic derecho en la regla; pedido del
   usuario: imán y grilla juntos o cada uno por su lado, como en el timeline): **Igual que el imán** (de entrada; con el
   imán en Libre, Auto), **Auto** (se afina con el zoom: el paso más fino con 14 px entre líneas) o una subdivisión fija
   (Compás a 1/64, 1/8T), guardada en `pianoGrid`; las líneas a menos de 6 px no se dibujan (`PianoRollView.GridMode`).

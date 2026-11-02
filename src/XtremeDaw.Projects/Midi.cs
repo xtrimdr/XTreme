@@ -287,6 +287,27 @@ public static class MidiEditing
         return [.. unique.Where(copies.ContainsKey).Select(id => copies[id])];
     }
 
+    /// <summary>
+    /// Shift+drag on the timeline: leaves a copy of each clip, take or MIDI, exactly where it is, under it, so the clip
+    /// that the gesture then moves is the one that keeps its selection.
+    /// </summary>
+    public static void LeaveCopies(Project p, IEnumerable<string> ids)
+    {
+        foreach (var id in ids)
+            if (TryFind(p, id) != null)
+            {
+                var (t, c) = Find(p, id);
+                t.MidiClips!.Insert(t.MidiClips.IndexOf(c), c.Copy());
+            }
+            else
+            {
+                var (t, c) = ClipEditing.Find(p, id);
+                var copy = ClipEditing.Copy(c);
+                copy.Id = Ids.New("clp");
+                t.Clips.Insert(t.Clips.IndexOf(c), copy);
+            }
+    }
+
     /// <summary>A copy right after the clip, on the same track; returns the copy's id.</summary>
     public static string Duplicate(Project p, string clipId)
     {

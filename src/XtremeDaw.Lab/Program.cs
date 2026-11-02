@@ -280,7 +280,7 @@ static class Program
               midi patron-unico carpeta --clip id   saca el clip del patrón (suena igual)
               midi patron-disolver carpeta --clip id   termina el patrón de ese clip: todos sus clips quedan únicos
               midi patron-borrar carpeta --clip id   borra el patrón de ese clip con todos sus clips
-              midi cuantizar carpeta --clip id [--grilla 1/4|1/8|1/16|1/32|1/8T]
+              midi cuantizar carpeta --clip id [--grilla bar|1/2|1/4|1/8|1/8T|1/16|1/32|1/64|1/4beat|1/6beat|1/3step|1/6step]
                                            mueve el comienzo de sus notas a la grilla de la canción (el largo queda)
               midi velocidad carpeta --clip id [--rango 100]
                                            escala las velocidades alrededor de su promedio (50 las acerca, 0 las

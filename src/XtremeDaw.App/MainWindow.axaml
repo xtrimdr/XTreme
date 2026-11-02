@@ -334,7 +334,7 @@
                         ToolTip.Tip="{loc:T ruler.bars.tip}">
                   <TextBlock Classes="icon" Text="&#xEC4F;" FontSize="14" />
                 </Button>
-                <Button x:Name="TimeRulerButton" Classes="ghost" Width="26" Height="22" Padding="0" MinWidth="0" CornerRadius="4"
+                <Button x:Name="TimeRulerButton" Classes="ghost" Width="22" Height="22" Padding="0" MinWidth="0" CornerRadius="4"
                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                         ToolTip.Tip="{loc:T ruler.time.tip}">
                   <TextBlock Classes="icon" Text="&#xE823;" FontSize="14" />
@@ -342,8 +342,8 @@
               </StackPanel>
             </Border>
             <!-- snap: the magnet lights up with the accent while clips, the playhead, trims and fades stick to the grid -->
-            <Panel Grid.Column="1" x:Name="SnapPanel" Width="86" Height="28" VerticalAlignment="Center">
-              <c:SelectButton x:Name="SnapBox" Classes="snap" Width="86" Height="28" Padding="25,0,6,0" CornerRadius="6" AutomationProperties.Name="{loc:T snap.name}" />
+            <Panel Grid.Column="1" x:Name="SnapPanel" Width="96" Height="28" VerticalAlignment="Center">
+              <c:SelectButton x:Name="SnapBox" Classes="snap" Width="96" Height="28" Padding="25,0,4,0" CornerRadius="6" AutomationProperties.Name="{loc:T snap.name}" />
               <PathIcon x:Name="SnapIcon" Data="{StaticResource MagnetIcon}" Width="13" Height="13" Margin="8,0,0,0"
                         HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" />
             </Panel>

@@ -12,6 +12,16 @@ public enum ClipEditMode { Move, TrimStart, TrimEnd, FadeIn, FadeOut, StretchSta
 public enum SnapEdges { None = 0, Start = 1, End = 2, Both = Start | End }
 
 /// <summary>
+/// What a time snaps to: lines every <paramref name="Step"/> seconds (0 = none), the nearest one or, with
+/// <paramref name="Cell"/>, the start of the cell it falls in (FL Studio's Cell, asked by the user). A plain number is a
+/// step with nearest lines.
+/// </summary>
+public readonly record struct SnapGrid(double Step, bool Cell = false)
+{
+    public static implicit operator SnapGrid(double step) => new(step);
+}
+
+/// <summary>
 /// Port of Timeline.tsx clip gestures and App.tsx lane operations. Times use native seconds instead of
 /// audioOffsetMs. Native tracks keep their IDs/channels; on multi-clip tracks only the clip under the
 /// pointer swaps, and dropping on empty space moves the clip without disturbing the other clips.
@@ -30,7 +40,8 @@ public static class ClipEditing
     public static double GridSeconds(string mode, double bpm) => (mode switch
     {
         "bar" => 4, "1/2" => 2, "1/4" => 1, "1/8" => 0.5,
-        "1/8T" => 1.0 / 3, "1/16" => 0.25, "1/32" => 0.125, "1/64" => 0.0625, _ => 0,
+        "1/8T" => 1.0 / 3, "1/16" => 0.25, "1/32" => 0.125, "1/64" => 0.0625,
+        "1/6beat" => 1.0 / 6, "1/4beat" => 0.25, "1/3step" => 1.0 / 12, "1/6step" => 1.0 / 24, _ => 0,
     }) * 60 / Math.Max(1, bpm);
 
     // JavaScript Math.round: half ties go toward positive infinity, including negative offsets.
@@ -42,7 +53,10 @@ public static class ClipEditing
     const double SamplesPerSec = 48000;
     public static double ToSample(double sec) => JsRound(sec * SamplesPerSec) / SamplesPerSec;
     static double Limit(double v, double max) => Math.Max(0, Math.Min(max, v));
-    public static double Snap(double sec, double grid, bool free) => free || grid <= 0 ? sec : JsRound(sec / grid) * grid;
+    public static double Snap(double sec, SnapGrid grid, bool free) => free || grid.Step <= 0 ? sec
+        : (grid.Cell ? Math.Floor(sec / grid.Step + CellSlack) : JsRound(sec / grid.Step)) * grid.Step;
+    /// <summary>In steps: a time on a line that floating point left just short of it is still in that line's cell.</summary>
+    const double CellSlack = 1e-9;
 
     /// <summary>Px within which a moved clip's edge sticks to another clip's edge (SNAP_PX in Timeline.tsx).</summary>
     public const double EdgePullPx = 8;
@@ -52,12 +66,12 @@ public static class ClipEditing
     /// <paramref name="others"/> and <paramref name="sticky"/> (the snap to other clips) a moved clip's visible start
     /// and/or end sticks to their visible edges within <see cref="EdgePullPx"/>.
     /// </summary>
-    public static Clip Drag(Clip original, Media? media, ClipEditMode mode, double dx, double grid, bool free,
+    public static Clip Drag(Clip original, Media? media, ClipEditMode mode, double dx, SnapGrid grid, bool free,
         double? durationSec = null, IEnumerable<ClipEnvelope.ClipWindow>? others = null, SnapEdges sticky = SnapEdges.None, double pps = 100) =>
         Drag(original, media, mode, dx, grid, free, out _, durationSec, others, sticky, pps);
 
     /// <summary>The same, saying in <paramref name="stuckTo"/> the other clip's edge it stuck to (the timeline draws a guide there).</summary>
-    public static Clip Drag(Clip original, Media? media, ClipEditMode mode, double dx, double grid, bool free, out double? stuckTo,
+    public static Clip Drag(Clip original, Media? media, ClipEditMode mode, double dx, SnapGrid grid, bool free, out double? stuckTo,
         double? durationSec = null, IEnumerable<ClipEnvelope.ClipWindow>? others = null, SnapEdges sticky = SnapEdges.None, double pps = 100)
     {
         stuckTo = null;
@@ -68,14 +82,14 @@ public static class ClipEditing
         switch (mode)
         {
             case ClipEditMode.Move:
-                // With a grid the clip moves in whole grid steps, relative (asked by the user): a clip off the grid
-                // keeps its offset and lands a bar (or a beat) away, as played; "Alinear a la grilla" puts it on a line.
-                // Other clips pull only with their own snap on (asked by the user), and only their visible edges: the
+                // With a grid its start lands on a line, so a clip off the grid goes back on it just by moving it (asked
+                // by the user, who had asked for the opposite, keeping the offset: lining up was all by hand); Alt keeps
+                // it free. The start is the anchor, the same as "Alinear a la grilla". Other clips pull only with their own snap on (asked by the user), and only their visible edges: the
                 // take's start hides left of a trimmed clip. Both magnets together are seamless (asked by the user):
                 // the grid places the clip and an edge only fine-tunes it, when the clip as placed is within
                 // EdgePullPx of it, so it never jumps more than that. Measured from the pointer instead, with a
                 // bar's step the clip leapt ~26 px off the grid to an edge the pointer was near but the clip wasn't.
-                double shift = Snap(dx, grid, free);
+                double shift = Snap(w.Anchor + dx, grid, free) - w.Anchor;
                 if (!free && others != null && sticky != SnapEdges.None)
                 {
                     double best = EdgePullPx / Math.Max(0.001, pps), placed = shift;

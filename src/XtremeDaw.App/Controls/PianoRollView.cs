@@ -35,7 +35,8 @@ namespace XtremeDaw.App.Controls;
 /// <para>
 /// The grid's lines follow the magnet or go their own way (<see cref="GridMode"/>, asked by the user, like the
 /// timeline's): the magnet's steps, Auto (finer as it zooms in) or a fixed subdivision. The right button on the ruler
-/// asks the window for that menu.
+/// asks the window for that menu. The magnet itself (<see cref="SnapMode"/>, FL's list) can follow those lines: Línea
+/// goes to the nearest, Celda to the start of the cell.
 /// </para>
 /// <para>
 /// It shows the whole track on the timeline's own bars (asked by the user): the clip being edited is lit, the track's
@@ -113,14 +114,22 @@ public sealed class PianoRollView : Control
     double bpm = 120;
     double playheadSec = -1;
 
-    double snapBeats = 0.25;
+    string snapMode = "1/16", mainSnap = "1/4";
     string gridMode = "snap";
 
-    /// <summary>The magnet in beats (0 = free): the window's selector sets it.</summary>
-    public double SnapBeats { get => snapBeats; set { snapBeats = value; InvalidateVisual(); } }
+    /// <summary>The magnet: one of <see cref="SnapChoices.PianoIds"/>, set by the window's menu.</summary>
+    public string SnapMode { get => snapMode; set { snapMode = value; InvalidateVisual(); } }
+    /// <summary>The timeline's magnet, what "main" follows.</summary>
+    public string MainSnap { get => mainSnap; set { mainSnap = value; InvalidateVisual(); } }
+    /// <summary>The magnet in effect, with "main" resolved.</summary>
+    public string ActiveSnap => snapMode == "main" ? mainSnap : snapMode;
+    /// <summary>The magnet's fixed length in beats, or 0 when it is off or follows the zoom: there is nothing to quantize to.</summary>
+    public double QuantizeBeats => ClipEditing.GridSeconds(ActiveSnap, 60);
+    /// <summary>The magnet's lines in beats right now (0 = free).</summary>
+    double SnapBeats => ActiveSnap is "line" or "cell" ? DrawnUnit() : QuantizeBeats;
 
     /// <summary>
-    /// How the grid's lines are spaced: "snap" (the magnet's steps; Auto while it is free), "auto" (by zoom) or one of
+    /// How the grid's lines are spaced: "snap" (the magnet's steps; Auto while it has no fixed length), "auto" (by zoom) or one of
     /// the timeline's subdivisions ("bar", "1/4", "1/8T"…).
     /// </summary>
     public string GridMode { get => gridMode; set { gridMode = value; InvalidateVisual(); } }
@@ -351,9 +360,9 @@ public sealed class PianoRollView : Control
 
     double SnapA(double beat, bool floor = false)
     {
-        if (SnapBeats <= 0 || (modifiers & KeyModifiers.Alt) != 0) return Math.Max(0, beat);
-        double k = beat / SnapBeats;
-        return Math.Max(0, (floor ? Math.Floor(k) : Math.Round(k)) * SnapBeats);
+        double step = SnapBeats;
+        if (step <= 0 || (modifiers & KeyModifiers.Alt) != 0) return Math.Max(0, beat);
+        return Math.Max(0, ClipEditing.Snap(beat, new SnapGrid(step, floor || ActiveSnap == "cell"), false));
     }
 
     /// <summary>The track's other clip under a timeline beat (the last one drawn wins), or null.</summary>
@@ -426,8 +435,7 @@ public sealed class PianoRollView : Control
         var bar = Palette.Pen(Palette.Alpha(Palette.LineColor, 1));
         var beat = Palette.Pen(Palette.Alpha(Palette.LineColor, 0.55));
         var step = Palette.Pen(Palette.Alpha(Palette.LineColor, 0.25));
-        double unit = GridUnit();
-        if (unit * beatW < MinGridPx) unit = beatW >= MinGridPx ? 1 : 4;
+        double unit = DrawnUnit();
         double first = Math.Floor(BeatA(KeyW) / unit) * unit;
         for (double b = Math.Max(0, first); XA(b) <= W; b += unit)
         {
@@ -438,10 +446,17 @@ public sealed class PianoRollView : Control
         }
     }
 
+    /// <summary>The step of the lines on screen: the grid's, or beats or bars when those are too close together to draw.</summary>
+    double DrawnUnit()
+    {
+        double unit = GridUnit();
+        return unit * beatW >= MinGridPx ? unit : beatW >= MinGridPx ? 1 : 4;
+    }
+
     /// <summary>The grid's step in beats (<see cref="GridMode"/>).</summary>
     double GridUnit()
     {
-        double unit = gridMode switch { "auto" => 0, "snap" => snapBeats, _ => ClipEditing.GridSeconds(gridMode, 60) };
+        double unit = gridMode switch { "auto" => 0, "snap" => QuantizeBeats, _ => ClipEditing.GridSeconds(gridMode, 60) };
         if (unit > 0) return unit;
         // Auto: from a bar down to a 1/64, the finest step that still leaves room between the lines
         unit = 4;
@@ -1150,13 +1165,13 @@ public sealed class PianoRollView : Control
     /// <summary>
     /// Moves the selected notes (all of them with none selected) to the magnet's steps on the song's grid, as one edit
     /// (<see cref="MidiEditing.Quantize(IList{MidiNote}, double, double, double, IReadOnlyCollection{MidiNote}?)"/>).
-    /// Returns how many moved; -1 with no clip or the magnet in Libre.
+    /// Returns how many moved; -1 with no clip or a magnet with no fixed length.
     /// </summary>
     public int Quantize()
     {
-        if (clipId == null || snapBeats <= 0) return -1;
+        if (clipId == null || QuantizeBeats <= 0) return -1;
         CancelGesture();
-        int moved = MidiEditing.Quantize(notes, clipAtSec, bpm, snapBeats, selected.Count > 0 ? selected : null);
+        int moved = MidiEditing.Quantize(notes, clipAtSec, bpm, QuantizeBeats, selected.Count > 0 ? selected : null);
         if (moved > 0) Commit();
         return moved;
     }
@@ -1291,7 +1306,8 @@ public sealed class PianoRollView : Control
                 if (selected.Count == 0) return true;
                 // right after the selection, a whole number of magnet steps on, as the timeline's duplicate
                 double start = selected.Min(n => n.Beat), span = selected.Max(n => n.Beat + n.Beats) - start;
-                double step = snapBeats > 0 ? Math.Max(snapBeats, Math.Ceiling(span / snapBeats - 1e-9) * snapBeats) : span;
+                double magnet = SnapBeats;
+                double step = magnet > 0 ? Math.Max(magnet, Math.Ceiling(span / magnet - 1e-9) * magnet) : span;
                 AddCopies([.. selected], step);
                 return true;
             }
@@ -1314,7 +1330,7 @@ public sealed class PianoRollView : Control
             {
                 if (selected.Count == 0) return true;
                 // a magnet step (a 1/16 when free), never out of the clip
-                double db = (e.Key == Key.Right ? 1 : -1) * (snapBeats > 0 ? snapBeats : 0.25);
+                double db = (e.Key == Key.Right ? 1 : -1) * (SnapBeats > 0 ? SnapBeats : 0.25);
                 if (selected.Any(n => n.Beat + db < -1e-9 || n.Beat + db >= clipBeats - 1e-9)) return true;
                 foreach (var n in selected) n.Beat = Math.Max(0, n.Beat + db);
                 Commit();
