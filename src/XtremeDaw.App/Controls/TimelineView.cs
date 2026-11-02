@@ -832,8 +832,8 @@ public sealed partial class TimelineView : Control
     /// <summary>The track or folder whose bottom edge is under the pointer, in the header column; null elsewhere.</summary>
     string? RowEdgeAt(Point p)
     {
-        // the pinned "Nueva pista" and the zoom bar cover the rows' edges there
-        if (p.Y < RulerH || p.X >= HeaderRight || p.Y >= AddRect.Y) return null;
+        // the zoom bar covers the rows' edges there
+        if (p.Y < RulerH || p.X >= HeaderRight || p.Y >= Bounds.Height - FooterH) return null;
         foreach (var r in rows)
         {
             // a separator keeps its height
@@ -1295,7 +1295,6 @@ public sealed partial class TimelineView : Control
             DrawDropTarget(ctx, W);
         }
         if (ExtraRows > 0) DrawRecordingHeader(ctx, LaneY(tracks.Count), W);
-        DrawAddButton(ctx);
         if (tracks.Count == 0 && folders.Count == 0 && !Recording)
         {
             ctx.DrawText(Loc.T("timeline.empty.title"), 12.5, Palette.Dim, new Point(HeaderW + 24, RulerH + 66), Palette.UiBold);
@@ -1331,32 +1330,13 @@ public sealed partial class TimelineView : Control
         }
     }
 
+    /// <summary>Empty space the scroll leaves under the last row, so a full view still has somewhere to right click for a new track.</summary>
+    const double TailH = 64;
+
     /// <summary>
     /// The column's resize grip: one strip for every track, the whole height under the ruler, with two short lines
     /// in the middle of the view. It lights up while the pointer is on it or dragging it.
     /// </summary>
-    /// <summary>Height of the "Nueva pista" button pinned at the foot of the header column.</summary>
-    const double AddH = 36;
-    /// <summary>
-    /// "Nueva pista", pinned at the foot of the header column right above the zoom bar (asked by the user: it used to
-    /// follow the last track and got lost with many rows); the rows scroll under it.
-    /// </summary>
-    Rect AddRect => new(0, Bounds.Height - FooterH - AddH, HeaderRight, AddH);
-
-    void DrawAddButton(DrawingContext ctx)
-    {
-        var r = AddRect;
-        if (r.Y < RulerH) return;
-        bool hover = gesture == null && r.Contains(lastPointer);
-        ctx.FillRectangle(hover ? Palette.Hover : Palette.Panel, r);
-        ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, r.Y + 0.5), new Point(r.Right, r.Y + 0.5));
-        var fg = hover ? Palette.Fg : Palette.Dim;
-        // a narrow column keeps only the +
-        bool withText = Palette.Text(Loc.T("timeline.newTrack"), 12, fg).Width + 40 <= r.Width;
-        ctx.DrawText("", 12, fg, new Point(withText ? 12 : r.Center.X - 6, r.Y + 11), new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"));
-        if (withText) ctx.DrawText(Loc.T("timeline.newTrack"), 12, fg, new Point(32, r.Y + 10));
-    }
-
     void DrawColumnGrip(DrawingContext ctx, double H)
     {
         bool lit = gesture == "header" || gesture == null && OnGrip(lastPointer);
@@ -2862,12 +2842,6 @@ public sealed partial class TimelineView : Control
             StartGesture("pan", e);
             return;
         }
-        if (AddRect.Contains(p) && AddRect.Y >= RulerH)
-        {
-            if (buttons.IsLeftButtonPressed) NewTrackRequested?.Invoke(p);
-            e.Handled = true;
-            return;
-        }
         var row = HitRow(p.Y);
         int i = row is { Folder: null, Lane: null } h ? h.Track : -1;
         if (row?.Lane == null) selectedBlock = null;
@@ -2881,8 +2855,8 @@ public sealed partial class TimelineView : Control
             if (p.Y >= RulerH && AutoRightPressed(row, i, p)) { e.Handled = true; return; }
             if (p.Y < RulerH && p.X > HeaderW) RulerMenuRequested?.Invoke(p);
             else if (row?.Folder is { } folder) FolderContextRequested?.Invoke(folder, p);
-            // the empty part of the header, under the last row, offers a new track
-            else if (row == null && p.X < HeaderW && p.Y >= RulerH) NewTrackRequested?.Invoke(p);
+            // the empty space under the last row, header or lanes, offers a new track
+            else if (row == null && p.Y >= RulerH) NewTrackRequested?.Invoke(p);
             else if (i >= 0 && i < tracks.Count && p.Y >= RulerH)
             {
                 if (p.X > HeaderW && tracks[i].Track.IsMidi && MidiContext(i, p)) { e.Handled = true; return; }
@@ -3567,7 +3541,6 @@ public sealed partial class TimelineView : Control
         if (InStrip(lastPointer)) cursor = StripCursor(lastPointer);
         else if (InChordStrip(lastPointer)) cursor = ChordAt(lastPointer) != null ? StandardCursorType.Hand : StandardCursorType.Arrow;
         else if (OnGrip(lastPointer)) cursor = StandardCursorType.SizeWestEast;
-        else if (AddRect.Contains(lastPointer)) cursor = StandardCursorType.Hand;
         else if (RowEdgeAt(lastPointer) != null) cursor = StandardCursorType.SizeNorthSouth;
         else if (row is { Lane: not null } autoRow)
             cursor = AutoCursor(autoRow);

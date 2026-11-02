@@ -34,7 +34,7 @@ public partial class MainWindow
 
     /// <summary>Column widths from which each piece of the corner toolbar fits (their widths add up from the left, the
     /// clear toggles at the right edge) and from which the footer keeps its height slider and its zoom icon.</summary>
-    const double ToolbarSnapClipsAt = TimelineView.DefaultHeaderW, ToolbarFitAt = 248, ToolbarClearAt = 220, ToolbarSnapAt = 160, FooterHeightAt = 200, FooterZoomIconAt = 120;
+    const double ToolbarSnapClipsAt = TimelineView.DefaultHeaderW, ToolbarFitAt = 248, ToolbarClearAt = 220, ToolbarSnapAt = 160, FooterHeightAt = 236, FooterZoomIconAt = 156;
 
     /// <summary>The bars above and below the track headers are as wide as the column: as it narrows, what doesn't fit
     /// goes, least used first, so nothing overlaps and the ruler mode and the zoom always stay.</summary>
@@ -47,7 +47,7 @@ public partial class MainWindow
         bool height = w >= FooterHeightAt;
         HeightIcon.IsVisible = TrackHeightSlider.IsVisible = ResetHeightsButton.IsVisible = height;
         // a star column keeps its share with nothing in it
-        TimelineFooterGrid.ColumnDefinitions[3].Width = height ? GridLength.Star : new GridLength(0);
+        TimelineFooterGrid.ColumnDefinitions[4].Width = height ? GridLength.Star : new GridLength(0);
         ZoomSlider.Margin = new Thickness(0, 0, height ? 16 : 0, 0);
         ZoomIcon.IsVisible = w >= FooterZoomIconAt;
     }
@@ -205,6 +205,7 @@ public partial class MainWindow
             Prefs();
         };
         TimelineFitButton.Click += (_, _) => Timeline.FitAll();
+        NewTrackButton.Click += (_, _) => ShowNewTrackMenu();
         TimelineFitButton.IsEnabled = !Timeline.FitMode;
         Timeline.FitModeChanged += fit => TimelineFitButton.IsEnabled = !fit;
         TrackHeightSlider.ValueChanged += (_, e) => { if (!timelineSyncing) Timeline.SetTrackHeight(e.NewValue); };
@@ -738,9 +739,24 @@ public partial class MainWindow
         return closed;
     }
 
+    /// <summary>The new track menu at a point of the timeline: the empty space under the rows, by right click.</summary>
     void ShowNewTrackMenu(Point point)
     {
-        if (store == null || restoring) return;
+        if (NewTrackItems() is { } list) OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
+    }
+
+    /// <summary>The new track menu above the + button at the foot of the headers; a second press closes it.</summary>
+    void ShowNewTrackMenu()
+    {
+        if (PressClosedMenuOf(NewTrackButton) || NewTrackItems() is not { } list) return;
+        var menu = Popup(list, 240);
+        menu.Placement = PlacementMode.TopEdgeAlignedLeft;
+        OpenAnchoredMenu(menu, NewTrackButton);
+    }
+
+    List<object>? NewTrackItems()
+    {
+        if (store == null || restoring) return null;
         bool enabled = !store.ReadOnly;
         var list = new List<object>();
         string tip = Loc.T("menu.emptyTrack.hint");

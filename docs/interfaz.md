@@ -515,8 +515,8 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   efectos (`PlaybackEngine.SetLoopRange`). Si arrancás después de B, sigue hasta el final y desde ahí vuelve a A.
 - **Clic derecho** (`ShowTimelineMenu`): sobre un clip, solo cosas del clip (dividir, duplicar, copiar, cortar, al inicio, corregir
   corte, restablecer, quitar clip); en el encabezado o en un tramo vacío del carril, solo cosas de la pista (panel de
-  video, renombrar, carpeta, guardar como plantilla, pegar en el cabezal, quitar pista); en la parte vacía de la columna de encabezados,
-  debajo de la última fila, el menú de "+ Nueva pista" (pedido del usuario). Mute y solo no van: están en el encabezado. Los
+  video, renombrar, carpeta, guardar como plantilla, pegar en el cabezal, quitar pista); en la parte vacía debajo de la última fila,
+  en los encabezados o en el timeline, el menú de "+ Nueva pista" (pedido del usuario). Mute y solo no van: están en el encabezado. Los
   menús no tienen tope de alto (sin scroll), salvo que la ventana sea más baja que el menú.
 - **Ganancia por clip**: `Clip.GainDb` (slider del inspector) y `Clip.GainCurve`, puntos en dB contados desde el sample
   0 de la toma (`ClipGainCurve`, así siguen pegados a las notas al mover, recortar o dividir). El clip seleccionado
@@ -546,8 +546,9 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   `SetZoom`, se mantiene el cabezal en su lugar) y altura de pista (40 a 320). Las filas scrollean por encima de la
   barra. Zooms fijos contados en tiempos (`TimelineView.ZoomPresetBeats`: un tiempo, 1 compás, 4, 16 y toda la
   canción), sin tecla de entrada (el usuario les sacó el 1 a 5 para las herramientas): se asignan en Atajos.
-- **"+ Nueva pista"** (pedido del usuario): fija al pie de la columna, justo encima de la barra de zoom (`AddRect`,
-  `AddH` = 36 px, `DrawAddButton`); las filas pasan por debajo y el scroll deja lugar para ver la última entera.
+- **"+ Nueva pista"** (pedido del usuario): un botón **+** al principio de la barra de zoom (`NewTrackButton`, tooltip con
+  el nombre y el atajo), así no tapa ninguna fila; el menú abre arriba del botón y se apaga mientras se graba. El scroll
+  deja `TailH` = 64 px vacíos debajo de la última fila, para el clic derecho con la vista llena.
 - **Alto por fila** (pedido del usuario): `Track.HeightScale` (múltiplo del alto general, así el slider sigue
   escalándola) / `Folder.Height` en px al alto general por defecto (`Track.DefaultHeight`) para la carpeta abierta y
   `Folder.HeightScale` (múltiplo, como la pista) para la plegada (null = el alto de siempre; el de la carpeta, abierta

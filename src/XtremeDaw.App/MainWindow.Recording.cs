@@ -285,6 +285,7 @@ public partial class MainWindow
                 recSilenced.Add(silenced);
             }
         Timeline.RecordingStartSec = startSec;
+        NewTrackButton.IsEnabled = false;
         Timeline.RecordingLanes = targets.Select(t => t == null ? tracks.Count : p.Tracks.IndexOf(t)).Concat(midiTargets.Select(t => p.Tracks.IndexOf(t))).ToHashSet();
         Status(notice ?? "");
         RefreshRecording();
@@ -341,6 +342,7 @@ public partial class MainWindow
             played = EndMidiTakes(startSec, endSec, discard || wasCountingIn);
             armedKey = "";
             Timeline.RecordingLanes = null;
+            NewTrackButton.IsEnabled = true;
             Timeline.SetPlayhead(startSec, true); // back to where the take started (the web: to 0)
             RefreshRecording();
         }

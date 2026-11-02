@@ -383,15 +383,20 @@
               <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#ffffff" />
               <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#ffffff" />
             </Border.Resources>
-            <Grid x:Name="TimelineFooterGrid" ColumnDefinitions="Auto,*,Auto,*,Auto" Margin="12,0,6,0">
-              <TextBlock x:Name="ZoomIcon" Classes="icon" Text="&#xE8A3;" FontSize="15" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="0,0,8,0" />
-              <Slider x:Name="ZoomSlider" Grid.Column="1" Minimum="0" Maximum="1" Value="0"
+            <Grid x:Name="TimelineFooterGrid" ColumnDefinitions="Auto,Auto,*,Auto,*,Auto" Margin="6,0,6,0">
+              <!-- new track (asked by the user): here it covers no row; the menu opens above it (MainWindow.Timeline.cs) -->
+              <Button x:Name="NewTrackButton" Classes="chip" Width="28" Height="28" MinHeight="0" Padding="0" Margin="0,0,8,0" CornerRadius="6"
+                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center" AutomationProperties.Name="{loc:T timeline.newTrack}">
+                <TextBlock Classes="icon" Text="&#xE710;" FontSize="13" />
+              </Button>
+              <TextBlock x:Name="ZoomIcon" Grid.Column="1" Classes="icon" Text="&#xE8A3;" FontSize="15" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="0,0,8,0" />
+              <Slider x:Name="ZoomSlider" Grid.Column="2" Minimum="0" Maximum="1" Value="0"
                       VerticalAlignment="Center" Margin="0,0,16,0" AutomationProperties.Name="{loc:T timeline.zoom}" />
-              <TextBlock x:Name="HeightIcon" Grid.Column="2" Classes="icon" Text="&#xE8FD;" FontSize="15" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="0,0,8,0" />
-              <Slider x:Name="TrackHeightSlider" Grid.Column="3" Minimum="40" Maximum="320" Value="64" TickFrequency="2" IsSnapToTickEnabled="True"
+              <TextBlock x:Name="HeightIcon" Grid.Column="3" Classes="icon" Text="&#xE8FD;" FontSize="15" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="0,0,8,0" />
+              <Slider x:Name="TrackHeightSlider" Grid.Column="4" Minimum="40" Maximum="320" Value="64" TickFrequency="2" IsSnapToTickEnabled="True"
                       VerticalAlignment="Center" AutomationProperties.Name="{loc:T timeline.height}" />
               <!-- native only: every track and folder back to the shared height (rows get their own by dragging their bottom edge) -->
-              <Button x:Name="ResetHeightsButton" Grid.Column="4" Classes="ghost" Width="30" Height="30" MinHeight="0" Padding="0" Margin="8,0,0,0"
+              <Button x:Name="ResetHeightsButton" Grid.Column="5" Classes="ghost" Width="30" Height="30" MinHeight="0" Padding="0" Margin="8,0,0,0"
                       HorizontalContentAlignment="Center" VerticalContentAlignment="Center" IsEnabled="False"
                       AutomationProperties.Name="{loc:T timeline.resetHeights}" ToolTip.Tip="{loc:T timeline.resetHeights.tip}">
                 <TextBlock Classes="icon" Text="&#xE72C;" FontSize="14" />
