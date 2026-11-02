@@ -71,6 +71,10 @@ public partial class MainWindow
         public string? BusId { get; init; }
         /// <summary>The track it is: only a track's sends have lanes.</summary>
         public LiveTrack? Track { get; init; }
+        /// <summary>Several picked tracks edited as one (<see cref="GroupRouter"/>): their channels; null = just this one.</summary>
+        public Func<IReadOnlyList<IRouted>>? Group { get; init; }
+        /// <summary>A group's identity, for what is rebuilt when it changes.</summary>
+        public string? Key { get; init; }
     }
 
     Router RouterOf(LiveTrack t) => new()
@@ -185,8 +189,14 @@ public partial class MainWindow
     /// <summary>The buses <paramref name="r"/> can send to or route into: all but itself and those its sound would come back through.</summary>
     List<Bus> Targets(Router r) => store == null || r.Get() is not { } x ? [] : [.. Buses.Where(b => ProjectBuses.CanFeed(store.Project, x, b.Id))];
 
-    /// <summary>The buses <paramref name="r"/> shows a send to: its list, without the ones taken out (<see cref="ProjectBuses.Shown"/>).</summary>
-    List<Bus> SendTargets(Router r) => store == null || r.Get() is not { } x ? [] : ProjectBuses.Shown(store.Project, x);
+    /// <summary>The buses <paramref name="r"/> shows a send to: its list, without the ones taken out (<see cref="ProjectBuses.Shown"/>); of a group, the ones all of them have.</summary>
+    List<Bus> SendTargets(Router r)
+    {
+        if (store == null || r.Get() is not { } x) return [];
+        var shown = ProjectBuses.Shown(store.Project, x);
+        if (r.Group is { } group) foreach (var other in group()) shown = [.. shown.Intersect(ProjectBuses.Shown(store.Project, other))];
+        return shown;
+    }
 
     /// <summary>
     /// The buses <paramref name="r"/> can send to, each with a check when it is in its list (asked by the user: not every
@@ -314,7 +324,8 @@ public partial class MainWindow
             var names = new List<string> { Loc.T("route.master") };
             foreach (var b in Targets(r)) { ids.Add(b.Id); names.Add(b.Name); }
             select.SetItems([.. names]);
-            select.SelectedIndex = Math.Max(0, ids.IndexOf(r.Get()?.Output));
+            if (r.Group?.Invoke().Any(x => x.Output != r.Get()?.Output) == true) select.ShowNone(Loc.T("insp.mixed"));
+            else select.SelectedIndex = Math.Max(0, ids.IndexOf(r.Get()?.Output));
         });
         return select;
     }
@@ -528,11 +539,12 @@ public partial class MainWindow
     /// (<see cref="InspectorSendRow"/>). Rebuilt only when the track, its folder or the buses (a name, a slot, the routing between them)
     /// change; every other edit just refreshes them.
     /// </summary>
-    void RebuildInspectorSends(LiveTrack t)
+    /// <param name="group">The picked tracks' router, when several are edited together; they show the sends they share, and an output only if none is in a folder.</param>
+    void RebuildInspectorSends(LiveTrack t, Router? group = null)
     {
-        var router = RouterOf(t);
+        var router = group ?? RouterOf(t);
         var targets = SendTargets(router);
-        string key = $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(t)}|{t.Track.FolderId}|"
+        string key = (group?.Key ?? $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(t)}|{t.Track.FolderId}") + "|"
             + string.Join("/", targets.Select(b => b.Id + ":" + b.Name)) + "|" + Targets(router).Count;
         if (key == inspectorSendsKey) return;
         inspectorSendsKey = key;
@@ -545,19 +557,19 @@ public partial class MainWindow
         // where the track's output goes: its folder's, or its own choice
         var output = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(8, 0, 2, 4) };
         output.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("route.output.upper"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
-        if (t.Track.FolderId is { } folder)
+        if (group == null && t.Track.FolderId is { } folder)
         {
             var through = new TextBlock { Classes = { "dim" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             sendRefresh.Add(() => through.Text = Loc.T("route.throughFolder", FolderById(folder)?.Name ?? ""));
             ToolTip.SetTip(through, Loc.T("route.throughFolder.tip"));
             Grid.SetColumn(through, 1); output.Children.Add(through);
         }
-        else
+        else if (group == null || PickedGroup()?.All(x => x.Track.FolderId == null) == true)
         {
             var select = OutputSelect(router, sendRefresh);
             Grid.SetColumn(select, 1); output.Children.Add(select);
         }
-        inspectorSends.Children.Add(output);
+        if (output.Children.Count > 1) inspectorSends.Children.Add(output);
 
         foreach (var bus in targets) inspectorSends.Children.Add(InspectorSendRow(router, bus));
         sendsTray.Set(targets.Count, Targets(router).Count > 0 ? AddSendButton(router) : null);
@@ -608,10 +620,17 @@ public partial class MainWindow
         {
             var (level, on, _) = S();
             bool lit = on && level > 0;
+            // tracks edited together that don't share it: the bar says so instead of a number
+            var others = router.Group?.Invoke().Select(x => ProjectBuses.SendOf(x, id)).ToList();
+            bool mixed = others?.Any(s => s.Level != level || s.On != on) == true;
+            bool mixedPre = others?.Any(s => s.Pre != others[0].Pre) == true;
             bar.Value = level;
             bar.Lit = on;
-            bar.Readout = $"{level * 100:0}%";
-            ToolTip.SetTip(bar, $"{Loc.T("mix.list.send.tip", bus.Name, $"{level * 100:0}")} · {SendDb(level)}");
+            bar.Opacity = mixed ? 0.6 : 1;
+            bar.Readout = mixed ? Loc.T("insp.mixed") : $"{level * 100:0}%";
+            ToolTip.SetTip(bar, mixed ? Loc.T("insp.mixed") : $"{Loc.T("mix.list.send.tip", bus.Name, $"{level * 100:0}")} · {SendDb(level)}");
+            pre.Content = mixedPre ? "–" : "PRE";
+            if (mixedPre) ToolTip.SetTip(pre, Loc.T("insp.mixed"));
             FxIcon.SetColor(icon, lit ? Palette.Accent : Palette.Faint);
             name.Foreground = lit ? Palette.Fg : Palette.Faint;
             // like an effect's panel: a step above the inspector, sinking back while it is off

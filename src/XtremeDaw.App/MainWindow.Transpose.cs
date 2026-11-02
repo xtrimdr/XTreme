@@ -240,11 +240,12 @@ public partial class MainWindow
             }), TaskScheduler.Default);
     }
 
-    /// <summary>The selected track's note: how far its transpose is, hidden when it plays what it should. The
-    /// channel's tags (timeline header, mixer strip) show the same progress.</summary>
+    /// <summary>The selected track's note (or the picked ones', together): how far its transpose is, hidden when it plays
+    /// what it should. The channel's tags (timeline header, mixer strip) show the same progress.</summary>
     void RefreshTransposeNote()
     {
-        var progress = sel == null ? null : TransposeProgress(sel);
+        var working = PickTargets().Select(TransposeProgress).OfType<float>().ToList();
+        float? progress = working.Count == 0 ? null : working.Average();
         RefreshStretchToast();
         transposeNote.IsVisible = progress != null;
         if (progress is { } p) transposeNote.Text = Loc.T("insp.transpose.working", $"{p * 100:0}");

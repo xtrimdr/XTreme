@@ -206,6 +206,15 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   `takeSections`; lo del clip (Sincronización, Clip, Encuadre y "Quitar del timeline") va aparte, en `clipSections`
   con sus refrescos en `clipRefresh`, y aparece solo con un clip. Debajo del canal vacío, cómo llenarlo y "Quitar
   pista". Una pista MIDI sigue con su panel propio.
+- **Con varias pistas elegidas** (`MainWindow.InspectorGroup.cs`, pedido del usuario; Ctrl o Shift+clic en los
+  encabezados): en lugar del nombre, un aviso ("3 pistas · los cambios se aplican a todas") y solo lo común, de audio y
+  MIDI mezcladas: Mezcla, Salida (si ninguna está en una carpeta), los envíos a los buses que tienen todas y Transponer;
+  "En el video" solo sin pistas MIDI. Efectos, clips, el instrumento y la automatización son de cada pista y no se
+  muestran. Cada control pone el mismo valor en todas (`EditPicked`, `GroupRouter`), en un solo paso de deshacer por
+  gesto (`EditTracks`). Un valor que no comparten dice "Varios" con el control atenuado (un slider, `InspectorSlider.Set`;
+  la barra de un envío; la salida), "En el video" queda indeterminado, el PRE muestra "–" y Mezcla dice "Mute en 2 de 3".
+  Mute (y M y S del teclado) prende todas salvo que ya estén todas. Las pistas bloqueadas quedan afuera, como en toda
+  edición de varios clips, y el aviso dice cuántas; si lo están todas, los controles quedan deshabilitados.
 - **Las tarjetas de efectos y envíos arrancan plegadas** (pedido del usuario: unos pocos llenaban el inspector):
   `Section(..., card: true)` las hace tarjetas compactas (encabezado de 36, márgenes chicos) y se recuerdan las que
   abriste (`"open:" + título` entre las plegadas). Plegada, al lado del título dicen lo suyo en mono
@@ -647,8 +656,10 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
 - **Varias pistas juntas** (pedido del usuario): Ctrl+clic en un encabezado suma o saca esa pista, Shift+clic marca
   el rango desde la última clickeada (`TimelineView.picked`, `Pick`); la seleccionada (la del inspector) es la última
   tocada. Arrastrar la manija de una de ellas las lleva a todas apiladas en su orden (`dragIds`, `BlockTop`) y caen
-  juntas (`TrackFolders.Move` con varias); el menú "Carpeta" del clic derecho sobre una de ellas también actúa sobre
-  todas. Un clic común vuelve a una sola.
+  juntas (`TrackFolders.Move` con varias). El clic derecho sobre una de ellas abre el menú de todas (pedido del
+  usuario; `TrackGroupItems`, también en el mixer): video, bloquear, Carpeta y "Quitar N pistas". Quitar también va por
+  Supr y el tacho, en un solo paso de deshacer; las que tienen algo bloqueado se quedan (`RemoveTracks`). Un clic común
+  vuelve a una sola.
 - **Quitar una carpeta** con pistas adentro pregunta (`MainWindow.RemoveFolder`): "Solo la carpeta" (las pistas
   quedan afuera) o "La carpeta y sus pistas" (`TrackFolders.Remove(…, withTracks)`); vacía se quita sin preguntar.
 - **Separadores** (`Folder.Separator`, pedido del usuario): una fila de `SeparatorH` = 22 px con la manija, el nombre en su

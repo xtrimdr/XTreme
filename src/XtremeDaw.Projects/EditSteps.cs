@@ -105,6 +105,8 @@ public static class EditSteps
         "track-solo-on" => T("step.n.soloOn", "Solo en {0} pistas", n),
         "track-solo-off" => T("step.n.soloOff", "Le sacaste el solo a {0} pistas", n),
         "track-volume" => T("step.n.volume", "Volumen de {0} pistas", n),
+        "track-pan" => T("step.n.pan", "Paneo de {0} pistas", n),
+        "track-transpose" => T("step.n.transpose", "Transponer {0} pistas", n),
         "track-look" => T("step.n.look", "Color de {0} pistas", n),
         "track-folder" => T("step.n.folder", "Cambiaste de carpeta {0} pistas", n),
         "track-lock" => T("step.n.lock", "Bloqueo de {0} pistas", n),

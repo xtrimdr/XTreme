@@ -124,6 +124,7 @@ public partial class MainWindow : Window
             BusSelectionLost();
             ShowTrack(i >= 0 && i < tracks.Count ? tracks[i] : null);
         };
+        Timeline.TracksPicked += RefreshInspectorText;
         Preview.ClipSelected += (track, clip) => Timeline.SelectClip(tracks.IndexOf(track), clip.Clip.Id);
         Preview.FramingRequested += (clip, zoom, x, y) =>
         {
@@ -764,10 +765,10 @@ public partial class MainWindow : Window
                 TunerToggle.IsChecked = TunerToggle.IsChecked != true;
                 break;
             case "mute" when sel != null:
-                Edit(t => t.Channel.Muted = !t.Channel.Muted, "mute");
+                TogglePicked(false);
                 break;
             case "solo" when sel != null:
-                Edit(t => t.Channel.Solo = !t.Channel.Solo, "solo");
+                TogglePicked(true);
                 break;
             // a hidden panel comes back first, as it was; shown, the key folds or opens it
             case "leftPanel" when !InspectorBar.IsVisible:

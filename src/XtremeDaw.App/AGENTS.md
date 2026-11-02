@@ -17,8 +17,8 @@ sus reglas en [Controls/AGENTS.md](Controls/AGENTS.md).
 - **Un efecto, un panel** (pedido del usuario): sus controles salen de `FxBody` en todo lugar; lo que es de un solo
   lugar (medidores de reducción, gráfico del multibanda) va alrededor, no adentro.
 - No hay MVVM ni bindings: code-behind con controles con nombre (`x:Name`). Las ediciones del inspector pasan por
-  `Edit(t => ...)` (marca sucio, refresca textos, redibuja el timeline); el flag `syncing` evita que llenar el
-  inspector dispare ediciones.
+  `Edit(t => ...)` (marca sucio, refresca textos, redibuja el timeline), o `EditPicked` en lo común a varias pistas
+  elegidas (`MainWindow.InspectorGroup.cs`); el flag `syncing` evita que llenar el inspector dispare ediciones.
 
 ## Textos (`Loc`)
 

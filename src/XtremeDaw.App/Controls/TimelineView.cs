@@ -516,8 +516,12 @@ public sealed partial class TimelineView : Control
     {
         picked.Clear();
         if (ids.Count > 1) foreach (var id in ids) picked.Add(id);
+        TracksPicked?.Invoke();
         InvalidateVisual();
     }
+
+    /// <summary>The window picked tracks again without changing the selected one.</summary>
+    public event Action? TracksPicked;
 
     /// <summary>The clips caught by the selection box, by id (empty or one = a plain selection).</summary>
     public IReadOnlyCollection<string> BoxedClipIds => boxed.Count > 1 ? boxed : [];

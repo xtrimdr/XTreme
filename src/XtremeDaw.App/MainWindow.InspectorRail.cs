@@ -32,8 +32,10 @@ public partial class MainWindow
     /// groups; empty when there's nothing to show.</summary>
     List<string> RailSections()
     {
-        if (sel == null || sel.Track.IsMidi) return [];
-        List<string> list = ["Mezcla", RailBreak, .. chainSections, RailBreak, .. sendSections, RailBreak, "Transponer"];
+        bool group = PickedGroup() != null;
+        if (sel == null || sel.Track.IsMidi && !group) return [];
+        // several tracks picked share no effects (MainWindow.InspectorGroup.cs)
+        List<string> list = ["Mezcla", RailBreak, .. group ? [] : chainSections, RailBreak, .. sendSections, RailBreak, "Transponer"];
         list.RemoveAll(t => t != RailBreak && !sectionLooks.ContainsKey(t));
         // an empty group leaves no line of its own
         for (int i = list.Count - 1; i >= 0; i--)

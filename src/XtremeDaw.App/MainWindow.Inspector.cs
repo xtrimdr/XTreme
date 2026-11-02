@@ -243,10 +243,10 @@ public partial class MainWindow
     static string SendDb(double v) => v <= 0 ? "-∞ dB" : Db(20 * Math.Log10(v));
 
     InspectorSlider Slider(StackPanel host, string label, double min, double max, double step, double reset,
-        Func<double> get, Action<double> set, Func<double, string> format, string? hint = null, Func<double>? maximum = null, List<Action>? refresh = null)
+        Func<double> get, Action<double> set, Func<double, string> format, string? hint = null, Func<double>? maximum = null, List<Action>? refresh = null, Func<bool>? mixed = null)
     {
         var slider = new InspectorSlider(label, min, max, step, reset, format, v => { if (!syncing) set(v); }, hint);
-        host.Children.Add(slider); (refresh ?? inspectorRefresh).Add(() => slider.Set(get(), maximum?.Invoke())); return slider;
+        host.Children.Add(slider); (refresh ?? inspectorRefresh).Add(() => slider.Set(get(), maximum?.Invoke(), mixed?.Invoke() == true ? Loc.T("insp.mixed") : null)); return slider;
     }
     void ClipEdit(Action<Clip, Media?> edit, string key)
     {
@@ -309,6 +309,7 @@ public partial class MainWindow
         Inspector.Children.Add(noSelection);
         takeHead.Child = new StackPanel { Children = { header, takeInfo, takeFacts } };
         Inspector.Children.Add(takeHead);
+        InitGroupInspector();
         var recordHint = new TextBlock { FontSize = 12, Foreground = Palette.Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
         recordHint.Inlines!.Add(new Avalonia.Controls.Documents.Run(Loc.T("insp.empty.a")));
         recordHint.Inlines.Add(new Avalonia.Controls.Documents.Run("R") { FontFamily = Palette.Mono.FontFamily, Foreground = Palette.Fg });
@@ -319,17 +320,39 @@ public partial class MainWindow
         removeEmpty.Click += async (_, _) => await DeleteTimelineSelection(); emptySections.Children.Add(removeEmpty);
         // an empty track shows its channel too, with how to fill it and its remove button below
         Inspector.Children.Add(takeSections); Inspector.Children.Add(clipSections); Inspector.Children.Add(emptySections);
-        var mix = Section("Mezcla", "\uE9E9", action: InspectorIcon("\uE74F", Loc.T("insp.mute.tip"), () => Edit(t => t.Channel.Muted = !t.Channel.Muted, "mute")));
-        var volumeSlider = Slider(mix, Loc.T("insp.volume"), 0, 1.5, 0.01, 1, () => sel!.Channel.Volume, v => Edit(t => t.Channel.Volume = v, "volume"), v => $"{v * 100:0}%");
-        AutomateOn(volumeSlider, () => sel, AutoTarget.Volume, k => { syncing = true; volumeSlider.Set(Fader.ToVol(k), null); syncing = false; });
-        var panSlider = Slider(mix, Loc.T("insp.pan"), -1, 1, 0.05, 0, () => sel!.Channel.Pan, v => Edit(t => t.Channel.Pan = Math.Abs(v) < 0.04 ? 0 : v, "pan"), v => v == 0 ? "C" : $"{(v < 0 ? "L" : "R")} {Math.Abs(v) * 100:0}");
-        AutomateOn(panSlider, () => sel, AutoTarget.Pan, k => { syncing = true; panSlider.Set(k * 2 - 1, null); syncing = false; });
+        var mix = Section("Mezcla", "\uE9E9", action: InspectorIcon("\uE74F", Loc.T("insp.mute.tip"), () => TogglePicked(false)));
+        var volumeSlider = Slider(mix, Loc.T("insp.volume"), 0, 1.5, 0.01, 1, () => PickLead.Channel.Volume, v => EditPicked(t => t.Channel.Volume = v, "volume"), v => $"{v * 100:0}%",
+            mixed: () => PicksDiffer(t => t.Channel.Volume));
+        AutomateOn(volumeSlider, () => SingleTrack, AutoTarget.Volume, k => { syncing = true; volumeSlider.Set(Fader.ToVol(k), null); syncing = false; });
+        var panSlider = Slider(mix, Loc.T("insp.pan"), -1, 1, 0.05, 0, () => PickLead.Channel.Pan, v => EditPicked(t => t.Channel.Pan = Math.Abs(v) < 0.04 ? 0 : v, "pan"), v => v == 0 ? "C" : $"{(v < 0 ? "L" : "R")} {Math.Abs(v) * 100:0}",
+            mixed: () => PicksDiffer(t => t.Channel.Pan));
+        AutomateOn(panSlider, () => SingleTrack, AutoTarget.Pan, k => { syncing = true; panSlider.Set(k * 2 - 1, null); syncing = false; });
+        // several tracks picked: the section's mute shows no state of its own, so this says how many are muted
+        mix.Children.Add(groupMuted);
+        inspectorRefresh.Add(() =>
+        {
+            var group = PickedGroup();
+            int muted = group?.Count(t => t.Channel.Muted) ?? 0;
+            groupMuted.IsVisible = muted > 0;
+            if (group != null) groupMuted.Text = Loc.T("insp.multi.muted", muted, group.Count);
+        });
         // native only: a track that sounds without a panel (a backing track, a click…)
         var inVideo = new CheckBox { Content = Loc.T("insp.inVideo"), FontSize = 12 };
         ToolTip.SetTip(inVideo, Loc.T("insp.inVideo.tip"));
-        inVideo.IsCheckedChanged += async (_, _) => { if (!syncing && sel != null) await SetInVideo(sel, inVideo.IsChecked == true); };
-        inspectorRefresh.Add(() => inVideo.IsChecked = sel!.Track.Video);
-        mix.Children.Add(inVideo);
+        inVideo.IsCheckedChanged += async (_, _) =>
+        {
+            if (syncing || sel == null) return;
+            if (PickedGroup() == null) await SetInVideo(sel, inVideo.IsChecked == true);
+            else await SetInVideo(PickTargets(), inVideo.IsChecked == true);
+        };
+        // its own row: videoOnly already rules the box itself, and a MIDI track has no panel
+        var inVideoRow = new Panel { Children = { inVideo } };
+        inspectorRefresh.Add(() =>
+        {
+            inVideoRow.IsVisible = PickTargets().All(t => !t.Track.IsMidi);
+            inVideo.IsChecked = PicksDiffer(t => t.Track.Video ? 1 : 0) ? null : PickLead.Track.Video;
+        });
+        mix.Children.Add(inVideoRow);
         videoOnly.Add(inVideo);
         // the insert slots, in their order (RebuildInspectorChain), and where the track goes and its sends, one section
         // per bus (RebuildInspectorSends; every send can be taken before the fader: its PRE chip, in the section's
@@ -345,9 +368,9 @@ public partial class MainWindow
         chainTrayAt = takeSections.Children.IndexOf(chainTray);
         // native only: the track's pitch, same length (MainWindow.Transpose.cs). A card of its own beside the other
         // effects (asked by the user); it reads as off (dimmed) while the track plays at its original pitch.
-        var transpose = Section("Transponer", FxIcon.Transpose, () => sel!.Track.Transpose != 0);
+        var transpose = Section("Transponer", FxIcon.Transpose, () => PickTargets().Any(t => t.Track.Transpose != 0));
         Slider(transpose, Loc.T("insp.transpose.semis"), -PitchShifter.MaxSemitones, PitchShifter.MaxSemitones, 1, 0,
-            () => sel!.Track.Transpose, SetTranspose, TransposeText, Loc.T("insp.transpose.tip"));
+            () => PickLead.Track.Transpose, SetTranspose, TransposeText, Loc.T("insp.transpose.tip"), mixed: () => PicksDiffer(t => t.Track.Transpose));
         InitTranspose(transpose);
         InitClipInspector();
         InitMidiInspector();
@@ -545,6 +568,8 @@ public partial class MainWindow
         {
             takeName.Text = sel?.Track.Name ?? "";
             var c = SelectedInspectorClip;
+            var group = PickedGroup();
+            RefreshGroupNote(group);
             var folder = sel == null ? SelectedFolder : null;
             var bus = sel == null && folder == null ? SelectedBus : null;
             noSelection.IsVisible = sel == null && folder == null && bus == null;
@@ -555,11 +580,12 @@ public partial class MainWindow
             {
                 foreach (var refresh in busRefresh) refresh();
                 PlaceInspectorChain(busChain);
+                chainTray.IsVisible = true;
                 RebuildInspectorChain(SlotsOf(bus), bus);
                 foreach (var refresh in chainRefresh) refresh();
             }
             noSelectionHint.Text = tracks.Any(t => t.Track.HasContent) ? Loc.T("insp.none.hint") : Loc.T("insp.none.empty");
-            takeHead.IsVisible = sel != null;
+            takeHead.IsVisible = sel != null && group == null;
             takeBadge.Set(sel?.Track, sel == null ? 0 : tracks.IndexOf(sel) + 1, c != null, !AudioOnly);
             takeInfo.Text = sel == null ? "" : c == null ? Loc.T("insp.trackEmpty") : c.Offline ? Loc.T("clip.offline") : "";
             takeInfo.IsVisible = takeInfo.Text != "";
@@ -570,9 +596,9 @@ public partial class MainWindow
                 takeFormat.Text = $"WAV {c.Audio!.SampleRate / 1000.0:0} kHz";
                 takeChannels.Text = Loc.T("insp.stereo");
             }
-            emptySections.IsVisible = sel != null && c == null && !sel.Track.IsMidi;
-            midiPanel.IsVisible = sel is { Track.IsMidi: true };
-            if (sel is { Track.IsMidi: true } midi)
+            emptySections.IsVisible = sel != null && c == null && !sel.Track.IsMidi && group == null;
+            midiPanel.IsVisible = sel is { Track.IsMidi: true } && group == null;
+            if (sel is { Track.IsMidi: true } midi && group == null)
             {
                 EnsurePlugins();
                 RefreshMidiInspector();
@@ -582,19 +608,25 @@ public partial class MainWindow
                 foreach (var refresh in sendRefresh) refresh();
             }
             // an empty audio track is still a channel: its mix, effects and sends show (only the clip's sections wait)
-            bool channel = sel is { Track.IsMidi: false };
+            // several tracks, of any kind: only what they all have (MainWindow.InspectorGroup.cs)
+            bool channel = sel is { Track.IsMidi: false } || group != null;
             takeSections.IsVisible = channel;
-            clipSections.IsVisible = channel && c != null;
+            takeSections.IsEnabled = group == null || group.Any(t => !t.Track.Locked);
+            clipSections.IsVisible = channel && c != null && group == null;
             if (collapseAll != null) collapseAll.IsVisible = channel;
             if (channel)
             {
                 PlaceInspectorChain(takeSections);
-                RebuildInspectorChain(SlotsOf(sel!), sel!);
+                chainTray.IsVisible = group == null;
+                if (group == null) RebuildInspectorChain(SlotsOf(sel!), sel!);
                 PlaceInspectorSends(takeSections);
-                RebuildInspectorSends(sel!);
+                RebuildInspectorSends(sel!, group == null ? null : GroupRouter(group));
                 foreach (var refresh in inspectorRefresh) refresh();
-                if (c != null) foreach (var refresh in clipRefresh) refresh();
-                foreach (var refresh in chainRefresh) refresh();
+                if (group == null)
+                {
+                    if (c != null) foreach (var refresh in clipRefresh) refresh();
+                    foreach (var refresh in chainRefresh) refresh();
+                }
                 foreach (var refresh in sendRefresh) refresh();
             }
         }

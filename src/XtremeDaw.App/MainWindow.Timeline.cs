@@ -472,6 +472,7 @@ public partial class MainWindow
                 return trackId;
             }, "clips-removed");
         }
+        if (Timeline.PickedTrackIds is { Count: > 1 } many) return RemoveTracks([.. many]);
         if (Timeline.SelectedMidiId is { } midi) return RemoveMidiClip(midi);
         string? clipId = Timeline.SelectedClipId ?? sel.Clips.FirstOrDefault()?.Clip.Id;
         if (clipId != null ? ClipEditing.IsLocked(store.Project, clipId) : ClipEditing.HasLock(sel.Track))
@@ -775,13 +776,23 @@ public partial class MainWindow
         list.Add(presets);
         list.Add(new Separator());
         list.Add(MenuAction(Loc.T("menu.import"), PickAudioToImport, enabled: CanImport(), icon: "", tip: Loc.T("menu.import.hint")));
-        OpenTimelineMenu(Popup(list, 240), point, 200);
+        return list;
     }
 
     /// <summary>The trash can of a track's header asks first, right there: one click took the track with its clips away.</summary>
     void AskRemoveTrack(string id, Point at)
     {
         if (store == null || restoring || store.ReadOnly || tracks.FirstOrDefault(t => t.Track.Id == id) is not { } track) return;
+        if (TrackGroup(track) is { } group)
+        {
+            OpenTimelineMenu(Popup(
+            [
+                new MenuItem { Header = Loc.T("track.remove.askMany", group.Count), IsEnabled = false, FontSize = 11 },
+                MenuAction(Loc.T("track.remove.yes"), () => RemoveTracks(group), danger: true, tip: Loc.T("track.remove.yes.tip")),
+                MenuAction(Loc.T("track.remove.no"), () => Task.CompletedTask),
+            ], 240), at, 110);
+            return;
+        }
         if (ClipEditing.HasLock(track.Track))
         {
             ToastLocked(track.Track);
@@ -795,6 +806,64 @@ public partial class MainWindow
             MenuAction(Loc.T("track.remove.no"), () => Task.CompletedTask),
         };
         OpenTimelineMenu(Popup(list, 240), at, 110);
+    }
+
+    /// <summary>The tracks picked together with this one, in order, or null when it is on its own: what acts on a track then acts on them all.</summary>
+    List<string>? TrackGroup(LiveTrack track) =>
+        Timeline.PickedTrackIds is { Count: > 1 } ids && ids.Contains(track.Track.Id) ? [.. ids] : null;
+
+    /// <summary>Removes the picked tracks at once (one step to undo). The ones with something locked stay, as a single track would.</summary>
+    Task RemoveTracks(List<string> ids)
+    {
+        var gone = ids.Where(id => tracks.FirstOrDefault(t => t.Track.Id == id) is { } t && !ClipEditing.HasLock(t.Track)).ToList();
+        if (gone.Count < ids.Count) Status(Loc.T("lock.removeMany.tip"));
+        if (gone.Count == 0) return Task.CompletedTask;
+        return EditTimeline(p =>
+        {
+            foreach (var id in gone) ClipEditing.RemoveTrack(p, id);
+            return null;
+        }, "track-removed");
+    }
+
+    /// <summary>The menu of a track picked with others: only what makes sense for all of them, each entry acting on all.</summary>
+    List<object> TrackGroupItems(LiveTrack track, List<string> group)
+    {
+        bool enabled = store is { ReadOnly: false };
+        var picked = tracks.Where(t => group.Contains(t.Track.Id)).ToList();
+        var audio = picked.Where(t => !t.Track.IsMidi).ToList();
+        var list = new List<object>();
+        async Task EditGroup(Action<Project> edit, string type)
+        {
+            await EditTimeline(p => { edit(p); return track.Track.Id; }, type);
+            Timeline.PickTracks(group);
+        }
+        void Each(Project p, IEnumerable<LiveTrack> those, Action<Track> set)
+        {
+            foreach (var t in those)
+                if (p.Tracks.Find(x => x.Id == t.Track.Id) is { } found) set(found);
+        }
+        if (!AudioOnly && audio.Count > 0)
+        {
+            bool shown = audio.All(t => t.Track.Video);
+            list.Add(MenuAction(Loc.T(shown ? "menu.hideVideo.many" : "menu.showVideo.many", audio.Count), async () =>
+            {
+                await EditGroup(p => Each(p, audio, t => t.Video = !shown), "track-video");
+                await OpenMissingVideos(store!);
+            }, enabled: enabled, icon: ""));
+        }
+        if (audio.Count > 0)
+        {
+            bool locked = audio.All(t => t.Track.Locked);
+            list.Add(MenuAction(Loc.T(locked ? "lock.tracks.off" : "lock.tracks.on", audio.Count), () => EditGroup(p => Each(p, audio, t => t.Locked = !locked), locked ? "track-unlocked" : "track-locked"),
+                enabled: enabled, icon: locked ? "" : "", tip: Loc.T("lock.track.tip")));
+            list.Add(new Separator());
+        }
+        list.Add(FolderSubmenu(track, enabled));
+        list.Add(new Separator());
+        int free = picked.Count(t => !ClipEditing.HasLock(t.Track));
+        list.Add(MenuAction(Loc.T("menu.removeTracks", free), () => RemoveTracks(group), "Supr", enabled && free > 0, danger: true,
+            tip: free < group.Count ? Loc.T("lock.removeMany.tip") : null));
+        return list;
     }
 
     /// <summary>The "nueva pista" shortcut: audio-only projects add the track at once; in video mode it asks audio+video or audio only.</summary>
@@ -812,7 +881,8 @@ public partial class MainWindow
         bool enabled = !store.ReadOnly;
         // A clip under the pointer gets the clip menu; the header or an empty stretch of lane, the track menu.
         var clip = clicked;
-        var list = new List<object> { new MenuItem { Header = track.Track.Name, IsEnabled = false, FontSize = 11 } };
+        var group = clip == null ? TrackGroup(track) : null;
+        var list = new List<object> { new MenuItem { Header = group != null ? Loc.T("menu.tracks.title", group.Count) : track.Track.Name, IsEnabled = false, FontSize = 11 } };
         Task Command(Action<Project> action, string type) => EditTimeline(p => { action(p); return track.Track.Id; }, type, clip?.Clip.Id);
         if (point.X > Timeline.HeaderW && Timeline.Range is { } range && range.TrackIds.Contains(track.Track.Id))
         {
@@ -930,6 +1000,7 @@ public partial class MainWindow
     /// its color and icon, for the strip (the timeline's header has its badge for that).</summary>
     List<object> TrackMenuItems(LiveTrack track, Control anchor, Point? point, Action rename, bool look = false)
     {
+        if (TrackGroup(track) is { } group) return TrackGroupItems(track, group);
         bool enabled = store is { ReadOnly: false };
         var list = new List<object>();
         list.Add(MenuAction(Loc.T("menu.paste"), PasteClips, Shortcuts.Label("paste"), enabled && clipboard != null, icon: "", tip: Loc.T("menu.paste.tip")));

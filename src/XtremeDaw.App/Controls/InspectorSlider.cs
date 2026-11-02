@@ -47,13 +47,18 @@ public sealed class InspectorSlider : StackPanel
         Children.Add(bottom);
     }
 
-    public void Set(double v, double? max = null)
+    /// <param name="mixed">What it reads while the tracks edited together don't share a value: the handle dims, it says no number.</param>
+    public void Set(double v, double? max = null, string? mixed = null)
     {
         filling = true;
         if (max is { } m) Range.Maximum = Math.Max(Range.Minimum + 0.01, m);
         Range.Value = v;
+        Range.Opacity = mixed == null ? 1 : MixedOpacity;
         Range.InvalidateVisual();
-        value.Text = format(v);
+        value.Text = mixed ?? format(v);
         filling = false;
     }
+
+    /// <summary>The slider while its handle stands for no value in particular.</summary>
+    const double MixedOpacity = 0.45;
 }
