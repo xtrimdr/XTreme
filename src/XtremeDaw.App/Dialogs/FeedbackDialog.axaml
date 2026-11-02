@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:XtremeDaw.App"
+             x:Class="XtremeDaw.App.Dialogs.FeedbackDialog"
+             AutomationProperties.Name="{loc:T feedback.title}"
+             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+
+  <!-- same frame as UnsavedDialog: a bug or a suggestion, sent from GitHub's page (IssueReport) -->
+  <Border Width="500" HorizontalAlignment="Center" VerticalAlignment="Center"
+          Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <StackPanel Margin="24,22,24,20" Spacing="12">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <TextBlock Classes="icon" Text="&#xE939;" FontSize="20" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+          <TextBlock Text="{loc:T feedback.title}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </StackPanel>
+        <Border Grid.Column="1" Classes="seg">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <ToggleButton x:Name="BugButton" Classes="seg" IsChecked="True" Content="{loc:T feedback.bug}" />
+            <ToggleButton x:Name="IdeaButton" Classes="seg" Content="{loc:T feedback.idea}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <TextBox x:Name="TitleBox" Classes="field" MaxLength="120" />
+      <TextBox x:Name="DescriptionBox" Classes="field" Height="130" Padding="12,8" AcceptsReturn="True" TextWrapping="Wrap"
+               VerticalContentAlignment="Top" FontSize="13" />
+
+      <StackPanel Spacing="4">
+        <CheckBox x:Name="FactsBox" Content="{loc:T feedback.facts}" FontSize="12" IsChecked="True" />
+        <TextBlock x:Name="FactsText" Classes="dim mono" FontSize="11" Margin="28,0,0,0" LineHeight="16" />
+      </StackPanel>
+
+      <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap" Text="{loc:T feedback.public}" />
+      <TextBlock x:Name="ProblemText" Classes="dim" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource Fg}" IsVisible="False" />
+
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Button x:Name="CancelButton" Classes="btn" Content="{loc:T transport.count.cancel}" />
+        <Button Grid.Column="2" x:Name="SendButton" Classes="btn primary" Padding="16,0" IsEnabled="False" Content="{loc:T feedback.send}" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

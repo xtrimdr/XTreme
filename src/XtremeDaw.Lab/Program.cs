@@ -47,6 +47,8 @@ static class Program
                 "camara" => CameraCommands.Run(a),
                 "sistema" => SystemCommands.Run(a),
                 "version" => VersionCommands.Run(a),
+                "reporte" => IssueCommands.Run(a),
+                "lista" => TestListCommands.Run(a),
                 "proyecto" => ProjectCommands.Run(a),
                 "midi" => MidiCommands.Run(a),
                 "vst" => VstCommands.Run(a),
@@ -189,6 +191,12 @@ static class Program
                                            y con qué placa de video exporta; --instalar-ffmpeg lo instala antes con
                                            winget, como el aviso de la ventana
               version                      esta versión contra la última release de GitHub (el aviso de "Acerca de")
+              reporte enlace "título" [--texto t] [--idea]
+                                           el enlace que abre "Enviar comentarios", sin abrir nada
+              reporte comprobar            comprueba ese enlace: textos, codificación y largo
+              lista [ver | agregar "qué probar" | arreglado número [--texto t]] --archivo pruebas\lista.json [--copia nombre]
+                                           la lista "Para probar" de las copias de prueba (lo usa tools\probar.ps1)
+              lista comprobar              comprueba la lista sobre un archivo temporal
               proyecto abrir    carpeta    abre un proyecto nativo y muestra pistas, avisos e historial
               proyecto versiones carpeta   lista las versiones guardadas, de más nueva a más vieja
               proyecto volver   carpeta n  restaura la versión n y conserva el estado actual en el historial (tomas y exportaciones quedan)

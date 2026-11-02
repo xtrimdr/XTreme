@@ -96,6 +96,15 @@ public partial class MainWindow : Window
             if (Projects.IsVisible || Export.IsVisible || Settings.IsVisible || RecordingBusy) return;
             About.Show();
         };
+        FeedbackButton.Click += (_, _) => OpenFeedback();
+        About.FeedbackRequested += OpenFeedback;
+        Feedback.Sent += copied => Toasts.Show(Loc.T(copied ? "feedback.copied" : "feedback.sent"));
+        Feedback.Dismissed += () =>
+        {
+            if (About.IsVisible) About.Focus();
+            else if (Projects.IsVisible) Projects.Focus();
+            else Timeline.Focus();
+        };
         HelpButton.Click += (_, _) => OpenHelp();
         Projects.HelpRequested += OpenHelp;
         HelpPanel.Dismissed += () => { if (Projects.IsVisible) Projects.Focus(); else Timeline.Focus(); };
@@ -577,7 +586,7 @@ public partial class MainWindow : Window
     {
         shortcutTips.AddRange(
         [
-            (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"), (VirtualKeysButton, Loc.T("sc.virtualKeys"), "virtualKeys"),
+            (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"), (NewTrackButton, Loc.T("timeline.newTrack"), "newTrack"), (VirtualKeysButton, Loc.T("sc.virtualKeys"), "virtualKeys"),
             (ToStartButton, Loc.T("transport.start.tip"), "toStart"), (LoopToggle, Loc.T("transport.loop.tip"), "loop"),(CountInToggle, Loc.T("transport.countin.tip"), "countIn"),
             (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (FitButton, Loc.T("transport.fit.tip"), "fit"), (HelpButton, Loc.T("help.title"), "help"),
         ]);

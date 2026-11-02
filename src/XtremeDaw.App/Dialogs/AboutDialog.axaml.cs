@@ -16,6 +16,7 @@ namespace XtremeDaw.App.Dialogs;
 public sealed partial class AboutDialog : UserControl
 {
     public event Action? Dismissed;
+    public event Action? FeedbackRequested;
 
     public AboutDialog()
     {
@@ -27,6 +28,7 @@ public sealed partial class AboutDialog : UserControl
             Directory.CreateDirectory(AppConfig.Dir);
             Explorer.Open(AppConfig.Dir);
         };
+        FeedbackButton.Click += (_, _) => FeedbackRequested?.Invoke();
         UpdateButton.Click += (_, _) => Explorer.Browse(updateUrl);
         UpdateCheckBox.IsChecked = UpdateCheck.Enabled;
         UpdateCheckBox.IsCheckedChanged += (_, _) =>

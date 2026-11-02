@@ -76,6 +76,11 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   release (`UpdateCheck`, en `XtremeDaw.Projects`; sin cuenta ni datos del usuario, y si falla no avisa nada). Una
   versión nueva sale en un toast con "Descargar" solo la primera vez (`config.json` "updateNotified"); después, solo
   en la campanita. La casilla "Avisarme cuando salga una versión nueva" lo apaga (`config.json` "checkUpdates": "off").
+- "Enviar comentarios" (`Dialogs/FeedbackDialog`, botón de la barra de título, entre Novedades y Ayuda, y de "Acerca de";
+  pedido del usuario): Error o Sugerencia, título, descripción y los datos que se agregan (versión, Windows, driver ASIO),
+  a la vista y con casilla. "Continuar en GitHub" abre el issue nuevo ya lleno (`IssueReport`): la app no tiene token y el
+  usuario lo envía con su cuenta. Lo que no entra en el enlace va por el portapapeles, con un toast. No abre grabando ni
+  sobre Configuración o Exportar. Lo escrito queda hasta que el navegador abrió.
 - FFmpeg solo aparece en la barra si falta ("FFmpeg no encontrado", `MainWindow.TopBar.cs`). Al abrir sin FFmpeg, y
   al hacer clic en ese chip, sale "Falta FFmpeg" (`Dialogs/FfmpegDialog`, pedido del usuario). Ofrece Instalar ahora
   (winget, `FfmpegSetup`, si está; se puede cerrar mientras instala y avisa con un toast), Abrir la página (gyan.dev),

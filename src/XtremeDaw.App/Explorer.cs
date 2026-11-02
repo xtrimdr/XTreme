@@ -22,11 +22,15 @@ public static class Explorer
         Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true, Verb = "open" })?.Dispose(),
         $"\"{folder}\"");
 
-    /// <summary>Opens a web page in the default browser; a failure (no browser set) is ignored.</summary>
-    public static void Browse(string url)
+    /// <summary>Opens a web page in the default browser; false when it couldn't (no browser set).</summary>
+    public static bool Browse(string url)
     {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose(); }
-        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+            return true;
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { return false; }
     }
 
     public static void Select(string file) => Launch(() =>

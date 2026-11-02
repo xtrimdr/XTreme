@@ -457,11 +457,13 @@ public partial class MainWindow
 
     // --- the keys -----------------------------------------------------------------------------------
 
+    /// <summary>Something on screen takes the keys ahead of the shortcuts.</summary>
+    bool DialogOpen => Unsaved.IsVisible || TempoAsk.IsVisible || Feedback.IsVisible || Stems.IsVisible || ComponentsHelp.IsVisible || Export.IsVisible || Settings.IsVisible || About.IsVisible || HelpPanel.IsVisible || News.IsVisible || Projects.IsVisible;
+
     /// <summary>Every tick: whether a key may play now, the same conditions as <see cref="OnKey"/> reaching <see cref="VirtualKeyDown"/>.</summary>
     void UpdateVirtualLive()
     {
-        bool open = Unsaved.IsVisible || Stems.IsVisible || ComponentsHelp.IsVisible || Export.IsVisible || Settings.IsVisible || About.IsVisible || HelpPanel.IsVisible || Projects.IsVisible;
-        virtualLive = VirtualKeysOn && !open && (FocusManager?.GetFocusedElement() as Visual)?.FindAncestorOfType<TextBox>(true) == null;
+        virtualLive = VirtualKeysOn && !DialogOpen && (FocusManager?.GetFocusedElement() as Visual)?.FindAncestorOfType<TextBox>(true) == null;
         ShowPluginBars();
     }
 
