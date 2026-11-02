@@ -8,7 +8,7 @@ Requirements, how to build, keyboard shortcuts, how it is built and `wtlab`. The
 
 - Windows 10/11, 64-bit.
 - An audio interface with an **ASIO** driver.
-- **FFmpeg** and **ffprobe** on the `PATH` (camera, video and export).
+- **FFmpeg** and **ffprobe** on the `PATH` or installed with winget (camera, video and export).
 - [.NET 10 SDK](https://dotnet.microsoft.com/) to build.
 
 ## Build and run

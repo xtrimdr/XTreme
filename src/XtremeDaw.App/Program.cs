@@ -13,6 +13,7 @@ static class Program
         SessionLog.Start(args);
         System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
         Audio.AudioWarmUp.Start();
+        XtremeDaw.Audio.FfmpegSetup.RefreshPath();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

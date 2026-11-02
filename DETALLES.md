@@ -8,7 +8,7 @@ Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `wtlab`. Lo g
 
 - Windows 10/11 de 64 bits.
 - Una interfaz de audio con driver **ASIO**.
-- **FFmpeg** y **ffprobe** en el `PATH` (cámara, video y exportación).
+- **FFmpeg** y **ffprobe** en el `PATH` o instalados con winget (cámara, video y exportación).
 - Para la preview, los DLL de **FFmpeg 9** (versión *shared*) en `lib\ffmpeg\` (`avcodec-63`, `avformat-63`,
   `avutil-61`, `swscale-10`, `swresample-7` y su `LICENSE`). No van en git: los baja `tools\get-ffmpeg.ps1` de
   [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) (`ffmpeg-n9.0-latest-win64-lgpl-shared-9.0.zip`,

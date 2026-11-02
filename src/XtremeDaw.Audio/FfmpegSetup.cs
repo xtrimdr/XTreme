@@ -12,7 +12,8 @@ public sealed record FfmpegInstallResult(bool Ready, int ExitCode, string Log);
 /// is missing the app offers to install it with winget (Gyan's build, the one ffmpeg.org links for Windows: it has
 /// libx264, LAME and the card encoders the export uses) or to open the download page. winget writes the new folder to
 /// the user's PATH in the registry, which a running process never sees, so <see cref="RefreshPath"/> reads it back
-/// and FFmpeg works without restarting the app.
+/// and FFmpeg works without restarting the app. That entry can also go missing while winget still counts the package
+/// as installed, and reinstalling then does nothing, so the folders winget unpacks to are searched too.
 /// </summary>
 public static class FfmpegSetup
 {
@@ -91,7 +92,8 @@ public static class FfmpegSetup
 
     /// <summary>
     /// Rebuilds this process' PATH from the machine's and the user's (as Windows keeps them now), keeping what only
-    /// this process had, so a program installed while the app runs is found by name.
+    /// this process had, so a program installed while the app runs is found by name. winget's FFmpeg folders go last:
+    /// one the user put on the PATH wins.
     /// </summary>
     public static void RefreshPath()
     {
@@ -107,7 +109,35 @@ public static class FfmpegSetup
                 if (!parts.Contains(dir, StringComparer.OrdinalIgnoreCase)) parts.Add(dir);
             }
         }
+        foreach (var dir in WingetFolders())
+            if (!parts.Contains(dir, StringComparer.OrdinalIgnoreCase)) parts.Add(dir);
         Environment.SetEnvironmentVariable("Path", string.Join(';', parts));
+    }
+
+    /// <summary>The <c>bin</c> folders of the FFmpeg packages winget unpacked (per user or per machine), newest first.</summary>
+    static IEnumerable<string> WingetFolders()
+    {
+        var found = new List<string>();
+        string[] roots =
+        [
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WinGet", "Packages"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WinGet", "Packages"),
+        ];
+        foreach (var root in roots)
+        {
+            try
+            {
+                if (!Directory.Exists(root)) continue;
+                foreach (var package in Directory.EnumerateDirectories(root, "*FFmpeg*"))
+                    foreach (var build in Directory.EnumerateDirectories(package))
+                    {
+                        string bin = Path.Combine(build, "bin");
+                        if (File.Exists(Path.Combine(bin, "ffmpeg.exe")) && File.Exists(Path.Combine(bin, "ffprobe.exe"))) found.Add(bin);
+                    }
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return found.OrderByDescending(Directory.GetLastWriteTimeUtc);
     }
 
     /// <summary>A winget line without its progress bar and spinner (they come as lines of their own through a pipe).</summary>
