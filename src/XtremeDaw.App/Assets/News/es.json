@@ -1,0 +1,167 @@
+{
+  "releases": [
+    {
+      "version": "0.9.12",
+      "items": [
+        {
+          "icon": "E939",
+          "title": "Enviar comentarios",
+          "text": "Reportá un error o sugerí algo desde la barra de título: el reporte se arma en la app y lo enviás desde GitHub.",
+          "topic": "feedback"
+        },
+        {
+          "icon": "EA37",
+          "title": "Escalas y acordes",
+          "text": "Elegí la escala de la canción en el piano roll o el teclado virtual: las notas caen en la escala y escribís acordes de un clic, con sus inversiones.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E950",
+          "title": "Plugins VST2 y de 32 bits",
+          "text": "Además de VST3 de 64 bits, ahora abren VST2 y plugins de 32 bits. Los menús marcan cuáles son.",
+          "topic": "plugins"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Automatizar desde el plugin",
+          "text": "Tocá **Automatizar** en la barra de su ventana y mové un parámetro: se crea su carril.",
+          "topic": "automation"
+        },
+        {
+          "icon": "E762",
+          "title": "Editar varias pistas a la vez",
+          "text": "Con varias pistas elegidas, el inspector cambia lo que tienen en común y el clic derecho actúa sobre todas.",
+          "topic": "multi-track"
+        },
+        {
+          "icon": "E8B2",
+          "title": "Estirar un clip",
+          "text": "**Ctrl** + arrastrar la manija de recorte lo estira sin cambiar el tono. Los ataques no se corren, así que sirve para loops de ritmo.",
+          "topic": "move-trim"
+        },
+        {
+          "icon": "EC4A",
+          "title": "Cambiar el tempo pregunta qué hacer",
+          "text": "Elegís **Estirar** los clips o **Solo la grilla**.",
+          "topic": "tempo"
+        },
+        {
+          "icon": "E8CB",
+          "title": "Tono por clip",
+          "text": "Clic derecho en un clip → **Tono**: de −12 a +12 semitonos, sumados a los de la pista.",
+          "topic": "transpose"
+        },
+        {
+          "icon": "E8FD",
+          "title": "96 presets del compresor",
+          "text": "Por instrumento y por uso, en 12 categorías. **Analizar toma** los ajusta al nivel de lo grabado.",
+          "topic": "comp-presets"
+        },
+        {
+          "icon": "E8C6",
+          "title": "Imán y atajos para editar más rápido",
+          "text": "El imán tiene **Línea**, **Celda** y más divisiones. **Shift** + arrastrar copia un clip, {key:alignGrid} lo alinea a la grilla, {key:selectAll} marca todo y {key:deselect} saca la selección.",
+          "topic": "select-many"
+        },
+        {
+          "icon": "E710",
+          "title": "Nueva pista, sin barra fija",
+          "text": "El **+** va al pie de los encabezados, y el clic derecho en el área vacía del timeline abre el mismo menú.",
+          "topic": "first-take"
+        },
+        {
+          "icon": "E7C1",
+          "title": "El loop gira sin cortes",
+          "text": "Da la vuelta en la muestra exacta: el comienzo entra entero y el click no pierde el tiempo.",
+          "topic": "markers-loop"
+        },
+        {
+          "icon": "E771",
+          "title": "Faders y perillas nuevos",
+          "text": "Faders, perillas y mixer con más contraste, la pista elegida con un borde de color y un ícono renovado."
+        },
+        {
+          "icon": "E897",
+          "title": "Ayuda renovada y esta ventana",
+          "text": "Temas con íconos, los más buscados a mano, y los cambios de cada versión siempre a un clic en {icon:E789}."
+        }
+      ]
+    },
+    {
+      "version": "0.9.11",
+      "items": [
+        {
+          "icon": "E9D9",
+          "title": "Automatización",
+          "text": "Volumen, paneo, envíos y parámetros de efectos e instrumentos, en carriles debajo de cada pista.",
+          "topic": "automation"
+        },
+        {
+          "icon": "E81E",
+          "title": "Separar en stems",
+          "text": "Voz, batería, bajo y más, cada uno en su pista. Usa la placa de video si hay una compatible.",
+          "topic": "stems"
+        },
+        {
+          "icon": "F0E2",
+          "title": "Patrones",
+          "text": "Clips MIDI enlazados: editar uno cambia todos. Con su pestaña para arrastrarlos a las pistas.",
+          "topic": "patterns"
+        },
+        {
+          "icon": "EC4A",
+          "title": "Todo sigue el tempo",
+          "text": "Cambiar el BPM cambia la velocidad de la canción sin cambiar el tono: clips, automatización, marcadores y loop siguen en su compás.",
+          "topic": "tempo"
+        },
+        {
+          "icon": "E71E",
+          "title": "Detectar escala y acordes",
+          "text": "Clic derecho en un clip de audio. Los acordes pueden quedar en una franja del timeline.",
+          "topic": "scale"
+        },
+        {
+          "icon": "E71C",
+          "title": "Más efectos",
+          "text": "Chorus, Flanger, Phaser y Tremolo, un EQ de 7 bandas dinámicas, y los efectos del master en cualquier canal.",
+          "topic": "eq"
+        },
+        {
+          "icon": "EB95",
+          "title": "Mastering modular",
+          "text": "La cadena del master es una lista de módulos que se arrastran para cambiar el orden.",
+          "topic": "mastering"
+        },
+        {
+          "icon": "EF3B",
+          "title": "Invertir un clip",
+          "text": "Suena de atrás para adelante sin tocar el archivo.",
+          "topic": "reverse"
+        },
+        {
+          "icon": "E8F1",
+          "title": "Biblioteca de samples",
+          "text": "Tus carpetas de sonidos, con búsqueda, favoritos y escucha. Importar es mucho más rápido y acepta casi cualquier formato.",
+          "topic": "import"
+        },
+        {
+          "icon": "E897",
+          "title": "Ayuda dentro de la app",
+          "text": "Temas por categoría, con buscador. Se abre con {key:help}.",
+          "topic": "tour"
+        },
+        {
+          "icon": "E896",
+          "title": "Componentes opcionales",
+          "text": "FFmpeg y los modelos de stems se instalan desde la app, en **Configuración → Componentes**.",
+          "topic": "no-ffmpeg"
+        },
+        {
+          "icon": "F4A5",
+          "title": "Ahora se llama XTreme",
+          "text": "Nombre e ícono nuevos. Tus proyectos y ajustes siguen donde estaban."
+        }
+      ]
+    }
+  ]
+}

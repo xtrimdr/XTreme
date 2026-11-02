@@ -22,7 +22,7 @@
     <Style Selector="Button.nav.topic">
       <Setter Property="FontSize" Value="12" />
       <Setter Property="MinHeight" Value="28" />
-      <Setter Property="Padding" Value="35,4,10,4" />
+      <Setter Property="Padding" Value="12,4,10,4" />
     </Style>
     <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource Hover}" />
@@ -49,6 +49,19 @@
     </Style>
     <Style Selector="Button.act:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource Hover}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <!-- breadcrumbs and text links -->
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Foreground" Value="{StaticResource Faint}" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
       <Setter Property="Foreground" Value="{StaticResource Fg}" />
     </Style>
     <Style Selector="Button.card">

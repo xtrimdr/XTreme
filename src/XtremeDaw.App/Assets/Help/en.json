@@ -8,21 +8,23 @@
       "topics": [
         {
           "id": "tour",
+          "icon": "E768",
           "title": "Record, mix and export",
           "keywords": "start begin tutorial first time how to use",
           "intro": "The whole path, from the first take to the final file.",
           "steps": [
             "Connect your audio interface and choose it in **Settings → Inputs and outputs**.",
             "In **Projects**, click **New project** and choose **Video + audio** or **Audio only**.",
-            "Create a track with **New track** and arm it with its **●**.",
+            "Create a track with the **+** at the foot of the track headers and arm it with its **●**.",
             "Record with {key:record}. Press it again to stop and save the take.",
             "Go to the **Mixer** with {key:mixer} and set volume, pan and effects.",
-            "Click **Export MP4** or **Export audio**, at the top right."
+            "Click {icon:E896} **Export MP4** or **Export audio**, at the top right."
           ],
           "see": ["audio-setup", "new-project", "first-take", "export-audio", "export-video"]
         },
         {
           "id": "audio-setup",
+          "icon": "E7F6",
           "title": "Connect your audio interface",
           "keywords": "sound card driver asio input output headphones speakers setup",
           "intro": "XTreme records and plays through ASIO, your interface's driver.",
@@ -41,6 +43,7 @@
         },
         {
           "id": "new-project",
+          "icon": "E838",
           "title": "Create or open a project",
           "keywords": "new manager projects template open folder start song",
           "intro": "Each song is a project with its own folder. The app starts in **Projects**.",
@@ -57,6 +60,7 @@
         },
         {
           "id": "video-or-audio",
+          "icon": "E714",
           "title": "Choose video or audio only",
           "keywords": "mode no camera music mp3 wav",
           "intro": "The switch at the top left sets the kind of project.",
@@ -71,6 +75,7 @@
         },
         {
           "id": "window",
+          "icon": "E80A",
           "title": "Learn the window",
           "keywords": "interface parts panels inspector timeline transport where is",
           "intro": "What each area holds.",
@@ -83,6 +88,18 @@
             "**Bottom**: clock, play, record, tempo, click, tuner and the Timeline, Piano roll, Mixer and Mastering views."
           ],
           "see": ["look", "shortcuts"]
+        },
+        {
+          "id": "news",
+          "icon": "E789",
+          "title": "See what's new",
+          "keywords": "changes version new update release notes changelog",
+          "intro": "What changed in each version. It shows by itself the first time you open a new version.",
+          "steps": [
+            "Click {icon:E789} in the title bar or in **Projects**, or **What's new** in this help.",
+            "At the top, choose the version.",
+            "**See in help** opens that item's topic."
+          ]
         }
       ]
     },
@@ -94,11 +111,12 @@
       "topics": [
         {
           "id": "first-take",
+          "icon": "E7C8",
           "title": "Record a take",
           "keywords": "recording rec guitar vocal microphone arm track",
           "intro": "Recording goes to the armed tracks, from the playhead.",
           "steps": [
-            "Create a track with **New track** ({key:newTrack}).",
+            "Create a track with the **+** at the foot of the track headers, a right click on the empty part of the timeline, or {key:newTrack}.",
             "Arm it with its **●** or with {key:arm}. It turns red.",
             "Put the playhead where you want to start. {key:toStart} goes back to the beginning.",
             "Record with {key:record}.",
@@ -112,6 +130,7 @@
         },
         {
           "id": "take-many",
+          "icon": "E716",
           "title": "Record several tracks at once",
           "keywords": "multitrack simultaneous band drums several inputs",
           "intro": "Each armed track records its own input, from the same instant.",
@@ -124,6 +143,7 @@
         },
         {
           "id": "pick-input",
+          "icon": "E720",
           "title": "Choose the input and hear yourself",
           "keywords": "input monitoring monitor cant hear myself gain level clipping red",
           "intro": "Each track chooses which input of the interface it records.",
@@ -140,6 +160,7 @@
         },
         {
           "id": "click",
+          "icon": "E823",
           "title": "Use the click and count-in",
           "keywords": "metronome bpm tempo count in tap bar",
           "intro": "It's all in the transport box.",
@@ -156,6 +177,7 @@
         },
         {
           "id": "punch-in",
+          "icon": "E72C",
           "title": "Re-record a section",
           "keywords": "overdub redo fix mistake punch replace take",
           "intro": "A new take replaces only the section it covers.",
@@ -172,6 +194,7 @@
         },
         {
           "id": "tuner",
+          "icon": "EC4F",
           "title": "Tune up",
           "keywords": "tuner strings note guitar bass out of tune",
           "intro": "It listens to the first armed track, or to input 1-2.",
@@ -186,6 +209,7 @@
         },
         {
           "id": "latency",
+          "icon": "E895",
           "title": "Calibrate latency",
           "keywords": "out of sync late early delay take shifted calibration loopback",
           "intro": "Makes what you record land exactly in time with what you were hearing.",
@@ -203,6 +227,7 @@
         },
         {
           "id": "camera",
+          "icon": "E722",
           "title": "Record with a camera",
           "keywords": "webcam phone droidcam video film ip",
           "intro": "In a **Video + audio** project, the camera records along with the take.",
@@ -224,22 +249,29 @@
       "topics": [
         {
           "id": "move-trim",
+          "icon": "E8B2",
           "title": "Move and trim clips",
-          "keywords": "clip drag shorten fade in out edges",
+          "keywords": "clip drag shorten fade in out edges stretch",
           "intro": "A clip is a piece of a take. Trimming doesn't touch the file.",
           "steps": [
             "To **move** it, drag the clip, onto another track too.",
             "To **trim** it, drag the lower handle on an edge.",
+            "To **stretch** it without changing the pitch, hold **Ctrl** and drag that handle. The label shows the speed against the recording. The clip goes quiet until its sound is ready.",
             "To **fade**, drag the upper handle on an edge.",
-            "To move it off the grid, hold **Alt** while dragging."
+            "With the snap on, the clip's start lands on a grid line: **Line** uses the nearest visible one and **Cell** the start of the cell it falls in; both change with the zoom. To move it freely, hold **Alt** while dragging.",
+            "To **copy** it, hold **Shift** and drag the clip: the original stays where it was."
           ],
           "notes": [
-            "**Restore trims and fades**, on right-click, puts it back."
+            "**Restore trims and fades**, on right-click, puts it back.",
+            "Attacks stay in place when stretching: the stretch goes between them, so it works on rhythm loops.",
+            "**Snap to other clips**, next to the snap, sticks the start or end to another clip's edge.",
+            "{key:alignGrid}, or **Align to the grid** on right-click, lines up the picked clips."
           ],
-          "see": ["split-copy", "clip-volume", "tools"]
+          "see": ["split-copy", "clip-volume", "tools", "reverse"]
         },
         {
           "id": "split-copy",
+          "icon": "E8C6",
           "title": "Split, duplicate, copy and paste",
           "keywords": "cut scissors paste repeat",
           "intro": "Works on the selected clip or on all the marked ones.",
@@ -253,6 +285,7 @@
         },
         {
           "id": "select-many",
+          "icon": "E8B3",
           "title": "Select several clips",
           "keywords": "mark multiple selection rectangle group",
           "intro": "To move or delete several at once.",
@@ -260,12 +293,14 @@
             "Drag on the empty part of the tracks: everything the rectangle touches is marked.",
             "**Ctrl+click** on a clip adds or removes it.",
             "Drag one marked clip by its body and they all move.",
-            "Delete them with {key:delete}."
+            "Delete them with {key:delete}.",
+            "{key:selectAll} marks every clip and {key:deselect} clears the selection."
           ],
           "see": ["delete-range", "split-copy"]
         },
         {
           "id": "delete-range",
+          "icon": "E74D",
           "title": "Delete a section",
           "keywords": "range remove part gap close",
           "intro": "Takes a piece out of one or more tracks.",
@@ -278,6 +313,7 @@
         },
         {
           "id": "tools",
+          "icon": "E90F",
           "title": "Use the tools",
           "keywords": "scissors eraser hand magnifier zoom cursor select",
           "intro": "They're in the center of the top bar and change what a click does on the tracks.",
@@ -293,6 +329,7 @@
         },
         {
           "id": "navigate",
+          "icon": "E8A3",
           "title": "Move around the timeline",
           "keywords": "zoom wheel scroll fit all track height grid snap",
           "intro": "The wheel does nearly everything.",
@@ -310,6 +347,7 @@
         },
         {
           "id": "import",
+          "icon": "E896",
           "title": "Import audio and use samples",
           "keywords": "bring file wav mp3 sample loop drag library backing track",
           "intro": "What you import is copied into the project: it never depends on the original folder.",
@@ -325,6 +363,7 @@
         },
         {
           "id": "clip-volume",
+          "icon": "E767",
           "title": "Change the volume inside a clip",
           "keywords": "gain curve points raise lower part",
           "intro": "To fix a phrase without touching the fader.",
@@ -337,12 +376,30 @@
           "see": ["automation", "move-trim"]
         },
         {
+          "id": "reverse",
+          "icon": "EF3B",
+          "title": "Reverse a clip",
+          "keywords": "backwards reversed flip effect",
+          "intro": "The clip plays backwards, in the same place. The file doesn't change.",
+          "steps": [
+            "Right-click an audio clip → **Reverse**. Works with several marked clips too.",
+            "A small arrow appears on the clip.",
+            "Repeat to turn it back to normal."
+          ],
+          "notes": [
+            "It doesn't apply to clips with video."
+          ],
+          "see": ["move-trim", "transpose"]
+        },
+        {
           "id": "tempo",
+          "icon": "EC4A",
           "title": "Change or detect the tempo",
           "keywords": "bpm speed faster slower stretch",
-          "intro": "Changing the tempo changes the speed of the whole song, keeping the pitch.",
+          "intro": "Changing the tempo can change the speed of the whole song, keeping the pitch.",
           "steps": [
-            "Type the value in **Tempo**, in the transport. Each clip goes quiet for a moment until its sound is ready.",
+            "Type the value in **Tempo**, in the transport.",
+            "If there are clips, choose **Stretch** so they follow the tempo, or **Grid only** to leave the audio as it is. Stretched, each clip goes quiet for a moment until its sound is ready.",
             "To find an audio's tempo, right-click the clip → **Detect tempo**.",
             "Choose **Set the project to N BPM**. That moves the grid and stretches nothing."
           ],
@@ -350,6 +407,7 @@
         },
         {
           "id": "markers-loop",
+          "icon": "E7C1",
           "title": "Use markers and the loop",
           "keywords": "repeat section chorus a-b range chapters youtube",
           "intro": "Both live in the strip above the ruler.",
@@ -360,11 +418,13 @@
             "Toggle the loop with {key:loop}. {key:loopIn} and {key:loopOut} set A and B at the playhead."
           ],
           "notes": [
-            "Right-click the strip → **Copy chapters for YouTube**."
+            "Right-click the strip → **Copy chapters for YouTube**.",
+            "Two buttons next to the tools show or hide the markers and chords strips."
           ]
         },
         {
           "id": "organize",
+          "icon": "E8B7",
           "title": "Organize your tracks",
           "keywords": "folder color icon name rename separator group move",
           "intro": "So a big project stays easy to read.",
@@ -375,18 +435,20 @@
             "**New track → Folder** groups tracks: drag them in by their handle."
           ],
           "notes": [
-            "A folder only groups. To process a group, send it to a bus and put the effects there."
+            "A folder only groups. To process a group, send it to a bus and put the effects there.",
+            "**Ctrl+click** on headers picks several tracks: right-click and {key:delete} act on all of them."
           ],
           "see": ["reverb-delay"]
         },
         {
           "id": "lock",
+          "icon": "E72E",
           "title": "Lock a clip or track",
           "keywords": "protect pin padlock dont move",
           "intro": "Locked items don't move, trim or delete, and recording won't overwrite them.",
           "steps": [
             "Right-click the clip → **Lock clip**, or the track → **Lock track**.",
-            "A padlock appears.",
+            "A padlock {icon:E72E} appears.",
             "Repeat to unlock."
           ],
           "notes": [
@@ -395,6 +457,7 @@
         },
         {
           "id": "undo-versions",
+          "icon": "E7A7",
           "title": "Undo and go back",
           "keywords": "ctrl z redo mistake recover version history steps",
           "intro": "There are three levels, from the most immediate to the widest.",
@@ -418,7 +481,23 @@
       "hint": "Mixer, effects, reverb and delay, automation and A/B.",
       "topics": [
         {
+          "id": "multi-track",
+          "icon": "E762",
+          "title": "Edit several tracks at once",
+          "keywords": "several tracks select multiple group together transpose volume pan mute all",
+          "intro": "With several tracks picked, the inspector changes what they have in common.",
+          "steps": [
+            "On the timeline, **Ctrl+click** or **Shift+click** the track headers.",
+            "The inspector shows how many you picked and keeps only what they share: **Mix**, **Output**, the sends they all have and **Transpose**.",
+            "Move a control: every track gets the same value, and **Undo** brings them back together.",
+            "If a value differs between them, the control reads **Mixed** until you change it.",
+            "Locked tracks don't change: the note on top says how many stay out."
+          ],
+          "see": ["mixer", "lock"]
+        },
+        {
           "id": "mixer",
+          "icon": "E9E9",
           "title": "Use the mixer",
           "keywords": "console fader volume pan mute solo channels level",
           "intro": "One strip per track, with the master fixed on the right.",
@@ -430,32 +509,73 @@
           ],
           "notes": [
             "{wheel:wheelZoom} over the mixer changes the channel width.",
-            "**MONO**, on the master, lets you check the mix in mono."
+            "**MONO**, on the master, lets you check the mix in mono.",
+            "Right-click a strip: the same actions as on the track header."
           ],
           "see": ["add-fx", "reverb-delay", "compare"]
         },
         {
           "id": "add-fx",
+          "icon": "ECC8",
           "title": "Add and reorder effects",
           "keywords": "plugin vst compressor eq equalizer saturation gate chorus insert",
           "intro": "Each channel has its effect list, which plays from top to bottom.",
           "steps": [
             "Select the track.",
             "Click **+ Effect** in the channel's **Effects** tray, or the **+** on its mixer strip.",
-            "Pick the effect by category. Your VST3 plugins are at the end.",
+            "Pick the effect by category. Your VST plugins are at the end.",
             "Drag an effect by its handle to move it.",
             "The **⋯** or right-click turns it off, duplicates or removes it."
           ],
-          "see": ["guitar-tone", "reverb-delay", "plugins"]
+          "notes": [
+            "Built-in effects are grouped: **Dynamics**, **EQ**, **Saturation**, **Modulation** and **Space and stereo**."
+          ],
+          "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
+        },
+        {
+          "id": "eq",
+          "icon": "E71C",
+          "title": "EQ with dynamic bands",
+          "keywords": "equalizer band dynamic de-esser sibilance harsh frequency graph large view",
+          "intro": "The **EQ** has 7 bands. A dynamic band acts only when that area goes over its level.",
+          "steps": [
+            "Add an **EQ** to the track and choose a preset, or drag the points on the graph.",
+            "To make a band move by itself, select it and turn on **Dynamic**.",
+            "Set **Threshold** and **Range**. A negative range cuts; a positive one boosts.",
+            "**Large view** opens the same editor in a bigger window."
+          ],
+          "notes": [
+            "Useful for an area that only bothers at certain moments, without cutting it through the whole song."
+          ],
+          "see": ["add-fx", "guitar-tone"]
+        },
+        {
+          "id": "comp-presets",
+          "icon": "E8FD",
+          "title": "Choose a compressor preset",
+          "keywords": "compressor preset vocal bass drums kick snare percussion piano synth strings winds bus mix voice-over podcast categories",
+          "intro": "The compressor has presets by instrument and by use. They apply right away.",
+          "steps": [
+            "Add a **Compressor** to the track.",
+            "Open the preset list and go through a category: **Vocals**, **Guitars**, **Bass**, **Drums**, **Percussion** and the rest.",
+            "Pick a preset and set **Amount**.",
+            "If it does not compress as expected, click **Analyze take**, next to the preset: it fits threshold and level to the take.",
+            "On a bus or the master use **Buses and mix**: they bind the sound without changing the level."
+          ],
+          "notes": [
+            "**General** works on any sound."
+          ],
+          "see": ["add-fx", "guitar-tone"]
         },
         {
           "id": "guitar-tone",
+          "icon": "F4A5",
           "title": "Shape a guitar sound",
           "keywords": "tone saturation life compressor strumming arpeggio lead eq tube tape",
           "intro": "A starting point with the built-in effects.",
           "steps": [
             "**Life**: adds saturation. Choose **Tube** (warm) or **Tape** (compact) and the amount.",
-            "**Compressor**: choose **Strumming**, **Arpeggio** or **Lead**, and set **Amount**.",
+            "**Compressor**: under **Guitars**, choose **Strumming**, **Arpeggio**, **Lead** or another preset, and set **Amount**.",
             "**EQ**: choose a preset and fix what's left.",
             "Use the **Gate** if there's noise or hum between notes."
           ],
@@ -466,6 +586,7 @@
         },
         {
           "id": "reverb-delay",
+          "icon": "E704",
           "title": "Add reverb or delay",
           "keywords": "echo ambience room bus send return fx",
           "intro": "They go on a bus: a separate channel that several tracks send a little signal to.",
@@ -482,22 +603,25 @@
         },
         {
           "id": "automation",
+          "icon": "E9D9",
           "title": "Automate volume and effects",
           "keywords": "curve move by itself fade envelope parameter",
           "intro": "Makes a control change by itself along the song.",
           "steps": [
-            "Right-click the control → **Automate…**, or the track's menu → **Automation**.",
+            "Right-click the control → **Automate…**, or the track's menu → **Automation**. In a plugin: click **Automate** in its window's bar and move the parameter.",
             "A lane appears under the track.",
             "Click adds a point, dragging moves it and double-click deletes it. Shift+drag draws.",
             "Drag the circle in the middle of a segment to curve it."
           ],
           "notes": [
-            "With a lane on, moving that control by hand does nothing: the lane rules."
+            "With a lane on, moving that control by hand does nothing: the lane rules.",
+            "**Automate** turns off by itself once the lane is made; another click cancels it. A bus's effects don't have it."
           ],
           "see": ["clip-volume"]
         },
         {
           "id": "compare",
+          "icon": "E8AB",
           "title": "Compare two mixes",
           "keywords": "a b ab before after mix versions",
           "intro": "**A | B**, in the mixer bar, keeps two mixes of the same song.",
@@ -512,6 +636,7 @@
         },
         {
           "id": "transpose",
+          "icon": "E8CB",
           "title": "Transpose a track",
           "keywords": "pitch semitones up down tuning change key",
           "intro": "Changes the pitch without changing the length.",
@@ -520,10 +645,14 @@
             "Move **Pitch** in the channel's **Transpose** section: −12 to +12 semitones.",
             "Wait for the notice: while it computes, the track sounds as before."
           ],
+          "notes": [
+            "To change **a single clip**: right-click the clip → **Pitch**. It adds to the track's, up to ±12."
+          ],
           "see": ["tempo"]
         },
         {
           "id": "track-template",
+          "icon": "E734",
           "title": "Save a track's sound",
           "keywords": "template preset reuse effect chain",
           "intro": "A track preset keeps its effects, volume, color and input.",
@@ -544,6 +673,7 @@
       "topics": [
         {
           "id": "mastering",
+          "icon": "EB95",
           "title": "Master in a few steps",
           "keywords": "final loud finish polish look suggestion",
           "intro": "The last step before exporting. Open the **Mastering** view in the transport.",
@@ -555,12 +685,14 @@
             "Check that **True peak** stays under the **Ceiling**."
           ],
           "notes": [
-            "With no effects in the list, the master does nothing. **+ Effect → Full chain** adds the stages."
+            "With no effects in the list, the master does nothing. **+ Effect → Full chain** adds the stages.",
+            "Each effect in the list is a module: drag it to change the order."
           ],
           "see": ["loudness", "export-audio"]
         },
         {
           "id": "loudness",
+          "icon": "E767",
           "title": "Hit each platform's loudness",
           "keywords": "lufs spotify youtube instagram tiktok apple music normalization quiet loud target limiter",
           "intro": "Each platform normalizes to its own level. **Target** takes the mix there.",
@@ -585,6 +717,7 @@
       "topics": [
         {
           "id": "export-audio",
+          "icon": "E8D6",
           "title": "Export audio",
           "keywords": "wav mp3 save bounce final mix file render",
           "intro": "Renders the mix to a file.",
@@ -600,6 +733,7 @@
         },
         {
           "id": "export-video",
+          "icon": "E714",
           "title": "Export the video",
           "keywords": "mp4 render upload reels shorts tiktok youtube instagram quality resolution 4k bitrate",
           "intro": "What you see in the preview is what gets exported.",
@@ -617,6 +751,7 @@
         },
         {
           "id": "export-range",
+          "icon": "E7FD",
           "title": "Export only a section",
           "keywords": "part fragment excerpt a-b",
           "intro": "Exports what's between A and B, with the effect tails.",
@@ -629,6 +764,7 @@
         },
         {
           "id": "export-stems",
+          "icon": "E8C8",
           "title": "Export each track separately",
           "keywords": "stems separate tracks producer mixing engineer wav per track",
           "intro": "To hand the song to someone else or to another program.",
@@ -644,6 +780,7 @@
         },
         {
           "id": "social-length",
+          "icon": "E774",
           "title": "See if the song fits a platform",
           "keywords": "duration length maximum story reel limit minutes",
           "intro": "The timeline shows where each platform's limit falls.",
@@ -664,6 +801,7 @@
       "topics": [
         {
           "id": "video-panels",
+          "icon": "ECA5",
           "title": "Set up the video panels",
           "keywords": "split screen grid tracks in the video",
           "intro": "Each video track is a panel.",
@@ -678,6 +816,7 @@
         },
         {
           "id": "framing",
+          "icon": "E92C",
           "title": "Frame a take",
           "keywords": "zoom move picture crop mirror panel",
           "intro": "Framing belongs to each clip.",
@@ -690,6 +829,7 @@
         },
         {
           "id": "color",
+          "icon": "E790",
           "title": "Correct the color",
           "keywords": "filter look lut brightness contrast grain vignette cinema bars sharpness",
           "intro": "The **Color** tab, in the right panel, applies to the whole video.",
@@ -702,6 +842,7 @@
         },
         {
           "id": "transitions",
+          "icon": "E8B1",
           "title": "Add a transition",
           "keywords": "crossfade black cut join clips",
           "intro": "Between two adjacent video clips, a square chip appears.",
@@ -716,6 +857,7 @@
         },
         {
           "id": "video-sync",
+          "icon": "E895",
           "title": "Sync picture and sound",
           "keywords": "out of sync lips late video early camera latency",
           "intro": "If the picture arrives late compared to the audio.",
@@ -732,10 +874,11 @@
       "id": "midi",
       "icon": "E8D6",
       "title": "MIDI and instruments",
-      "hint": "MIDI tracks, piano roll, VST3, keyboards and patterns.",
+      "hint": "MIDI tracks, piano roll, VST, keyboards and patterns.",
       "topics": [
         {
           "id": "midi-track",
+          "icon": "E70F",
           "title": "Create a MIDI track and write notes",
           "keywords": "piano roll notes drums beat compose draw",
           "intro": "A MIDI track keeps notes and plays them with an instrument.",
@@ -747,13 +890,35 @@
             "Below, in **VEL**, you set how hard each note plays."
           ],
           "notes": [
-            "{key:quantize} snaps the notes to the grid."
+            "{key:quantize} snaps the notes to the grid.",
+            "The piano roll has its own snap, or **Same as the timeline**."
           ],
-          "see": ["instrument", "midi-keyboard", "patterns"]
+          "see": ["scales-chords", "instrument", "midi-keyboard", "patterns"]
+        },
+        {
+          "id": "scales-chords",
+          "icon": "EA37",
+          "title": "Scales and chords",
+          "keywords": "scale key root major minor pentatonic mode dorian chord triad inversion piano roll",
+          "intro": "Choose the song's scale and write chords with one click.",
+          "steps": [
+            "In the **Piano roll**, or on the virtual keyboard, click **Scale** and choose the root and the scale.",
+            "The scale's rows light up, and notes you write or move land on the scale by themselves.",
+            "Turn on **Chords** ({key:chordTool}) and click a note: it writes the chord that belongs to it in the scale.",
+            "The selector appears over the chord: **R** is root position and **1**, **2** and **3** the inversions. Keys 1 to 4 work too.",
+            "Drag the chord to move it: up and down it follows the scale, so it changes chord without leaving the key."
+          ],
+          "notes": [
+            "**Alt** writes and moves outside the scale. A note out of the scale looks hollow.",
+            "The selector appears on any chord: select its notes with Ctrl+drag.",
+            "**Move notes to the scale**, in the scale picker, fixes what stayed out."
+          ],
+          "see": ["midi-track", "virtual-keyboard"]
         },
         {
           "id": "instrument",
-          "title": "Choose a VST3 instrument",
+          "icon": "E7F5",
+          "title": "Choose a VST instrument",
           "keywords": "plugin sound piano synth kontakt sampler no sound test tone",
           "intro": "Without an instrument, the track plays a test tone.",
           "steps": [
@@ -766,9 +931,10 @@
         },
         {
           "id": "plugins",
+          "icon": "E950",
           "title": "Install and manage plugins",
-          "keywords": "vst vst3 folder scan not showing hide",
-          "intro": "XTreme uses VST3 plugins, each in its own process: if one crashes, recording goes on.",
+          "keywords": "vst vst2 vst3 32 bits folder scan not showing hide",
+          "intro": "XTreme uses VST3 and VST2 plugins, 64 and 32 bits, each in its own process: if one crashes, recording goes on.",
           "steps": [
             "Install the plugin as usual.",
             "Click **Scan for new**.",
@@ -780,6 +946,7 @@
         },
         {
           "id": "midi-keyboard",
+          "icon": "E765",
           "title": "Play and record with a keyboard",
           "keywords": "controller usb keyboard pedal sustain record notes",
           "intro": "The keyboard plays on the selected MIDI track, with nothing to arm.",
@@ -796,6 +963,7 @@
         },
         {
           "id": "virtual-keyboard",
+          "icon": "E770",
           "title": "Play with the computer keyboard",
           "keywords": "no keyboard virtual notes letters",
           "intro": "Turns letters into piano keys.",
@@ -806,11 +974,16 @@
             "**Shift** is the sustain pedal."
           ],
           "notes": [
-            "While it's on, those letters don't work as shortcuts."
-          ]
+            "While it's on, those letters don't work as shortcuts.",
+            "With a **scale** chosen, the **Z**, **A** and **Q** rows are three octaves of the scale, 7 notes each from the root. The octave moves to **O** and **P**, and the velocity to **L** and **;**.",
+            "With **Chords** on, each key plays its note's chord.",
+            "With an instrument's window open, the keys play on its track."
+          ],
+          "see": ["scales-chords"]
         },
         {
           "id": "patterns",
+          "icon": "F0E2",
           "title": "Repeat a pattern",
           "keywords": "loop rhythm drums link same clips fl studio",
           "intro": "Linked clips: editing one changes them all.",
@@ -821,7 +994,8 @@
             "**Make unique** takes a clip out of the pattern."
           ],
           "notes": [
-            "The **Patterns** tab lists them. Drag them onto any MIDI track."
+            "The **Patterns** tab lists them. Drag them onto any MIDI track.",
+            "Opening a pattern clip shows a single loop. The tab also renames and deletes them."
           ]
         }
       ]
@@ -834,6 +1008,7 @@
       "topics": [
         {
           "id": "stems",
+          "icon": "E81E",
           "title": "Separate vocals, drums and bass",
           "keywords": "stems demucs remove vocals karaoke isolate instruments backing track",
           "intro": "Splits an audio clip into tracks. The original stays muted and untouched.",
@@ -844,13 +1019,15 @@
             "Each stem lands on its own track, in a new folder."
           ],
           "notes": [
-            "It needs the models: install them in **Settings → Components**. It's one undo step."
+            "It needs the models: install them in **Settings → Components**. It's one undo step.",
+            "It uses the video card if there is a compatible one. While it runs, **Cancel separation**, in the notice, stops it."
           ],
           "settings": "components",
           "see": ["extract-midi"]
         },
         {
           "id": "extract-midi",
+          "icon": "E8D6",
           "title": "Turn audio into MIDI notes",
           "keywords": "transcribe extract convert sheet music",
           "intro": "Pulls the notes of an audio clip onto a MIDI track.",
@@ -863,6 +1040,7 @@
         },
         {
           "id": "scale",
+          "icon": "E71E",
           "title": "Detect the scale and chords",
           "keywords": "key harmony what key is it figure out song",
           "intro": "Listens to a clip and says what scale it's in.",
@@ -886,12 +1064,13 @@
       "topics": [
         {
           "id": "autosave",
+          "icon": "E74E",
           "title": "Save the project",
           "keywords": "autosave lose changes automatic saving",
           "intro": "By default, each change is saved by itself after 1.5 seconds.",
           "steps": [
             "Check the status next to the project name: **Saved**, **Saving** or **Unsaved**.",
-            "To force it, use {key:save} or the disk icon.",
+            "To force it, use {key:save} or the disk icon {icon:E74E}.",
             "In **Settings → Saving and export** you can choose when it saves: on each edit, every few minutes or by hand."
           ],
           "notes": [
@@ -902,6 +1081,7 @@
         },
         {
           "id": "library",
+          "icon": "E8F1",
           "title": "Find takes and free up space",
           "keywords": "library deleted take recover disk full space unused recycle bin",
           "intro": "**Library**, in the right panel, lists every take: used or not.",
@@ -917,6 +1097,7 @@
         },
         {
           "id": "share-project",
+          "icon": "E7B8",
           "title": "Move a project to another PC",
           "keywords": "share zip package backup copy transfer",
           "intro": "A package is a ZIP with everything needed.",
@@ -937,6 +1118,7 @@
       "topics": [
         {
           "id": "shortcuts",
+          "icon": "E765",
           "title": "See and change shortcuts",
           "keywords": "keyboard keys list combinations",
           "intro": "The main ones, with the keys you have set:",
@@ -947,24 +1129,27 @@
             "Split: {key:split}. Duplicate: {key:duplicate}. Undo: {key:undo}. Save: {key:save}."
           ],
           "notes": [
-            "**Keyboard shortcuts** has the full list, and any of them can be changed."
+            "**Keyboard shortcuts** has the full list, and any of them can be changed.",
+            "With a plugin's window in front, the **Transport** group keeps working, except while you type in one of the plugin's text fields."
           ],
           "settings": "shortcuts"
         },
         {
           "id": "look",
+          "icon": "E771",
           "title": "Change the color and layout",
           "keywords": "theme accent appearance vertical panels hide full screen",
           "intro": "It's all in the title bar.",
           "steps": [
             "The theme picker chooses the accent color and background.",
-            "The layout button switches between **Classic** and **Vertical**.",
+            "The layout button {icon:E80A} switches between **Classic** and **Vertical**.",
             "The two panel buttons hide the sides.",
             "{key:fullScreen} goes full screen."
           ]
         },
         {
           "id": "language",
+          "icon": "F2B7",
           "title": "Change the language",
           "keywords": "english spanish espanol translation",
           "intro": "It applies when you restart the app. Projects don't change.",
@@ -984,6 +1169,7 @@
       "topics": [
         {
           "id": "no-sound",
+          "icon": "E767",
           "title": "I can't hear anything",
           "keywords": "no sound mute silent nothing plays",
           "intro": "Check in this order.",
@@ -998,6 +1184,7 @@
         },
         {
           "id": "no-interface",
+          "icon": "E7F6",
           "title": "My interface doesn't show up",
           "keywords": "asio driver not found not detected sound card",
           "intro": "XTreme needs an ASIO driver.",
@@ -1011,6 +1198,7 @@
         },
         {
           "id": "dropouts",
+          "icon": "E9D9",
           "title": "Audio drops out or clicks",
           "keywords": "crackling glitch pops skips stutter buffer cpu dsp",
           "intro": "It's nearly always a lack of processing time.",
@@ -1027,6 +1215,7 @@
         },
         {
           "id": "offset-take",
+          "icon": "E895",
           "title": "My take lands out of time",
           "keywords": "out of sync shifted late click doesnt match",
           "intro": "Your interface's real latency hasn't been measured yet.",
@@ -1040,6 +1229,7 @@
         },
         {
           "id": "no-camera",
+          "icon": "E722",
           "title": "The camera doesn't show up",
           "keywords": "no picture black webcam droidcam video not visible",
           "intro": "Check in this order.",
@@ -1057,6 +1247,7 @@
         },
         {
           "id": "no-ffmpeg",
+          "icon": "E896",
           "title": "FFmpeg is missing",
           "keywords": "cant export video mp3 disabled error components install",
           "intro": "FFmpeg is needed for the camera, video, MP3 and some formats.",
@@ -1065,10 +1256,14 @@
             "Install FFmpeg.",
             "Try again."
           ],
+          "notes": [
+            "If you installed it with winget, the app finds it even when it isn't on the PATH."
+          ],
           "settings": "components"
         },
         {
           "id": "plugin-fail",
+          "icon": "E950",
           "title": "A plugin won't open or show up",
           "keywords": "vst wont load crash closed error failure",
           "intro": "A failing plugin doesn't bring the app down.",
@@ -1078,12 +1273,13 @@
             "If it's among the ones that didn't open, read the reason and click **Try again**."
           ],
           "notes": [
-            "Only 64-bit VST3 plugins are supported."
+            "VST3 and VST2 plugins are supported, 64 and 32 bits. When a plugin comes in both formats, the VST2 or 32-bit one says so in the list."
           ],
           "settings": "plugins"
         },
         {
           "id": "no-midi",
+          "icon": "E765",
           "title": "My MIDI keyboard makes no sound",
           "keywords": "not detected controller no notes",
           "intro": "Check in this order.",
@@ -1096,6 +1292,7 @@
         },
         {
           "id": "offline-clip",
+          "icon": "E8A5",
           "title": "A clip is gray",
           "keywords": "offline missing file lost",
           "intro": "Its file is missing from the project's **media** folder.",
@@ -1110,12 +1307,27 @@
         },
         {
           "id": "read-only",
+          "icon": "E72E",
           "title": "The project opens read-only",
           "keywords": "cant edit locked another window",
           "intro": "Another XTreme window has that project open, or it was saved with a newer version.",
           "steps": [
             "Close the other window and open it again.",
             "If it was saved with a newer version, update XTreme."
+          ]
+        },
+        {
+          "id": "feedback",
+          "icon": "E939",
+          "title": "Report a bug or suggest something",
+          "keywords": "comments feedback problem bug idea issue github support",
+          "intro": "Reports go to GitHub, where anyone can see them. You need a free account.",
+          "steps": [
+            "Click **Send feedback** in the title bar or in About.",
+            "Choose **Bug** or **Suggestion** and write a title and the description.",
+            "Check the information included and untick it if you don't want to send it.",
+            "Click **Continue on GitHub**, review the report and send it from that page.",
+            "If the text is long, it is copied to the clipboard: paste it into the description."
           ]
         }
       ]

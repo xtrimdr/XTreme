@@ -8,21 +8,23 @@
       "topics": [
         {
           "id": "tour",
+          "icon": "E768",
           "title": "Grabar, mezclar y exportar",
           "keywords": "empezar inicio principio tutorial primera vez como se usa",
           "intro": "El camino completo, de la primera toma al archivo final.",
           "steps": [
             "Conectá la interfaz de audio y elegila en **Configuración → Entradas y salidas**.",
             "En **Proyectos**, tocá **Nuevo proyecto** y elegí **Video + audio** o **Solo audio**.",
-            "Creá una pista con **Nueva pista** y armala con su **●**.",
+            "Creá una pista con el **+** al pie de los encabezados y armala con su **●**.",
             "Grabá con {key:record}. Volvé a apretarlo para detener y guardar la toma.",
             "Pasá al **Mixer** con {key:mixer} y ajustá volumen, paneo y efectos.",
-            "Tocá **Exportar MP4** o **Exportar audio**, arriba a la derecha."
+            "Tocá {icon:E896} **Exportar MP4** o **Exportar audio**, arriba a la derecha."
           ],
           "see": ["audio-setup", "new-project", "first-take", "export-audio", "export-video"]
         },
         {
           "id": "audio-setup",
+          "icon": "E7F6",
           "title": "Conectar la interfaz de audio",
           "keywords": "placa de sonido driver asio entrada salida auriculares parlantes configurar",
           "intro": "XTreme graba y reproduce por ASIO, el driver de tu interfaz.",
@@ -41,6 +43,7 @@
         },
         {
           "id": "new-project",
+          "icon": "E838",
           "title": "Crear o abrir un proyecto",
           "keywords": "nuevo gestor proyectos plantilla abrir carpeta empezar tema cancion",
           "intro": "Cada tema es un proyecto, con su propia carpeta. La app arranca en **Proyectos**.",
@@ -57,6 +60,7 @@
         },
         {
           "id": "video-or-audio",
+          "icon": "E714",
           "title": "Elegir entre video y solo audio",
           "keywords": "modo sin camara musica mp3 wav",
           "intro": "El interruptor de arriba a la izquierda define qué tipo de proyecto es.",
@@ -71,6 +75,7 @@
         },
         {
           "id": "window",
+          "icon": "E80A",
           "title": "Conocer la ventana",
           "keywords": "interfaz partes paneles inspector timeline transporte donde esta",
           "intro": "Qué hay en cada zona.",
@@ -83,6 +88,18 @@
             "**Abajo de todo**: reloj, reproducir, grabar, tempo, click, afinador y las vistas Timeline, Piano roll, Mixer y Mastering."
           ],
           "see": ["look", "shortcuts"]
+        },
+        {
+          "id": "news",
+          "icon": "E789",
+          "title": "Ver las novedades",
+          "keywords": "cambios version nuevo actualizacion que hay de nuevo lista",
+          "intro": "Qué cambió en cada versión. Se muestra sola la primera vez que abrís una versión nueva.",
+          "steps": [
+            "Tocá {icon:E789} en la barra de título o en **Proyectos**, o **Novedades** en esta ayuda.",
+            "Arriba, elegí la versión.",
+            "**Ver en la ayuda** abre el tema de esa novedad."
+          ]
         }
       ]
     },
@@ -94,11 +111,12 @@
       "topics": [
         {
           "id": "first-take",
+          "icon": "E7C8",
           "title": "Grabar una toma",
           "keywords": "grabacion rec guitarra voz microfono armar pista",
           "intro": "Se graba en las pistas armadas, desde el cabezal.",
           "steps": [
-            "Creá una pista con **Nueva pista** ({key:newTrack}).",
+            "Creá una pista con el **+** al pie de los encabezados, con clic derecho en el área vacía del timeline o con {key:newTrack}.",
             "Armala con su **●** o con {key:arm}. Se tiñe de rojo.",
             "Poné el cabezal donde querés empezar. {key:toStart} vuelve al inicio.",
             "Grabá con {key:record}.",
@@ -112,6 +130,7 @@
         },
         {
           "id": "take-many",
+          "icon": "E716",
           "title": "Grabar varias pistas a la vez",
           "keywords": "multipista simultaneo banda bateria varias entradas",
           "intro": "Cada pista armada graba su propia entrada, desde el mismo instante.",
@@ -124,6 +143,7 @@
         },
         {
           "id": "pick-input",
+          "icon": "E720",
           "title": "Elegir la entrada y escucharte",
           "keywords": "input monitoreo monitor no me escucho retorno ganancia nivel clip rojo",
           "intro": "Cada pista elige de qué entrada de la interfaz graba.",
@@ -140,6 +160,7 @@
         },
         {
           "id": "click",
+          "icon": "E823",
           "title": "Usar el click y la cuenta",
           "keywords": "metronomo bpm tempo cuenta previa tap compas",
           "intro": "Todo está en el recuadro del transporte.",
@@ -156,6 +177,7 @@
         },
         {
           "id": "punch-in",
+          "icon": "E72C",
           "title": "Volver a grabar un tramo",
           "keywords": "regrabar pisar corregir error punch reemplazar toma",
           "intro": "Una toma nueva reemplaza solo el tramo que cubre.",
@@ -172,6 +194,7 @@
         },
         {
           "id": "tuner",
+          "icon": "EC4F",
           "title": "Afinar",
           "keywords": "afinador cuerdas nota guitarra bajo desafinado",
           "intro": "Escucha la primera pista armada o la entrada 1-2.",
@@ -186,6 +209,7 @@
         },
         {
           "id": "latency",
+          "icon": "E895",
           "title": "Calibrar la latencia",
           "keywords": "desfasado atrasado adelantado sincro retraso toma corrida calibracion loopback",
           "intro": "Hace que lo que grabás caiga exactamente en tiempo con lo que escuchabas.",
@@ -203,6 +227,7 @@
         },
         {
           "id": "camera",
+          "icon": "E722",
           "title": "Grabar con cámara",
           "keywords": "webcam celular droidcam video filmar ip",
           "intro": "En un proyecto **Video + audio**, la cámara graba junto con la toma.",
@@ -224,22 +249,29 @@
       "topics": [
         {
           "id": "move-trim",
+          "icon": "E8B2",
           "title": "Mover y recortar clips",
-          "keywords": "clip arrastrar acortar fade fundido entrada salida bordes",
+          "keywords": "clip arrastrar acortar fade fundido entrada salida bordes estirar stretch",
           "intro": "Un clip es un pedazo de una toma. Recortarlo no toca el archivo.",
           "steps": [
             "Para **mover**, arrastrá el clip, también a otra pista.",
             "Para **recortar**, arrastrá la manija de abajo en un borde.",
+            "Para **estirar** sin cambiar el tono, mantené **Ctrl** y arrastrá esa manija. La etiqueta dice la velocidad contra lo grabado. El clip calla hasta que su sonido está listo.",
             "Para hacer un **fade**, arrastrá la manija de arriba en un borde.",
-            "Para moverlo libre de la grilla, mantené **Alt** mientras arrastrás."
+            "Con el imán prendido, el comienzo del clip cae en una línea de la grilla: **Línea** usa la más cercana de las que se ven y **Celda** el comienzo de la celda donde cae; las dos cambian con el zoom. Para moverlo libre, mantené **Alt** mientras arrastrás.",
+            "Para **copiarlo**, mantené **Shift** y arrastrá el clip: el original queda en su lugar."
           ],
           "notes": [
-            "**Restaurar recortes y fades**, con clic derecho, lo deja como estaba."
+            "**Restaurar recortes y fades**, con clic derecho, lo deja como estaba.",
+            "Los ataques no se corren al estirar: el estiramiento va entre uno y otro, así que sirve para loops de ritmo.",
+            "**Imán a otros clips**, al lado del imán, pega el inicio o el final al borde de otro clip.",
+            "{key:alignGrid}, o **Alinear a la grilla** con clic derecho, acomoda los clips elegidos."
           ],
-          "see": ["split-copy", "clip-volume", "tools"]
+          "see": ["split-copy", "clip-volume", "tools", "reverse"]
         },
         {
           "id": "split-copy",
+          "icon": "E8C6",
           "title": "Dividir, duplicar, copiar y pegar",
           "keywords": "cortar partir tijera pegar repetir",
           "intro": "Se aplica al clip elegido o a todos los marcados.",
@@ -253,6 +285,7 @@
         },
         {
           "id": "select-many",
+          "icon": "E8B3",
           "title": "Seleccionar varios clips",
           "keywords": "marcar seleccion multiple rectangulo grupo",
           "intro": "Para mover o borrar varios de una vez.",
@@ -260,12 +293,14 @@
             "Arrastrá en la parte vacía de las pistas: se marca todo lo que toque el rectángulo.",
             "**Ctrl+clic** en un clip lo suma o lo saca.",
             "Arrastrá uno de los marcados por el cuerpo y se mueven todos.",
-            "Borralos con {key:delete}."
+            "Borralos con {key:delete}.",
+            "{key:selectAll} marca todos los clips y {key:deselect} saca la selección."
           ],
           "see": ["delete-range", "split-copy"]
         },
         {
           "id": "delete-range",
+          "icon": "E74D",
           "title": "Borrar un tramo",
           "keywords": "rango sacar parte eliminar hueco cerrar",
           "intro": "Saca un pedazo de una o varias pistas.",
@@ -278,6 +313,7 @@
         },
         {
           "id": "tools",
+          "icon": "E90F",
           "title": "Usar las herramientas",
           "keywords": "tijera goma mano lupa zoom cursor seleccionar",
           "intro": "Están en el centro de la barra superior y cambian qué hace el clic en las pistas.",
@@ -293,6 +329,7 @@
         },
         {
           "id": "navigate",
+          "icon": "E8A3",
           "title": "Moverte por el timeline",
           "keywords": "zoom rueda desplazar ver todo alto pistas grilla iman",
           "intro": "La rueda hace casi todo.",
@@ -310,6 +347,7 @@
         },
         {
           "id": "import",
+          "icon": "E896",
           "title": "Importar audio y usar samples",
           "keywords": "traer archivo wav mp3 sample loop arrastrar biblioteca pista base",
           "intro": "Lo que importás se copia al proyecto: nunca depende de la carpeta original.",
@@ -325,6 +363,7 @@
         },
         {
           "id": "clip-volume",
+          "icon": "E767",
           "title": "Cambiar el volumen dentro de un clip",
           "keywords": "ganancia curva puntos subir bajar parte",
           "intro": "Para corregir una frase sin tocar el fader.",
@@ -337,12 +376,30 @@
           "see": ["automation", "move-trim"]
         },
         {
+          "id": "reverse",
+          "icon": "EF3B",
+          "title": "Invertir un clip",
+          "keywords": "reverse al reves atras hacia atras dar vuelta efecto",
+          "intro": "El clip suena de atrás para adelante, en el mismo lugar. El archivo no cambia.",
+          "steps": [
+            "Clic derecho en un clip de audio → **Invertir**. También con varios marcados.",
+            "Aparece una flechita en el clip.",
+            "Repetí para volverlo a la normalidad."
+          ],
+          "notes": [
+            "No se aplica a clips con video."
+          ],
+          "see": ["move-trim", "transpose"]
+        },
+        {
           "id": "tempo",
+          "icon": "EC4A",
           "title": "Cambiar o detectar el tempo",
           "keywords": "bpm velocidad mas rapido lento estirar",
-          "intro": "Cambiar el tempo cambia la velocidad de todo el tema, sin cambiar el tono.",
+          "intro": "Cambiar el tempo puede cambiar la velocidad de todo el tema, sin cambiar el tono.",
           "steps": [
-            "Escribí el valor en **Tempo**, en el transporte. Cada clip calla un momento hasta que su sonido está listo.",
+            "Escribí el valor en **Tempo**, en el transporte.",
+            "Si hay clips, elegí **Estirar** para que sigan el tempo, o **Solo la grilla** para dejar el audio como está. Estirados, cada clip calla un momento hasta que su sonido está listo.",
             "Para saber el tempo de un audio, clic derecho en el clip → **Detectar tempo**.",
             "Elegí **Poner el proyecto a N BPM**. Eso mueve la grilla y no estira nada."
           ],
@@ -350,6 +407,7 @@
         },
         {
           "id": "markers-loop",
+          "icon": "E7C1",
           "title": "Usar marcadores y el loop",
           "keywords": "repetir seccion estribillo a-b rango capitulos youtube",
           "intro": "Ambos viven en la franja de arriba de la regla.",
@@ -360,11 +418,13 @@
             "Prendé o apagá el loop con {key:loop}. También ponés A y B en el cabezal con {key:loopIn} y {key:loopOut}."
           ],
           "notes": [
-            "Clic derecho en la franja → **Copiar capítulos para YouTube**."
+            "Clic derecho en la franja → **Copiar capítulos para YouTube**.",
+            "Dos botones al lado de las herramientas muestran u ocultan las franjas de marcadores y de acordes."
           ]
         },
         {
           "id": "organize",
+          "icon": "E8B7",
           "title": "Ordenar las pistas",
           "keywords": "carpeta color icono nombre renombrar separador agrupar mover",
           "intro": "Para que un proyecto grande siga siendo fácil de leer.",
@@ -375,18 +435,20 @@
             "**Nueva pista → Carpeta** agrupa pistas: arrastralas adentro por la manija."
           ],
           "notes": [
-            "La carpeta solo agrupa. Para procesar un grupo, mandala a un bus y poné los efectos ahí."
+            "La carpeta solo agrupa. Para procesar un grupo, mandala a un bus y poné los efectos ahí.",
+            "**Ctrl+clic** en los encabezados elige varias pistas: el clic derecho y {key:delete} actúan sobre todas."
           ],
           "see": ["reverb-delay"]
         },
         {
           "id": "lock",
+          "icon": "E72E",
           "title": "Bloquear un clip o una pista",
           "keywords": "proteger fijar candado no mover",
           "intro": "Lo bloqueado no se mueve, no se recorta, no se borra y grabar no lo pisa.",
           "steps": [
             "Clic derecho en el clip → **Bloquear clip**, o en la pista → **Bloquear pista**.",
-            "Aparece un candado.",
+            "Aparece un candado {icon:E72E}.",
             "Repetí para desbloquear."
           ],
           "notes": [
@@ -395,6 +457,7 @@
         },
         {
           "id": "undo-versions",
+          "icon": "E7A7",
           "title": "Deshacer y volver atrás",
           "keywords": "ctrl z rehacer error me equivoque recuperar version historial pasos",
           "intro": "Hay tres niveles, del más inmediato al más amplio.",
@@ -418,7 +481,23 @@
       "hint": "Mixer, efectos, reverb y delay, automatización y A/B.",
       "topics": [
         {
+          "id": "multi-track",
+          "icon": "E762",
+          "title": "Editar varias pistas a la vez",
+          "keywords": "varias pistas seleccionar multiple grupo juntas transponer volumen paneo mute todas",
+          "intro": "Con varias pistas elegidas, el inspector cambia lo que tienen en común.",
+          "steps": [
+            "En el timeline, hacé **Ctrl+clic** o **Shift+clic** en los encabezados de las pistas.",
+            "El inspector muestra arriba cuántas elegiste y deja solo lo común: **Mezcla**, **Salida**, los envíos que tienen todas y **Transponer**.",
+            "Mové un control: el mismo valor va a todas, y **Deshacer** las vuelve juntas.",
+            "Si un valor no coincide entre ellas, el control dice **Varios** hasta que lo cambies.",
+            "Las pistas bloqueadas no cambian: el aviso de arriba dice cuántas quedan afuera."
+          ],
+          "see": ["mixer", "lock"]
+        },
+        {
           "id": "mixer",
+          "icon": "E9E9",
           "title": "Usar el mixer",
           "keywords": "consola fader volumen paneo mute solo canales nivel",
           "intro": "Una tira por pista, con el master fijo a la derecha.",
@@ -430,32 +509,73 @@
           ],
           "notes": [
             "{wheel:wheelZoom} sobre el mixer cambia el ancho de los canales.",
-            "**MONO**, en el master, sirve para comprobar la mezcla en mono."
+            "**MONO**, en el master, sirve para comprobar la mezcla en mono.",
+            "Clic derecho en una tira: las mismas acciones que en el encabezado de la pista."
           ],
           "see": ["add-fx", "reverb-delay", "compare"]
         },
         {
           "id": "add-fx",
+          "icon": "ECC8",
           "title": "Agregar y ordenar efectos",
           "keywords": "plugin vst compresor eq ecualizador saturacion puerta chorus insertar",
           "intro": "Cada canal tiene su lista de efectos, que suena de arriba a abajo.",
           "steps": [
             "Elegí la pista.",
             "Tocá **+ Efecto** en la bandeja **Efectos** del canal, o el **+** de su tira en el mixer.",
-            "Elegí el efecto por categoría. Tus VST3 están al final.",
+            "Elegí el efecto por categoría. Tus VST están al final.",
             "Arrastrá un efecto por su manija para cambiarlo de lugar.",
             "El **⋯** o el clic derecho lo apaga, duplica o elimina."
           ],
-          "see": ["guitar-tone", "reverb-delay", "plugins"]
+          "notes": [
+            "Los efectos propios van por grupos: **Dinámica**, **EQ**, **Saturación**, **Modulación** y **Espacio y estéreo**."
+          ],
+          "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
+        },
+        {
+          "id": "eq",
+          "icon": "E71C",
+          "title": "Ecualizar con bandas dinámicas",
+          "keywords": "eq ecualizador banda dinamico de-esser sibilancia frecuencia molesta grafico vista grande",
+          "intro": "El **EQ** tiene 7 bandas. Una banda dinámica actúa solo cuando esa zona se pasa de nivel.",
+          "steps": [
+            "Agregá un **EQ** a la pista y elegí un preset, o arrastrá los puntos del gráfico.",
+            "Para que una banda se mueva sola, elegila y prendé **Dinámico**.",
+            "Ajustá **Umbral** y **Rango**. Con rango negativo corta; con positivo realza.",
+            "**Vista grande** abre el mismo editor en una ventana más amplia."
+          ],
+          "notes": [
+            "Sirve para domar una zona que molesta solo en algunos momentos, sin cortarla en todo el tema."
+          ],
+          "see": ["add-fx", "guitar-tone"]
+        },
+        {
+          "id": "comp-presets",
+          "icon": "E8FD",
+          "title": "Elegir un preset del compresor",
+          "keywords": "compresor preset voz bajo bateria bombo caja percusion piano sinte cuerdas vientos bus mezcla locucion podcast categorias",
+          "intro": "El compresor trae presets por instrumento y por uso. Se aplican directo.",
+          "steps": [
+            "Agregá un **Compresor** a la pista.",
+            "Abrí la lista de presets y pasá por una categoría: **Voces**, **Guitarras**, **Bajo**, **Batería**, **Percusión** y las demás.",
+            "Elegí el preset y ajustá **Cantidad**.",
+            "Si no comprime lo que esperabas, tocá **Analizar toma**, al lado del preset: ajusta umbral y volumen al nivel de la toma.",
+            "En un bus o en el master usá **Buses y mezcla**: une el sonido sin cambiar el volumen."
+          ],
+          "notes": [
+            "**Usos generales** sirve para cualquier sonido."
+          ],
+          "see": ["add-fx", "guitar-tone"]
         },
         {
           "id": "guitar-tone",
+          "icon": "F4A5",
           "title": "Darle sonido a una guitarra",
           "keywords": "tono saturacion vida compresor rasgueo arpegio punteo eq valvula cinta",
           "intro": "Un punto de partida con los efectos propios.",
           "steps": [
             "**Vida**: suma saturación. Elegí **Válvula** (cálida) o **Cinta** (compacta) y la cantidad.",
-            "**Compresor**: elegí **Rasgueo**, **Arpegio** o **Punteo**, y ajustá **Cantidad**.",
+            "**Compresor**: en **Guitarras**, elegí **Rasgueo**, **Arpegio**, **Punteo** u otro preset, y ajustá **Cantidad**.",
             "**EQ**: elegí un preset y corregí lo que sobre.",
             "Usá la **Puerta** si hay ruido o zumbido entre notas."
           ],
@@ -466,6 +586,7 @@
         },
         {
           "id": "reverb-delay",
+          "icon": "E704",
           "title": "Agregar reverb o delay",
           "keywords": "eco ambiente sala bus envio send retorno fx",
           "intro": "Se usan en un bus: un canal aparte al que varias pistas mandan un poco de señal.",
@@ -482,22 +603,25 @@
         },
         {
           "id": "automation",
+          "icon": "E9D9",
           "title": "Automatizar volumen y efectos",
           "keywords": "curva mover solo fade envolvente parametro",
           "intro": "Hace que un control cambie solo a lo largo del tema.",
           "steps": [
-            "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista → **Automatización**.",
+            "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista → **Automatización**. En un plugin: tocá **Automatizar** en la barra de su ventana y mové el parámetro.",
             "Aparece un carril debajo de la pista.",
             "Clic agrega un punto, arrastrar lo mueve y doble clic lo borra. Shift+arrastrar dibuja.",
             "Arrastrá el círculo en medio de un tramo para curvarlo."
           ],
           "notes": [
-            "Con un carril prendido, mover ese control a mano no sirve: manda el carril."
+            "Con un carril prendido, mover ese control a mano no sirve: manda el carril.",
+            "**Automatizar** se apaga solo al crear el carril; otro clic lo cancela. Los efectos de un bus no lo tienen."
           ],
           "see": ["clip-volume"]
         },
         {
           "id": "compare",
+          "icon": "E8AB",
           "title": "Comparar dos mezclas",
           "keywords": "a b ab antes despues versiones de mezcla",
           "intro": "**A | B**, en la barra del mixer, guarda dos mezclas del mismo tema.",
@@ -512,6 +636,7 @@
         },
         {
           "id": "transpose",
+          "icon": "E8CB",
           "title": "Transponer una pista",
           "keywords": "tono semitonos subir bajar afinacion cambiar tonalidad",
           "intro": "Cambia el tono sin cambiar el largo.",
@@ -520,10 +645,14 @@
             "Mové **Tono** en la sección **Transponer** del canal: de −12 a +12 semitonos.",
             "Esperá el aviso: mientras se calcula, la pista suena como estaba."
           ],
+          "notes": [
+            "Para cambiar **un solo clip**: clic derecho en el clip → **Tono**. Se suma al de la pista, hasta ±12."
+          ],
           "see": ["tempo"]
         },
         {
           "id": "track-template",
+          "icon": "E734",
           "title": "Guardar el sonido de una pista",
           "keywords": "plantilla preset reutilizar cadena efectos",
           "intro": "Una plantilla de pista guarda sus efectos, volumen, color y entrada.",
@@ -544,6 +673,7 @@
       "topics": [
         {
           "id": "mastering",
+          "icon": "EB95",
           "title": "Masterizar en pocos pasos",
           "keywords": "master final sonar fuerte terminar pulir look sugerencia",
           "intro": "El último paso antes de exportar. Abrí la vista **Mastering** en el transporte.",
@@ -555,12 +685,14 @@
             "Mirá que **Pico real** no pase del **Techo**."
           ],
           "notes": [
-            "Sin efectos en la lista, el master no procesa nada. **+ Efecto → Cadena completa** agrega las etapas."
+            "Sin efectos en la lista, el master no procesa nada. **+ Efecto → Cadena completa** agrega las etapas.",
+            "Cada efecto de la lista es un módulo: arrastralo para cambiar el orden."
           ],
           "see": ["loudness", "export-audio"]
         },
         {
           "id": "loudness",
+          "icon": "E767",
           "title": "Llegar al volumen de cada red",
           "keywords": "lufs spotify youtube instagram tiktok apple music normalizacion bajo fuerte destino limitador",
           "intro": "Cada plataforma normaliza a su nivel. **Destino** lleva la mezcla a ese nivel.",
@@ -585,6 +717,7 @@
       "topics": [
         {
           "id": "export-audio",
+          "icon": "E8D6",
           "title": "Exportar audio",
           "keywords": "wav mp3 guardar bajar mezcla final archivo render bounce",
           "intro": "Saca la mezcla a un archivo.",
@@ -600,6 +733,7 @@
         },
         {
           "id": "export-video",
+          "icon": "E714",
           "title": "Exportar el video",
           "keywords": "mp4 render subir reels shorts tiktok youtube instagram calidad resolucion 4k bitrate",
           "intro": "Lo que ves en la vista previa es lo que se exporta.",
@@ -617,6 +751,7 @@
         },
         {
           "id": "export-range",
+          "icon": "E7FD",
           "title": "Exportar solo un tramo",
           "keywords": "parte fragmento recorte seccion a-b",
           "intro": "Exporta lo que está entre A y B, con la cola de efectos.",
@@ -629,6 +764,7 @@
         },
         {
           "id": "export-stems",
+          "icon": "E8C8",
           "title": "Exportar cada pista por separado",
           "keywords": "stems pistas sueltas productor mezclador wav por pista",
           "intro": "Para pasarle el tema a otra persona o a otro programa.",
@@ -644,6 +780,7 @@
         },
         {
           "id": "social-length",
+          "icon": "E774",
           "title": "Ver si el tema entra en una red",
           "keywords": "duracion largo maximo historia reel limite minutos",
           "intro": "El timeline marca dónde cae el límite de cada red.",
@@ -664,6 +801,7 @@
       "topics": [
         {
           "id": "video-panels",
+          "icon": "ECA5",
           "title": "Armar los paneles del video",
           "keywords": "pantalla dividida split screen grilla pistas en el video",
           "intro": "Cada pista con video es un panel.",
@@ -678,6 +816,7 @@
         },
         {
           "id": "framing",
+          "icon": "E92C",
           "title": "Encuadrar una toma",
           "keywords": "zoom mover imagen recortar espejo espejar panel",
           "intro": "El encuadre es de cada clip.",
@@ -690,6 +829,7 @@
         },
         {
           "id": "color",
+          "icon": "E790",
           "title": "Corregir el color",
           "keywords": "filtro look lut brillo contraste grano vineta barras cine nitidez",
           "intro": "La pestaña **Color**, en el panel derecho, vale para todo el video.",
@@ -702,6 +842,7 @@
         },
         {
           "id": "transitions",
+          "icon": "E8B1",
           "title": "Agregar una transición",
           "keywords": "fundido cruzado negro corte union clips",
           "intro": "Entre dos clips de video seguidos aparece un chip cuadrado.",
@@ -716,6 +857,7 @@
         },
         {
           "id": "video-sync",
+          "icon": "E895",
           "title": "Sincronizar imagen y sonido",
           "keywords": "desfasada labios atrasado video adelantado camara latencia",
           "intro": "Si la imagen llega tarde respecto del audio.",
@@ -732,10 +874,11 @@
       "id": "midi",
       "icon": "E8D6",
       "title": "MIDI e instrumentos",
-      "hint": "Pistas MIDI, piano roll, VST3, teclados y patrones.",
+      "hint": "Pistas MIDI, piano roll, VST, teclados y patrones.",
       "topics": [
         {
           "id": "midi-track",
+          "icon": "E70F",
           "title": "Crear una pista MIDI y escribir notas",
           "keywords": "piano roll notas bateria base componer dibujar",
           "intro": "Una pista MIDI guarda notas y las toca con un instrumento.",
@@ -747,13 +890,35 @@
             "Abajo, en **VEL**, ajustás la fuerza de cada nota."
           ],
           "notes": [
-            "{key:quantize} acomoda las notas a la grilla."
+            "{key:quantize} acomoda las notas a la grilla.",
+            "El imán del piano roll es propio, o **Igual que el timeline**."
           ],
-          "see": ["instrument", "midi-keyboard", "patterns"]
+          "see": ["scales-chords", "instrument", "midi-keyboard", "patterns"]
+        },
+        {
+          "id": "scales-chords",
+          "icon": "EA37",
+          "title": "Escalas y acordes",
+          "keywords": "escala tonalidad tonica mayor menor pentatonica modo dorica acorde triada inversion piano roll",
+          "intro": "Elegí la escala de la canción y escribí acordes con un clic.",
+          "steps": [
+            "En el **Piano roll**, o en el teclado virtual, tocá **Escala** y elegí la tónica y la escala.",
+            "Las filas de la escala se resaltan, y las notas que escribís o movés van solas a la escala.",
+            "Prendé **Acordes** ({key:chordTool}) y hacé clic en una nota: escribe el acorde que le corresponde en la escala.",
+            "Sobre el acorde aparece el selector: **F** es la posición fundamental y **1**, **2** y **3**, las inversiones. También con las teclas 1 a 4.",
+            "Arrastrá el acorde para moverlo: arriba y abajo sigue la escala, así que cambia de acorde sin salirse de tono."
+          ],
+          "notes": [
+            "**Alt** escribe y mueve fuera de la escala. Una nota fuera de la escala se ve hueca.",
+            "El selector aparece en cualquier acorde: elegí sus notas con Ctrl+arrastrar.",
+            "**Llevar las notas a la escala**, en el selector de escala, acomoda lo que quedó afuera."
+          ],
+          "see": ["midi-track", "virtual-keyboard"]
         },
         {
           "id": "instrument",
-          "title": "Elegir un instrumento VST3",
+          "icon": "E7F5",
+          "title": "Elegir un instrumento VST",
           "keywords": "plugin sonido piano sintetizador kontakt sampler sin sonido tono de prueba",
           "intro": "Sin instrumento, la pista suena con un tono de prueba.",
           "steps": [
@@ -766,9 +931,10 @@
         },
         {
           "id": "plugins",
+          "icon": "E950",
           "title": "Instalar y administrar plugins",
-          "keywords": "vst vst3 carpeta buscar no aparece escanear ocultar",
-          "intro": "XTreme usa plugins VST3, cada uno en su propio proceso: si uno se cuelga, la grabación sigue.",
+          "keywords": "vst vst2 vst3 32 bits carpeta buscar no aparece escanear ocultar",
+          "intro": "XTreme usa plugins VST3 y VST2, de 64 y 32 bits, cada uno en su propio proceso: si uno se cuelga, la grabación sigue.",
           "steps": [
             "Instalá el plugin como siempre.",
             "Tocá **Buscar nuevos**.",
@@ -780,6 +946,7 @@
         },
         {
           "id": "midi-keyboard",
+          "icon": "E765",
           "title": "Tocar y grabar con un teclado",
           "keywords": "controlador usb keyboard pedal sustain grabar notas",
           "intro": "El teclado suena en la pista MIDI elegida, sin armar nada.",
@@ -796,6 +963,7 @@
         },
         {
           "id": "virtual-keyboard",
+          "icon": "E770",
           "title": "Tocar con el teclado de la computadora",
           "keywords": "sin teclado teclado virtual notas letras",
           "intro": "Convierte las letras en teclas de piano.",
@@ -806,11 +974,16 @@
             "**Shift** es el pedal de sustain."
           ],
           "notes": [
-            "Mientras está prendido, esas letras no funcionan como atajos."
-          ]
+            "Mientras está prendido, esas letras no funcionan como atajos.",
+            "Con una **escala** elegida, las filas de la **Z**, la **A** y la **Q** son tres octavas de la escala, de 7 notas cada una desde la tónica. La octava pasa a **O** y **P**, y la velocidad a **L** y **Ñ**.",
+            "Con **Acordes** prendido, cada tecla toca el acorde de su nota.",
+            "Con la ventana de un instrumento abierta, las teclas tocan en su pista."
+          ],
+          "see": ["scales-chords"]
         },
         {
           "id": "patterns",
+          "icon": "F0E2",
           "title": "Repetir un patrón",
           "keywords": "loop ritmo bateria enlazar clips iguales fl studio",
           "intro": "Clips enlazados: editar uno cambia todos.",
@@ -821,7 +994,8 @@
             "**Hacer único** saca un clip del patrón."
           ],
           "notes": [
-            "La pestaña **Patrones** los lista. Se arrastran a cualquier pista MIDI."
+            "La pestaña **Patrones** los lista. Se arrastran a cualquier pista MIDI.",
+            "Abrir un clip de patrón muestra una sola vuelta. Desde la pestaña también se renombran y se eliminan."
           ]
         }
       ]
@@ -834,6 +1008,7 @@
       "topics": [
         {
           "id": "stems",
+          "icon": "E81E",
           "title": "Separar voz, batería y bajo",
           "keywords": "stems demucs quitar voz karaoke aislar instrumentos backing track",
           "intro": "Separa un audio en pistas. La original queda silenciada y sin tocar.",
@@ -844,13 +1019,15 @@
             "Cada stem queda en su pista, dentro de una carpeta nueva."
           ],
           "notes": [
-            "Necesita los modelos: se instalan en **Configuración → Componentes**. Es un paso de deshacer."
+            "Necesita los modelos: se instalan en **Configuración → Componentes**. Es un paso de deshacer.",
+            "Usa la placa de video si hay una compatible. Mientras corre, **Cancelar separación**, en el aviso, la detiene."
           ],
           "settings": "components",
           "see": ["extract-midi"]
         },
         {
           "id": "extract-midi",
+          "icon": "E8D6",
           "title": "Pasar audio a notas MIDI",
           "keywords": "transcribir extraer convertir partitura",
           "intro": "Saca las notas de un clip de audio a una pista MIDI.",
@@ -863,6 +1040,7 @@
         },
         {
           "id": "scale",
+          "icon": "E71E",
           "title": "Detectar la escala y los acordes",
           "keywords": "tonalidad armonia que tono esta sacar tema",
           "intro": "Escucha un clip y dice en qué escala está.",
@@ -886,12 +1064,13 @@
       "topics": [
         {
           "id": "autosave",
+          "icon": "E74E",
           "title": "Guardar el proyecto",
           "keywords": "autoguardado perder cambios salvar guardado automatico",
           "intro": "De entrada, cada cambio se guarda solo a los 1,5 segundos.",
           "steps": [
             "Mirá el estado al lado del nombre del proyecto: **Guardado**, **Guardando** o **Sin guardar**.",
-            "Para forzarlo, usá {key:save} o el diskette.",
+            "Para forzarlo, usá {key:save} o el diskette {icon:E74E}.",
             "En **Configuración → Guardado y exportación** podés elegir **Al editar**, **Cada X minutos** o **A mano**."
           ],
           "notes": [
@@ -902,6 +1081,7 @@
         },
         {
           "id": "library",
+          "icon": "E8F1",
           "title": "Encontrar tomas y liberar espacio",
           "keywords": "biblioteca toma borrada recuperar disco lleno espacio no usadas papelera",
           "intro": "**Biblioteca**, en el panel derecho, lista todas las tomas: usadas o no.",
@@ -917,6 +1097,7 @@
         },
         {
           "id": "share-project",
+          "icon": "E7B8",
           "title": "Pasar un proyecto a otra PC",
           "keywords": "compartir zip paquete backup respaldo copia mover",
           "intro": "Un paquete es un ZIP con todo lo necesario.",
@@ -937,6 +1118,7 @@
       "topics": [
         {
           "id": "shortcuts",
+          "icon": "E765",
           "title": "Ver y cambiar los atajos",
           "keywords": "teclado teclas lista combinaciones",
           "intro": "Los principales, con las teclas que tenés configuradas:",
@@ -947,24 +1129,27 @@
             "Dividir: {key:split}. Duplicar: {key:duplicate}. Deshacer: {key:undo}. Guardar: {key:save}."
           ],
           "notes": [
-            "En **Atajos de teclado** está la lista completa y se cambia cualquiera."
+            "En **Atajos de teclado** está la lista completa y se cambia cualquiera.",
+            "Con la ventana de un plugin adelante andan los del grupo **Transporte**, salvo mientras escribís en un campo de texto del plugin."
           ],
           "settings": "shortcuts"
         },
         {
           "id": "look",
+          "icon": "E771",
           "title": "Cambiar el color y el diseño",
           "keywords": "tema acento apariencia vertical paneles ocultar pantalla completa",
           "intro": "Todo está en la barra de título.",
           "steps": [
             "El selector de tema elige el color de acento y el fondo.",
-            "El botón de diseño cambia entre **Clásico** y **Vertical**.",
+            "El botón de diseño {icon:E80A} cambia entre **Clásico** y **Vertical**.",
             "Los dos botones de panel ocultan los costados.",
             "{key:fullScreen} pasa a pantalla completa."
           ]
         },
         {
           "id": "language",
+          "icon": "F2B7",
           "title": "Cambiar el idioma",
           "keywords": "ingles espanol english traduccion",
           "intro": "Se aplica al reiniciar la app. Los proyectos no cambian.",
@@ -984,6 +1169,7 @@
       "topics": [
         {
           "id": "no-sound",
+          "icon": "E767",
           "title": "No se oye nada",
           "keywords": "sin sonido mudo no suena no escucho silencio",
           "intro": "Revisá en este orden.",
@@ -998,6 +1184,7 @@
         },
         {
           "id": "no-interface",
+          "icon": "E7F6",
           "title": "No aparece la interfaz",
           "keywords": "asio driver no se encontro no detecta placa",
           "intro": "XTreme necesita un driver ASIO.",
@@ -1011,6 +1198,7 @@
         },
         {
           "id": "dropouts",
+          "icon": "E9D9",
           "title": "El audio se corta o hace clics",
           "keywords": "crujidos glitch pops saltos entrecortado buffer cpu dsp",
           "intro": "Casi siempre es falta de tiempo para procesar.",
@@ -1027,6 +1215,7 @@
         },
         {
           "id": "offset-take",
+          "icon": "E895",
           "title": "La toma queda corrida",
           "keywords": "desfasada fuera de tiempo atrasada click no coincide",
           "intro": "Falta medir la latencia real de tu interfaz.",
@@ -1040,6 +1229,7 @@
         },
         {
           "id": "no-camera",
+          "icon": "E722",
           "title": "La cámara no aparece",
           "keywords": "sin imagen negro webcam droidcam video no se ve",
           "intro": "Revisá en este orden.",
@@ -1057,6 +1247,7 @@
         },
         {
           "id": "no-ffmpeg",
+          "icon": "E896",
           "title": "Falta FFmpeg",
           "keywords": "no exporta video mp3 deshabilitado error componentes instalar",
           "intro": "FFmpeg hace falta para la cámara, el video, el MP3 y algunos formatos.",
@@ -1065,10 +1256,14 @@
             "Instalá FFmpeg.",
             "Probá de nuevo."
           ],
+          "notes": [
+            "Si lo instalaste con winget, la app lo encuentra sola aunque no esté en el PATH."
+          ],
           "settings": "components"
         },
         {
           "id": "plugin-fail",
+          "icon": "E950",
           "title": "Un plugin no abre o no aparece",
           "keywords": "vst no carga crash cerro error falla",
           "intro": "Un plugin que falla no tira abajo la app.",
@@ -1078,12 +1273,13 @@
             "Si está en la lista de los que no abrieron, leé el motivo y tocá **Probar de nuevo**."
           ],
           "notes": [
-            "Solo se admiten plugins VST3 de 64 bits."
+            "Se admiten plugins VST3 y VST2, de 64 y 32 bits. Si un plugin viene en los dos formatos, el VST2 o el de 32 bits lo dice en la lista."
           ],
           "settings": "plugins"
         },
         {
           "id": "no-midi",
+          "icon": "E765",
           "title": "El teclado MIDI no suena",
           "keywords": "no detecta controlador sin notas",
           "intro": "Revisá en este orden.",
@@ -1096,6 +1292,7 @@
         },
         {
           "id": "offline-clip",
+          "icon": "E8A5",
           "title": "Un clip aparece en gris",
           "keywords": "sin conexion falta archivo offline perdido",
           "intro": "Falta su archivo en la carpeta **media** del proyecto.",
@@ -1110,12 +1307,27 @@
         },
         {
           "id": "read-only",
+          "icon": "E72E",
           "title": "El proyecto abre en solo lectura",
           "keywords": "no puedo editar bloqueado otra ventana",
           "intro": "Hay otra ventana de XTreme con ese proyecto abierto, o se guardó con una versión más nueva.",
           "steps": [
             "Cerrá la otra ventana y volvé a abrirlo.",
             "Si se guardó con una versión más nueva, actualizá XTreme."
+          ]
+        },
+        {
+          "id": "feedback",
+          "icon": "E939",
+          "title": "Reportar un error o sugerir algo",
+          "keywords": "comentarios feedback problema bug idea issue github soporte",
+          "intro": "Los reportes van a GitHub, a la vista de todos. Hace falta una cuenta gratuita.",
+          "steps": [
+            "Tocá **Enviar comentarios** en la barra de título o en Acerca de.",
+            "Elegí **Error** o **Sugerencia** y escribí un título y la descripción.",
+            "Revisá los datos que se incluyen y destildalos si no querés mandarlos.",
+            "Tocá **Continuar en GitHub**, revisá el reporte y envialo desde esa página.",
+            "Si el texto es largo, se copia al portapapeles: pegalo en la descripción."
           ]
         }
       ]

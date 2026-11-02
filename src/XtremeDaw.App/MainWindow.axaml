@@ -185,6 +185,12 @@
               <TextBlock Classes="icon" Text="&#xE80A;" />
             </Button>
             <c:ThemePicker x:Name="ThemePick" VerticalAlignment="Center" />
+            <Button x:Name="NewsButton" Classes="ghost" ToolTip.Tip="{loc:T news.title}" AutomationProperties.Name="{loc:T news.title}">
+              <TextBlock Classes="icon" Text="&#xE789;" />
+            </Button>
+            <Button x:Name="FeedbackButton" Classes="ghost" ToolTip.Tip="{loc:T feedback.title}" AutomationProperties.Name="{loc:T feedback.title}">
+              <TextBlock Classes="icon" Text="&#xE939;" />
+            </Button>
             <Button x:Name="HelpButton" Classes="ghost" AutomationProperties.Name="{loc:T help.title}">
               <TextBlock Classes="icon" Text="&#xE897;" />
             </Button>
@@ -557,7 +563,10 @@
     <d:ComponentsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="ComponentsHelp" IsVisible="False" />
     <d:ScaleDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="ScaleResult" IsVisible="False" />
     <d:HelpDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="HelpPanel" IsVisible="False" />
+    <d:NewsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="News" IsVisible="False" />
     <d:UnsavedDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Unsaved" IsVisible="False" />
+    <d:TempoDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="TempoAsk" IsVisible="False" />
+    <d:FeedbackDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Feedback" IsVisible="False" />
     <!-- toasts float over everything (the manager and the dialogs too), above the transport bar -->
     <c:ToastHost Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Toasts" Margin="0,0,16,68" />
   </Grid>

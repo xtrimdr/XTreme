@@ -27,6 +27,7 @@
     <AvaloniaResource Include="Assets\XTreme-512.png" />
     <AvaloniaResource Include="Assets\Lang\*.json" />
     <AvaloniaResource Include="Assets\Help\*.json" />
+    <AvaloniaResource Include="Assets\News\*.json" />
     <!-- the instrument icons' license travels with the exe -->
     <None Include="Assets\Icons\LICENSES.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

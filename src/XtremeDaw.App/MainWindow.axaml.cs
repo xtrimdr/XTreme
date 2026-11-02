@@ -109,6 +109,17 @@ public partial class MainWindow : Window
         Projects.HelpRequested += OpenHelp;
         HelpPanel.Dismissed += () => { if (Projects.IsVisible) Projects.Focus(); else Timeline.Focus(); };
         HelpPanel.SettingsRequested += tab => { if (!RecordingBusy) Settings.Show(tab); };
+        HelpPanel.NewsRequested += OpenNews;
+        NewsButton.Click += (_, _) => OpenNews();
+        Projects.NewsRequested += OpenNews;
+        News.TopicRequested += topic => HelpPanel.Show(topic, canOpenSettings: !Projects.IsVisible);
+        News.Dismissed += () =>
+        {
+            if (HelpPanel.IsVisible) HelpPanel.Focus();
+            else if (ComponentsHelp.IsVisible) ComponentsHelp.Focus();
+            else if (Projects.IsVisible) Projects.Focus();
+            else Timeline.Focus();
+        };
         Live.OpenInputs += () =>
         {
             if (Projects.IsVisible || Export.IsVisible || RecordingBusy) return;
@@ -221,6 +232,7 @@ public partial class MainWindow : Window
             // like the web app, it starts on the project manager (a folder on the command line opens directly)
             if (dir != null && ProjectStore.IsProject(dir)) await LoadProject(dir);
             else await ShowProjects();
+            if (NewsGuide.Unseen) OpenNews();
         };
         Closing += async (_, e) =>
         {
@@ -616,9 +628,27 @@ public partial class MainWindow : Window
         HelpPanel.Show(canOpenSettings: !Projects.IsVisible);
     }
 
+    /// <summary>Like the help: over the manager too, and over the help itself.</summary>
+    void OpenNews()
+    {
+        if (Export.IsVisible || Settings.IsVisible || About.IsVisible || RecordingBusy) return;
+        News.Show();
+    }
+
+    /// <summary>Over the manager and "Acerca de" too; not while a dialog or a take has the keys.</summary>
+    void OpenFeedback()
+    {
+        if (Export.IsVisible || Settings.IsVisible || RecordingBusy) return;
+        Feedback.Show([$"XTreme {Dialogs.AboutDialog.AppVersion()}", System.Runtime.InteropServices.RuntimeInformation.OSDescription, $"ASIO: {engine.DriverName ?? "-"}"]);
+    }
+
     async void OnKey(object? sender, KeyEventArgs e)
     {
+        TellTimelineKeys(e, down: true);
         if (Unsaved.HandleKey(e)) return;
+        if (TempoAsk.HandleKey(e)) return;
+        if (Feedback.HandleKey(e)) return;
+        if (News.HandleKey(e)) return;
         if (Stems.HandleKey(e)) return;
         if (ScaleResult.HandleKey(e)) return;
         if (ComponentsHelp.HandleKey(e)) return;

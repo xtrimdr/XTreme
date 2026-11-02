@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:XtremeDaw.App"
+             x:Class="XtremeDaw.App.Dialogs.NewsDialog"
+             AutomationProperties.Name="{loc:T news.title}"
+             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+
+  <!-- same frame as SettingsDialog -->
+  <UserControl.Styles>
+    <Style Selector="Button.act">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource Faint}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.act:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+      <Setter Property="FontSize" Value="11.5" />
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource AccentHover}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Margin="32" Width="640" MaxHeight="760" HorizontalAlignment="Center" VerticalAlignment="Center"
+          Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+      <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="20,10,12,10">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Classes="icon" Text="&#xE789;" FontSize="15" Foreground="{StaticResource Accent}" />
+            <TextBlock Text="{loc:T news.title}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
+          <Button Grid.Column="1" x:Name="CloseButton" Classes="act" ToolTip.Tip="{loc:T settings.close}" AutomationProperties.Name="{loc:T settings.close}">
+            <TextBlock Classes="icon" Text="&#xE711;" FontSize="13" />
+          </Button>
+        </Grid>
+      </Border>
+      <WrapPanel Grid.Row="1" x:Name="Versions" Margin="20,12,12,4" />
+      <ScrollViewer Grid.Row="2" x:Name="Scroller" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel x:Name="List" Spacing="8" Margin="20,8,20,12" />
+      </ScrollViewer>
+      <Border Grid.Row="3" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="20,10">
+        <Button x:Name="OkButton" Classes="btn primary" Padding="16,0" HorizontalAlignment="Right" Content="{loc:T news.ok}" />
+      </Border>
+    </Grid>
+  </Border>
+</UserControl>

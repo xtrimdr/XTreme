@@ -253,5 +253,7 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
 6. Si cambiás atajos, comandos de `wtlab` o la estructura, actualizá DETALLES.md y DETALLES_EN.md.
 7. Si cambiás cómo se usa algo o el nombre de un control, actualizá su tema de la ayuda en todos los idiomas
    (`src/XtremeDaw.App/Assets/Help`, ver "Ayuda" en docs/interfaz.md); una función nueva que alguien vendría a buscar
-   lleva su tema.
+   lleva su tema. Lo que el usuario va a notar suma una línea en la versión más nueva de `Assets/News` (todos los idiomas,
+   ver "Novedades" en docs/interfaz.md), que puede ser la próxima, aún sin publicar. Al publicar, esa versión tiene que ser
+   la de `Directory.Build.props`.
 8. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.

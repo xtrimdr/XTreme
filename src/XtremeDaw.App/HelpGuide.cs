@@ -11,13 +11,16 @@ namespace XtremeDaw.App;
 /// The contents of the help window: categories of task-named topics, one JSON per language in Assets/Help (embedded).
 /// They live apart from Assets/Lang because they are pages, not labels. es.json is the reference: a category or topic
 /// missing from another language falls back to Spanish, like <see cref="Loc"/>. Texts use **bold** for what the user
-/// sees on screen and {key:id} / {wheel:id} for shortcuts, so a key the user changed reads right here too.
+/// sees on screen, {key:id} / {wheel:id} for shortcuts, so a key the user changed reads right here too, and {icon:E74E}
+/// for the glyph of a button on screen.
 /// </summary>
 public static partial class HelpGuide
 {
     public sealed class Topic
     {
         public string Id { get; init; } = "";
+        /// <summary>Segoe Fluent Icons code point, in hex; without one, the category's.</summary>
+        public string Icon { get; init; } = "";
         public string Title { get; init; } = "";
         /// <summary>Words people search with that the text itself doesn't use ("no suena", "pisar una toma").</summary>
         public string Keywords { get; init; } = "";
@@ -60,7 +63,11 @@ public static partial class HelpGuide
         return null;
     }
 
-    public static string Glyph(Category c) => char.ConvertFromUtf32(int.Parse(c.Icon, NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+    public static string Glyph(string hex) => char.ConvertFromUtf32(int.Parse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+
+    public static string Glyph(Category c) => Glyph(c.Icon);
+
+    public static string Glyph(Topic t) => Glyph(t.Icon.Length > 0 ? t.Icon : t.Category.Icon);
 
     static Category[] Load()
     {
@@ -89,22 +96,25 @@ public static partial class HelpGuide
         }
     }
 
-    [GeneratedRegex(@"\*\*(?<bold>.+?)\*\*|\{key:(?<key>\w+)\}|\{wheel:(?<wheel>\w+)\}")]
+    [GeneratedRegex(@"\*\*(?<bold>.+?)\*\*|\{key:(?<key>\w+)\}|\{wheel:(?<wheel>\w+)\}|\{icon:(?<icon>[0-9A-Fa-f]+)\}")]
     private static partial Regex Marks();
 
+    public enum Mark { Plain, Bold, Key, Icon }
+
     /// <summary>Text with its marks found: each piece in order, with what it is.</summary>
-    public static IEnumerable<(string Text, bool Bold, bool Key)> Pieces(string text)
+    public static IEnumerable<(string Text, Mark Mark)> Pieces(string text)
     {
         int at = 0;
         foreach (Match m in Marks().Matches(text))
         {
-            if (m.Index > at) yield return (text[at..m.Index], false, false);
-            if (m.Groups["bold"].Success) yield return (m.Groups["bold"].Value, true, false);
-            else if (m.Groups["key"].Success) yield return (KeyLabel(m.Groups["key"].Value), false, true);
-            else yield return (WheelLabel(m.Groups["wheel"].Value), false, true);
+            if (m.Index > at) yield return (text[at..m.Index], Mark.Plain);
+            if (m.Groups["bold"].Success) yield return (m.Groups["bold"].Value, Mark.Bold);
+            else if (m.Groups["key"].Success) yield return (KeyLabel(m.Groups["key"].Value), Mark.Key);
+            else if (m.Groups["wheel"].Success) yield return (WheelLabel(m.Groups["wheel"].Value), Mark.Key);
+            else yield return (Glyph(m.Groups["icon"].Value), Mark.Icon);
             at = m.Index + m.Length;
         }
-        if (at < text.Length) yield return (text[at..], false, false);
+        if (at < text.Length) yield return (text[at..], Mark.Plain);
     }
 
     static string KeyLabel(string id) =>
@@ -113,7 +123,7 @@ public static partial class HelpGuide
     static string WheelLabel(string id) =>
         Shortcuts.Wheel.Any(a => a.Id == id) && Shortcuts.WheelLabel(id) is { Length: > 0 } k ? k : Loc.T("set.sc.none");
 
-    static string Plain(string text) => string.Concat(Pieces(text).Select(p => p.Text));
+    static string Plain(string text) => string.Concat(Pieces(text).Where(p => p.Mark != Mark.Icon).Select(p => p.Text));
 
     /// <summary>Lowercase and without accents: "cómo" finds "Como" and the other way around.</summary>
     static string Fold(string text)

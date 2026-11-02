@@ -63,6 +63,9 @@ public sealed partial class ProjectsDialog : UserControl
     /// <summary>The ? of the header; the window shows the help over the manager.</summary>
     public event Action? HelpRequested;
 
+    /// <summary>The megaphone of the header; the window shows the news over the manager.</summary>
+    public event Action? NewsRequested;
+
     bool CanCancel => CurrentDir != null;
 
     public ProjectsDialog()
@@ -70,6 +73,7 @@ public sealed partial class ProjectsDialog : UserControl
         InitializeComponent();
         CloseButton.Click += (_, _) => Cancel();
         HelpButton.Click += (_, _) => HelpRequested?.Invoke();
+        NewsButton.Click += (_, _) => NewsRequested?.Invoke();
         NewButton.Click += (_, _) => StartNew();
         OpenFolderButton.Click += async (_, _) => await OpenFolder();
         UnpackButton.Click += async (_, _) => await Unpack();

@@ -1,0 +1,167 @@
+{
+  "releases": [
+    {
+      "version": "0.9.12",
+      "items": [
+        {
+          "icon": "E939",
+          "title": "Send feedback",
+          "text": "Report a bug or suggest something from the title bar: you write the report in the app and send it from GitHub.",
+          "topic": "feedback"
+        },
+        {
+          "icon": "EA37",
+          "title": "Scales and chords",
+          "text": "Choose the song's scale in the piano roll or on the virtual keyboard: notes land in the scale and you write chords with one click, with their inversions.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E950",
+          "title": "VST2 and 32-bit plugins",
+          "text": "Besides 64-bit VST3, VST2 and 32-bit plugins now open too. The menus mark which ones they are.",
+          "topic": "plugins"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Automate from the plugin",
+          "text": "Click **Automate** in its window's bar and move a parameter: its lane is created.",
+          "topic": "automation"
+        },
+        {
+          "icon": "E762",
+          "title": "Edit several tracks at once",
+          "text": "With several tracks picked, the inspector changes what they share and right-click acts on all of them.",
+          "topic": "multi-track"
+        },
+        {
+          "icon": "E8B2",
+          "title": "Stretch a clip",
+          "text": "**Ctrl** + dragging the trim handle stretches it without changing the pitch. Attacks stay in place, so it works on rhythm loops.",
+          "topic": "move-trim"
+        },
+        {
+          "icon": "EC4A",
+          "title": "Changing the tempo asks what to do",
+          "text": "Choose **Stretch** the clips or **Grid only**.",
+          "topic": "tempo"
+        },
+        {
+          "icon": "E8CB",
+          "title": "Pitch per clip",
+          "text": "Right-click a clip → **Pitch**: −12 to +12 semitones, added to the track's.",
+          "topic": "transpose"
+        },
+        {
+          "icon": "E8FD",
+          "title": "96 compressor presets",
+          "text": "By instrument and by use, in 12 categories. **Analyze take** fits them to the recorded level.",
+          "topic": "comp-presets"
+        },
+        {
+          "icon": "E8C6",
+          "title": "Snap and shortcuts for faster editing",
+          "text": "The snap has **Line**, **Cell** and more divisions. **Shift** + drag copies a clip, {key:alignGrid} aligns it to the grid, {key:selectAll} marks everything and {key:deselect} clears the selection.",
+          "topic": "select-many"
+        },
+        {
+          "icon": "E710",
+          "title": "New track, no fixed bar",
+          "text": "The **+** sits at the foot of the track headers, and right-clicking the empty timeline area opens the same menu.",
+          "topic": "first-take"
+        },
+        {
+          "icon": "E7C1",
+          "title": "The loop turns without cuts",
+          "text": "It wraps on the exact sample: the start comes in whole and the click keeps its beat.",
+          "topic": "markers-loop"
+        },
+        {
+          "icon": "E771",
+          "title": "New faders and knobs",
+          "text": "Faders, knobs and mixer with more contrast, the selected track with a colored border, and a refreshed icon."
+        },
+        {
+          "icon": "E897",
+          "title": "Refreshed help and this window",
+          "text": "Topics with icons, the most searched at hand, and each version's changes always one click away on {icon:E789}."
+        }
+      ]
+    },
+    {
+      "version": "0.9.11",
+      "items": [
+        {
+          "icon": "E9D9",
+          "title": "Automation",
+          "text": "Volume, pan, sends and effect and instrument parameters, on lanes below each track.",
+          "topic": "automation"
+        },
+        {
+          "icon": "E81E",
+          "title": "Split into stems",
+          "text": "Vocals, drums, bass and more, each on its own track. It uses the video card if there is a compatible one.",
+          "topic": "stems"
+        },
+        {
+          "icon": "F0E2",
+          "title": "Patterns",
+          "text": "Linked MIDI clips: editing one changes them all. With their own tab to drag them onto tracks.",
+          "topic": "patterns"
+        },
+        {
+          "icon": "EC4A",
+          "title": "Everything follows the tempo",
+          "text": "Changing the BPM changes the song's speed, keeping the pitch: clips, automation, markers and loop stay on their bar.",
+          "topic": "tempo"
+        },
+        {
+          "icon": "E71E",
+          "title": "Detect scale and chords",
+          "text": "Right-click an audio clip. Chords can stay on a strip of the timeline.",
+          "topic": "scale"
+        },
+        {
+          "icon": "E71C",
+          "title": "More effects",
+          "text": "Chorus, Flanger, Phaser and Tremolo, a 7-band dynamic EQ, and the master's effects on any channel.",
+          "topic": "eq"
+        },
+        {
+          "icon": "EB95",
+          "title": "Modular mastering",
+          "text": "The master chain is a list of modules you drag to change the order.",
+          "topic": "mastering"
+        },
+        {
+          "icon": "EF3B",
+          "title": "Reverse a clip",
+          "text": "It plays backwards without touching the file.",
+          "topic": "reverse"
+        },
+        {
+          "icon": "E8F1",
+          "title": "Sample library",
+          "text": "Your sound folders, with search, favorites and preview. Importing is much faster and takes almost any format.",
+          "topic": "import"
+        },
+        {
+          "icon": "E897",
+          "title": "Help inside the app",
+          "text": "Topics by category, with search. Open it with {key:help}.",
+          "topic": "tour"
+        },
+        {
+          "icon": "E896",
+          "title": "Optional components",
+          "text": "FFmpeg and the stem models install from the app, in **Settings → Components**.",
+          "topic": "no-ffmpeg"
+        },
+        {
+          "icon": "F4A5",
+          "title": "Now called XTreme",
+          "text": "New name and icon. Your projects and settings stay where they were."
+        }
+      ]
+    }
+  ]
+}

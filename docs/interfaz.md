@@ -126,7 +126,8 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   que es lo primero que ve alguien nuevo (pedido del usuario: didáctica, simple y por categorías). No abre grabando ni
   sobre Configuración, Exportar o Acerca de. Reabre donde quedó.
 - A la izquierda, el buscador y las categorías (una abierta a la vez, con sus temas); a la derecha, la página: Inicio con
-  una tarjeta por categoría, la categoría con sus temas, o el tema. El foco arranca en el buscador; Enter abre el primer
+  "Empezá por acá" y Novedades, lo más buscado (`HelpDialog.Popular`) y una tarjeta por categoría; la categoría con sus temas, o el tema, que termina con
+  el anterior y el siguiente de su categoría. Cada tema lleva su ícono (`icon`, en la lista, las páginas y los chips; sin ícono usa el de su categoría). El foco arranca en el buscador; Enter abre el primer
   resultado y Esc limpia la búsqueda y después cierra. La búsqueda ignora mayúsculas y acentos, y mira título, `keywords`
   y texto (`HelpGuide.Search`).
 - Un tema se llama como lo que la gente quiere hacer ("Grabar una toma", "No se oye nada"), no como el control. Lleva
@@ -134,7 +135,18 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   sobre el gestor, donde Configuración no abre) y `see` (ids de otros temas).
 - El contenido va en `Assets/Help/<código>.json`, no en `Assets/Lang`: son páginas, no etiquetas. **es.json es la
   referencia** y lo que falta en otro idioma cae al español. En el texto, `**negrita**` es lo que se ve en pantalla (tal
-  cual dice la interfaz) y `{key:id}` / `{wheel:id}` el atajo que el usuario tiene configurado.
+  cual dice la interfaz), `{key:id}` / `{wheel:id}` el atajo que el usuario tiene configurado y `{icon:E74E}` el glifo de
+  un botón (el mismo que en pantalla).
+
+## Novedades (`Dialogs/NewsDialog`, `NewsGuide`)
+
+- Qué cambió en cada versión, la más nueva primero y las anteriores en chips arriba; cada novedad lleva ícono y, si tiene,
+  "Ver en la ayuda" (`topic`). Se abre con el megáfono de la barra de título y del gestor de proyectos y con la tarjeta del
+  inicio de la Ayuda. No abre grabando ni sobre Configuración, Exportar o Acerca de.
+- Se muestra sola al arrancar si la primera versión del archivo no es la de `config.json` "newsSeen": también en una
+  instalación nueva (pedido del usuario: la primera vez que se entra). Va por encima del aviso de componentes.
+- El contenido va en `Assets/News/<código>.json`, con las marcas de la Ayuda; **es.json es la referencia**. Se cuenta para
+  el usuario, sin nombres internos ni arreglos que no va a notar.
 
 ## Avisos y toasts
 
