@@ -22,6 +22,11 @@ public partial class MainWindow
     InspectorSlider? clickVolume;
     // like ClickSoundMenu's volTimer: one audition 150 ms after the volume stops moving
     readonly Avalonia.Threading.DispatcherTimer clickVolumeTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    /// <summary>How long the tempo box stays still before asking: the wheel and typing give no sign that they ended.</summary>
+    static readonly TimeSpan TempoAskDelay = TimeSpan.FromMilliseconds(700);
+    readonly Avalonia.Threading.DispatcherTimer tempoAskTimer = new() { Interval = TempoAskDelay };
+    double tempoAsked;
+    ProjectStore? tempoAskedIn;
     Task clickPrefsSaving = Task.CompletedTask;
     bool? transportPlaying;
     string? clockTip;
@@ -35,7 +40,8 @@ public partial class MainWindow
         LoopToggle.IsCheckedChanged += (_, _) => engine.Loop = LoopToggle.IsChecked == true;
         StopButton.Click += (_, _) => engine.StopTransport();
         ClockButton.Click += (_, _) => SetRulerMode(!Timeline.RulerInBars);
-        Tempo.Changed += SetTempo;
+        Tempo.Changed += TempoEdited;
+        tempoAskTimer.Tick += (_, _) => AskTempo();
         AddHandler(KeyUpEvent, OnTransportKeyUp, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         Deactivated += (_, _) => transportKeys.Clear();
         if (!Enum.TryParse<ClickSound>(AppConfig.Get("click.sound"), out var sound)) sound = ClickSound.Bip;
@@ -200,7 +206,8 @@ public partial class MainWindow
         }
         StopButton.IsEnabled = !engine.Recording && (engine.Playing || pos > 0);
         PlayButton.IsEnabled = ToStartButton.IsEnabled = !engine.Recording;
-        Tempo.Set(engine.Bpm);
+        // a value waiting for its question (TempoEdited) stays in the box: the engine only gets it with the answer
+        Tempo.Set(tempoAskTimer.IsEnabled || TempoAsk.IsVisible ? tempoAsked : engine.Bpm);
         Tempo.IsEnabled = store != null && !store.ReadOnly && !restoring && !RecordingBusy;
         ShowArm();
         ShowMidiListeners();

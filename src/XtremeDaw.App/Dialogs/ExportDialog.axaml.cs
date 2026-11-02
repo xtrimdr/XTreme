@@ -1269,7 +1269,7 @@ public sealed partial class ExportDialog : UserControl
                 var lc = lt?.Clips.FirstOrDefault(x => x.Clip.Id == c.Id);
                 // what the clip plays when it is already what its track and the tempo want, else the cache's (or made now)
                 float[]? l = null, r = null;
-                if (lc?.Sound is { } sound && lc.Plays(trk.Transpose))
+                if (lc?.Sound is { } sound && lc.Plays(c.SemitonesOn(trk)))
                 {
                     l = sound.L;
                     r = sound.R;

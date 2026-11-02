@@ -194,7 +194,105 @@ static class StretchChecks
         TempoFollow.SetGrid(p, 90);
         bool grid = p.Settings.Bpm == 90 && back.Stretch == 1 && Near(back.AtSec, 2);
         TransposeCommands.Row("Detectar tempo: el audio queda", grid ? "igual" : "distinto", "igual", grid);
-        return moved && undo && home && grid;
+        return moved && undo && home && grid && CheckHand() && CheckPitch();
+    }
+
+    /// <summary>A clip's own pitch: it adds to the track's up to the shifter's limit, a lock refuses it, undo brings it back and it survives a save.</summary>
+    static bool CheckPitch()
+    {
+        var media = new Media { Name = "Toma", DurationSec = 10 };
+        var clip = new Clip { MediaId = media.Id };
+        var p = new Project { Tracks = [new Track { Name = "Guitarra", Transpose = 2, Clips = [clip] }] };
+        p.Media.Add(media);
+
+        ClipEditing.SetPitch(p, clip.Id, 3.4);
+        bool adds = clip.Pitch == 3 && clip.SemitonesOn(p.Tracks[0]) == 5;
+        ClipEditing.SetPitch(p, clip.Id, 40);
+        adds &= clip.Pitch == 12 && clip.SemitonesOn(p.Tracks[0]) == PitchShifter.MaxSemitones;
+        TransposeCommands.Row("Tono del clip: suma al de la pista", adds ? "igual" : "distinto", "igual", adds);
+
+        var history = new UndoManager();
+        history.Checkpoint(p, "gain");
+        ClipEditing.SetPitch(p, clip.Id, -5);
+        history.Undo(p);
+        bool undo = p.Tracks[0].Clips[0].Pitch == 12;
+        TransposeCommands.Row("Deshacer vuelve al tono del clip", undo ? "igual" : "distinto", "igual", undo);
+
+        var kept = p.Tracks[0].Clips[0];
+        kept.Locked = true;
+        bool refused = false;
+        try { ClipEditing.SetPitch(p, kept.Id, 1); } catch (ArgumentException) { refused = true; }
+        kept.Locked = false;
+        TransposeCommands.Row("Un clip bloqueado no cambia de tono", refused ? "igual" : "distinto", "igual", refused);
+
+        string json = System.Text.Json.JsonSerializer.Serialize(kept, ProjectStore.Json);
+        bool stored = System.Text.Json.JsonSerializer.Deserialize<Clip>(json, ProjectStore.Json)!.Pitch == 12
+            && !System.Text.Json.JsonSerializer.Serialize(new Clip(), ProjectStore.Json).Contains("pitch")
+            && new Clip { MediaId = "m", Pitch = 2 }.TakeKey() != new Clip { MediaId = "m" }.TakeKey();
+        TransposeCommands.Row("Tono del clip: se guarda y separa tomas", stored ? "igual" : "distinto", "igual", stored);
+        return adds && undo && refused && stored;
+    }
+
+    /// <summary>A clip stretched by its edges: the other edge stays, the limits hold, a lock refuses it, undo brings it back and the tempo goes on top.</summary>
+    static bool CheckHand()
+    {
+        var media = new Media { Name = "Toma", DurationSec = 10 };
+        var p = new Project { Tracks = [new Track { Name = "Guitarra" }] };
+        p.Media.Add(media);
+        p.Settings.Bpm = 120;
+        // heard from 3 to 9
+        var clip = new Clip { MediaId = media.Id, AtSec = 2, TrimStartSec = 1, TrimEndSec = 3, FadeInSec = 0.4, GainCurve = [new GainPoint { Sec = 4, Db = -3 }] };
+        p.Tracks[0].Clips.Add(clip);
+        Clip Pull(ClipEditMode mode, double dx, double grid = 0) => ClipEditing.Drag(clip, media, mode, dx, grid, grid == 0);
+
+        var longer = Pull(ClipEditMode.StretchEnd, 1.5);
+        var w = ClipEditing.Window(longer, media);
+        bool end = Near(longer.Stretch, 1.25) && Near(w.Start, 3) && Near(w.End, 10.5) && Near(longer.FadeInSec, 0.5) && Near(longer.GainCurve[0].Sec, 5);
+        TransposeCommands.Row("Estirar el final: el inicio queda", end ? "igual" : "distinto", "igual", end);
+
+        var earlier = Pull(ClipEditMode.StretchStart, -1.5);
+        w = ClipEditing.Window(earlier, media);
+        bool start = Near(earlier.Stretch, 1.25) && Near(w.Start, 1.5) && Near(w.End, 9);
+        TransposeCommands.Row("Estirar el inicio: el final queda", start ? "igual" : "distinto", "igual", start);
+
+        // no limit on the amount: only the shortest clip and the start of the song hold it
+        const double Sample = 1.0 / 48000;
+        var far = ClipEditing.Window(Pull(ClipEditMode.StretchEnd, 94), media);
+        var tiny = ClipEditing.Window(Pull(ClipEditMode.StretchEnd, -100), media);
+        bool limits = Math.Abs(far.End - far.Start - 100) < Sample && Math.Abs(tiny.End - tiny.Start - ClipEnvelope.MinClipSec) < Sample
+            && Near(ClipEditing.Window(Pull(ClipEditMode.StretchStart, -100), media).Start, 0);
+        TransposeCommands.Row("Estirar a mano: sin tope, solo el cero", limits ? "igual" : "distinto", "igual", limits);
+
+        bool snapped = Near(ClipEditing.Window(Pull(ClipEditMode.StretchEnd, 1.6, 0.5), media).End, 10.5);
+        TransposeCommands.Row("Estirar a mano: imán a la grilla", snapped ? "igual" : "distinto", "igual", snapped);
+
+        // only the stretch changes when a whole clip is pulled by its end: the lock has to look at it too
+        var whole = new Clip { MediaId = media.Id, Locked = true };
+        p.Tracks[0].Clips.Add(whole);
+        bool refused = false;
+        try { ClipEditing.Replace(p, ClipEditing.Drag(whole, media, ClipEditMode.StretchEnd, 2, 0, true)); }
+        catch (ArgumentException) { refused = true; }
+        p.Tracks[0].Clips.Remove(whole);
+        TransposeCommands.Row("Un clip bloqueado no se estira", refused ? "igual" : "distinto", "igual", refused);
+
+        bool pieces = new Clip { MediaId = "m", Stretch = 1.25 }.TakeKey() != new Clip { MediaId = "m", Stretch = 1.5 }.TakeKey()
+            && new Clip { MediaId = "m" }.TakeKey() == "m";
+        TransposeCommands.Row("Distinto estiramiento, otra toma", pieces ? "igual" : "distinto", "igual", pieces);
+
+        var history = new UndoManager();
+        history.Checkpoint(p, "gain");
+        ClipEditing.Replace(p, longer);
+        history.Undo(p);
+        var undone = p.Tracks[0].Clips[0];
+        TempoFollow.SetBpm(p, 60);
+        bool stacked = Near(undone.Stretch, 2);
+        ClipEditing.Replace(p, ClipEditing.Drag(undone, media, ClipEditMode.StretchEnd, -3, 0, true));
+        var back = ClipEditing.Find(p, undone.Id).Clip;
+        stacked &= Near(back.Stretch, 1.5);
+        TempoFollow.SetBpm(p, 120);
+        stacked &= Near(back.Stretch, 0.75);
+        TransposeCommands.Row("Deshacer y tempo sobre lo estirado", stacked ? "igual" : "distinto", "igual", stacked);
+        return end && start && limits && snapped && refused && pieces && stacked;
     }
 
     static bool Near(double a, double b) => Math.Abs(a - b) < 1e-6;

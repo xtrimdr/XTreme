@@ -159,7 +159,11 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   tooltip) y el botón **Monitor** (`ToggleButton.cell`, el monitoreo por software de Configuración). A la derecha, la vista.
 - Metrónomo: una caja con celdas Compás · Tempo · TAP · Cuenta · Click · sonido ▾ (ícono `MetronomeIcon`, dibujado
   porque Segoe no tiene metrónomo).
-- **Cambiar el tempo cambia la velocidad de toda la canción** (`SetTempo`, `TempoFollow`, decisión del usuario, sin
+- **Cambiar el tempo pregunta si se estiran los clips** (pedido del usuario): con clips en el timeline, el valor nuevo
+  solo se muestra hasta que el control queda quieto (`TempoAskDelay`, y `TempoControl.Busy` mientras se arrastra o se
+  marca TAP) y entonces `TempoDialog` ofrece **Estirar**, **Solo la grilla** (`SetTempo(valor, follow: false)`) o
+  Cancelar (el tempo queda como estaba). Sin clips o grabando no pregunta.
+- **Estirar cambia la velocidad de toda la canción** (`SetTempo`, `TempoFollow`, decisión del usuario, sin
   elegir qué clips): clips, video, automatización, marcadores, acordes, loop y cabezal quedan en su compás, con el mismo
   tono. Cada clip que cambió de largo **calla** hasta que su sonido está listo (decisión del usuario): se ve "Ajustando
   al tempo… N%" sobre el clip y un toast con barra para todos, de a un render por vez, después de 300 ms sin tocar el
@@ -432,6 +436,10 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
 - **Clips que se pisan**: se ve el último de la pista. El clic derecho → "Traer al frente" (`ClipEditing.BringToFront`,
   prendido solo si otro lo tapa) lo pasa al final: arriba en el timeline, en la vista previa y en la exportación. El
   sonido no cambia: los dos suenan.
+- **Tono de un clip** (pedido del usuario): clic derecho → Tono, un submenú de −12 a +12 semitonos (`PitchItem`), con los
+  que estén en la selección. Se suma al Transponer de la pista hasta ±12 (`Clip.Pitch`, `Clip.SemitonesOn`), no cambia el
+  largo y no toca el archivo; usa el mismo render y caché (`RefreshTranspose`). El clip lleva "+2" arriba a la derecha
+  (`DrawPitchTab`). Un clip bloqueado no cambia de tono.
 - **Invertir** (pedido del usuario: reverse): clic derecho en un clip de audio, con los que estén en la selección; clic
   derecho de nuevo lo deja como estaba. No toca el archivo: `Clip.Reversed` y `ClipEditing.Reverse`, que deja el clip en
   el mismo lugar, pasa lo recortado a la otra punta y da vuelta la curva de volumen; los fades quedan en sus bordes. Suena

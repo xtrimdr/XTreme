@@ -194,7 +194,7 @@ la consola, sin abrir la ventana.
 | `proyecto abrir\|clips\|versiones\|volver carpeta` | abre un proyecto, lista pistas y clips, y recorre el historial |
 | `proyecto guardar-version carpeta [nombre] \| nombrar-version carpeta n [nombre]` | guarda una versión ahora / le pone nombre a la n de la lista (con nombre no se borra sola; sin nombre se lo saca) |
 | `proyecto toma\|cortar carpeta [--camara]` | graba un tono como la ventana / lo corta sin cerrar, para probar la recuperación |
-| `proyecto editar carpeta mover\|recortar-inicio\|recortar-final\|fade-in\|fade-out clip delta` | edita un clip como en el timeline (más: `a-pista`, `dividir`, `duplicar` (varios ids con comas), `pegar`, `ganancia`, `curva`, `invertir`, `quitar-clip`, `nueva-pista`…) |
+| `proyecto editar carpeta mover\|recortar-inicio\|recortar-final\|estirar-inicio\|estirar-final\|fade-in\|fade-out clip delta` | edita un clip como en el timeline (más: `a-pista`, `dividir`, `duplicar` (varios ids con comas), `pegar`, `ganancia`, `curva`, `invertir`, `tono`, `quitar-clip`, `nueva-pista`…) |
 | `proyecto mezcla carpeta [ab\|copiar\|olvidar]` | el A \| B del mixer: pasa a la otra mezcla, copia esta sobre la otra u olvida la otra |
 | `proyecto verificar-ab` | comprueba el A/B de la mezcla |
 | `proyecto editar carpeta bloquear\|desbloquear clip\|pista` | fija un clip (o toda la pista): no se mueve, no se recorta, no se borra y grabar no lo pisa |

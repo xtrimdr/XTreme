@@ -528,7 +528,7 @@ public sealed class LiveTrack
             secs[i] = c.Clip.TransitionSec;
             takes[i] = i;
             for (int k = 0; k < i; k++)
-                if (c.Media != null && clips[k].Media?.Id == c.Media.Id && clips[k].Clip.Reversed == c.Clip.Reversed) { takes[i] = k; break; }
+                if (c.Media != null && clips[k].Media?.Id == c.Media.Id && clips[k].Clip.Reversed == c.Clip.Reversed && clips[k].Clip.Stretch == c.Clip.Stretch && clips[k].Clip.Pitch == c.Clip.Pitch) { takes[i] = k; break; }
             c.Lead = c.Tail = 0;
         }
 

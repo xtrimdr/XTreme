@@ -202,7 +202,7 @@ static class Program
               proyecto sincronia carpeta clip [--audio-ms -30] [--camara-ms 80] [--heredar]
               proyecto formato  carpeta [--relacion 16:9|9:16|1:1] [--disposicion lado-a-lado|apilado]
                                            como la ventana: 9:16 pasa a apilado y 16:9 a lado a lado
-              proyecto editar carpeta mover|recortar-inicio|recortar-final|fade-in|fade-out clip delta-segundos
+              proyecto editar carpeta mover|recortar-inicio|recortar-final|estirar-inicio|estirar-final|fade-in|fade-out clip delta-segundos
                         [--libre] [--iman 1/4] [--a-clips inicio|final|ambos|no] [--pps 100]   con imán, de a pasos
                         enteros; --a-clips: ese borde se pega al de otro clip a menos de 8 px (a ese zoom), si queda más
                         cerca que el paso de la grilla; sin imán ni --a-clips, o --libre, sin pegarse a nada

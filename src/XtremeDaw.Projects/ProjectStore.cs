@@ -465,14 +465,14 @@ public sealed class ProjectStore : IDisposable
     public string CachePath => Path.Combine(Dir, CacheDir);
 
     /// <summary>
-    /// A take's audio as it plays on <paramref name="track"/>: moved by its <see cref="Track.Transpose"/>, from the
+    /// A take's audio as it plays on <paramref name="track"/>: moved by <see cref="Clip.SemitonesOn"/>, from the
     /// cache or computed now (seconds per minute of audio: call it off the UI thread), or the audio itself at 0.
     /// A reversed clip gets its own copy, backward.
     /// </summary>
     public (float[] Left, float[] Right) TrackAudio(Track track, Clip clip, string audioPath, float[] left, float[] right,
         Action<double>? progress = null, CancellationToken ct = default)
     {
-        var (l, r) = TransposeCache.Get(CachePath, audioPath, left, right, track.Transpose, clip.Stretch, progress, ct);
+        var (l, r) = TransposeCache.Get(CachePath, audioPath, left, right, clip.SemitonesOn(track), clip.Stretch, progress, ct);
         if (!clip.Reversed) return (l, r);
         (l, r) = ((float[])l.Clone(), (float[])r.Clone());
         Array.Reverse(l);

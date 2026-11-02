@@ -115,6 +115,7 @@ public static class EditSteps
         "clip-split" => T("step.n.clipSplit", "Cortaste {0} clips", n),
         "clip-fade" => T("step.n.clipFade", "Fundidos de {0} clips", n),
         "clip-gain" => T("step.n.clipGain", "Ganancia de {0} clips", n),
+        "clip-pitch" => T("step.n.clipPitch", "Tono de {0} clips", n),
         "clip-lock" => T("step.n.clipLock", "Bloqueo de {0} clips", n),
         "midi-add" => T("step.n.midiAdd", "Agregaste {0} clips MIDI", n),
         "midi-remove" => T("step.n.midiRemove", "Borraste {0} clips MIDI", n),
@@ -220,6 +221,8 @@ public static class EditSteps
             Change? change =
                 !Same(old, c, "syncMs") || !Same(old, c, "videoOffsetMs") ? new("edit", [P(T("step.sync", "Sincronía de ")), Q(name)], "clip-sync", name)
                 : was.Track != tid ? new("move", [P(T("step.clipToTrack", "Moviste ")), Q(name), P(T("step.to", " a ")), Q(TrackName(tid))], "clip-move", null)
+                : !Same(old, c, "pitch") ? new("edit", [P(T("step.pitch", "Tono de ")), Q(name), P($": {Num(c, "pitch"):+0;-0;0}")], "clip-pitch", null)
+                : !Same(old, c, "stretch") ? new("cut", [P(T("step.stretch", "Estiraste ")), Q(name)], "clip-trim", null)
                 : !Same(old, c, "trimStartSec") || !Same(old, c, "trimEndSec") ? new("cut", [P(T("step.trim", "Recortaste ")), Q(name)], "clip-trim", null)
                 : !Same(old, c, "atSec") ? new("move", [P(T("step.clipMove", "Moviste ")), Q(name)], "clip-move", null)
                 : !Same(old, c, "fadeInSec") || !Same(old, c, "fadeOutSec") || !Same(old, c, "videoFadeInSec") || !Same(old, c, "videoFadeOutSec")

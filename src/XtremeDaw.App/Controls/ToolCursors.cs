@@ -10,7 +10,8 @@ namespace XtremeDaw.App.Controls;
 /// The timeline tools' pointers (native only): each tool's own icon, the same glyph as its button in the tool strip,
 /// white with a dark outline so it reads on clips and on the empty timeline alike. Built once into a bitmap (twice for
 /// Zoom: + and, with Alt, −). Rango uses the system's text cursor and Seleccionar the usual ones, so they are not here.
-/// The hand is drawn from <see cref="FxIcon"/>'s path because Segoe Fluent Icons has no open hand.
+/// The hand is drawn from <see cref="FxIcon"/>'s path because Segoe Fluent Icons has no open hand. <see cref="Stretch"/>
+/// is no tool: it is the pointer on a clip's edge with Ctrl, a two-way arrow under a stopwatch, so it never reads as a trim.
 /// </summary>
 static class ToolCursors
 {
@@ -30,6 +31,38 @@ static class ToolCursors
         TimelineTool.Erase => "\uE75C", TimelineTool.Listen => "\uE7F6", TimelineTool.Zoom => alt ? "\uE71F" : "\uE8A3",
         _ => FxIcon.Hand,
     };
+
+    /// <summary>The stopwatch over the arrow of <see cref="Stretch"/>, smaller than a tool's icon.</summary>
+    const string StretchGlyph = "";
+    const double StretchGlyphSize = 13;
+    /// <summary>The arrow's line in the cursor, and the arrow itself: the click lands on it.</summary>
+    const int StretchArrowY = 22;
+    static Cursor? stretch;
+
+    public static Cursor Stretch => stretch ??= MakeStretch();
+
+    static Cursor MakeStretch()
+    {
+        try { return new Cursor(RenderStretch(), new PixelPoint(Size / 2, StretchArrowY)); }
+        catch { return new Cursor(StandardCursorType.SizeWestEast); }
+    }
+
+    static Bitmap RenderStretch()
+    {
+        var bmp = new RenderTargetBitmap(new PixelSize(Size, Size));
+        using var ctx = bmp.CreateDrawingContext();
+        var arrow = Geometry.Parse($"M4 {StretchArrowY}H28 M9 {StretchArrowY - 5}L4 {StretchArrowY}L9 {StretchArrowY + 5} M23 {StretchArrowY - 5}L28 {StretchArrowY}L23 {StretchArrowY + 5}");
+        ctx.DrawGeometry(null, new Pen(Brushes.Black, 4.5, lineCap: PenLineCap.Round), arrow);
+        ctx.DrawGeometry(null, new Pen(Brushes.White, 2, lineCap: PenLineCap.Round), arrow);
+        var outline = new TextLayout(StretchGlyph, Icons, StretchGlyphSize, Brushes.Black);
+        var glyph = new TextLayout(StretchGlyph, Icons, StretchGlyphSize, Brushes.White);
+        var at = new Point((Size - glyph.Width) / 2, 0);
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+                if (dx != 0 || dy != 0) outline.Draw(ctx, at + new Point(dx, dy));
+        glyph.Draw(ctx, at);
+        return bmp;
+    }
 
     public static Cursor Of(TimelineTool t, bool alt)
     {

@@ -75,8 +75,8 @@ public sealed partial class TimelineView : Control
     public Func<LiveTrack, string, (bool On, double Level)>? SendState { get; set; }
     /// <summary>How far a track's transpose is being made (0 to 1), null when it plays what it should; set by the window.</summary>
     public Func<LiveTrack, float?>? TransposeProgress { get; set; }
-    /// <summary>What <see cref="TransposeProgress"/> is making is the track's clips at a new tempo (their lanes say so).</summary>
-    public Func<LiveTrack, bool>? FittingTempo { get; set; }
+    /// <summary>How far the sound one clip is waiting for is, shown on that clip alone; null when it has it.</summary>
+    public Func<LiveTrack, LiveClip, float?>? ClipRenderProgress { get; set; }
     /// <summary>How far "Detectar tempo" is on a clip (0 to 1), or null when it isn't listening to it.</summary>
     public Func<LiveClip, float?>? TempoProgress { get; set; }
     /// <summary>How far "Detectar escala y acordes" is on a clip (0 to 1), or null when it isn't listening to it.</summary>
@@ -237,6 +237,11 @@ public sealed partial class TimelineView : Control
     LiveClip? dragged;
     Clip? original, preview;
     ClipEditMode dragMode;
+    /// <summary>
+    /// The speed shown while a clip is stretched by hand, against the recording (asked by the user: half as long reads
+    /// ×2, the way it sounds, not <see cref="Clip.Stretch"/>); null in any other gesture.
+    /// </summary>
+    string? stretchText;
     bool moved;
     string? swapId;
     /// <summary>The clip is over another track with Ctrl held: it swaps instead of landing at a new time.</summary>
@@ -1084,7 +1089,8 @@ public sealed partial class TimelineView : Control
     ClipEnvelope.ClipWindow Window(LiveClip clip, Clip? value = null)
     {
         var c = value ?? DisplayClip(clip);
-        return ClipEditing.Window(c, clip.Media, clip.LengthSec);
+        // the shown clip's own stretch: a stretch being dragged is not on the clip yet
+        return ClipEditing.Window(c, clip.Media, clip.MediaLengthSec * c.Stretch);
     }
     LiveClip? ClipAt(int i, double x) => i >= 0 && i < tracks.Count
         ? tracks[i].Clips.LastOrDefault(c => { var w = Window(c); return x >= X(w.Start) && x <= X(w.End); }) : null;
@@ -1228,6 +1234,7 @@ public sealed partial class TimelineView : Control
                 double gx = Math.Round(X(guide)) + 0.5;
                 ctx.DrawLine(Palette.Pen(Palette.Accent), new Point(gx, RulerH), new Point(gx, H));
             }
+            DrawStretchAmount(ctx);
             if (gesture == "box" && moved)
                 ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.08), Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.7)), BoxRect());
             DrawZoomBand(ctx, H);
@@ -1978,6 +1985,8 @@ public sealed partial class TimelineView : Control
             if (locked && clip.Width > tabAt + 2) DrawClipTab(ctx, clip, tabAt, "");
             if (locked) tabAt += 22;
             if (model.Reversed && clip.Width > tabAt + 2) DrawClipTab(ctx, clip, tabAt, "");
+            if (model.Reversed) tabAt += 22;
+            if (model.Pitch != 0 && clip.Width > tabAt + 12) DrawPitchTab(ctx, clip, tabAt + 10, model.Pitch);
             if (!c.Offline && MediaBadge(clip) is { } badge) DrawMediaBadge(ctx, badge, c.VideoPath != null);
             if (w.AnchorCut > 0.0005)
             {
@@ -2182,6 +2191,10 @@ public sealed partial class TimelineView : Control
     {
         double mid = clip.Center.Y, quarter = clip.Height / 4;
         var lit = dragged == c ? dragMode : gesture == null && clip.Contains(lastPointer) ? HitHandle(c, lastPointer) : ClipEditMode.Move;
+        // a stretch grabs the same tab as a trim
+        lit = lit switch { ClipEditMode.StretchStart => ClipEditMode.TrimStart, ClipEditMode.StretchEnd => ClipEditMode.TrimEnd, _ => lit };
+        // with Ctrl the trim tabs stretch: they say so before the press
+        bool stretching = dragged == c ? dragMode is ClipEditMode.StretchStart or ClipEditMode.StretchEnd : tool == TimelineTool.Select && (modifiers & KeyModifiers.Control) != 0;
         // a small dark tab with two short lines, like the column's grip, centered in its half; the one you would grab lights up
         void Tick(double x, double cy, ClipEditMode mode, Color color)
         {
@@ -2198,8 +2211,38 @@ public sealed partial class TimelineView : Control
         Tick(Math.Min(clip.Right - 5, fadeOutX), mid - quarter, ClipEditMode.FadeOut, Palette.AccentColor);
         // a locked clip keeps its length: no trim tabs
         if (locked) return;
+        if (stretching)
+        {
+            StretchTick(ctx, clip.Left + 8, mid + quarter, Math.Round(Math.Min(16, quarter * 2 - 4)), lit == ClipEditMode.TrimStart);
+            StretchTick(ctx, clip.Right - 8, mid + quarter, Math.Round(Math.Min(16, quarter * 2 - 4)), lit == ClipEditMode.TrimEnd);
+            return;
+        }
         Tick(clip.Left + 5, mid + quarter, ClipEditMode.TrimStart, Palette.FgColor);
         Tick(clip.Right - 5, mid + quarter, ClipEditMode.TrimEnd, Palette.FgColor);
+    }
+
+    /// <summary>A trim tab while Ctrl is down: wider, in the accent, with two arrows pointing out, so a stretch never looks like a trim.</summary>
+    static void StretchTick(DrawingContext ctx, double x, double cy, double h, bool on)
+    {
+        if (h < 8) return;
+        var tab = new Rect(Math.Round(x) - 6.5, Math.Round(cy - h / 2) + 0.5, 13, h);
+        ctx.DrawRectangle(Palette.Alpha(on ? Palette.HoverColor : Palette.AppColor, 0.85), Palette.Pen(Palette.Alpha(Palette.AccentColor, on ? 1 : 0.7)), tab, 2, 2);
+        var pen = Palette.Pen(Palette.Alpha(Palette.AccentColor, on ? 1 : 0.8));
+        double mid = tab.Center.Y;
+        ctx.DrawLine(pen, new Point(tab.X + 5, mid - 2.5), new Point(tab.X + 2.5, mid));
+        ctx.DrawLine(pen, new Point(tab.X + 2.5, mid), new Point(tab.X + 5, mid + 2.5));
+        ctx.DrawLine(pen, new Point(tab.Right - 5, mid - 2.5), new Point(tab.Right - 2.5, mid));
+        ctx.DrawLine(pen, new Point(tab.Right - 2.5, mid), new Point(tab.Right - 5, mid + 2.5));
+    }
+
+    /// <summary>How fast against its recording the clip being stretched plays, on a dark tab beside the pointer.</summary>
+    void DrawStretchAmount(DrawingContext ctx)
+    {
+        if (gesture != "clip" || !moved || stretchText == null) return;
+        var t = Palette.Text(stretchText, 11, Palette.Fg, Palette.Mono);
+        var tab = new Rect(lastPointer.X + 12, lastPointer.Y - t.Height - 10, t.Width + 12, t.Height + 6);
+        ctx.DrawRectangle(Palette.Alpha(Palette.AppColor, 0.85), Palette.Pen(Palette.Line), tab, 4, 4);
+        t.Draw(ctx, new Point(tab.X + 6, tab.Y + 3));
     }
 
     /// <summary>A small padlock in a locked clip's top right corner, on a dark tab so it reads over the frames.</summary>
@@ -2210,6 +2253,15 @@ public sealed partial class TimelineView : Control
         ctx.DrawText(glyph, 10, Palette.Dim, new Point(tab.X + 3.5, tab.Y + 3), Icons);
     }
 
+    /// <summary>A clip's own pitch ("+2"), beside its other tabs: the track's Transponer has its tag in the header.</summary>
+    static void DrawPitchTab(DrawingContext ctx, Rect clip, double fromRight, double pitch)
+    {
+        var tab = new Rect(Math.Round(clip.Right - fromRight) + 0.5, Math.Round(clip.Top + 4) + 0.5, 27, 16);
+        ctx.DrawRectangle(Palette.Alpha(Palette.AppColor, 0.75), null, tab, 4, 4);
+        var t = Palette.Text(TransposeTags[Math.Clamp((int)Math.Round(pitch), -12, 12) + 12], 10, Palette.Accent, Palette.Mono);
+        t.Draw(ctx, new Point(tab.Center.X - t.Width / 2, tab.Center.Y - t.Height / 2));
+    }
+
     /// <summary>
     /// The web's Filmstrip: the whole source (trims only hide its ends) split into as many 16:9 cells as fit at
     /// the lane's height, each showing the cached frame nearest its middle, cover-fitted and mirrored like the clip.
@@ -2217,7 +2269,7 @@ public sealed partial class TimelineView : Control
     void DrawFilmstrip(DrawingContext ctx, LiveClip c, Clip model, Rect clip, double W)
     {
         if (VideoThumbnails.Get(c.VideoPath!, c.MediaLengthSec) is not { Length: > 0 } frames) return;
-        double x0 = X(model.AtSec), srcW = c.LengthSec * pps;
+        double x0 = X(model.AtSec), srcW = c.MediaLengthSec * model.Stretch * pps;
         double h = clip.Height - 2;
         int slots = Math.Max(1, (int)Math.Round(srcW / (h * 16 / 9)));
         double cell = srcW / slots;
@@ -3112,6 +3164,14 @@ public sealed partial class TimelineView : Control
     /// <summary>Px from a clip's edge (or a fade tab, ±half of it) that grab its handle.</summary>
     const double EdgeGrab = 9;
 
+    /// <summary>What a press at <paramref name="p"/> does: <see cref="HitHandle"/>, with Ctrl turning a trim into a stretch.</summary>
+    ClipEditMode GrabMode(LiveClip clip, Point p)
+    {
+        var mode = HitHandle(clip, p);
+        if ((modifiers & KeyModifiers.Control) == 0) return mode;
+        return mode switch { ClipEditMode.TrimStart => ClipEditMode.StretchStart, ClipEditMode.TrimEnd => ClipEditMode.StretchEnd, _ => mode };
+    }
+
     ClipEditMode HitHandle(LiveClip clip, Point p)
     {
         var w = Window(clip);
@@ -3309,6 +3369,7 @@ public sealed partial class TimelineView : Control
                 if (swapping) preview = ClipEditing.Copy(original);
                 else preview = ClipEditing.Drag(original, dragged.Media, dragMode, dxPx / pps, Grid, (modifiers & KeyModifiers.Alt) != 0, out stuckTo, dragged.LengthSec,
                     SnapToClips != SnapEdges.None ? tracks.SelectMany(t => t.Clips).Where(c => c != dragged).Select(c => Window(c)) : null, SnapToClips, pps);
+                stretchText = dragMode is ClipEditMode.StretchStart or ClipEditMode.StretchEnd ? $"×{1 / preview.Stretch:0.00}" : null;
             }
         }
         InvalidateVisual();
@@ -3388,6 +3449,7 @@ public sealed partial class TimelineView : Control
     void ClearGesture()
     {
         if (gesture == "listen") ListenEnded?.Invoke();
+        stretchText = null;
         if (erasing.Count > 0) erasing.Clear();
         bool reordered = gesture == "reorder" && moved;
         if (reordered)
@@ -3464,8 +3526,13 @@ public sealed partial class TimelineView : Control
                 cursor = fx.Dial ? StandardCursorType.SizeNorthSouth : StandardCursorType.Hand;
             else if (lastPointer.X >= HeaderW && ClipAt(i, lastPointer.X) is { } clip)
             {
-                var mode = HitHandle(clip, lastPointer);
-                if (mode is ClipEditMode.TrimStart or ClipEditMode.TrimEnd && ClipEditing.IsLocked(tracks[i].Track, clip.Clip)) mode = ClipEditMode.Move;
+                var mode = GrabMode(clip, lastPointer);
+                if (mode is ClipEditMode.TrimStart or ClipEditMode.TrimEnd or ClipEditMode.StretchStart or ClipEditMode.StretchEnd && ClipEditing.IsLocked(tracks[i].Track, clip.Clip)) mode = ClipEditMode.Move;
+                if (mode is ClipEditMode.StretchStart or ClipEditMode.StretchEnd)
+                {
+                    Cursor = ToolCursors.Stretch;
+                    return;
+                }
                 cursor = mode switch
                 {
                     ClipEditMode.Move when CurvePointAt(i, clip, lastPointer) >= 0 => StandardCursorType.SizeAll,

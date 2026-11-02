@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace XtremeDaw.Projects;
 
 /// <summary>The five clip handles in GuitarCam/src/components/Timeline.tsx.</summary>
-public enum ClipEditMode { Move, TrimStart, TrimEnd, FadeIn, FadeOut }
+public enum ClipEditMode { Move, TrimStart, TrimEnd, FadeIn, FadeOut, StretchStart, StretchEnd }
 
 /// <summary>Which edges of a moved clip stick to the edges of the others (the snap to other clips).</summary>
 [Flags]
@@ -114,8 +114,30 @@ public static class ClipEditing
                 double fo = Limit(fades.FadeOut - dx, len - fades.FadeIn);
                 c.FadeOutSec = ToSample(Limit(w.End - Snap(w.End - fo, grid, free), len - fades.FadeIn));
                 break;
+            case ClipEditMode.StretchStart or ClipEditMode.StretchEnd:
+                StretchEdge(c, w, mode == ClipEditMode.StretchEnd, dx, grid, free);
+                break;
         }
         return c;
+    }
+
+    /// <summary>
+    /// One edge pulled (with the grid) and the other left where it is: everything the clip has on the timeline scales
+    /// around that fixed edge, as a tempo change scales it around zero, so <see cref="Clip.Stretch"/> stays one number
+    /// whichever made it. There is no limit on the amount (asked by the user: rhythm loops go far); the clip only keeps
+    /// its shortest length, and its start can't be pulled past zero.
+    /// </summary>
+    static void StretchEdge(Clip c, ClipEnvelope.ClipWindow w, bool end, double dx, SnapGrid grid, bool free)
+    {
+        double len = w.End - w.Start, anchor = end ? w.Start : w.End;
+        if (len <= 0) return;
+        double f = (end ? Snap(w.End + dx, grid, free) - anchor : anchor - Snap(w.Start + dx, grid, free)) / len;
+        double low = ClipEnvelope.MinClipSec / len;
+        f = Math.Max(f, low);
+        if (!end) f = Math.Max(low, Math.Min(f, Math.Max(1, anchor / len)));
+        double at = anchor + (c.AtSec - anchor) * f;
+        TempoFollow.Rescale(c, f);
+        c.AtSec = ToSample(at);
     }
 
     public static (Track Track, Clip Clip) Find(Project p, string clipId)
@@ -155,11 +177,11 @@ public static class ClipEditing
     /// <summary>Locks or unlocks a clip.</summary>
     public static void SetLocked(Project p, string id, bool locked) => Find(p, id).Clip.Locked = locked;
 
-    /// <summary>Writes a clip's new values; a locked one refuses a new place or a new trim (its other values change).</summary>
+    /// <summary>Writes a clip's new values; a locked one refuses a new place, trim or stretch (its other values change).</summary>
     public static void Replace(Project p, Clip value)
     {
         var (track, clip) = Find(p, value.Id);
-        if (value.AtSec != clip.AtSec || value.TrimStartSec != clip.TrimStartSec || value.TrimEndSec != clip.TrimEndSec) Unlocked(track, clip);
+        if (value.AtSec != clip.AtSec || value.TrimStartSec != clip.TrimStartSec || value.TrimEndSec != clip.TrimEndSec || value.Stretch != clip.Stretch) Unlocked(track, clip);
         track.Clips[track.Clips.IndexOf(clip)] = Copy(value);
     }
 
@@ -332,6 +354,14 @@ public static class ClipEditing
 
     /// <summary>Only sound goes backward: a clip with picture stays in step with its video.</summary>
     public static bool CanReverse(Media? m) => string.IsNullOrEmpty(m?.Video);
+
+    /// <summary>The clip's own pitch, in whole semitones. A locked clip refuses it, as it refuses turning around: what it plays stays.</summary>
+    public static void SetPitch(Project p, string id, double semitones)
+    {
+        var (track, c) = Find(p, id);
+        Unlocked(track, c);
+        c.Pitch = Math.Clamp(Math.Round(semitones), -XtremeDaw.Audio.Dsp.PitchShifter.MaxSemitones, XtremeDaw.Audio.Dsp.PitchShifter.MaxSemitones);
+    }
 
     /// <summary>
     /// Turns a clip around where it stands (native only): the same stretch of the timeline plays the same audio backward.

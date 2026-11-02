@@ -832,6 +832,7 @@ public partial class MainWindow
             bool reversible = ClipEditing.CanReverse(clip.Media);
             list.Add(MenuCheck(Loc.T("menu.reverse"), () => clip.Clip.Reversed, () => _ = ReverseClips(track, clip, boxed), [],
                 tip: Loc.T(reversible ? "menu.reverse.tip" : "menu.reverse.video"), enabled: enabled && free && reversible));
+            list.Add(PitchItem(track, clip, boxed, enabled && free));
             list.AddRange(TransitionItems(track, clip, point));
             list.Add(new Separator());
             list.Add(DetectTempoItem(clip, point, enabled));
@@ -861,6 +862,37 @@ public partial class MainWindow
             foreach (var c in turned.Where(c => !ClipEditing.IsLocked(p, c.Clip.Id))) ClipEditing.Reverse(p, c.Clip.Id, c.LengthSec);
             return track.Track.Id;
         }, "clip-reversed", clip.Clip.Id);
+        Timeline.BoxClips(boxed);
+    }
+
+    /// <summary>The clip's "Tono": semitones of its own, on top of the track's Transponer; every value is one entry, so a change is one step and one render.</summary>
+    MenuItem PitchItem(LiveTrack track, LiveClip clip, List<string> boxed, bool enabled)
+    {
+        var refresh = new List<Action>();
+        var choices = new List<object>();
+        for (int v = (int)PitchShifter.MaxSemitones; v >= -PitchShifter.MaxSemitones; v--)
+        {
+            double semis = v;
+            choices.Add(MenuCheck(TransposeText(semis), () => clip.Clip.Pitch == semis, () => _ = SetClipPitch(track, clip, boxed, semis), refresh));
+        }
+        string label = Loc.T("menu.pitch");
+        if (clip.Clip.Pitch != 0) label += " · " + TransposeTag(clip.Clip.Pitch);
+        var item = new MenuItem { Header = MenuHeader(label, FxIcon.Create(FxIcon.Transpose, 12)), ItemsSource = choices, IsEnabled = enabled };
+        ToolTip.SetTip(item, Loc.T("menu.pitch.tip"));
+        ToolTip.SetShowDelay(item, (int)MenuTipDelay.TotalMilliseconds);
+        return item;
+    }
+
+    /// <summary>The boxed clips this one is among all get the value, skipping the locked ones.</summary>
+    async Task SetClipPitch(LiveTrack track, LiveClip clip, List<string> boxed, double semis)
+    {
+        var moved = tracks.SelectMany(t => t.Clips).Where(c => boxed.Contains(c.Clip.Id) && c.Clip.Pitch != semis).ToList();
+        if (moved.Count == 0) return;
+        await EditTimeline(p =>
+        {
+            foreach (var c in moved.Where(c => !ClipEditing.IsLocked(p, c.Clip.Id))) ClipEditing.SetPitch(p, c.Clip.Id, semis);
+            return track.Track.Id;
+        }, "clip-pitch", clip.Clip.Id);
         Timeline.BoxClips(boxed);
     }
 

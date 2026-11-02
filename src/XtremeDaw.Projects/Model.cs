@@ -1174,8 +1174,8 @@ public sealed class Clip
     /// <summary>Timeline time of the media's sample 0 (includes the sync correction).</summary>
     public double AtSec { get; set; }
     /// <summary>
-    /// How many times longer than its media it plays: where the tempo left it (<see cref="TempoFollow"/>), 1 = as
-    /// recorded. Every time of the clip is a time of the timeline, so they already count it; what reads the media
+    /// How many times longer than its media it plays: where the tempo (<see cref="TempoFollow"/>) and a stretch by hand
+    /// (<see cref="ClipEditMode.StretchEnd"/>) left it, 1 = as recorded. Every time of the clip is a time of the timeline, so they already count it; what reads the media
     /// goes through <see cref="MediaSec"/>.
     /// </summary>
     public double Stretch { get; set; } = 1;
@@ -1192,8 +1192,17 @@ public sealed class Clip
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Reversed { get; set; }
-    /// <summary>What it plays, for the transitions: two pieces of one take only join as one going the same way.</summary>
-    public string TakeKey() => Reversed ? MediaId + "<" : MediaId;
+    /// <summary>
+    /// Native only: semitones of its own, on top of its track's <see cref="Track.Transpose"/> (asked by the user), so one
+    /// clip can change key without the rest of the track. Whole semitones; the length stays (<see cref="SemitonesOn"/>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Pitch { get; set; }
+    /// <summary>How far it sounds moved on <paramref name="track"/>: the track's and its own, up to what the shifter does.</summary>
+    public double SemitonesOn(Track track) => Math.Clamp(track.Transpose + Pitch, -Dsp.PitchShifter.MaxSemitones, Dsp.PitchShifter.MaxSemitones);
+    /// <summary>What it plays, for the transitions: two pieces of one take only join as one going the same way, at the same stretch and pitch.</summary>
+    public string TakeKey() => MediaId + (Reversed ? "<" : "") + (Stretch == 1 ? "" : "x" + Stretch.ToString("R", System.Globalization.CultureInfo.InvariantCulture))
+        + (Pitch == 0 ? "" : "p" + Pitch.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
 
     public double EffectiveSyncMs(Media? media) => SyncMs ?? media?.SyncMs ?? 0;
     public double EffectiveVideoOffsetMs(Media? media) => VideoOffsetMs ?? media?.VideoOffsetMs ?? 80;
@@ -1204,6 +1213,7 @@ public sealed class Clip
     {
         Framing ??= new();
         if (!double.IsFinite(Stretch) || Stretch <= 0) Stretch = 1;
+        Pitch = double.IsFinite(Pitch) ? Math.Clamp(Pitch, -Dsp.PitchShifter.MaxSemitones, Dsp.PitchShifter.MaxSemitones) : 0;
         if (SyncMs is { } sync && !double.IsFinite(sync)) SyncMs = null;
         if (VideoOffsetMs is { } video && !double.IsFinite(video)) VideoOffsetMs = null;
         if (!double.IsFinite(GainDb)) GainDb = 0;

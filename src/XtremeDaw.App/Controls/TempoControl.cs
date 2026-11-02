@@ -24,6 +24,8 @@ public sealed class TempoControl : Border
     double bpm = 120, startBpm, startY, step;
     bool editing;
     public event Action<double>? Changed;
+    /// <summary>True while the value is still being set: a drag, or taps that may go on.</summary>
+    public bool Busy => pointer != null || taps.Count > 0 && Now() - taps[^1] <= TapResetMs;
 
     public TempoControl()
     {
@@ -102,9 +104,10 @@ public sealed class TempoControl : Border
         string[] parts = value.ToString("0.0", CultureInfo.InvariantCulture).Split('.');
         integer.Text = parts[0]; fraction.Text = parts[1];
     }
+    static double Now() => Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency;
     public void Tap()
     {
-        double now = Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency;
+        double now = Now();
         if (taps.Count > 0 && now - taps[^1] > TapResetMs) taps.Clear();
         taps.Add(now);
         if (taps.Count > 8) taps.RemoveAt(0);

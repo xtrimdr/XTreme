@@ -62,11 +62,21 @@ public partial class MainWindow
         transposeClock.Tick += (_, _) => RefreshTransposeNote();
         inspectorRefresh.Add(RefreshTransposeNote);
         Timeline.TransposeProgress = TransposeProgress;
-        Timeline.FittingTempo = t => transposing.Any(j => j.Key.Stretch != 1 && j.Value.TrackId == t.Track.Id);
+        Timeline.ClipRenderProgress = ClipRenderProgress;
     }
 
-    /// <summary>The selected track's Transponer, from the inspector.</summary>
-    void SetTranspose(double semis) { if (sel != null) SetTranspose(sel, semis); }
+    /// <summary>The Transponer of the selected track, or of all the picked ones, from the inspector.</summary>
+    void SetTranspose(double semis)
+    {
+        if (sel == null) return;
+        if (PickedGroup() == null) { SetTranspose(sel, semis); return; }
+        semis = Math.Clamp(Math.Round(semis), -PitchShifter.MaxSemitones, PitchShifter.MaxSemitones);
+        var list = PickTargets();
+        if (list.All(t => t.Track.Transpose == semis)) return;
+        EditTracks(list, t => t.Track.Transpose = semis, "transpose");
+        RefreshTranspose();
+        RefreshMixer();
+    }
 
     /// <summary>Any track's Transponer (inspector or mixer strip), clamped to what <see cref="PitchShifter"/> does.</summary>
     void SetTranspose(LiveTrack track, double semis)
@@ -86,6 +96,13 @@ public partial class MainWindow
         foreach (var job in transposing.Values)
             if (job.TrackId == track.Track.Id) { sum += job.Progress; n++; }
         return n == 0 ? null : sum / n;
+    }
+
+    /// <summary>How far the sound this clip is waiting for is (0 to 1), or null when it plays what it should: a clip stretched by hand leaves the others alone. Called on every frame.</summary>
+    float? ClipRenderProgress(LiveTrack track, LiveClip clip)
+    {
+        if (transposing.Count == 0 || clip.Media is not { } media) return null;
+        return transposing.TryGetValue(new TransposeKey(media.Id, clip.Clip.SemitonesOn(track.Track), TransposeCache.Step(clip.Clip.Stretch)), out var job) ? job.Progress : null;
     }
 
     /// <summary>The short form the channel shows (timeline header, mixer strip): "+2", "-5".</summary>
@@ -136,12 +153,12 @@ public partial class MainWindow
         var wanted = new HashSet<TransposeKey>();
         foreach (var lt in tracks)
         {
-            double semis = lt.Track.Transpose;
             // a MIDI track's notes just play higher or lower: nothing to render
             if (lt.Track.IsMidi) lt.SetMidi(st.Project.Settings.Bpm);
             foreach (var lc in lt.Clips)
             {
                 if (lc.Audio is not { } audio || lc.Media is not { } media) continue;
+                double semis = lc.Clip.SemitonesOn(lt.Track);
                 double stretch = TransposeCache.Step(lc.Clip.Stretch);
                 if (semis == 0 && stretch == 1)
                 {
@@ -242,8 +259,8 @@ public partial class MainWindow
         var used = new List<(string Path, int Length, double Semis, double Stretch)>();
         foreach (var lt in tracks)
             foreach (var lc in lt.Clips)
-                if ((lt.Track.Transpose != 0 || lc.Clip.Stretch != 1) && lc.Audio != null && st.Resolve(lc.Media?.Audio) is { } path)
-                    used.Add((path, lc.Audio.L.Length, lt.Track.Transpose, lc.Clip.Stretch));
+                if ((lc.Clip.SemitonesOn(lt.Track) != 0 || lc.Clip.Stretch != 1) && lc.Audio != null && st.Resolve(lc.Media?.Audio) is { } path)
+                    used.Add((path, lc.Audio.L.Length, lc.Clip.SemitonesOn(lt.Track), lc.Clip.Stretch));
         _ = Task.Run(() => TransposeCache.Prune(st.CachePath, used.Select(u => TransposeCache.PathFor(st.CachePath, u.Path, u.Length, u.Semis, u.Stretch)).ToList()));
     }
 }

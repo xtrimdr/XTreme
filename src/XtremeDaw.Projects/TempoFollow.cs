@@ -1,7 +1,7 @@
 namespace XtremeDaw.Projects;
 
 /// <summary>
-/// The whole song follows the tempo (asked by the user: every clip, video included, with no per-clip choice): a clip's
+/// The whole song can follow the tempo (asked by the user: every clip, video included, with no per-clip choice; the window asks each time): a clip's
 /// numbers are seconds of the timeline, so a new tempo multiplies them all by old/new and <see cref="Clip.Stretch"/>
 /// says what that does to its media (<see cref="XtremeDaw.Audio.Dsp.PitchShifter.Render"/>). What sits on the timeline
 /// with the clips goes with them, so everything stays on its bar: automation points, markers, chords and the loop. The
@@ -63,7 +63,8 @@ public static class TempoFollow
         foreach (var m in p.ChordMarkers) { m.Sec *= f; m.EndSec *= f; }
     }
 
-    static void Rescale(Clip c, double f)
+    /// <summary>The clip's own times and its <see cref="Clip.Stretch"/>: also what a stretch by hand does (<see cref="ClipEditing"/>).</summary>
+    internal static void Rescale(Clip c, double f)
     {
         c.AtSec *= f;
         c.TrimStartSec *= f;
