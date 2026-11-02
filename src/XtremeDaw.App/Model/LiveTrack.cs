@@ -368,6 +368,8 @@ public sealed class LiveTrack
 {
     /// <summary>10 ms at 48 kHz: a clip that starts playing its transposed audio, or goes silent or comes back from it, crossfades, never clicks.</summary>
     public const int SoundFade = 480;
+    /// <summary>The block plays one place of the song (<see cref="MixInto"/>).</summary>
+    public const long NoSecondRead = long.MinValue;
     readonly int sampleRate;
 
     public Track Track { get; set; }
@@ -663,9 +665,10 @@ public sealed class LiveTrack
     /// <c>SyncMs</c> offset, linear fade-in/out envelope and clip gain, then runs the full insert chain and
     /// accumulates into its output (<see cref="Out"/>'s buffer, or <paramref name="masterL"/> / <paramref name="masterR"/>)
     /// and its sends' buses, from <paramref name="sendOffset"/> on in theirs (the block's part where the tracks play).
-    /// Zero allocations. During a seek crossfade
-    /// (<paramref name="fromFrame"/> &gt;= 0) the clips at the old position, weighted by <paramref name="wOut"/>, are
-    /// summed with the new ones, weighted by <paramref name="wIn"/>, before the chain, so its state stays continuous.
+    /// Zero allocations. During a seek crossfade or a loop's splice (<paramref name="fromFrame"/> other than
+    /// <see cref="NoSecondRead"/>; a splice near zero reads before it) the clips at that position, weighted by
+    /// <paramref name="wOut"/>, are summed with the ones at <paramref name="posFrame"/>, weighted by <paramref name="wIn"/>,
+    /// before the chain, so its state stays continuous.
     /// </summary>
     public void MixInto(
         long posFrame,
@@ -674,7 +677,7 @@ public sealed class LiveTrack
         Span<float> masterL,
         Span<float> masterR,
         int sendOffset,
-        long fromFrame = -1,
+        long fromFrame = NoSecondRead,
         ReadOnlySpan<float> wIn = default,
         ReadOnlySpan<float> wOut = default)
     {
@@ -685,7 +688,7 @@ public sealed class LiveTrack
         Chain.Frame = posFrame;
         var seq = notes;
         var inst = instrument;
-        if (fromFrame < 0)
+        if (fromFrame == NoSecondRead)
         {
             AddClips(posFrame, n, bl, br, default);
             if (inst != null) inst.Play(posFrame, n, bl, br, Keys);

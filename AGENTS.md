@@ -168,7 +168,7 @@ exports/
 ## 4. Audio en tiempo real
 
 **Nivel profesional**, como Logic Pro o Fender Studio Pro: nada de clics ni cortes. Arrancar, parar y hacer scrub
-llevan su fundido (`PlaybackEngine.TransportFadeMs`, elegible en Configuración); los saltos, crossfade de 10 ms;
+llevan su fundido (`PlaybackEngine.TransportFadeMs`, elegible en Configuración); los saltos, crossfade de 10 ms; el bucle no salta: gira en la muestra exacta y A entra entero, sin fundido (`LoopSplice`, pedido del usuario);
 `Stop`/`Pause` cortan en el acto y son solo para grabar, exportar o cambiar de proyecto. El estado de los efectos no
 se reinicia en medio de la música. Lo que se dude se mide (`AudioGapLog`) en vez de suponerlo.
 

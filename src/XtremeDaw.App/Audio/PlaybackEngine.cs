@@ -219,7 +219,7 @@ public sealed class PlaybackEngine : IDisposable
 
     /// <summary>
     /// The A–B range the loop repeats (<see cref="ProjectMarkers.SetLoop"/>); null = the whole song. Crossing B while
-    /// the loop is on jumps to A with the seek crossfade, so the effects keep their state; a playhead already past B
+    /// the loop is on turns to A on the exact sample (<see cref="LoopSplice"/>), so A comes in whole and the effects keep their state; a playhead already past B
     /// plays on to the end and loops back to A from there.
     /// </summary>
     public void SetLoopRange((double Start, double End)? range) =>
@@ -1050,8 +1050,13 @@ public sealed class PlaybackEngine : IDisposable
 
                 bool xf = xfFrom >= 0 && !isRec;
                 if (xf) CrossfadeWeights(ref xfLevel, playCount, xfIn, xfOut);
+                // a seek's crossfade has the second read; a loop turning under one just turns (it lasts 10 ms)
+                var lap = loopRange;
+                long lapStart = lap?.Start ?? 0, lapEnd = lap?.End ?? endFrame;
+                bool splice = !xf && !isRec && loop && LoopSplice.Weights(trackPos, playCount, lapStart, lapEnd, xfIn, xfOut);
+                long second = xf ? xfFrom : splice ? trackPos - (lapEnd - lapStart) : LiveTrack.NoSecondRead;
                 for (int i = 0; i < list.Length; i++)
-                    list[i].MixInto(trackPos, playCount, anySolo, subMl, subMr, playOffset, xf ? xfFrom : -1, xfIn.AsSpan(0, playCount), xfOut.AsSpan(0, playCount));
+                    list[i].MixInto(trackPos, playCount, anySolo, subMl, subMr, playOffset, second, xfIn.AsSpan(0, playCount), xfOut.AsSpan(0, playCount));
                 if (xf)
                 {
                     xfFrom += playCount;
@@ -1148,17 +1153,26 @@ public sealed class PlaybackEngine : IDisposable
                 if (fadeMode == 1 && fadeLevel >= 1) fadeMode = 0;
                 var lr = loopRange;
                 long loopStart = lr?.Start ?? 0, loopEnd = lr?.End ?? endFrame;
-                bool crossedB = loop && loopEnd > loopStart && blockStart < loopEnd && pos >= loopEnd;
+                bool crossedB = loop & LoopSplice.Turned(blockStart, pos, loopStart, loopEnd, out long lapTo);
                 bool atEnd = endFrame > 0 && pos >= endFrame;
-                if (!isRec && (crossedB || atEnd && loop))
+                if (!isRec && crossedB)
                 {
-                    // back to A like a seek: the old position plays on fading out while A fades in, and the effects
-                    // keep their state (resetting them here cut the reverb tails and clicked on every lap)
-                    long to = loopStart + (crossedB ? pos - loopEnd : 0);
-                    xfFrom = pos;
-                    xfLevel = 0;
-                    nextBeat = BeatAt(to);
-                    Interlocked.Exchange(ref position, to);
+                    // the block already played the start of the lap (LoopSplice), so A comes in whole on its sample;
+                    // the effects keep their state (resetting them here cut the reverb tails and clicked on every lap)
+                    // and the beats go on one lap back, so a click that hasn't sounded yet still does
+                    if (xfFrom >= 0)
+                    {
+                        xfFrom = pos;
+                        xfLevel = 0;
+                    }
+                    nextBeat = BeatAt((long)Math.Round(nextBeat * beatLen) - (loopEnd - loopStart));
+                    Interlocked.Exchange(ref position, lapTo);
+                }
+                else if (!isRec && atEnd && loop)
+                {
+                    // past B, at the end of the song: nothing sounds here to join with
+                    nextBeat = BeatAt(loopStart);
+                    Interlocked.Exchange(ref position, loopStart);
                 }
                 else if (!isRec && atEnd)
                 {

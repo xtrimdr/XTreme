@@ -631,9 +631,11 @@ static class DspCommands
         allOk &= MasterChecks(sr48);
         allOk &= TransposeCommands.Check();
         allOk &= StretchChecks.Check();
+        allOk &= LoopChecks.Check();
         allOk &= InsertCommands.Check();
         allOk &= GateChecks.Check();
         allOk &= FxChecks.Check();
+        allOk &= CompPresetChecks.Check();
         allOk &= ModChecks.Check();
         allOk &= PdcChecks.Check();
         allOk &= AutomationChecks.Check();
