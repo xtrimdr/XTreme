@@ -15,14 +15,13 @@ namespace XtremeDaw.Audio.Dsp;
 /// whole takes about what the integration alone takes. Runs on worker threads, never on the audio thread.
 /// The same pass also changes the length (<see cref="Render"/>, what lets a clip follow the tempo, asked by the user):
 /// the frames are read and written at different spacings and the phases grow by what the output spacing asks, so a
-/// transposed clip that also follows the tempo goes through one pass, not two. The spacing that keeps
-/// <see cref="Hop"/> is the output's when stretching and the input's when squeezing, so the instantaneous frequencies
-/// are never measured across more than a hop.
+/// transposed clip that also follows the tempo goes through one pass, not two. The spacings come from
+/// <see cref="TimeMap"/>, which goes at 1:1 around each attack so a stretch doesn't smear them.
 /// </summary>
 public static class PitchShifter
 {
     /// <summary>Changes whenever the result would sound different, so cached renders are made again.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
     public const double MaxSemitones = 12;
 
     /// <summary>85 ms at 48 kHz: resolves the harmonics of a low E (82 Hz apart) into separate bins.</summary>
@@ -88,10 +87,10 @@ public static class PitchShifter
         const int m = FrameSize, n = FftSize;
 
         // frame k sits at Read(k) in the input and at Written(k) in the output
-        double hopIn = stretch > 1 ? Hop / stretch : Hop, hopOut = stretch > 1 ? Hop : Hop * stretch;
-        int Read(int k) => (int)Math.Round(k * hopIn);
-        int Written(int k) => (int)Math.Round(k * hopOut);
-        int frames = (int)Math.Max((len + m / 2) / hopIn, (outLen + m / 2) / hopOut) + 1;
+        var (readAt, writtenAt) = TimeMap.Frames(left, right, stretch, Hop, m, ct);
+        int Read(int k) => readAt[k];
+        int Written(int k) => writtenAt[k];
+        int frames = readAt.Length;
         var win = new double[m];
         for (int k = 0; k < m; k++) win[k] = 0.5 - 0.5 * Math.Cos(2 * Math.PI * k / m);
         // read at f/ratio, a frame is the input frame squeezed by the ratio in time: its window is m/ratio long
@@ -275,11 +274,12 @@ public static class PitchShifter
             var mag = fr.Mag;
             var omega = fr.Omega;
             bool first = index == 0;
-            int hop = first ? Hop : Math.Max(1, Read(index) - Read(index - 1));
+            // a very long stretch reads the same place twice: nothing to measure there
+            int hop = first ? 0 : Read(index) - Read(index - 1);
             for (int b = 0; b < Bins; b++)
             {
                 double expected = 2 * Math.PI * b / n;
-                omega[b] = first ? expected : expected + PrincArg(fr.Phase[b] - before[b] - expected * hop) / hop;
+                omega[b] = hop == 0 ? expected : expected + PrincArg(fr.Phase[b] - before[b] - expected * hop) / hop;
             }
             double yMax = 0;
             for (int b = 0; b < Bins; b++)

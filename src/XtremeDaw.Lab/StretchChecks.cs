@@ -39,11 +39,11 @@ static class StretchChecks
         bool ok = true;
 
         // a sine keeps its frequency and its level at any speed, and the length is exactly the one asked for
-        foreach (double s in new[] { 0.5, 0.75, 0.9, 1.1, 1.25, 1.5, 2.0 })
+        foreach (double s in new[] { 0.1, 0.25, 0.5, 0.75, 0.9, 1.1, 1.25, 1.5, 2.0, 4.0, 10.0 })
         {
             var sine = TransposeCommands.Tone(Sr * 3, i => 0.5 * Math.Sin(2 * Math.PI * 440 * i / Sr));
             var (l, _) = PitchShifter.Render(sine, sine, 0, s);
-            int mid = l.Length / 2, w = Sr / 2;
+            int mid = l.Length / 2, w = Math.Min(Sr / 2, l.Length / 4);
             double hz = TransposeCommands.Frequency(l, mid - w, mid + w);
             double db = 20 * Math.Log10(TransposeCommands.Rms(l, mid - w, mid + w) / TransposeCommands.Rms(sine, Sr, Sr * 2));
             bool pass = l.Length == PitchShifter.StretchedLength(sine.Length, s) && Math.Abs(hz - 440) < 0.05 && Math.Abs(db) < 0.1;
@@ -67,8 +67,8 @@ static class StretchChecks
             }
             return v;
         });
-        // a frame of 85 ms spreads what it stretches: the wider the change, the sooner the attack shows (see PENDIENTES)
-        foreach (var (s, limit) in new[] { (0.8, 6.0), (0.9, 6.0), (1.1, 6.0), (1.25, 6.0), (1.5, 10.0) })
+        // a frame of 85 ms would spread what it stretches; TimeMap keeps them where they go, however wide the change
+        foreach (double s in new[] { 0.25, 0.5, 0.8, 0.9, 1.1, 1.25, 1.5, 2.0, 4.0 })
         {
             var (l, _) = PitchShifter.Render(plucks, plucks, 0, s);
             double worst = 0, pre = -200;
@@ -78,10 +78,43 @@ static class StretchChecks
                 worst = Math.Max(worst, Math.Abs(Onset(l, at - Sr / 8, at + Sr / 8) - at) * 1000.0 / Sr);
                 pre = Math.Max(pre, 10 * Math.Log10(TransposeCommands.Energy(l, at - Sr * 40 / 1000, at - Sr * 3 / 1000) / TransposeCommands.Energy(l, at, at + Sr * 40 / 1000) + 1e-30));
             }
-            bool pass = worst <= limit && pre < -14;
+            bool pass = worst <= 2 && pre < -25;
             ok &= pass;
-            TransposeCommands.Row($"Ataques x{s:0.00}: lugar, pre-eco", $"{worst:0.0} ms {pre:0} dB", $"{limit:0} ms <-14", pass);
+            TransposeCommands.Row($"Ataques x{s:0.00}: lugar, pre-eco", $"{worst:0.0} ms {pre:0} dB", "2 ms <-25", pass);
         }
+
+        // a rhythm loop: a hit every 100 ms, sped up and slowed down, and each one still lands on its place
+        int[] loopHits = [.. Enumerable.Range(0, 30).Select(k => Sr / 4 + k * Sr / 10)];
+        var loop = TransposeCommands.Tone(Sr * 4, i =>
+        {
+            double v = 0;
+            foreach (int h in loopHits)
+            {
+                if (i < h) continue;
+                v += Math.Exp(-(i - h) / (double)Sr * 200) * 0.6 * noise[i];
+            }
+            return v;
+        });
+        foreach (double s in new[] { 0.5, 2.0, 4.0 })
+        {
+            var (l, _) = PitchShifter.Render(loop, loop, 0, s);
+            double worst = 0;
+            foreach (int h in loopHits)
+            {
+                int at = (int)(h * s);
+                worst = Math.Max(worst, Math.Abs(Onset(l, at - Sr / 45, at + Sr / 45) - at) * 1000.0 / Sr);
+            }
+            bool pass = worst <= 6;
+            ok &= pass;
+            TransposeCommands.Row($"Loop cada 100 ms x{s:0.00}: lugar", $"{worst:0.0} ms", "6 ms", pass);
+        }
+
+        // what has no attacks keeps the even map: noise doesn't count as hits, and every take of the loop is found
+        var flat = TransposeCommands.Tone(Sr * 4, i => 0.3 * noise[i]);
+        int falseHits = TimeMap.Attacks(flat, flat).Length, foundHits = TimeMap.Attacks(loop, loop).Length;
+        bool heard = falseHits <= 4 && foundHits == loopHits.Length;
+        ok &= heard;
+        TransposeCommands.Row("Ataques: ruido parejo, loop", $"{falseHits} {foundHits}", $"<=4 {loopHits.Length}", heard);
 
         // both at once, in one pass; a mono take stays mono; neither is the take itself
         var tone = TransposeCommands.Tone(Sr * 3, i => 0.5 * Math.Sin(2 * Math.PI * 330 * i / Sr));

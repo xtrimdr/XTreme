@@ -21,8 +21,7 @@ _Ideas y mejoras para la nativa._
 - [x] Varios clips por pista: se reproducen, se dibujan, se exportan (comparten el panel), se graba desde el cabezal y
   "Traer al frente" elige cuál se ve donde se pisan (hecho, ver [HECHO.md](HECHO.md))
 - [x] Importar audio externo (hecho, ver [HECHO.md](HECHO.md))
-- [ ] Time-stretch: los ataques se corren con los cambios grandes (hasta ±20 %: 4 ms; a ×1,5: 9 ms antes de lo que
-  van). Probar reiniciar las fases en cada ataque. Una toma tocada sin click se estira parejo: no se ajusta a la grilla.
+- [ ] Time-stretch: una toma tocada sin click se estira parejo: no se ajusta a la grilla.
 - [ ] Transponer: probar si conviene un modo "fino" en cents. Límite conocido: dos armónicos a menos de ~7 Hz (la 3ª
   de un acorde grave) mantienen su batido original
 - [x] Efectos en slots por canal, con los internos y los VST3, su latencia compensada y el estado del plugin guardado
