@@ -69,11 +69,10 @@ public static class ChannelDsp
     }
 
     /// <summary>A track as the export renders it, with its clips and the level its Vida is measured against.</summary>
-    /// <param name="env">The take's envelope, which an automated compressor's amount is measured against; null = as a track without audio.</param>
-    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb, CompPresets.TakeEnvelope? env = null)
+    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb)
     {
         var ch = t.Channel;
-        var automator = InsertAutomator.Create(t, rmsDb, p.Settings.Bpm, env ?? CompPresets.Analyze([], MidiSampleRate));
+        var automator = InsertAutomator.Create(t, rmsDb, p.Settings.Bpm);
         return new MixTrackSpec
         {
             Name = t.Name,
@@ -203,7 +202,9 @@ public static class ChannelDsp
         c.Release,
         c.Knee,
         c.Makeup,
-        new CompEqParams(c.Eq.HpfHz, c.Eq.MudDb, c.Eq.PresenceDb, c.Eq.PresenceHz, c.Eq.AirDb));
+        new CompEqParams(c.Eq.HpfHz, c.Eq.MudDb, c.Eq.PresenceDb, c.Eq.PresenceHz, c.Eq.AirDb),
+        ThresholdTrim: c.ThresholdTrim,
+        MakeupTrim: c.MakeupTrim);
 
     public static EqBandSpec[] EqBands(EqSettings eq)
     {
@@ -223,13 +224,20 @@ public static class ChannelDsp
         return bands;
     }
 
-    /// <summary>
-    /// Writes a compressor preset's values (<see cref="CompPresets.UpdateComp"/>) back into <paramref name="c"/>, measured
-    /// against the take's <paramref name="env"/>. Returns the estimated reduction (dB).
-    /// </summary>
-    public static double RecalculateComp(CompSettings c, CompPresets.TakeEnvelope env)
+    /// <summary>Writes a compressor preset's values (<see cref="CompPresets.Apply"/>) back into <paramref name="c"/>.</summary>
+    public static void RecalculateComp(CompSettings c) => WriteComp(c, CompPresets.Apply(Comp(c)));
+
+    /// <summary>"Analizar toma": the preset's values measured on the take's <paramref name="env"/>.</summary>
+    public static void AnalyzeComp(CompSettings c, CompPresets.TakeEnvelope env)
     {
-        var state = CompPresets.UpdateComp(Comp(c), env);
+        WriteComp(c, CompPresets.UpdateComp(Comp(c), env));
+        c.Analyzed = true;
+    }
+
+    static void WriteComp(CompSettings c, CompState state)
+    {
+        c.ThresholdTrim = state.ThresholdTrim;
+        c.MakeupTrim = state.MakeupTrim;
         c.Threshold = state.Threshold;
         c.Ratio = state.Ratio;
         c.Attack = state.Attack;
@@ -241,6 +249,7 @@ public static class ChannelDsp
         c.Eq.PresenceDb = state.Eq.PresenceDb;
         c.Eq.PresenceHz = state.Eq.PresenceHz;
         c.Eq.AirDb = state.Eq.AirDb;
-        return state.EstGrDb ?? 0;
+        c.Extra ??= [];
+        c.Extra["estGrDb"] = System.Text.Json.JsonSerializer.SerializeToElement(state.EstGrDb ?? 0);
     }
 }

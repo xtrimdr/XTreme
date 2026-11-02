@@ -48,12 +48,10 @@ static class DspCommands
             {
                 "arpegio" or "arpeggio" => "arpeggio",
                 "punteo" or "lead" => "lead",
-                _ => "rhythm",
+                var id => CompPresets.NormalizePreset(id),
             };
-            var state = CompPresets.UpdateComp(
-                CompState.Defaults with { On = true, Preset = presetId, Amount = a.Double("comp-cant", 0.5), Limit = !a.Flag("sin-limit") },
-                ch,
-                sr);
+            var wanted = CompState.Defaults with { On = true, Preset = presetId, Amount = a.Double("comp-cant", 0.5), Limit = !a.Flag("sin-limit") };
+            var state = a.Flag("comp-analizar") ? CompPresets.UpdateComp(wanted, ch, sr) : CompPresets.Apply(wanted);
             comp.Bypass = false;
             comp.Threshold = state.Threshold;
             comp.Ratio = state.Ratio;
@@ -328,10 +326,8 @@ static class DspCommands
             float[][] ch = [loaded.Left, loaded.Right];
             var (rms, _) = LevelAnalysis.Analyze(ch, sr);
             defaultOut = Path.ChangeExtension(target, null) + "_mezcla.wav";
-            var compState = CompPresets.UpdateComp(
-                CompState.Defaults with { On = a.Flag("comp"), Preset = a.Get("comp-estilo", "rhythm"), Amount = a.Double("comp-cant", 0.5) },
-                ch,
-                sr);
+            var wantedComp = CompState.Defaults with { On = a.Flag("comp"), Preset = a.Get("comp-estilo", "rhythm"), Amount = a.Double("comp-cant", 0.5) };
+            var compState = a.Flag("comp-analizar") ? CompPresets.UpdateComp(wantedComp, ch, sr) : CompPresets.Apply(wantedComp);
             var satParams = SatParams.From(a.Get("sat") != null, a.Get("sat")?.StartsWith("c", StringComparison.OrdinalIgnoreCase) == true ? SatMode.Tape : SatMode.Tube, a.Double("vida", 0.3), rms);
             bool eqOn = a.Get("eq") != null;
             var eqBands = a.Get("eq") is { } eqId ? TrackEq.ApplyPreset(eqId) : TrackEq.DefaultBands;

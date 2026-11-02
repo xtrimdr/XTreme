@@ -57,7 +57,9 @@ public sealed class MediaAudio
     public float[] PeakMin { get; }
     public float[] PeakMax { get; }
     public double RmsDb { get; }
-    public CompPresets.TakeEnvelope Envelope { get; }
+    readonly Lazy<CompPresets.TakeEnvelope> envelope;
+    /// <summary>For "Analizar toma": read on first use only, from any thread.</summary>
+    public CompPresets.TakeEnvelope Envelope => envelope.Value;
     /// <summary>Both sides are the same samples: a one-channel file or a take from a mono input (the mixer shows one bar).</summary>
     public bool Mono { get; }
     public double LengthSec => L.Length / (double)SampleRate;
@@ -90,7 +92,7 @@ public sealed class MediaAudio
         }
         Mono = L.AsSpan().SequenceEqual(R);
         RmsDb = LevelAnalysis.Analyze([L, R], SampleRate).RmsDb;
-        Envelope = CompPresets.Analyze([L, R], SampleRate);
+        envelope = new(() => CompPresets.Analyze([L, R], SampleRate));
     }
 }
 
@@ -412,8 +414,8 @@ public sealed class LiveTrack
     /// <summary>Level the "Vida" knob is measured against: the first clip with audio (one take per track for now).</summary>
     public double RmsDb => Clips.FirstOrDefault(c => c.Audio != null)?.Audio!.RmsDb ?? -24;
 
-    /// <summary>Pre-analyzed take envelope for the first clip with audio, used by <see cref="RecalculateCompPreset"/>.</summary>
-    public CompPresets.TakeEnvelope? Envelope => Clips.FirstOrDefault(c => c.Audio != null)?.Audio!.Envelope;
+    /// <summary>The first clip's audio, which "Analizar toma" measures.</summary>
+    public MediaAudio? FirstAudio => Clips.FirstOrDefault(c => c.Audio != null)?.Audio;
 
     public bool HasPanel => Track.Video && Clips.Count > 0;
 
@@ -639,7 +641,7 @@ public sealed class LiveTrack
     {
         Channel.AdoptSpares();
         var live = LiveVst.Of(Track.Id);
-        automator = InsertAutomator.Create(Track, RmsDb, bpm, Envelope ?? CompPresets.Analyze([], sampleRate), live, PlaybackEngine.FxBypass);
+        automator = InsertAutomator.Create(Track, RmsDb, bpm, live, PlaybackEngine.FxBypass);
         Chain.SetInserts(automator?.At(autoSec, force: true) ?? ChannelDsp.Specs(Track, RmsDb, bpm, live, PlaybackEngine.FxBypass), fade: started);
     }
 
@@ -647,15 +649,13 @@ public sealed class LiveTrack
     bool started;
 
     /// <summary>
-    /// Recomputes a compressor's threshold, ratio, attack/release, makeup and CompEq from its preset and amount against
-    /// the take's envelope (port of <c>updateComp</c> in <c>compPresets.ts</c>), writes them back into
-    /// <paramref name="comp"/> (the channel's first compressor when null) and updates the live DSP chain.
+    /// Recomputes a compressor's threshold, ratio, attack/release, makeup and CompEq from its preset and amount, writes
+    /// them back into <paramref name="comp"/> (the channel's first compressor when null) and updates the live DSP chain.
     /// </summary>
-    public double RecalculateCompPreset(CompSettings? comp = null)
+    public void RecalculateCompPreset(CompSettings? comp = null)
     {
-        double gr = ChannelDsp.RecalculateComp(comp ?? Channel.Comp, Envelope ?? CompPresets.Analyze([], sampleRate));
+        ChannelDsp.RecalculateComp(comp ?? Channel.Comp);
         ApplyInserts();
-        return gr;
     }
 
     /// <summary>

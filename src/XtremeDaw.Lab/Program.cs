@@ -80,12 +80,12 @@ static class Program
                                            armadas (toma_e1.wav, toma_e3-4.wav…); con --simular verifica cada WAV
               procesar  entrada.wav [--salida x.wav] [--sat valvula|cinta] [--vida 0.3]
                         [--comp] [--umbral -24] [--ratio 4] [--ataque 10] [--release 150] [--knee 6]
-                        [--makeup 0] [--limit] [--comp-estilo rasgueo|arpegio|punteo] [--comp-cant 0.5]
+                        [--makeup 0] [--limit] [--comp-estilo rasgueo|arpegio|punteo|id de un preset] [--comp-cant 0.5] [--comp-analizar]
                         [--eq ritmica|punteo|acustica|frente] [--reverb cuarto|sala|salon|placa|catedral]
                         [--delay slapback|corchea|punteada|pingpong|ambiente] [--bpm 120]
                                            aplica efectos de pista y buses a un WAV
               mezclar   carpeta-proyecto|entrada.wav [--salida mezcla.wav] [--segundos N]
-                        [--sat valvula|cinta] [--vida 0.3] [--comp] [--comp-estilo rhythm|arpeggio|lead] [--comp-cant 0.5]
+                        [--sat valvula|cinta] [--vida 0.3] [--comp] [--comp-estilo id de un preset] [--comp-cant 0.5] [--comp-analizar]
                         [--eq rhythm|lead|acoustic|front] [--cadena vida,comp,eq,puerta]
                                            renderiza la mezcla completa offline (sin la demora del limitador); con un WAV,
                                            --cadena arma los slots de la pista en ese orden (se pueden repetir: eq,vida,eq)

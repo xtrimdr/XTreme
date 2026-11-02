@@ -240,7 +240,22 @@ public partial class MainWindow
         window.Show(this);
     }
 
-    /// <summary>The compressor's choices: its style, peak limiting and going back to the style's defaults.</summary>
+    /// <summary>What the compressor's menu lists, by category; "Manual" goes at the end, outside them, only while it is in use.</summary>
+    sealed record CompList(string[] Names, string?[] Hints, string?[] Groups);
+
+    static CompList MakeCompList(bool custom)
+    {
+        var all = CompPresets.All;
+        string Group(CompPresetDef p) => Loc.Or("insp.comp.group." + p.Group, Array.Find(CompPresets.Groups, g => g.Id == p.Group)?.Label ?? p.Group);
+        return new([.. all.Select(CompPresetName), .. custom ? new[] { Loc.T("insp.comp.manual") } : []],
+            [.. all.Select(CompPresetHint), .. custom ? new string?[] { null } : []],
+            [.. all.Select(Group), .. custom ? new string?[] { null } : []]);
+    }
+
+    // made once: every edit refreshes the panels, and the language only changes on restart
+    static readonly Lazy<CompList> compList = new(() => MakeCompList(false)), compListManual = new(() => MakeCompList(true));
+
+    /// <summary>The compressor's choices: its style, measuring the take, peak limiting and going back to the style's defaults.</summary>
     void CompChoices(StackPanel body, SlotOwner o, string id, List<Action> refresh)
     {
         CompSettings C() => o.Slot(id)?.Comp ?? GoneComp;
@@ -251,6 +266,22 @@ public partial class MainWindow
             string p = CompPresets.All[i].Id;
             StripComp(o, id, c => { c.Preset = p; c.On = true; }, "preset");
         };
+        // the take goes off the UI thread: a long one takes a moment the first time, and then the result is kept
+        var analyze = new Button { Classes = { "chip" }, Content = new TextBlock { Classes = { "icon" }, Text = "\uE9D9", FontSize = 12 }, Height = 30, MinHeight = 30, Padding = new Thickness(6, 0), Margin = new Thickness(4, 0, 0, 0), Focusable = false };
+        ToolTip.SetShowOnDisabled(analyze, true);
+        analyze.Click += async (_, _) =>
+        {
+            if (o.Take() is not { } take) return;
+            analyze.IsEnabled = false;
+            var env = await Task.Run(() => take.Envelope);
+            analyze.IsEnabled = true;
+            SlotEdit(o, id, s =>
+            {
+                if (s.Comp is not { } c) return;
+                o.CompEdited?.Invoke(c);
+                ChannelDsp.AnalyzeComp(c, env);
+            }, $"comp.analyze.{++slotEdits}");
+        };
         var lim = new Button { Content = "LIM", Classes = { "chip", "mono" }, FontSize = 10, FontWeight = FontWeight.Bold, Height = 30, MinHeight = 30, Padding = new Thickness(6, 0), Margin = new Thickness(4, 0, 0, 0), Focusable = false };
         lim.Click += (_, _) => StripComp(o, id, c => c.Limit = !c.Limit, "limit");
         var reset = InspectorIcon("", Loc.T("insp.comp.reset"), () => SlotEdit(o, id, s =>
@@ -259,19 +290,24 @@ public partial class MainWindow
             s.Comp = new CompSettings { On = on, Preset = o.DefaultPreset() };
             o.Recalculate(s.Comp);
         }, "comp.reset"));
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto") };
         row.Children.Add(preset);
-        Grid.SetColumn(lim, 1); row.Children.Add(lim);
-        Grid.SetColumn(reset, 2); row.Children.Add(reset);
+        Grid.SetColumn(analyze, 1); row.Children.Add(analyze);
+        Grid.SetColumn(lim, 2); row.Children.Add(lim);
+        Grid.SetColumn(reset, 3); row.Children.Add(reset);
         refresh.Add(() =>
         {
             var c = C();
             bool custom = c.Preset == "custom";
-            preset.SetItems(CompPresets.All.Select(CompPresetName).Concat(custom ? new[] { Loc.T("insp.comp.manual") } : []).ToArray(),
-                CompPresets.All.Select(p => (string?)CompPresetHint(p)).Concat(custom ? new string?[] { null } : []).ToArray());
+            var list = (custom ? compListManual : compList).Value;
+            preset.SetItems(list.Names, list.Hints, list.Groups);
             int i = Array.FindIndex(CompPresets.All, p => p.Id == c.Preset);
             preset.SelectedIndex = custom ? CompPresets.All.Length : i;
             ToolTip.SetTip(preset, i >= 0 ? CompPresetHint(CompPresets.All[i]) : Loc.T("mix.comp.custom.tip"));
+            bool take = o.Take() != null;
+            analyze.IsEnabled = take && !custom;
+            analyze.Classes.Set("on", c.Analyzed && !custom);
+            ToolTip.SetTip(analyze, Loc.T(custom ? "insp.comp.analyze.manual" : !take ? "insp.comp.analyze.none" : c.Analyzed ? "insp.comp.analyze.on" : "insp.comp.analyze.tip"));
             lim.Classes.Set("on", c.Limit);
             ToolTip.SetTip(lim, Loc.T(c.Limit ? "mix.lim.on" : "mix.lim.off"));
         });
@@ -369,8 +405,10 @@ public partial class MainWindow
             change(m.Slots);
             if (m.Slots.Count > before) m.On = true;
         }, key),
-        Recalculate = _ => { },
+        Recalculate = ChannelDsp.RecalculateComp,
+        Take = () => BusTake(MasterOwner),
         Insert = engine.MasterInsert,
+        DefaultPreset = () => "bus-mix",
         AddTip = Loc.T("mix.slot.add.master.tip"),
         Master = true,
     };

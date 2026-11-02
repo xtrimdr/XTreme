@@ -1078,6 +1078,11 @@ public sealed class CompSettings
     /// <summary>A preset id of the web app (rhythm, lead…) or "custom".</summary>
     public string Preset { get; set; } = "rhythm";
     public double Amount { get; set; } = 0.5;
+    /// <summary>"Analizar toma" was used: the trims hold what it found.</summary>
+    public bool Analyzed { get; set; }
+    /// <summary>How far the take's measured threshold and make-up are from the preset's fixed ones (dB).</summary>
+    public double ThresholdTrim { get; set; }
+    public double MakeupTrim { get; set; }
     public bool Limit { get; set; } = true;
     public double Threshold { get; set; } = -18;
     public double Ratio { get; set; } = 4;

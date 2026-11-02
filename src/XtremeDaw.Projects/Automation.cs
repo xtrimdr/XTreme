@@ -452,18 +452,16 @@ public sealed class InsertAutomator
     readonly Lane[] lanes;
     readonly double[] last;
     readonly double rmsDb, bpm;
-    readonly CompPresets.TakeEnvelope env;
     readonly Func<InsertSlot, VstBridge?>? live;
     readonly bool bypass, wait;
     readonly Dictionary<string, VstParamCurves> plugins = [];
 
-    InsertAutomator(Channel channel, Lane[] lanes, Track track, double rmsDb, double bpm, CompPresets.TakeEnvelope env, Func<InsertSlot, VstBridge?>? live, bool bypass)
+    InsertAutomator(Channel channel, Lane[] lanes, Track track, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live, bool bypass)
     {
         this.channel = channel;
         this.lanes = lanes;
         this.rmsDb = rmsDb;
         this.bpm = bpm;
-        this.env = env;
         this.live = live;
         this.bypass = bypass;
         wait = live == null;
@@ -477,7 +475,7 @@ public sealed class InsertAutomator
     /// For a track with lanes on its native effects; null without any. <paramref name="live"/> as in
     /// <see cref="ChannelDsp.Specs(Channel, double, double, Func{InsertSlot, VstBridge?}?, bool)"/>: without it, the export.
     /// </summary>
-    public static InsertAutomator? Create(Track t, double rmsDb, double bpm, CompPresets.TakeEnvelope env, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false)
+    public static InsertAutomator? Create(Track t, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false)
     {
         if (t.Automation == null) return null;
         var channel = ProjectLibrary.Clone(t.Channel);
@@ -487,7 +485,7 @@ public sealed class InsertAutomator
         foreach (var l in t.Automation)
             if (Automations.FxParamOf(slots, l.Target) is { } f && Automations.Curve(l, f.Param.Toggle) is { } c)
                 list.Add(new(f.Slot, f.Param, c, f.Slot.Type == InsertSlot.ReverbKind && f.Param.Id is "decay" or "tone" or "width"));
-        return list.Count == 0 ? null : new InsertAutomator(channel, [.. list], t, rmsDb, bpm, env, live, bypass);
+        return list.Count == 0 ? null : new InsertAutomator(channel, [.. list], t, rmsDb, bpm, live, bypass);
     }
 
     /// <summary>The slots at <paramref name="sec"/> if a lane moved since the last call; with <paramref name="force"/>, always.</summary>
@@ -508,7 +506,7 @@ public sealed class InsertAutomator
         if (!moved) return null;
         if (recalc)
             foreach (var l in lanes)
-                if (l.Slot.Comp is { Preset: not "custom" } c && l.Param.Id == "amount") ChannelDsp.RecalculateComp(c, env);
+                if (l.Slot.Comp is { Preset: not "custom" } c && l.Param.Id == "amount") ChannelDsp.RecalculateComp(c);
         var specs = ChannelDsp.Specs(channel, rmsDb, bpm, live, bypass);
         for (int i = 0; i < specs.Length; i++)
         {

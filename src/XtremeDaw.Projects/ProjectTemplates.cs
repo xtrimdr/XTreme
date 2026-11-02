@@ -94,7 +94,7 @@ public static class ProjectTemplates
     /// <summary>Built-in track names by their Spanish name, to look up the translation.</summary>
     static readonly Dictionary<string, string> TrackIds = new() { ["Rítmica"] = "rhythm", ["Rítmica L"] = "rhythmL", ["Rítmica R"] = "rhythmR", ["Punteo"] = "lead", ["Arpegio"] = "arpeggio", ["Guitarra"] = "guitar" };
 
-    /// <summary>The compressor's raw values get computed from the first take that fills the track.</summary>
+    /// <summary>The compressor's raw values come from its preset when the track first gets a take.</summary>
     static TemplateTrack Track(string name, string preset, Action<Channel>? set = null, double amount = 0.5)
     {
         var ch = new Channel { Inserts = Channel.DefaultInserts() };

@@ -404,11 +404,11 @@ public partial class MainWindow
                 Toast(Loc.T("rec.timelineFail", kept[0].Take.Journal.Name));
                 return;
             }
-            // a preset compressor sets its make-up and the rest from the new take's level (the web's updateComp)
+            // a track's first take brings its compressor's values, which an empty track doesn't have yet
             foreach (var id in trackIds)
                 if (tracks.Find(t => t.Track.Id == id) is { } live && live.Channel.Comp.Preset != "custom")
                 {
-                    RecalculateInspectorComp(live);
+                    live.RecalculateCompPreset();
                     if (trackIds.Count == 1 || live == sel) ShowTrack(live);
                 }
             await FlushProjectOperation();

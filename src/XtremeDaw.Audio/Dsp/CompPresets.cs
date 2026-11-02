@@ -31,7 +31,9 @@ public readonly record struct CompState(
     double Knee,
     double Makeup,
     CompEqParams Eq,
-    double? EstGrDb = null)
+    double? EstGrDb = null,
+    double ThresholdTrim = 0,
+    double MakeupTrim = 0)
 {
     public static readonly CompState Defaults = new(
         On: false,
@@ -48,6 +50,7 @@ public readonly record struct CompState(
 }
 
 public sealed record CompPresetDef(
+    string Group,
     string Id,
     string Label,
     string Hint,
@@ -64,67 +67,29 @@ public sealed record CompPresetDef(
     (double Min, double Max) Air);
 
 /// <summary>
-/// Port of <c>GuitarCam/src/audio/compPresets.ts</c>: simple-mode guitar compressor presets
-/// (<c>rhythm</c>, <c>arpeggio</c>, <c>lead</c>) that simulate the compressor on the take's 2 ms envelope
-/// to find the threshold and make-up gain automatically.
+/// Simple-mode compressor presets (<see cref="CompPresetTable"/>). A preset goes straight to fixed values
+/// (<see cref="Apply"/>, decision of the user: no reading of the take), worked out for a take at <see cref="RefPeakDb"/>.
+/// Only when asked, <see cref="UpdateComp(CompState, TakeEnvelope)"/> (port of <c>compPresets.ts</c>) simulates the
+/// compressor on the take's 2 ms envelope to find the threshold and make-up, and keeps how far they are from the fixed
+/// ones as trims, so the amount and other presets stay fixed-value sums on top of what was measured.
 /// </summary>
 public static class CompPresets
 {
     public const double TrackLimitCeilingDb = -3;
     public const double EqMudHz = 280;
     public const double EqAirHz = 9000;
+    /// <summary>The take the fixed values are for: its typical peak and level, as a recording usually sits (dBFS).</summary>
+    public const double RefPeakDb = -12, RefRmsDb = -24;
 
     const double BlockSec = 0.002;
     const int WinBlocks = 25; // 50 ms windows
 
-    public static readonly CompPresetDef[] All =
-    [
-        new(
-            Id: "rhythm",
-            Label: "Rasgueo",
-            Hint: "Rítmicas y riffs: empareja los golpes, conserva el ataque de la púa y deja lugar al punteo",
-            Gr: (1.5, 9),
-            Ratio: (2, 5),
-            AttackMs: (30, 10),
-            ReleaseMs: (150, 90),
-            Knee: (8, 4),
-            TargetRmsDb: -21,
-            Hpf: (80, 100),
-            Mud: (-1, -2.5),
-            Presence: (-0.5, -2),
-            PresenceHz: 2800,
-            Air: (0.5, 1.5)),
-        new(
-            Id: "arpeggio",
-            Label: "Arpegio",
-            Hint: "Arpegios y limpias: iguala las cuerdas, las notas suaves se escuchan y suena abierto",
-            Gr: (1, 7),
-            Ratio: (2, 3.5),
-            AttackMs: (20, 6),
-            ReleaseMs: (220, 140),
-            Knee: (10, 6),
-            TargetRmsDb: -21,
-            Hpf: (70, 85),
-            Mud: (-1, -2),
-            Presence: (-0.5, -1),
-            PresenceHz: 3000,
-            Air: (1, 2.5)),
-        new(
-            Id: "lead",
-            Label: "Punteo",
-            Hint: "Solos y melodías: más sustain, notas parejas y presencia para que quede adelante",
-            Gr: (3, 13),
-            Ratio: (3, 8),
-            AttackMs: (10, 3),
-            ReleaseMs: (250, 170),
-            Knee: (6, 3),
-            TargetRmsDb: -17,
-            Hpf: (110, 140),
-            Mud: (-1, -2),
-            Presence: (1.5, 4),
-            PresenceHz: 2500,
-            Air: (0, 1)),
-    ];
+    /// <summary>A preset's <see cref="CompPresetDef.TargetRmsDb"/> when the make-up only gives back what it took off.</summary>
+    public const double SameLevel = double.NaN;
+
+    public static CompPresetGroup[] Groups => CompPresetTable.Groups;
+
+    public static CompPresetDef[] All => CompPresetTable.All;
 
     public static string PresetLabel(string? id)
     {
@@ -160,7 +125,7 @@ public static class CompPresets
         if (c.Eq.PresenceDb >= 1)
             parts.Add($"presencia +{c.Eq.PresenceDb.ToString("0.0", fmt)} dB");
         else if (c.Eq.PresenceDb <= -1)
-            parts.Add($"lugar al punteo {c.Eq.PresenceDb.ToString("0.0", fmt)} dB");
+            parts.Add($"presencia {c.Eq.PresenceDb.ToString("0.0", fmt)} dB");
         return string.Join(" · ", parts);
     }
 
@@ -306,24 +271,56 @@ public static class CompPresets
     public static CompState UpdateComp(CompState comp, float[][] chans, int sampleRate) =>
         UpdateComp(comp, Analyze(chans, sampleRate));
 
+    static CompPresetDef? Find(string id) => Array.Find(All, p => p.Id == id);
+
+    static Curve Shape(CompPresetDef p, double t) => new(
+        Threshold: 0,
+        Ratio: Lerp(p.Ratio, t),
+        Knee: Lerp(p.Knee, t),
+        Attack: Lerp(p.AttackMs, t) / 1000.0,
+        Release: Lerp(p.ReleaseMs, t) / 1000.0);
+
+    /// <summary>
+    /// The threshold that takes <paramref name="gr"/> dB off a peak at <see cref="RefPeakDb"/>, and the make-up that
+    /// brings a take at <see cref="RefRmsDb"/> to the preset's level (with <see cref="SameLevel"/>, what it took off).
+    /// </summary>
+    static (double Threshold, double Makeup) Fixed(CompPresetDef p, Curve shape, double gr)
+    {
+        double over = gr / (1 - 1 / Math.Max(1.01, shape.Ratio));
+        double makeup = double.IsNaN(p.TargetRmsDb) ? gr : p.TargetRmsDb - (RefRmsDb - gr);
+        return (RefPeakDb - over, makeup);
+    }
+
+    /// <summary>A preset's values at its amount, without reading any audio: the trims of the last analysis stay.</summary>
+    public static CompState Apply(CompState next)
+    {
+        if (Find(next.Preset) is not { } preset) return next;
+        double t = Math.Clamp(next.Amount, 0, 1);
+        var shape = Shape(preset, t);
+        double gr = Lerp(preset.Gr, t);
+        var (threshold, makeup) = Fixed(preset, shape, gr);
+        return Values(next, preset, t, shape, threshold + next.ThresholdTrim, makeup + next.MakeupTrim, gr);
+    }
+
+    /// <summary>The analysis: a preset's values measured on the take, which stay as trims over the fixed ones.</summary>
     public static CompState UpdateComp(CompState next, TakeEnvelope a)
     {
-        CompPresetDef? preset = null;
-        foreach (var p in All)
-            if (p.Id == next.Preset) { preset = p; break; }
-        if (preset == null) return next;
-
+        if (Find(next.Preset) is not { } preset) return next;
         double t = Math.Clamp(next.Amount, 0, 1);
-        var shape = new Curve(
-            Threshold: 0,
-            Ratio: Lerp(preset.Ratio, t),
-            Knee: Lerp(preset.Knee, t),
-            Attack: Lerp(preset.AttackMs, t) / 1000.0,
-            Release: Lerp(preset.ReleaseMs, t) / 1000.0);
+        var shape = Shape(preset, t);
         var scratch = new float[a.PeakDb.Length];
         double threshold = Math.Clamp(FindThreshold(a, shape, Lerp(preset.Gr, t), scratch), -60, 0);
         var sim = Simulate(a, shape with { Threshold = threshold }, scratch, wantOut: true);
-        double makeup = Math.Clamp(preset.TargetRmsDb - sim.OutRmsDb, -12, 30);
+        double target = double.IsNaN(preset.TargetRmsDb) ? a.RmsDb : preset.TargetRmsDb;
+        double makeup = Math.Clamp(target - sim.OutRmsDb, -12, 30);
+        var (fixedThreshold, fixedMakeup) = Fixed(preset, shape, Lerp(preset.Gr, t));
+        return Values(next with { ThresholdTrim = threshold - fixedThreshold, MakeupTrim = makeup - fixedMakeup }, preset, t, shape, threshold, makeup, sim.Gr);
+    }
+
+    static CompState Values(CompState next, CompPresetDef preset, double t, Curve shape, double threshold, double makeup, double gr)
+    {
+        threshold = Math.Clamp(threshold, -60, 0);
+        makeup = Math.Clamp(makeup, -12, 30);
         var eq = new CompEqParams(
             HpfHz: JsRound(Lerp(preset.Hpf, t)),
             MudDb: RoundStep(Lerp(preset.Mud, t), 0.5),
@@ -339,7 +336,7 @@ public static class CompPresets
             Knee = RoundStep(shape.Knee, 0.5),
             Makeup = RoundStep(makeup, 0.5),
             Eq = eq,
-            EstGrDb = RoundStep(sim.Gr, 0.5),
+            EstGrDb = RoundStep(gr, 0.5),
         };
     }
 }

@@ -441,12 +441,11 @@ public partial class MainWindow
         MarkDirty(); UpdateUndoButtons(); RefreshInspectorText(); Timeline.InvalidateVisual();
     }
 
-    /// <summary>The compressor from a strip: like the inspector, the preset is recomputed against the take
-    /// (an empty track just keeps the values until a take fills it, as updateComp needs the audio).</summary>
+    /// <summary>The compressor from a strip: like the inspector, its values follow its preset.</summary>
     void StripComp(LiveTrack t, Action<CompSettings> edit, string key) => EditTrack(t, x =>
     {
         edit(x.Channel.Comp);
-        if (x.Envelope != null && x.Channel.Comp.Preset != "custom") RecalculateInspectorComp(x);
+        if (x.Channel.Comp.Preset != "custom") x.RecalculateCompPreset();
     }, "comp." + key);
 
     void RefreshMixer()
@@ -1346,8 +1345,10 @@ public partial class MainWindow
         public required Func<List<InsertSlot>> Slots { get; init; }
         /// <summary>An edit of the slots: one undo step per key, heard at once, saved.</summary>
         public required Action<Action<List<InsertSlot>>, string> Edit { get; init; }
-        /// <summary>Measures a compressor's preset again (after its preset or amount changed, or a new one).</summary>
+        /// <summary>Sets a compressor's values from its preset (after its preset or amount changed, or a new one).</summary>
         public required Action<CompSettings> Recalculate { get; init; }
+        /// <summary>What "Analizar toma" measures; null = nothing to measure.</summary>
+        public Func<MediaAudio?> Take { get; init; } = () => null;
         /// <summary>The "+ Efecto" tooltip: what a new effect works on.</summary>
         public string AddTip { get; init; } = Loc.T("mix.slot.add.tip");
         /// <summary>A bus's or the master's chain: a new reverb or delay starts all wet (on a track, mixed with the dry signal).</summary>
@@ -1369,7 +1370,8 @@ public partial class MainWindow
         OwnerId = t.Track.Id,
         Slots = () => t.Channel.Slots,
         Edit = (change, key) => EditTrack(t, x => change(x.Channel.Slots), key),
-        Recalculate = c => { if (t.Envelope != null) RecalculateInspectorComp(t, c); },
+        Recalculate = c => t.RecalculateCompPreset(c),
+        Take = () => t.FirstAudio,
         Insert = t.Chain.Find,
         DefaultPreset = () => InspectorEditing.DefaultCompPreset(SelectedInspectorClip?.Clip, tracks.IndexOf(t) == 1 ? "lead" : "rhythm"),
         CompEdited = c =>
@@ -1418,7 +1420,7 @@ public partial class MainWindow
         return Task.CompletedTask;
     }
 
-    /// <summary>An edit of one compressor slot, found by id; its preset is measured again unless it is manual.</summary>
+    /// <summary>An edit of one compressor slot, found by id; its values follow its preset unless it is manual.</summary>
     void StripComp(SlotOwner o, string id, Action<CompSettings> edit, string key) => o.Edit(slots =>
     {
         if (slots.Find(s => s.Id == id)?.Comp is not { } c) return;
@@ -1534,8 +1536,12 @@ public partial class MainWindow
             item.Click += (_, _) => SlotsEdit(o, x =>
             {
                 var slot = ChannelInserts.Add(x, kind);
-                // a compressor's preset is measured against the take, like a new track's
-                if (slot?.Comp is { } c) o.Recalculate(c);
+                if (slot?.Comp is { } c)
+                {
+                    // a guitar's preset would change the level of a whole bus or of the mix
+                    if (o.Master || o.ReturnKinds) c.Preset = o.DefaultPreset();
+                    o.Recalculate(c);
+                }
                 // on a track a reverb or a delay goes over its dry signal; a bus's send already keeps it
                 if (slot != null && !o.ReturnKinds && !o.Master && kind is InsertSlot.ReverbKind or InsertSlot.DelayKind)
                 {

@@ -717,7 +717,7 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   canción, el cabezal (clic o arrastre para moverlo) y una regla en compases o en minutos y segundos, con su propio
   switch de dos botones a la izquierda que es el mismo modo que el de la regla del timeline (`SetRulerMode`).
 - Las ediciones de canal pasan por `EditTrack`, las de las carpetas por `FolderEdit` y las de los buses por `BusEdit`
-  (`BusesEdit` para agregar y quitar). Los desplegables son `SelectButton`, no `ComboBox`.
+  (`BusesEdit` para agregar y quitar). Los desplegables son `SelectButton`, no `ComboBox`; con grupos abren submenús, como los presets del compresor (`CompPresetTable`: categoría → preset, pedido del usuario). Un preset se aplica directo con valores fijos (`CompPresets.Apply`); el botón **Analizar toma**, al lado, mide la toma y guarda la diferencia (`ThresholdTrim`, `MakeupTrim`), que sigue valiendo al mover Cantidad o cambiar de preset (decisión del usuario).
 - **A | B** (`MainWindow.MixCompare.cs`, `MixCompare`): segmentado en la barra del mixer, entre los M/S de limpiar y la
   barra del ancho de los canales. La mezcla que suena es la del proyecto; la otra espera en `ProjectSettings.Compare` (solo ajustes:
   el canal de cada pista, salida y envíos de las carpetas, y volumen, paneo, slots, salida y envíos de los buses, por

@@ -114,26 +114,19 @@ public partial class MainWindow
             OwnerId = id,
             Slots = () => B().Inserts,
             Edit = (change, key) => BusEdit(id, x => change(x.Inserts), key),
-            Recalculate = c => RecalculateBusComp(id, c),
+            Recalculate = ChannelDsp.RecalculateComp,
+            Take = () => BusTake(id),
             Insert = slot => engine.Node(id)?.Find(slot),
             AddTip = Loc.T("mix.slot.add.bus.tip"),
             ReturnKinds = true,
+            DefaultPreset = () => "bus-glue",
         };
     }
 
-    /// <summary>
-    /// A bus compressor's preset, measured against the first track that reaches it (or any track with audio): a bus has
-    /// no take of its own; with none, its values stay as they are.
-    /// </summary>
-    void RecalculateBusComp(string id, CompSettings c)
-    {
-        var env = (tracks.FirstOrDefault(t => (ChannelDsp.TrackOutput(t.Track) == id || t.Channel.SendTo(id) is { On: true, Level: > 0 }) && t.Envelope != null)
-            ?? tracks.FirstOrDefault(t => t.Envelope != null))?.Envelope;
-        if (env == null) return;
-        double gr = ChannelDsp.RecalculateComp(c, env);
-        c.Extra ??= [];
-        c.Extra["estGrDb"] = System.Text.Json.JsonSerializer.SerializeToElement(gr);
-    }
+    /// <summary>What a bus's or the master's compressor is analyzed against, having no take of its own: the first track that reaches it, or any with audio.</summary>
+    MediaAudio? BusTake(string id) =>
+        (tracks.FirstOrDefault(t => (ChannelDsp.TrackOutput(t.Track) == id || t.Channel.SendTo(id) is { On: true, Level: > 0 }) && t.FirstAudio != null)
+            ?? tracks.FirstOrDefault(t => t.FirstAudio != null))?.FirstAudio;
 
     /// <summary>Counts every edit (<see cref="MarkDirty"/>): what is cached from the project is made again when it moves.</summary>
     int editStamp;

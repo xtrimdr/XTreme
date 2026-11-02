@@ -489,10 +489,8 @@ public partial class MainWindow
         EditTrack(track, x =>
         {
             skipped = TrackPresets.ApplyTo(store.Project, x.Track, preset);
-            // a preset's compressor was measured on another take: measured again on this one, unless it is manual
-            if (x.Envelope != null)
-                foreach (var s in x.Channel.Slots)
-                    if (s.Comp is { } c && c.Preset != "custom") RecalculateInspectorComp(x, c);
+            foreach (var s in x.Channel.Slots)
+                if (s.Comp is { } c && c.Preset != "custom") x.RecalculateCompPreset(c);
         }, $"preset.{preset.Id}");
         RefreshMixer();
         RebuildInspectorSends(track);

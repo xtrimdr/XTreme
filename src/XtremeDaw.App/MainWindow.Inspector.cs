@@ -266,15 +266,6 @@ public partial class MainWindow
         Timeline.LengthSec = tracks.Count == 0 ? 0 : tracks.Max(t => t.EndSec);
         Timeline.InvalidateVisual(); Preview.InvalidateVisual();
     }
-    /// <param name="comp">The compressor slot to measure; the channel's first when null.</param>
-    static void RecalculateInspectorComp(LiveTrack track, CompSettings? comp = null)
-    {
-        var c = comp ?? track.Channel.Comp;
-        double gr = track.RecalculateCompPreset(c);
-        c.Extra ??= [];
-        c.Extra["estGrDb"] = System.Text.Json.JsonSerializer.SerializeToElement(gr);
-    }
-
     static double EstimatedCompression(CompSettings c) =>
         c.Extra?.TryGetValue("estGrDb", out var value) == true && value.TryGetDouble(out double gr) && double.IsFinite(gr)
             ? gr : Math.Max(0, -c.Threshold / 4);
