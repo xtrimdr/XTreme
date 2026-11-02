@@ -1,0 +1,22 @@
+#### Audio
+
+
+
+\-> Support for .flp and other DAW project files
+
+\-> The chance to add more plugins to the "master" channel of the mixer
+
+\-> Native plugins of free use (Reverb, Compression, Delay, Filter)
+
+\-> A way to automate any parameter inside of plugins
+
+
+
+#### Video
+
+
+
+\-> A native function to make an audio visualizer
+
+
+
