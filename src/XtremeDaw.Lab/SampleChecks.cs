@@ -11,6 +11,9 @@ namespace XtremeDaw.Lab;
 /// </summary>
 static class SampleChecks
 {
+    // How many 10 ms waits a folder scan gets: long, it only matters on a machine busy with something else
+    const int ScanTries = 6000;
+
     public static int Run(Args a)
     {
         string sub = a.Positional.FirstOrDefault() ?? "";
@@ -91,7 +94,7 @@ static class SampleChecks
             {
                 lib.Open();
                 lib.AddFolder(root);
-                for (int i = 0; i < 500 && (lib.Scanning || lib.Files.Count == 0); i++) Thread.Sleep(10);
+                for (int i = 0; i < ScanTries && (lib.Scanning || lib.Files.Count == 0); i++) Thread.Sleep(10);
                 Ok(lib.Files.Count == 3, "agregar una carpeta la lee");
                 var first = lib.Files.First(f => f.Path == kick);
                 SampleLibrary.AnalyzeOne(first);
@@ -100,13 +103,13 @@ static class SampleChecks
                 lib.Scan();
                 File.Delete(kick2);
                 lib.Scan();
-                for (int i = 0; i < 500 && (lib.Scanning || lib.Files.Count != 2); i++) Thread.Sleep(10);
+                for (int i = 0; i < ScanTries && (lib.Scanning || lib.Files.Count != 2); i++) Thread.Sleep(10);
                 Ok(lib.Files.Count == 2, "volver a leer saca lo que se borró");
             }
             using (var lib = new SampleLibrary())
             {
                 lib.Open();
-                for (int i = 0; i < 500 && lib.Scanning; i++) Thread.Sleep(10);
+                for (int i = 0; i < ScanTries && lib.Scanning; i++) Thread.Sleep(10);
                 var kept = lib.Files.FirstOrDefault(f => f.Path == kick);
                 Ok(kept is { DurationSec: > 0.4, Peaks: not null } && lib.IsFavorite(kept) && lib.Folders.Single().Name == "Baterías", "el índice guarda el análisis, los favoritos y el nombre");
             }
@@ -115,7 +118,7 @@ static class SampleChecks
             using (var lib = new SampleLibrary())
             {
                 lib.Open();
-                for (int i = 0; i < 500 && lib.Scanning; i++) Thread.Sleep(10);
+                for (int i = 0; i < ScanTries && lib.Scanning; i++) Thread.Sleep(10);
                 Ok(lib.Files.Count == 2, "una carpeta que no está conserva sus archivos");
             }
             Directory.Move(root + "-fuera", root);
@@ -215,7 +218,8 @@ static class SampleChecks
         ok(over != track && after == track && track.Clips.Count == 2, "soltar sobre una pista usa el lugar libre y nunca tapa lo que hay");
 
         var media = p.FindMedia(track.Clips[0].MediaId)!;
-        string first = ClipEditing.PlaceMedia(p, media.Id, 3, track.Id);
+        // inside the clip at 2 s: the video lasts about 1 s, so 3 s can fall in the free gap after it
+        string first = ClipEditing.PlaceMedia(p, media.Id, 2.5, track.Id);
         ok(first != track.Id && p.Tracks.Find(t => t.Id == first) is { Video: true }, "una toma arrastrada sobre algo ocupado va a una pista nueva, con su panel");
         ok(ClipEditing.PlaceMedia(p, media.Id, 7, track.Id) == track.Id && ClipEditing.Window(track.Clips[^1], media).Start == 7, "cae donde se soltó, y la misma toma se puede usar varias veces");
         var synced = new Media { Name = "Toma", Audio = "media/t.wav", DurationSec = 2, SyncMs = 100 };

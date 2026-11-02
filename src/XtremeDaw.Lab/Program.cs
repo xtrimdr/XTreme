@@ -11,9 +11,11 @@ static class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        XtremeDaw.Audio.FfmpegSetup.RefreshPath();
         var a = new Args(argv);
         try
         {
+            if (!HeavyTurn.Take(a.Command)) return HeavyTurn.BusyCode;
             return a.Command switch
             {
                 "dispositivos" => AudioCommands.Devices(),

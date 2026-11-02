@@ -18,12 +18,13 @@ public partial class App : Application
         TrackKnobs.Load();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var (dir, note) = ParseArgs(desktop.Args ?? []);
+            // XTreme.exe [carpeta]
+            var dir = desktop.Args?.FirstOrDefault();
             // the splash paints first; the main window (slow to build) comes once it is on screen
             var splash = new SplashWindow();
             splash.Opened += (_, _) => Dispatcher.UIThread.Post(() =>
             {
-                var main = new MainWindow(dir, note);
+                var main = new MainWindow(dir);
                 desktop.MainWindow = main;
                 main.Opened += (_, _) => _ = splash.Dismiss();
                 main.Show();
@@ -31,20 +32,5 @@ public partial class App : Application
             splash.Show();
         }
         base.OnFrameworkInitializationCompleted();
-    }
-
-    /// <summary>
-    /// <c>XTreme.exe [carpeta] [--probar "texto"]</c>: the project folder, and what to try in this build (the
-    /// agent passes it after each change; it is shown as a toast and not saved anywhere).
-    /// </summary>
-    static (string? Dir, string? TestNote) ParseArgs(string[] args)
-    {
-        string? dir = null, note = null;
-        for (int i = 0; i < args.Length; i++)
-        {
-            if (args[i] == "--probar") { if (i + 1 < args.Length) note = args[++i]; }
-            else dir ??= args[i];
-        }
-        return (dir, string.IsNullOrWhiteSpace(note) ? null : note);
     }
 }

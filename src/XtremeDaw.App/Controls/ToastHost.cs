@@ -10,8 +10,8 @@ namespace XtremeDaw.App.Controls;
 /// <summary>
 /// Toasts (native only, asked by the user): small cards in the bottom right corner, over everything, for a message
 /// worth seeing right away instead of waiting in the <see cref="NotificationBell"/> (the window also adds it there).
-/// A plain toast goes away by itself after <see cref="Life"/> (the pointer over it holds it); a sticky one, like
-/// the "what to test" note of <c>--probar</c>, stays until closed. At most <see cref="MaxShown"/> at once, newest
+/// A plain toast goes away by itself after <see cref="Life"/> (the pointer over it holds it); a sticky one
+/// stays until closed. At most <see cref="MaxShown"/> at once, newest
 /// at the bottom. No shadow and no animation, like the rest of the window. Bigger text than the rest of the window
 /// (asked by the user: the toasts were hard to read at a glance).
 /// </summary>

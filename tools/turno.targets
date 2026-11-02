@@ -1,0 +1,58 @@
+<Project>
+  <!-- A build takes the same turn as tools\probar.ps1 and wtlab (HeavyTurn.cs), so no session has to remember to wait.
+       It is taken once, by whatever the build started from: a solution, or the App or Lab project. Taking it per project
+       would deadlock, since a project holding it builds the ones it references. It is registered for the build's
+       lifetime, so MSBuild closes the file when the build ends, however it ends, even on a reused node.
+       Only Debug: that's the output wtlab runs from, and the installer's Release build has nobody to wait for. -->
+  <UsingTask TaskName="TakeBuildTurn" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Path ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        const int MaxWaitSec = 540; // as in HeavyTurn.cs
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        bool told = false;
+        while (true)
+        {
+            try
+            {
+                var held = new FileStream(Path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+                held.SetLength(0);
+                var text = Encoding.UTF8.GetBytes($"dotnet build (pid {System.Diagnostics.Process.GetCurrentProcess().Id})");
+                held.Write(text, 0, text.Length);
+                held.Flush();
+                BuildEngine4.RegisterTaskObject("XTreme.Turno", held, RegisteredTaskObjectLifetime.Build, false);
+                return true;
+            }
+            catch (IOException)
+            {
+                string who;
+                try
+                {
+                    using var f = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    using var r = new StreamReader(f);
+                    who = r.ReadToEnd();
+                }
+                catch (IOException) { who = "otro proceso"; }
+                if (clock.Elapsed.TotalSeconds > MaxWaitSec)
+                {
+                    Log.LogError($"Sigue ocupado después de {MaxWaitSec} s: {who}.");
+                    return false;
+                }
+                if (!told) Log.LogMessage(MessageImportance.High, $"Esperando turno: {who}.");
+                told = true;
+                System.Threading.Thread.Sleep(500);
+            }
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <PropertyGroup>
+    <!-- XTREME_TURNO: tools\probar.ps1 already holds it -->
+    <XtremeTakesTurn Condition="'$(Configuration)' != 'Release' And '$(XTREME_TURNO)' != '1' And '$(BuildingInsideVisualStudio)' != 'true'">true</XtremeTakesTurn>
+    <XtremeTurnFile>$(MSBuildThisFileDirectory)..\src\XtremeDaw.Lab\bin\Debug\net10.0-windows\turno.lock</XtremeTurnFile>
+  </PropertyGroup>
+</Project>

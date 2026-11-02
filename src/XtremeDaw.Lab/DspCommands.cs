@@ -395,7 +395,8 @@ static class DspCommands
         var (rms, _) = LevelAnalysis.Analyze(ch, sr);
         var env = CompPresets.Analyze(ch, sr);
         var tube30 = SatParams.From(true, SatMode.Tube, 0.3, rms);
-        string tmp = Path.Combine(Path.GetTempPath(), "wtlab-verify");
+        // Its own folder: another run at the same time would have these files open
+        string tmp = Path.Combine(Path.GetTempPath(), $"wtlab-verify-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tmp);
         bool allOk = true;
 
@@ -649,6 +650,7 @@ static class DspCommands
         allOk &= ToMidiChecks.Check();
         allOk &= StemChecks.Check();
         allOk &= SampleChecks.Check();
+        try { Directory.Delete(tmp, true); } catch (IOException) { }
 
         Console.WriteLine();
         Console.WriteLine(allOk

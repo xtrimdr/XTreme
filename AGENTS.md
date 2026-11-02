@@ -54,7 +54,7 @@ src/
   XtremeDaw.App        la ventana (Avalonia 11.3). Depende de Audio y Projects.
   XtremeDaw.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana.
   XtremeDaw.VstHost    wtvsthost.exe (C++, SDK de VST3): abre un plugin en su propio proceso. Lo compila el build de Audio.
-tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que renderiza Blender con tools/icon/vinilo.py; necesita solo Blender; hasta 96 px, una versión plana dibujada en el script; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
+tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que dibuja tools/icon/Vinilo.cs píxel a píxel, cada tamaño a su resolución; no necesita nada instalado; hasta 96 px, una versión plana; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
 .github/workflows/instalador.yml   arma el instalador en GitHub Actions (un tag vX.Y.Z → release en borrador; firma con SignPath)
 ```
 
@@ -227,12 +227,20 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
 
 1. `dotnet build` de `XtremeDaw.slnx` compila sin warnings nuevos.
 2. **Se trabaja en esta carpeta, en `master`, sin ramas ni worktrees** (lo pidió el usuario): así hay un solo build y
-   lo que se prueba es lo que está acá. Probá el motor y el proyecto con `wtlab`. **Al terminar cada cambio corré
-   `tools\probar.ps1 -NoAbrir`** (compila, corre `wtlab comprobar-dsp` y deja una copia en
+   lo que se prueba es lo que está acá. Probá el motor y el proyecto con `wtlab`. Compilar, comprobar y copiar van de a
+   una sesión por vez: `dotnet build` (`tools\turno.targets`), `probar.ps1` y los comandos pesados de `wtlab`
+   (`HeavyTurn`) esperan su turno solos y dicen a quién esperan, así que correlos con un timeout de 10 minutos, sin
+   reintentar ni matar nada mientras esperan (código 4 = el turno no llegó). **Al terminar cada cambio corré
+   `tools\probar.ps1 -NoAbrir "qué probar"`** (compila, corre `wtlab comprobar-dsp`, deja una copia en
    `pruebas\`, fuera de AppData a propósito: desde la app de Claude, que es MSIX, lo escrito en AppData queda dentro
-   del paquete y el acceso directo no lo ve) **y preguntale al usuario** (con un cuadro de pregunta, si tu herramienta lo
-   tiene) **si quiere probarlo**. Si dice que sí, `tools\probar.ps1 -Abrir "texto"` abre esa copia con qué probar,
-   corto y concreto (sale como toast fijo; `-Proyecto carpeta` la abre en ese proyecto). Si el script dice
+   del paquete y el acceso directo no lo ve, y anota el texto, corto y concreto, en la lista "Para probar",
+   `pruebas\lista.json`, que el usuario marca desde la copia; varias sesiones pueden anotar a la vez) **y preguntale al usuario**
+   (con un cuadro de pregunta, si tu herramienta lo tiene) **si lo abre ahora o lo deja en la lista**: la prueba ya quedó encolada, y con
+   varios agentes trabajando él prueba todo junto después (pedido del usuario). Si elige abrir,
+   `tools\probar.ps1 -Abrir` abre la última copia con la lista a la vista (`-Proyecto carpeta` la abre en ese
+   proyecto); si elige dejarlo, no abras nada ni vuelvas a preguntar por ese cambio. `tools\probar.ps1 -Lista` muestra lo pendiente y lo que el usuario
+   marcó como que no anda, con su nota: miralo antes de seguir con algo ya entregado. Si arreglaste un ítem, corré
+   `tools\probar.ps1 -NoAbrir -Arregla 12` (con su número): vuelve a por probar en lugar de duplicarse. Si el script dice
    "NO SE PUEDE PROBAR", contale por qué y no abras nada. Nunca abras el exe de `bin\` ni lo mandes a probar desde
    ahí: bloquea los DLL y el próximo build falla. Si hay un XTreme abierto, el script le pregunta al usuario en un
    cuadro si lo cierra (guarda antes); nunca lo cierres ni lo mates por otro lado. Si eligió cancelar (código 2), no

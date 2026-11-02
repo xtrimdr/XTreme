@@ -43,11 +43,9 @@ public partial class MainWindow : Window
     public MainWindow() : this(null) { }
 
     /// <param name="dir">A project folder to open directly (otherwise it starts on the manager).</param>
-    /// <param name="testNote">What to try in this build (<c>--probar</c>): a sticky toast at start.</param>
-    public MainWindow(string? dir, string? testNote = null)
+    public MainWindow(string? dir)
     {
         InitializeComponent();
-        if (testNote != null) Opened += (_, _) => Toast(testNote, Loc.T("toast.test.title"), sticky: true);
 
         TitleBar.PointerPressed += (_, e) =>
         {

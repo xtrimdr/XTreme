@@ -42,6 +42,7 @@ public partial class MainWindow
             TestBuildText.Text = TestBuild.Label;
             ToolTip.SetTip(TestBuildChip, TestBuild.Detail);
             Title = WindowTitle(null);
+            InitTestList();
         }
         UiTheme.Changed += OnThemeChanged;
         InputMeter.OpenRequested += () =>

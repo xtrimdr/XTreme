@@ -1,0 +1,7 @@
+<Project>
+  <!-- Building the whole solution: see tools\turno.targets -->
+  <Import Project="$(MSBuildThisFileDirectory)tools\turno.targets" />
+  <Target Name="TakeSolutionTurn" BeforeTargets="Build" Condition="'$(XtremeTakesTurn)' == 'true'">
+    <TakeBuildTurn Path="$(XtremeTurnFile)" />
+  </Target>
+</Project>

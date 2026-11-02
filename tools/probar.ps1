@@ -1,21 +1,31 @@
 ﻿# The one way to try a change: builds the solution, runs wtlab's DSP checks, copies the app to its own folder
 # and opens that copy. The app never runs from bin\, so an open XTreme never blocks the next build, and every
 # copy carries a prueba.txt mark (commit, uncommitted changes, time) that the app shows in its title bar.
-#   tools\probar.ps1 "qué probar"            -> build, check, copy and open with that test note
+#   tools\probar.ps1 "qué probar"            -> build, check, copy, add that to the list to try and open
 #   tools\probar.ps1 "qué probar" -Proyecto D:\...\MiTema   -> same, opening that project directly
 #   tools\probar.ps1 -Abrir                  -> open the newest copy without building (the desktop shortcut)
 #   tools\probar.ps1 -SinComprobar           -> skip wtlab comprobar-dsp (UI-only changes in a hurry)
-#   tools\probar.ps1 -NoAbrir                -> build, check and copy only (what the agent runs after each change)
+#   tools\probar.ps1 -NoAbrir "qué probar"   -> build, check, copy and add to the list (what the agent runs after each change)
+#   tools\probar.ps1 -NoAbrir -Arregla 12    -> same, for a fix: item 12 goes back to be tried on this copy
+#   tools\probar.ps1 -Lista                  -> what is left to try and what the user marked as failing
+#   tools\probar.ps1 -SoloCompilar           -> build only, in its turn and below normal priority
+# Several sessions share this folder, so building, checking and copying go one at a time: the script holds the turn that
+# wtlab (HeavyTurn.cs) and dotnet build (turno.targets) also take until the copy is done, and runs below normal priority
+# so the machine stays usable.
 # Before opening, if a XTreme is already open, a window offers to close it and open the new one (it saves first);
 # one open from bin\ is asked about before building, since it blocks it. A XTreme with no window left is not asked
 # about: it already saved and closed, and it would hold the audio interface and the project.
-# Exit codes: 0 opened (or built, with -NoAbrir), 1 it failed, 2 the user cancelled, 3 nobody answered the question.
+# Exit codes: 0 opened (or built, with -NoAbrir), 1 it failed, 2 the user cancelled, 3 nobody answered the question,
+# 4 another session kept the turn for too long.
 param(
     [Parameter(Position = 0)][string]$Que = '',
     [string]$Proyecto = '',
     [switch]$Abrir,
     [switch]$SinComprobar,
-    [switch]$NoAbrir
+    [switch]$NoAbrir,
+    [switch]$SoloCompilar,
+    [int]$Arregla = 0,
+    [switch]$Lista
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -23,6 +33,9 @@ $bin = Join-Path $root 'src\XtremeDaw.App\bin\Debug\net10.0-windows'
 # Not under AppData: run from an MSIX-packaged tool (the Claude desktop app), Windows redirects AppData writes into
 # the package's own LocalCache and the desktop shortcut would never find the copies
 $copies = Join-Path $root 'pruebas'
+# The list of changes to try: it stays here so it outlives the copies (TestList.cs)
+$listFile = Join-Path $copies 'lista.json'
+$wtlab = Join-Path $root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows\wtlab.exe'
 # How many copies stay around; older ones are deleted (unless one is still open)
 $Keep = 5
 
@@ -51,6 +64,8 @@ $AskWaitSec = 100
 # How long the new copy gets to appear, and how long it has to stay up to count as opened
 $StartWaitSec = 15
 $AliveWaitSec = 8
+# How long to wait for the turn: a little under the ten minutes an agent's command can last, so it hears back
+$TurnWaitSec = 540
 
 # The app's process, and its name before the rename (a test copy from then may still be open)
 $AppProcesses = 'XTreme', 'GuitarCam'
@@ -125,6 +140,53 @@ function AskClose($procs) {
     return 'closed'
 }
 
+# Who holds the turn, as the holder wrote it in the file
+function TurnHolder([string]$path) {
+    try {
+        $f = [System.IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')
+        try { return (New-Object System.IO.StreamReader($f)).ReadToEnd() } finally { $f.Dispose() }
+    } catch { return 'otro proceso' }
+}
+
+# The same turn as HeavyTurn.cs: an open file, which Windows frees when this script dies, however it dies
+function TakeTurn {
+    $dir = Join-Path $root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $path = Join-Path $dir 'turno.lock'
+    $until = (Get-Date).AddSeconds($TurnWaitSec)
+    $told = $false
+    while ($true) {
+        try {
+            $f = [System.IO.File]::Open($path, 'OpenOrCreate', 'ReadWrite', 'Read')
+            $f.SetLength(0)
+            $text = [System.Text.Encoding]::UTF8.GetBytes("probar.ps1 (pid $PID)")
+            $f.Write($text, 0, $text.Length)
+            $f.Flush()
+            return $f
+        } catch {
+            if ((Get-Date) -gt $until) {
+                Write-Host "NO SE PUEDE PROBAR: sigue ocupado después de $TurnWaitSec s: $(TurnHolder $path)." -ForegroundColor Yellow
+                SessionLog "probar.ps1: sin turno después de $TurnWaitSec s"
+                exit 4
+            }
+            if (-not $told) { Write-Host "Esperando turno: $(TurnHolder $path)." -ForegroundColor DarkGray }
+            $told = $true
+            Start-Sleep -Milliseconds 500
+        }
+    }
+}
+
+# Puts what to try on the list, tied to that copy. It never stops a test: the copy is already made.
+function AddToList([string]$copy) {
+    if (-not $Que -and -not $Arregla) { return }
+    # through the environment: Windows PowerShell breaks quotes inside an argument
+    $env:XTREME_PROBAR_TEXTO = if ($Que) { $Que } else { $null }
+    if ($Arregla) { & $wtlab lista arreglado $Arregla --archivo $listFile --copia $copy }
+    else { & $wtlab lista agregar --archivo $listFile --copia $copy }
+    if ($LASTEXITCODE -ne 0) { Write-Host 'No se pudo anotar en la lista de pruebas.' -ForegroundColor Yellow }
+    $env:XTREME_PROBAR_TEXTO = $null
+}
+
 function Launch([string]$dir) {
     $running = @(Get-Process $AppProcesses -ErrorAction SilentlyContinue)
     foreach ($p in $running) { if ($p.MainWindowHandle -eq 0) { CloseApp $p } }
@@ -141,7 +203,6 @@ function Launch([string]$dir) {
     }
     $a = @()
     if ($Proyecto) { $a += $Proyecto }
-    if ($Que) { $a += '--probar'; $a += $Que }
     $exe = Join-Path $dir 'XTreme.exe'
     SessionLog "probar.ps1 abre $exe"
     # Opened through Explorer, so it runs as the user's own app even when this script runs inside a packaged tool
@@ -171,9 +232,17 @@ function Launch([string]$dir) {
     Write-Host "Abierto: $exe" -ForegroundColor Green
 }
 
+if ($Lista) {
+    if (-not (Test-Path $wtlab)) { Fail 'falta wtlab: compilá una vez.' }
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    & $wtlab lista ver --archivo $listFile
+    exit $LASTEXITCODE
+}
+
 if ($Abrir) {
     $last = Get-ChildItem $copies -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
     if (-not $last) { Fail 'todavía no hay ninguna copia de prueba. Corré tools\probar.ps1 una vez.' }
+    if (Test-Path $wtlab) { AddToList $last.Name }
     Launch $last.FullName
     exit 0
 }
@@ -183,6 +252,10 @@ $fromBin = @(Get-Process $AppProcesses -ErrorAction SilentlyContinue | Where-Obj
 if ($fromBin.Count -and (AskClose $fromBin) -ne 'closed') {
     Fail 'hay un XTreme abierto desde bin\ y no lo cerré. Cerralo y volvé a correr esto.'
 }
+
+$turn = TakeTurn
+$env:XTREME_TURNO = '1'
+(Get-Process -Id $PID).PriorityClass = 'BelowNormal'
 
 Push-Location $root
 try {
@@ -196,10 +269,11 @@ $mark = "$commit$(if ($dirty) { ' + cambios sin commit' })"
 Write-Host "Compilando ($mark)..." -ForegroundColor Cyan
 dotnet build (Join-Path $root 'XtremeDaw.slnx') -c Debug -nologo -v:minimal -clp:ErrorsOnly
 if ($LASTEXITCODE -ne 0) { Fail 'la compilación falló (arriba están los errores).' }
+if ($SoloCompilar) { exit 0 }
 
 if (-not $SinComprobar) {
     Write-Host 'Comprobando el DSP (wtlab comprobar-dsp)...' -ForegroundColor Cyan
-    $out = & (Join-Path $root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows\wtlab.exe') comprobar-dsp 2>&1
+    $out = & $wtlab comprobar-dsp 2>&1
     if ($LASTEXITCODE -ne 0) { $out | Write-Host; Fail "wtlab comprobar-dsp falló (código $LASTEXITCODE)." }
     Write-Host '  todo bien' -ForegroundColor DarkGray
 }
@@ -220,4 +294,6 @@ Get-ChildItem $copies -Directory | Sort-Object Name -Descending | Select-Object 
 }
 
 Write-Host "Copia: $dest" -ForegroundColor DarkGray
+AddToList (Split-Path -Leaf $dest)
+$turn.Dispose()
 if (-not $NoAbrir) { Launch $dest }

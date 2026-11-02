@@ -21,7 +21,11 @@ It builds, runs `wtlab comprobar-dsp`, copies the app to `pruebas\<date>-<commit
 5 are kept) and opens it from there, marked "TEST <commit>" in the title bar. Since it never runs from `bin\`, an open
 app does not block the next build. `-Abrir` opens the newest copy without building, `-NoAbrir` only builds and copies,
 `-SinComprobar` skips `wtlab`, `-Proyecto folder` opens that project. If a XTreme is already open, a dialog asks first whether to close it
-(it saves the project before closing), so the new copy does not open the same project read-only. Plain `dotnet build` still works for building.
+(it saves the project before closing), so the new copy does not open the same project read-only. `-SoloCompilar` only builds, and `dotnet build` works too.
+
+The text goes on the **To test** list (`pruebas\lista.json`, it outlives the copies). A test copy shows it in a separate panel, which opens by itself when something is pending and from the button next to "TEST": each item is marked Works or Fails, with a note on what went wrong. An item from a copy newer than the open one says it is missing here. `-Lista` shows what is pending and what fails; `-Arregla 12` (with `-NoAbrir` or not) sends that item back to be tried on the new copy and counts one more attempt.
+
+When several sessions work in this folder, building, checking and copying go one at a time: Debug `dotnet build` (`tools\turno.targets`), `probar.ps1` and the heavy `wtlab` commands (`comprobar-dsp`, `exportar`, `separar`…) wait for their turn (`turno.lock`, next to `wtlab.exe`). `probar.ps1` and `wtlab` run below normal priority so the machine stays responsive. If the turn doesn't come within 9 minutes they fail and say who holds it (`probar.ps1` and `wtlab`, code 4).
 
 The app starts in the **Projects** manager (list, search, templates, rename, duplicate, Recycle Bin). With a
 project folder as an argument, it opens it directly. `tools\make-shortcut.ps1` creates a desktop shortcut that opens the newest test copy (`probar.ps1 -Abrir`).

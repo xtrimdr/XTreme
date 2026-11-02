@@ -97,6 +97,10 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 - Una copia hecha por `tools\probar.ps1` lleva un `prueba.txt` al lado del exe (commit, con o sin cambios, hora):
   `TestBuild` lo lee y la barra muestra, después del nombre, el badge "PRUEBA a1b2c3d + cambios" (`TestBuildChip`,
   fondo `Hover`, la hora en el tooltip) y el título de la ventana lo repite. Sin ese archivo no aparece nada.
+  Al lado, el botón de la lista **Para probar** (`TestListButton`, con lo pendiente; `MainWindow.TestList.cs`) abre
+  `Dialogs/TestListWindow`, una ventana aparte que queda encima de la app (pedido del usuario): se abre sola, sin tomar
+  el foco, si hay algo pendiente; cada ítem se marca Anda (verde) o No anda (ámbar, y pide la nota), marcarlo devuelve
+  el foco a la app, y lo que agrega otra sesión llega en 2 s con un toast. Lee y escribe `pruebas\lista.json` (`TestList`).
 - CPU / GPU / RAM / DSP con la misma forma ("CPU 19% ▬"), con líneas `Border.tsep` entre los grupos.
 - Después de la campanita, dos botones **ocultan del todo** el panel del canal y el del proyecto (`LeftPanelButton`,
   `RightPanelButton`, `MainWindow.Sidebars.cs`, pedido del usuario): una ventanita dibujada con el panel relleno

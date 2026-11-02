@@ -131,6 +131,13 @@
                 <TextBlock x:Name="TestBuildText" Classes="mono" FontSize="9.5" Foreground="{StaticResource Dim}" />
               </StackPanel>
             </Border>
+            <!-- what is left to try by hand (MainWindow.TestList) -->
+            <Button x:Name="TestListButton" Classes="ghost" Padding="5,2" IsVisible="False" AutomationProperties.Name="{loc:T test.list.title}">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock Classes="icon" Text="&#xE9D5;" FontSize="13" Foreground="{StaticResource Dim}" VerticalAlignment="Center" />
+                <TextBlock x:Name="TestListCount" Classes="mono" FontSize="11" Foreground="{StaticResource Dim}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
           </StackPanel>
 
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" Margin="0" VerticalAlignment="Center">

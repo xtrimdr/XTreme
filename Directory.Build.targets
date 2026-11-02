@@ -1,0 +1,8 @@
+<Project>
+  <!-- Building the App or the Lab on their own: see tools\turno.targets. From a solution, Directory.Solution.targets has it. -->
+  <Import Project="$(MSBuildThisFileDirectory)tools\turno.targets" />
+  <Target Name="TakeProjectTurn" BeforeTargets="BeforeBuild"
+          Condition="'$(XtremeTakesTurn)' == 'true' And '$(BuildingSolutionFile)' != 'true' And ('$(MSBuildProjectName)' == 'XtremeDaw.App' Or '$(MSBuildProjectName)' == 'XtremeDaw.Lab')">
+    <TakeBuildTurn Path="$(XtremeTurnFile)" />
+  </Target>
+</Project>

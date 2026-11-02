@@ -38,10 +38,14 @@ la app abierta no traba la próxima compilación. `-Abrir` abre la última copia
 copia, `-SinComprobar` salta `wtlab`, `-Proyecto carpeta` abre ese proyecto. Si ya hay un XTreme abierto, antes de abrir
 pregunta en un cuadro si lo cierra (guarda el proyecto antes), así la copia nueva no abre el mismo proyecto en solo
 lectura. Si algo falla, dice "NO SE PUEDE PROBAR" y no abre nada (desde el acceso directo, que no muestra la consola, queda
-anotado en `%APPDATA%\XTreme\sesiones.log`, junto con cada inicio y cierre de la app y sus errores). `dotnet build` solo sigue sirviendo para compilar.
+anotado en `%APPDATA%\XTreme\sesiones.log`, junto con cada inicio y cierre de la app y sus errores). `-SoloCompilar` solo compila, y `dotnet build` también sirve.
+
+El texto queda en la lista **Para probar** (`pruebas\lista.json`, sobrevive a las copias). Una copia de prueba la muestra en un panel aparte, que se abre solo si hay algo pendiente y desde el botón junto a "PRUEBA": cada ítem se marca Anda o No anda, con una nota de qué falló. Un ítem de una copia más nueva que la abierta avisa que falta en esta. `-Lista` muestra lo pendiente y lo que no anda; `-Arregla 12` (con `-NoAbrir` o no) devuelve ese ítem a por probar en la copia nueva y cuenta un intento más.
+
+Si hay varias sesiones trabajando en esta carpeta, compilar, comprobar y copiar van de a una: `dotnet build` en Debug (`tools\turno.targets`), `probar.ps1` y los comandos pesados de `wtlab` (`comprobar-dsp`, `exportar`, `separar`…) esperan su turno (`turno.lock`, junto a `wtlab.exe`). `probar.ps1` y `wtlab` corren con prioridad baja para que la máquina siga respondiendo. Si en 9 minutos no les toca, salen con error diciendo quién lo tiene (`probar.ps1` y `wtlab`, código 4).
 
 La app arranca en el gestor de **Proyectos** (lista, buscador, plantillas, renombrar, duplicar, Papelera).
-Con una carpeta de proyecto como argumento, la abre directo. Con `--probar "texto"` muestra ese texto en un aviso fijo ("Para probar") al abrir. `tools\make-shortcut.ps1` crea un acceso
+Con una carpeta de proyecto como argumento, la abre directo. `tools\make-shortcut.ps1` crea un acceso
 directo en el escritorio que abre la última copia de prueba (`probar.ps1 -Abrir`). Los ajustes se guardan en `%APPDATA%\XTreme`.
 
 ## Atajos principales
