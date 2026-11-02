@@ -20,6 +20,9 @@ namespace XtremeDaw.App;
 public partial class MainWindow
 {
     const double ProjectBarCollapsedWidth = 44;
+    /// <summary>The header's room left of the tabs (the hide button), and the gap between tabs, at its widest and tightest.</summary>
+    const double ProjectBarHideWidth = 44, ProjectTabGap = 20, ProjectTabGapMin = 8;
+    const double ProjectTabFontSize = 13;
 
     readonly List<Action> colorRefresh = [];
     readonly HashSet<string> collapsedColor = [], collapsedHistory = [];
@@ -29,6 +32,8 @@ public partial class MainWindow
     readonly DockPanel projectBarExpanded = new();
     readonly StackPanel projectBarCollapsed = new() { Spacing = 4, Margin = new Thickness(0, 8), HorizontalAlignment = HorizontalAlignment.Center };
     readonly List<(string Key, Button Tab, Button Rail)> projectTabs = [];
+    readonly List<(Button Tab, string Label, TextBlock Icon, double Width)> projectTabFaces = [];
+    readonly Grid projectBarHeader = new() { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*"), Height = 44, Margin = new Thickness(6, 0, 8, 0) };
     string projectTab = "history";
     List<VideoTemplate> videoTemplates = [];
     readonly StackPanel templateRows = new() { Spacing = 4 };
@@ -65,10 +70,10 @@ public partial class MainWindow
                 foreach (var title in System.Text.Json.JsonSerializer.Deserialize<string[]>(AppConfig.Get("collapsed." + scope) ?? "[]") ?? []) set.Add(title);
             }
             catch (System.Text.Json.JsonException) { }
-        projectTab = AppConfig.Get("projectTab") is "color" or "library" ? AppConfig.Get("projectTab")! : "history";
+        projectTab = AppConfig.Get("projectTab") is "color" or "library" or "patterns" ? AppConfig.Get("projectTab")! : "history";
         bool collapsed = AppConfig.Get("projectBarCollapsed") == "1";
 
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*"), Height = 44, Margin = new Thickness(6, 0, 16, 0) };
+        var header = projectBarHeader;
         var hide = RailButton("", Loc.T("insp.hide"), () => SetProjectBarCollapsed(true));
         shortcutTips.Add((hide, Loc.T("insp.hide"), "rightPanel"));
         hide.Margin = new Thickness(0, 0, 12, 0);
@@ -77,16 +82,18 @@ public partial class MainWindow
         shortcutTips.Add((rail, Loc.T("bar.show"), "rightPanel"));
         projectBarCollapsed.Children.Add(rail);
         int col = 1;
-        foreach (var (key, label, glyph) in new[] { ("color", Loc.T("bar.tab.color"), ""), ("library", Loc.T("bar.tab.library"), ""), ("history", Loc.T("bar.tab.history"), "") })
+        foreach (var (key, label, glyph) in new[] { ("color", Loc.T("bar.tab.color"), ""), ("patterns", Loc.T("bar.tab.patterns"), ""), ("library", Loc.T("bar.tab.library"),""), ("history", Loc.T("bar.tab.history"), "") })
         {
-            var tab = new Button { Classes = { "ghost" }, Content = label, FontSize = 13, FontWeight = FontWeight.Medium, Padding = new Thickness(0),
-                Margin = new Thickness(0, 0, 20, 0), CornerRadius = new CornerRadius(0), BorderThickness = new Thickness(0, 0, 0, 2), VerticalAlignment = VerticalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center };
+            var tab = new Button { Classes = { "ghost" }, Content = label, FontSize = ProjectTabFontSize, FontWeight = FontWeight.Medium, Padding = new Thickness(0),
+                Margin = new Thickness(0, 0, ProjectTabGap, 0), CornerRadius = new CornerRadius(0), BorderThickness = new Thickness(0, 0, 0, 2), VerticalAlignment = VerticalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center };
             tab.Click += (_, _) => SetProjectTab(key);
             Grid.SetColumn(tab, col++); header.Children.Add(tab);
             var icon = RailButton(glyph, label, () => { SetProjectTab(key); SetProjectBarCollapsed(false); });
             projectBarCollapsed.Children.Add(icon);
             projectTabs.Add((key, tab, icon));
+            projectTabFaces.Add((tab, label, new TextBlock { Classes = { "icon" }, Text = glyph, FontSize = 14 }, Palette.Text(label, ProjectTabFontSize, Palette.Fg, Palette.UiBold).Width));
         }
+        header.SizeChanged += (_, _) => FitProjectTabs();
         var top = new Border { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = header };
         DockPanel.SetDock(top, Dock.Top);
         projectBarExpanded.Children.Add(top);
@@ -97,6 +104,7 @@ public partial class MainWindow
 
         BuildColorPanel();
         BuildHistoryPanel();
+        BuildSamplesPanel();
         SetProjectTab(projectTab, save: false);
         SetProjectBarCollapsed(collapsed, save: false);
     }
@@ -118,6 +126,23 @@ public partial class MainWindow
         projectBarExpanded.IsVisible = !collapsed;
         projectBarCollapsed.IsVisible = collapsed;
         if (save) SaveViewPref("projectBarCollapsed", collapsed ? "1" : "2");
+        if (!collapsed) RefreshHistory(); // the lists don't follow the project while they are out of sight
+    }
+
+    /// <summary>The tabs share the header: they close up as the bar narrows and, when the names no longer fit, show their icons.</summary>
+    void FitProjectTabs()
+    {
+        var shown = projectTabFaces.Where(f => f.Tab.IsVisible).ToList();
+        double room = projectBarHeader.Bounds.Width - ProjectBarHideWidth, names = shown.Sum(f => f.Width);
+        int gaps = Math.Max(1, shown.Count - 1);
+        double gap = Math.Clamp((room - names) / gaps, ProjectTabGapMin, ProjectTabGap);
+        bool icons = names + gaps * gap > room;
+        foreach (var (tab, label, icon, _) in projectTabFaces)
+        {
+            tab.Margin = new Thickness(0, 0, icons ? ProjectTabGap : gap, 0);
+            tab.Content = icons ? icon : label;
+            ToolTip.SetTip(tab, icons ? label : null);
+        }
     }
 
     /// <summary>Solo audio has no picture to color: the Color tab hides and Historial shows (the saved tab stays).</summary>
@@ -126,6 +151,7 @@ public partial class MainWindow
         foreach (var (key, tab, rail) in projectTabs)
             if (key == "color") tab.IsVisible = rail.IsVisible = visible;
         if (!visible && projectTab == "color") SetProjectTab("history", save: false);
+        FitProjectTabs();
     }
 
     void SetProjectTab(string key, bool save = true)
@@ -139,7 +165,9 @@ public partial class MainWindow
             rail.Foreground = on ? Palette.Accent : Palette.Faint;
             rail.Background = on ? Palette.AccentSoft : Brushes.Transparent;
         }
-        projectBarBody.Content = key == "color" ? colorPanel : key == "library" ? libraryPanel : historyPanel;
+        // the Biblioteca scrolls by itself, under its Proyecto / Samples switch and over the player
+        projectBarBody.VerticalScrollBarVisibility = key == "library" ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
+        projectBarBody.Content = key switch { "color" => colorPanel, "library" => libraryRoot, "patterns" => patternsPanel, _ => historyPanel };
         if (key != "color") RefreshHistory();
         if (save) SaveViewPref("projectTab", key);
     }

@@ -116,6 +116,8 @@ public sealed record ExportTakeSpec
     public double SyncMs { get; init; }
     /// <summary>Effective per-clip camera latency in ms (<c>clip.EffectiveVideoOffsetMs(media)</c>).</summary>
     public double VideoOffsetMs { get; init; } = 80;
+    /// <summary>How many times longer than its file it plays (<c>Clip.Stretch</c>): the picture slows down with the sound.</summary>
+    public double Stretch { get; init; } = 1;
     public double TrimStartSec { get; init; }
     public double TrimEndSec { get; init; }
     public double FadeInSec { get; init; }
@@ -543,10 +545,10 @@ public static partial class Mp4Exporter
             double visStart = Math.Max(0, w.Start - lead[i]);
             double visEnd = w.End + tailOver[i];
 
-            // Video time = timeline time - net shift. Positive VideoOffsetMs (camera latency) pulls the video earlier.
-            double netVideoShift = w.Origin - (t.VideoOffsetMs / 1000.0);
-            double srcStart = Math.Max(0, visStart - netVideoShift);
-            double srcEnd = visEnd - netVideoShift;
+            // Video time = time into the clip, at the file's speed, plus the camera latency, which pulls the video earlier.
+            double latency = t.VideoOffsetMs / 1000.0;
+            double srcStart = Math.Max(0, (visStart - w.Origin) / t.Stretch + latency);
+            double srcEnd = (visEnd - w.Origin) / t.Stretch + latency;
 
             double zoom = Math.Clamp(double.IsFinite(t.Zoom) && t.Zoom > 0 ? t.Zoom : 1.0, 1.0, 2.5);
             double panX = Math.Clamp(double.IsFinite(t.PanX) ? t.PanX : 0.0, -1.0, 1.0);
@@ -565,13 +567,13 @@ public static partial class Mp4Exporter
 
             if (srcEnd - srcStart > 0.01 && visEnd > visStart)
             {
-                double firstAt = srcStart + netVideoShift;
+                double firstAt = (srcStart - latency) * t.Stretch + w.Origin;
                 double hold = firstAt - visStart;
 
                 var pre = new List<string>
                 {
                     $"trim=start={F3(srcStart)}:end={F3(srcEnd)}",
-                    "setpts=PTS-STARTPTS",
+                    t.Stretch == 1 ? "setpts=PTS-STARTPTS" : $"setpts=(PTS-STARTPTS)*{t.Stretch.ToString("0.000000", CultureInfo.InvariantCulture)}",
                 };
                 if (lutFile != null) pre.Add($"lut3d=file={lutFile}:interp=trilinear");
                 if (grain > 0)

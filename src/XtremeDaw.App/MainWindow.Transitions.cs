@@ -11,8 +11,8 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App;
 
 /// <summary>
-/// The transition of a join between two clips (native only, asked by the user: simple to use; later, that it also
-/// fades the sound, as a bare cut was too abrupt). Opened from the join's chip in the timeline or the clip's
+/// The transition of a join between two video clips (native only, asked by the user: simple to use; later, that it
+/// also fades the sound, as a bare cut was too abrupt, and that joins of audio clips don't offer it). Opened from the join's chip in the timeline or the clip's
 /// right-click menu: Corte / Fundido cruzado / Pasar por negro (only where both clips have a picture), quick lengths
 /// and a slider, and a line on what the sound does. Every pick is an edit of the clip coming in
 /// (<see cref="EditTrack"/>: undo, autosave); playback, the preview and the export read it from there.
@@ -108,10 +108,10 @@ public partial class MainWindow
     /// <summary>Both clips of the join into <paramref name="incoming"/> have a picture on a video track.</summary>
     bool HasPictures(LiveTrack track, LiveClip incoming)
     {
-        if (AudioOnly || !track.Track.Video || incoming.VideoPath == null) return false;
+        if (AudioOnly) return false;
         var (w, k) = Windows(track, incoming);
         int o = k < 0 ? -1 : ClipTransitions.FindOut(w, k);
-        return o >= 0 && track.Clips[o].VideoPath != null;
+        return o >= 0 && track.Pictured(track.Clips[o], incoming);
     }
 
     static (XtremeDaw.Audio.Dsp.ClipEnvelope.ClipWindow[] Windows, int Index) Windows(LiveTrack track, LiveClip clip)
@@ -155,7 +155,7 @@ public partial class MainWindow
             if (from != clip.Clip && to != clip.Clip) continue;
             var incoming = track.Clips.FirstOrDefault(x => x.Clip == to);
             var outgoing = track.Clips.FirstOrDefault(x => x.Clip == from);
-            if (incoming == null || outgoing == null || incoming.Offline || outgoing.Offline) continue;
+            if (incoming == null || outgoing == null || incoming.Offline || outgoing.Offline || !track.OffersTransition(outgoing, incoming, !AudioOnly)) continue;
             string kind = join is { Kind: TransitionKind.Crossfade } ? Loc.T("trans.crossfade") : join != null ? Loc.T("trans.dip") : Loc.T("trans.cut");
             yield return MenuAction(Loc.T(to == clip.Clip ? "menu.transitionIn" : "menu.transitionOut") + "…",
                 () => { ShowTransitionMenu(track, incoming, point); return Task.CompletedTask; }, kind, !store.ReadOnly);

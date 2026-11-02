@@ -202,7 +202,7 @@ static class ToMidiChecks
 
     /// <summary>Plucked strings (Karplus–Strong: a noise burst through a damped, averaged delay of one period), each
     /// note muted after its length with a short fade, as a guitarist lifting the finger.</summary>
-    static (float[] L, float[] R) Pluck(IReadOnlyList<(double At, double Len, int Pitch)> notes, int seed, int sr)
+    public static (float[] L, float[] R) Pluck(IReadOnlyList<(double At, double Len, int Pitch)> notes, int seed, int sr)
     {
         var rng = new Random(seed);
         double end = notes.Max(n => n.At + n.Len) + 0.5;

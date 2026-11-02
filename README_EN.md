@@ -67,12 +67,15 @@ More details in [Requirements](DETALLES_EN.md#requirements).
 ### Edit
 
 - A multitrack **timeline**: clips you can move, trim, split and duplicate, fades, clip gain with its own **volume
-  curve**, range delete, unlimited undo and redo, and audio import (WAV, MP3, FLAC, OGG, M4A, AIFF). **Detect tempo**
+  curve**, range delete, unlimited undo and redo, and import of nearly any audio or video (WAV, MP3, FLAC, OGG, M4A, AIFF and more). **Detect tempo**
   on any clip (right-click) and set the project to those BPM.
 - **MIDI tracks** with a **piano roll**: double-click on the lane creates a clip and opens it. Click writes a note,
   dragging moves or lengthens it, right-click deletes it, and each note's velocity sits below.
 - **Extract MIDI**: the notes of an audio clip (chords or melody) go to a MIDI track, from the right-click or by
   dragging the clip onto a MIDI track (Spotify's Basic Pitch, on the CPU).
+- **Detect scale and chords**: a clip's scale, its notes and its chords in a summary, and the chords on their own timeline strip if you want.
+- **Split into stems**: an audio clip splits into 2, 4 or 6 tracks (vocals, drums, bass, guitar, piano and rest), at
+  Fast, High or Maximum quality, from the right-click (Demucs, on the graphics card or the CPU).
 - **Folders** that fold and group tracks; Ctrl+click / Shift+click marks several tracks to move them together. Each
   track gets its own **color** (24, in rainbow order), an **instrument icon** (guitars, bass, drums, synths, strings,
   winds, percussion…), its own height and Vida, Comp, Reverb, Delay and Pitch knobs in its header (which ones show,
@@ -94,7 +97,7 @@ More details in [Requirements](DETALLES_EN.md#requirements).
 ### Mix
 
 - A per-channel effects chain, in any order: saturation (**Vida**, tube or tape), a **compressor** with presets
-  (Strumming / Arpeggio / Lead), a **6-band EQ** with live spectrum and a **noise gate**, plus pan templates, a
+  (Strumming / Arpeggio / Lead), a **7-band EQ** with live spectrum, dynamic bands and a large view and a **noise gate**, plus pan templates, a
   **MONO** button to check the mix and **FX** to hear it without effects.
 - **Transpose** per track (−12 to +12 semitones) without changing the length: it is computed in the background
   (about 4 s per 3 min) with a high-quality phase vocoder, progress shows on the clips and the result is kept in
@@ -181,3 +184,6 @@ never on anyone's machine, so what you download comes from this code. Free code 
 requested by the user or the person installing or operating it: it checks GitHub's latest release for a new version
 (it can be turned off in About) and connects to the network camera you set up.
 
+## Stem separation models
+
+The models belong to Meta (Demucs, https://github.com/facebookresearch/demucs). XTreme neither includes nor hosts them: they download from their original source to your PC when you install them. They have their own terms and are not covered by XTreme's license. The app works without them.

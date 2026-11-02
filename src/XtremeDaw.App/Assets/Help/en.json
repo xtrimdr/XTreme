@@ -1,0 +1,1124 @@
+{
+  "categories": [
+    {
+      "id": "start",
+      "icon": "E80F",
+      "title": "Getting started",
+      "hint": "Connect your interface, create a project and learn the window.",
+      "topics": [
+        {
+          "id": "tour",
+          "title": "Record, mix and export",
+          "keywords": "start begin tutorial first time how to use",
+          "intro": "The whole path, from the first take to the final file.",
+          "steps": [
+            "Connect your audio interface and choose it in **Settings → Inputs and outputs**.",
+            "In **Projects**, click **New project** and choose **Video + audio** or **Audio only**.",
+            "Create a track with **New track** and arm it with its **●**.",
+            "Record with {key:record}. Press it again to stop and save the take.",
+            "Go to the **Mixer** with {key:mixer} and set volume, pan and effects.",
+            "Click **Export MP4** or **Export audio**, at the top right."
+          ],
+          "see": ["audio-setup", "new-project", "first-take", "export-audio", "export-video"]
+        },
+        {
+          "id": "audio-setup",
+          "title": "Connect your audio interface",
+          "keywords": "sound card driver asio input output headphones speakers setup",
+          "intro": "XTreme records and plays through ASIO, your interface's driver.",
+          "steps": [
+            "Install the maker's ASIO driver and connect the interface before opening the app.",
+            "Under **Interface**, choose your driver.",
+            "Under **Channels**, choose **Stereo**, **Mono 1** or **Mono 2**, depending on where your guitar or mic is plugged in.",
+            "Under **Output**, choose the interface's output: it has the lowest latency.",
+            "Play your guitar and check that the input meter moves, at the bottom next to the transport."
+          ],
+          "notes": [
+            "If audio drops out, raise the **Buffer** from **Driver panel**. If playing feels slow, lower it."
+          ],
+          "settings": "audio",
+          "see": ["latency", "no-sound", "dropouts"]
+        },
+        {
+          "id": "new-project",
+          "title": "Create or open a project",
+          "keywords": "new manager projects template open folder start song",
+          "intro": "Each song is a project with its own folder. The app starts in **Projects**.",
+          "steps": [
+            "Click **New project** and give it a name.",
+            "Choose **Video + audio** or **Audio only**.",
+            "Choose a template, or start without tracks. Templates bring tracks, effects and the Reverb and Delay buses.",
+            "To open an existing one, click it in the list or use **Open folder…**."
+          ],
+          "notes": [
+            "To return to the list from an open project, click the project name in the top bar and choose **Projects…**."
+          ],
+          "see": ["video-or-audio", "autosave", "share-project"]
+        },
+        {
+          "id": "video-or-audio",
+          "title": "Choose video or audio only",
+          "keywords": "mode no camera music mp3 wav",
+          "intro": "The switch at the top left sets the kind of project.",
+          "steps": [
+            "**Video + audio**: camera, one panel per track and MP4 export.",
+            "**Audio only**: no camera or video, more room for the timeline. Exports WAV or MP3."
+          ],
+          "notes": [
+            "You can switch at any time. Going back to video deletes nothing."
+          ],
+          "see": ["camera", "export-audio", "export-video"]
+        },
+        {
+          "id": "window",
+          "title": "Learn the window",
+          "keywords": "interface parts panels inspector timeline transport where is",
+          "intro": "What each area holds.",
+          "steps": [
+            "**Top**: project mode, name, save, undo, tools and **Export**.",
+            "**Left**: the selected track's channel, with its volume, effects and sends. {key:leftPanel} folds it.",
+            "**Center**: the video preview and the live camera.",
+            "**Below the preview**: the timeline, with tracks and clips. {key:mixer} swaps it for the mixer.",
+            "**Right**: project-wide things: Color, Patterns, Library and History. {key:rightPanel} folds it.",
+            "**Bottom**: clock, play, record, tempo, click, tuner and the Timeline, Piano roll, Mixer and Mastering views."
+          ],
+          "see": ["look", "shortcuts"]
+        }
+      ]
+    },
+    {
+      "id": "record",
+      "icon": "E7C8",
+      "title": "Record",
+      "hint": "Takes, click, inputs, tuner, camera and latency.",
+      "topics": [
+        {
+          "id": "first-take",
+          "title": "Record a take",
+          "keywords": "recording rec guitar vocal microphone arm track",
+          "intro": "Recording goes to the armed tracks, from the playhead.",
+          "steps": [
+            "Create a track with **New track** ({key:newTrack}).",
+            "Arm it with its **●** or with {key:arm}. It turns red.",
+            "Put the playhead where you want to start. {key:toStart} goes back to the beginning.",
+            "Record with {key:record}.",
+            "Stop with {key:record} or {key:play}. The take stays on the track. With **Discard**, it doesn't."
+          ],
+          "notes": [
+            "If **Record** is off, no track is armed.",
+            "Takes are written to disk as you record. If the power fails, the take is recovered when you open the project."
+          ],
+          "see": ["click", "pick-input", "punch-in", "take-many"]
+        },
+        {
+          "id": "take-many",
+          "title": "Record several tracks at once",
+          "keywords": "multitrack simultaneous band drums several inputs",
+          "intro": "Each armed track records its own input, from the same instant.",
+          "steps": [
+            "Arm all the tracks with their **●**.",
+            "Click each track's input chip and choose its input.",
+            "Record with {key:record}. You get one take per track."
+          ],
+          "see": ["pick-input", "first-take"]
+        },
+        {
+          "id": "pick-input",
+          "title": "Choose the input and hear yourself",
+          "keywords": "input monitoring monitor cant hear myself gain level clipping red",
+          "intro": "Each track chooses which input of the interface it records.",
+          "steps": [
+            "Arm the track. A chip with its input appears.",
+            "Click the chip and choose the input or pair.",
+            "Set the gain on the interface so the meter stays out of the red.",
+            "To hear yourself, use the interface's direct monitoring. If it has none, turn on **Monitor** in the transport."
+          ],
+          "notes": [
+            "**Monitor** adds latency: use it only if the interface has no direct monitoring."
+          ],
+          "see": ["audio-setup", "latency"]
+        },
+        {
+          "id": "click",
+          "title": "Use the click and count-in",
+          "keywords": "metronome bpm tempo count in tap bar",
+          "intro": "It's all in the transport box.",
+          "steps": [
+            "Turn the click on with {key:click}.",
+            "Turn the count-in on with {key:countIn}: four beats before recording.",
+            "Type the tempo in **Tempo**, or tap it with {key:tap}.",
+            "The **▾** next to it chooses the click sound."
+          ],
+          "notes": [
+            "The click never goes into takes or exports."
+          ],
+          "see": ["tempo", "first-take"]
+        },
+        {
+          "id": "punch-in",
+          "title": "Re-record a section",
+          "keywords": "overdub redo fix mistake punch replace take",
+          "intro": "A new take replaces only the section it covers.",
+          "steps": [
+            "Put the playhead a little before the mistake.",
+            "Arm the track and record with {key:record}.",
+            "Stop after the section. What came before and after stays as it was."
+          ],
+          "notes": [
+            "What was replaced isn't lost: it stays in **History** and **Library**.",
+            "**Lock clip** protects a good take: recording won't overwrite it."
+          ],
+          "see": ["undo-versions", "lock", "library"]
+        },
+        {
+          "id": "tuner",
+          "title": "Tune up",
+          "keywords": "tuner strings note guitar bass out of tune",
+          "intro": "It listens to the first armed track, or to input 1-2.",
+          "steps": [
+            "Open the tuner with {key:tuner}.",
+            "Play one string alone.",
+            "Follow the blinking triangle to know whether to go up or down. Green means in tune."
+          ],
+          "notes": [
+            "If it doesn't react, move **Sensitivity** in the same panel."
+          ]
+        },
+        {
+          "id": "latency",
+          "title": "Calibrate latency",
+          "keywords": "out of sync late early delay take shifted calibration loopback",
+          "intro": "Makes what you record land exactly in time with what you were hearing.",
+          "steps": [
+            "**With a cable**: connect an interface output to an input. Lower your headphones and measure. It's the most accurate.",
+            "**Playing**: without a cable, play a short note on each click.",
+            "Done: every new channel is compensated automatically."
+          ],
+          "notes": [
+            "Calibrate again if you change interface or buffer. Each input and output pair keeps its own measurement.",
+            "To adjust a single take, use **Audio offset** in the channel's **Sync** section."
+          ],
+          "settings": "sync",
+          "see": ["audio-setup", "video-sync"]
+        },
+        {
+          "id": "camera",
+          "title": "Record with a camera",
+          "keywords": "webcam phone droidcam video film ip",
+          "intro": "In a **Video + audio** project, the camera records along with the take.",
+          "steps": [
+            "Choose the camera and resolution in Settings. For a phone, **IP DroidCam**.",
+            "Check the picture in the live monitor, next to the preview.",
+            "Arm a video track and record with {key:record}. The video goes to the first armed track that carries video."
+          ],
+          "settings": "camera",
+          "see": ["video-panels", "video-sync", "no-camera"]
+        }
+      ]
+    },
+    {
+      "id": "edit",
+      "icon": "E70F",
+      "title": "Edit",
+      "hint": "Cut, move, copy, import, tempo, markers and undo.",
+      "topics": [
+        {
+          "id": "move-trim",
+          "title": "Move and trim clips",
+          "keywords": "clip drag shorten fade in out edges",
+          "intro": "A clip is a piece of a take. Trimming doesn't touch the file.",
+          "steps": [
+            "To **move** it, drag the clip, onto another track too.",
+            "To **trim** it, drag the lower handle on an edge.",
+            "To **fade**, drag the upper handle on an edge.",
+            "To move it off the grid, hold **Alt** while dragging."
+          ],
+          "notes": [
+            "**Restore trims and fades**, on right-click, puts it back."
+          ],
+          "see": ["split-copy", "clip-volume", "tools"]
+        },
+        {
+          "id": "split-copy",
+          "title": "Split, duplicate, copy and paste",
+          "keywords": "cut scissors paste repeat",
+          "intro": "Works on the selected clip or on all the marked ones.",
+          "steps": [
+            "Put the playhead where you want to cut and split with {key:split}.",
+            "Duplicate with {key:duplicate}: the copy lands right after.",
+            "Copy with {key:copy} or cut with {key:cut}.",
+            "Paste with {key:paste}: it starts at the playhead, on the selected track."
+          ],
+          "see": ["select-many", "tools", "move-trim"]
+        },
+        {
+          "id": "select-many",
+          "title": "Select several clips",
+          "keywords": "mark multiple selection rectangle group",
+          "intro": "To move or delete several at once.",
+          "steps": [
+            "Drag on the empty part of the tracks: everything the rectangle touches is marked.",
+            "**Ctrl+click** on a clip adds or removes it.",
+            "Drag one marked clip by its body and they all move.",
+            "Delete them with {key:delete}."
+          ],
+          "see": ["delete-range", "split-copy"]
+        },
+        {
+          "id": "delete-range",
+          "title": "Delete a section",
+          "keywords": "range remove part gap close",
+          "intro": "Takes a piece out of one or more tracks.",
+          "steps": [
+            "Choose the **Range** tool ({key:toolRange}) and drag over the section. Dragging up or down adds tracks.",
+            "Delete with {key:delete}: the gap stays.",
+            "With {key:deleteClose}, what follows also shifts and closes the gap."
+          ],
+          "see": ["tools", "undo-versions"]
+        },
+        {
+          "id": "tools",
+          "title": "Use the tools",
+          "keywords": "scissors eraser hand magnifier zoom cursor select",
+          "intro": "They're in the center of the top bar and change what a click does on the tracks.",
+          "steps": [
+            "**Select** ({key:toolSelect}): the usual.",
+            "**Range** ({key:toolRange}): marks a section.",
+            "**Split** ({key:toolSplit}): one click cuts the clip.",
+            "**Erase** ({key:toolErase}): removes what it touches.",
+            "**Listen** ({key:toolListen}): hold down on a clip to hear that track alone.",
+            "**Zoom** ({key:toolZoom}) and **Hand** ({key:toolHand}): zoom in and move the view."
+          ],
+          "see": ["navigate"]
+        },
+        {
+          "id": "navigate",
+          "title": "Move around the timeline",
+          "keywords": "zoom wheel scroll fit all track height grid snap",
+          "intro": "The wheel does nearly everything.",
+          "steps": [
+            "**Wheel**: up and down.",
+            "{wheel:wheelZoom}: zoom in and out.",
+            "{wheel:wheelSideways}: sideways.",
+            "{wheel:wheelHeight}: track height.",
+            "{key:fit}: see the whole song."
+          ],
+          "notes": [
+            "Right-click the ruler numbers to choose how the grid is drawn."
+          ],
+          "see": ["shortcuts"]
+        },
+        {
+          "id": "import",
+          "title": "Import audio and use samples",
+          "keywords": "bring file wav mp3 sample loop drag library backing track",
+          "intro": "What you import is copied into the project: it never depends on the original folder.",
+          "steps": [
+            "Drag the file onto the timeline, or click **New track → Import audio…**.",
+            "For your sound folders, open **Library → Samples** and add a folder.",
+            "Listen with **Space** and drag the sample onto a track."
+          ],
+          "notes": [
+            "Formats: WAV, MP3, FLAC, OGG, M4A and AIFF. Some need FFmpeg."
+          ],
+          "see": ["library", "no-ffmpeg"]
+        },
+        {
+          "id": "clip-volume",
+          "title": "Change the volume inside a clip",
+          "keywords": "gain curve points raise lower part",
+          "intro": "To fix a phrase without touching the fader.",
+          "steps": [
+            "Select the clip. Its volume line appears.",
+            "Click the line to add a point and drag it.",
+            "Double-click a point to remove it.",
+            "For the whole clip, use **Clip gain** in the channel's **Clip** section."
+          ],
+          "see": ["automation", "move-trim"]
+        },
+        {
+          "id": "tempo",
+          "title": "Change or detect the tempo",
+          "keywords": "bpm speed faster slower stretch",
+          "intro": "Changing the tempo changes the speed of the whole song, keeping the pitch.",
+          "steps": [
+            "Type the value in **Tempo**, in the transport. Each clip goes quiet for a moment until its sound is ready.",
+            "To find an audio's tempo, right-click the clip → **Detect tempo**.",
+            "Choose **Set the project to N BPM**. That moves the grid and stretches nothing."
+          ],
+          "see": ["click", "scale"]
+        },
+        {
+          "id": "markers-loop",
+          "title": "Use markers and the loop",
+          "keywords": "repeat section chorus a-b range chapters youtube",
+          "intro": "Both live in the strip above the ruler.",
+          "steps": [
+            "Add a marker at the playhead with {key:marker}, or double-click the strip.",
+            "Jump between markers with {key:prevMarker} and {key:nextMarker}.",
+            "Drag in the strip to mark the A–B range. The loop turns on.",
+            "Toggle the loop with {key:loop}. {key:loopIn} and {key:loopOut} set A and B at the playhead."
+          ],
+          "notes": [
+            "Right-click the strip → **Copy chapters for YouTube**."
+          ]
+        },
+        {
+          "id": "organize",
+          "title": "Organize your tracks",
+          "keywords": "folder color icon name rename separator group move",
+          "intro": "So a big project stays easy to read.",
+          "steps": [
+            "Double-click a track's name to rename it.",
+            "Click its badge to choose color and icon.",
+            "Drag a track by its handle to move it.",
+            "**New track → Folder** groups tracks: drag them in by their handle."
+          ],
+          "notes": [
+            "A folder only groups. To process a group, send it to a bus and put the effects there."
+          ],
+          "see": ["reverb-delay"]
+        },
+        {
+          "id": "lock",
+          "title": "Lock a clip or track",
+          "keywords": "protect pin padlock dont move",
+          "intro": "Locked items don't move, trim or delete, and recording won't overwrite them.",
+          "steps": [
+            "Right-click the clip → **Lock clip**, or the track → **Lock track**.",
+            "A padlock appears.",
+            "Repeat to unlock."
+          ],
+          "notes": [
+            "Volume, fades and framing can still be changed."
+          ]
+        },
+        {
+          "id": "undo-versions",
+          "title": "Undo and go back",
+          "keywords": "ctrl z redo mistake recover version history steps",
+          "intro": "There are three levels, from the most immediate to the widest.",
+          "steps": [
+            "Undo with {key:undo} and redo with {key:redo}.",
+            "**History → Steps**: every change in this session. One click goes to that point.",
+            "**History → Versions**: saved copies of the project. Click **Save version** before trying something big.",
+            "**History → Exports**: go back to the exact mix of an exported file."
+          ],
+          "notes": [
+            "Going back to a version saves the current state first, and takes recorded later aren't lost."
+          ],
+          "see": ["autosave"]
+        }
+      ]
+    },
+    {
+      "id": "mix",
+      "icon": "E9E9",
+      "title": "Mix",
+      "hint": "Mixer, effects, reverb and delay, automation and A/B.",
+      "topics": [
+        {
+          "id": "mixer",
+          "title": "Use the mixer",
+          "keywords": "console fader volume pan mute solo channels level",
+          "intro": "One strip per track, with the master fixed on the right.",
+          "steps": [
+            "Open it with {key:mixer}.",
+            "Raise or lower each track with its fader. The pan bar moves it left or right.",
+            "**M** mutes ({key:mute}) and **S** soloes the track ({key:solo}).",
+            "Watch the master meter: the red light on top means the level went over."
+          ],
+          "notes": [
+            "{wheel:wheelZoom} over the mixer changes the channel width.",
+            "**MONO**, on the master, lets you check the mix in mono."
+          ],
+          "see": ["add-fx", "reverb-delay", "compare"]
+        },
+        {
+          "id": "add-fx",
+          "title": "Add and reorder effects",
+          "keywords": "plugin vst compressor eq equalizer saturation gate chorus insert",
+          "intro": "Each channel has its effect list, which plays from top to bottom.",
+          "steps": [
+            "Select the track.",
+            "Click **+ Effect** in the channel's **Effects** tray, or the **+** on its mixer strip.",
+            "Pick the effect by category. Your VST3 plugins are at the end.",
+            "Drag an effect by its handle to move it.",
+            "The **⋯** or right-click turns it off, duplicates or removes it."
+          ],
+          "see": ["guitar-tone", "reverb-delay", "plugins"]
+        },
+        {
+          "id": "guitar-tone",
+          "title": "Shape a guitar sound",
+          "keywords": "tone saturation life compressor strumming arpeggio lead eq tube tape",
+          "intro": "A starting point with the built-in effects.",
+          "steps": [
+            "**Life**: adds saturation. Choose **Tube** (warm) or **Tape** (compact) and the amount.",
+            "**Compressor**: choose **Strumming**, **Arpeggio** or **Lead**, and set **Amount**.",
+            "**EQ**: choose a preset and fix what's left.",
+            "Use the **Gate** if there's noise or hum between notes."
+          ],
+          "notes": [
+            "Project templates already bring these effects set up."
+          ],
+          "see": ["add-fx", "track-template"]
+        },
+        {
+          "id": "reverb-delay",
+          "title": "Add reverb or delay",
+          "keywords": "echo ambience room bus send return fx",
+          "intro": "They go on a bus: a separate channel that several tracks send a little signal to.",
+          "steps": [
+            "In the mixer, right-click → **New bus / FX channel**. Templates already bring Reverb and Delay.",
+            "On the bus, click **+** and add **Reverb** or **Delay**.",
+            "Select a track and click **+ Send** in **Output & sends**. Check the bus.",
+            "Raise the send level until it sounds right."
+          ],
+          "notes": [
+            "**PRE** takes the send before the fader: it keeps sounding if you lower the track."
+          ],
+          "see": ["add-fx", "mixer"]
+        },
+        {
+          "id": "automation",
+          "title": "Automate volume and effects",
+          "keywords": "curve move by itself fade envelope parameter",
+          "intro": "Makes a control change by itself along the song.",
+          "steps": [
+            "Right-click the control → **Automate…**, or the track's menu → **Automation**.",
+            "A lane appears under the track.",
+            "Click adds a point, dragging moves it and double-click deletes it. Shift+drag draws.",
+            "Drag the circle in the middle of a segment to curve it."
+          ],
+          "notes": [
+            "With a lane on, moving that control by hand does nothing: the lane rules."
+          ],
+          "see": ["clip-volume"]
+        },
+        {
+          "id": "compare",
+          "title": "Compare two mixes",
+          "keywords": "a b ab before after mix versions",
+          "intro": "**A | B**, in the mixer bar, keeps two mixes of the same song.",
+          "steps": [
+            "Make a mix in **A**.",
+            "Click **B**: it starts as a copy of A.",
+            "Change what you want and switch to compare."
+          ],
+          "notes": [
+            "It doesn't touch tracks or the master. Right-click: **Copy A to B** and **Forget mix B**."
+          ]
+        },
+        {
+          "id": "transpose",
+          "title": "Transpose a track",
+          "keywords": "pitch semitones up down tuning change key",
+          "intro": "Changes the pitch without changing the length.",
+          "steps": [
+            "Select the track.",
+            "Move **Pitch** in the channel's **Transpose** section: −12 to +12 semitones.",
+            "Wait for the notice: while it computes, the track sounds as before."
+          ],
+          "see": ["tempo"]
+        },
+        {
+          "id": "track-template",
+          "title": "Save a track's sound",
+          "keywords": "template preset reuse effect chain",
+          "intro": "A track preset keeps its effects, volume, color and input.",
+          "steps": [
+            "Right-click the track → **Save as preset**.",
+            "To use it, **New track → Preset**.",
+            "To apply it to an existing track, right-click → **Use preset**."
+          ],
+          "see": ["guitar-tone"]
+        }
+      ]
+    },
+    {
+      "id": "master",
+      "icon": "E767",
+      "title": "Master",
+      "hint": "Final loudness, Looks, Suggest and limiter.",
+      "topics": [
+        {
+          "id": "mastering",
+          "title": "Master in a few steps",
+          "keywords": "final loud finish polish look suggestion",
+          "intro": "The last step before exporting. Open the **Mastering** view in the transport.",
+          "steps": [
+            "Play the loudest part of the song.",
+            "Choose a **Look** (Natural, Glued, Bright, Warm, Upfront) and set **Amount**.",
+            "Or click **Suggest**: it analyzes the mix and proposes settings.",
+            "Choose the **Target** for where you'll publish.",
+            "Check that **True peak** stays under the **Ceiling**."
+          ],
+          "notes": [
+            "With no effects in the list, the master does nothing. **+ Effect → Full chain** adds the stages."
+          ],
+          "see": ["loudness", "export-audio"]
+        },
+        {
+          "id": "loudness",
+          "title": "Hit each platform's loudness",
+          "keywords": "lufs spotify youtube instagram tiktok apple music normalization quiet loud target limiter",
+          "intro": "Each platform normalizes to its own level. **Target** takes the mix there.",
+          "steps": [
+            "In **Mastering**, **Output** box, choose the **Target**: YouTube, Instagram, TikTok, Spotify or Apple Music.",
+            "The app measures the mix and sets the gain by itself.",
+            "You hear and export at that loudness."
+          ],
+          "notes": [
+            "With **As it is**, you set **Drive** by hand.",
+            "The **Limiter** keeps peaks under the **Ceiling**, −1 dB by default."
+          ],
+          "see": ["mastering", "export-video"]
+        }
+      ]
+    },
+    {
+      "id": "export",
+      "icon": "EDE1",
+      "title": "Export",
+      "hint": "Audio, video, social media, stems and a single section.",
+      "topics": [
+        {
+          "id": "export-audio",
+          "title": "Export audio",
+          "keywords": "wav mp3 save bounce final mix file render",
+          "intro": "Renders the mix to a file.",
+          "steps": [
+            "In an **Audio only** project, click **Export audio**, at the top right.",
+            "Choose **WAV** or **MP3**.",
+            "Click export. When it's done, a notice lets you open the file in Explorer."
+          ],
+          "notes": [
+            "Files go to the project's **exports** folder. MP3 needs FFmpeg."
+          ],
+          "see": ["export-range", "export-stems", "no-ffmpeg"]
+        },
+        {
+          "id": "export-video",
+          "title": "Export the video",
+          "keywords": "mp4 render upload reels shorts tiktok youtube instagram quality resolution 4k bitrate",
+          "intro": "What you see in the preview is what gets exported.",
+          "steps": [
+            "Click **Export MP4**, at the top right.",
+            "Under **Destination**, choose **Project** or a platform: Reels, TikTok, YouTube, IG 1:1 or IG 4:5.",
+            "Choose the **Quality**.",
+            "Click export and wait. If there's a compatible graphics card, it's used."
+          ],
+          "notes": [
+            "**Advanced** changes resolution (up to 4K) and bitrate.",
+            "Loudness isn't chosen here: it's the Mastering **Target**."
+          ],
+          "see": ["loudness", "export-range", "social-length"]
+        },
+        {
+          "id": "export-range",
+          "title": "Export only a section",
+          "keywords": "part fragment excerpt a-b",
+          "intro": "Exports what's between A and B, with the effect tails.",
+          "steps": [
+            "Mark the A–B range in the ruler strip.",
+            "Open the export.",
+            "Under **Section**, choose **Loop A–B** instead of **Whole song**."
+          ],
+          "see": ["markers-loop"]
+        },
+        {
+          "id": "export-stems",
+          "title": "Export each track separately",
+          "keywords": "stems separate tracks producer mixing engineer wav per track",
+          "intro": "To hand the song to someone else or to another program.",
+          "steps": [
+            "Open the export.",
+            "Check the stems box.",
+            "Along with the file, you get a folder with one WAV per track."
+          ],
+          "notes": [
+            "They all last the same, so they line up in any program."
+          ],
+          "see": ["stems"]
+        },
+        {
+          "id": "social-length",
+          "title": "See if the song fits a platform",
+          "keywords": "duration length maximum story reel limit minutes",
+          "intro": "The timeline shows where each platform's limit falls.",
+          "steps": [
+            "Right-click the ruler numbers.",
+            "Turn on the platforms you care about.",
+            "If the song runs over, the line turns amber and says **too long**."
+          ],
+          "see": ["export-video"]
+        }
+      ]
+    },
+    {
+      "id": "video",
+      "icon": "E714",
+      "title": "Video",
+      "hint": "Panels, format, framing, color and transitions.",
+      "topics": [
+        {
+          "id": "video-panels",
+          "title": "Set up the video panels",
+          "keywords": "split screen grid tracks in the video",
+          "intro": "Each video track is a panel.",
+          "steps": [
+            "Choose the layout and format above the preview: **16:9**, **9:16** or **1:1**.",
+            "To take a track out of the picture, turn off **In the video** on its channel. It keeps sounding."
+          ],
+          "notes": [
+            "For vertical video, try the **Vertical** layout from the layout button in the title bar."
+          ],
+          "see": ["framing", "look"]
+        },
+        {
+          "id": "framing",
+          "title": "Frame a take",
+          "keywords": "zoom move picture crop mirror panel",
+          "intro": "Framing belongs to each clip.",
+          "steps": [
+            "In the preview, drag to move the picture.",
+            "Use the wheel to zoom.",
+            "The channel's **Framing** section has zoom, mirror and **Reset framing**."
+          ],
+          "see": ["video-panels"]
+        },
+        {
+          "id": "color",
+          "title": "Correct the color",
+          "keywords": "filter look lut brightness contrast grain vignette cinema bars sharpness",
+          "intro": "The **Color** tab, in the right panel, applies to the whole video.",
+          "steps": [
+            "Start with a **Filter**.",
+            "Refine it in **Adjustments**.",
+            "**Effects** has sharpness, vignette, grain and cinema bars.",
+            "Save what you like in **Templates**."
+          ]
+        },
+        {
+          "id": "transitions",
+          "title": "Add a transition",
+          "keywords": "crossfade black cut join clips",
+          "intro": "Between two adjacent video clips, a square chip appears.",
+          "steps": [
+            "Click the chip, at the join.",
+            "Choose **Cut**, **Crossfade** or **Dip to black**.",
+            "Choose the length. Sound fades along with the picture."
+          ],
+          "notes": [
+            "It's also on the clip's right-click menu: **Transition in** and **Transition out**."
+          ]
+        },
+        {
+          "id": "video-sync",
+          "title": "Sync picture and sound",
+          "keywords": "out of sync lips late video early camera latency",
+          "intro": "If the picture arrives late compared to the audio.",
+          "steps": [
+            "For new takes, set **Camera latency** in Settings.",
+            "For a take already recorded, use the channel's **Sync** section."
+          ],
+          "settings": "sync",
+          "see": ["latency"]
+        }
+      ]
+    },
+    {
+      "id": "midi",
+      "icon": "E8D6",
+      "title": "MIDI and instruments",
+      "hint": "MIDI tracks, piano roll, VST3, keyboards and patterns.",
+      "topics": [
+        {
+          "id": "midi-track",
+          "title": "Create a MIDI track and write notes",
+          "keywords": "piano roll notes drums beat compose draw",
+          "intro": "A MIDI track keeps notes and plays them with an instrument.",
+          "steps": [
+            "**New track → MIDI track**.",
+            "Double-click an empty spot on the track: it creates a clip and opens the **Piano roll**.",
+            "Click on the grid to write a note. Drag to move it; its right edge lengthens it.",
+            "Right-click deletes.",
+            "Below, in **VEL**, you set how hard each note plays."
+          ],
+          "notes": [
+            "{key:quantize} snaps the notes to the grid."
+          ],
+          "see": ["instrument", "midi-keyboard", "patterns"]
+        },
+        {
+          "id": "instrument",
+          "title": "Choose a VST3 instrument",
+          "keywords": "plugin sound piano synth kontakt sampler no sound test tone",
+          "intro": "Without an instrument, the track plays a test tone.",
+          "steps": [
+            "Select the MIDI track.",
+            "On the channel, open the **Instrument** dropdown, or right-click the track → **Instrument**.",
+            "Choose one from the list. The first time, installed plugins are scanned.",
+            "**Open its window** shows the plugin."
+          ],
+          "see": ["plugins", "plugin-fail"]
+        },
+        {
+          "id": "plugins",
+          "title": "Install and manage plugins",
+          "keywords": "vst vst3 folder scan not showing hide",
+          "intro": "XTreme uses VST3 plugins, each in its own process: if one crashes, recording goes on.",
+          "steps": [
+            "Install the plugin as usual.",
+            "Click **Scan for new**.",
+            "If it's in another folder, add it with **+**.",
+            "Uncheck the ones you don't want in the menus."
+          ],
+          "settings": "plugins",
+          "see": ["add-fx", "plugin-fail"]
+        },
+        {
+          "id": "midi-keyboard",
+          "title": "Play and record with a keyboard",
+          "keywords": "controller usb keyboard pedal sustain record notes",
+          "intro": "The keyboard plays on the selected MIDI track, with nothing to arm.",
+          "steps": [
+            "Connect the keyboard. Check that its light blinks in Settings.",
+            "Select a MIDI track and play.",
+            "To record, arm it with **●** and record with {key:record}. The notes land in a clip."
+          ],
+          "notes": [
+            "**Quantize while recording**, on the same page, snaps notes automatically."
+          ],
+          "settings": "midi",
+          "see": ["virtual-keyboard", "no-midi"]
+        },
+        {
+          "id": "virtual-keyboard",
+          "title": "Play with the computer keyboard",
+          "keywords": "no keyboard virtual notes letters",
+          "intro": "Turns letters into piano keys.",
+          "steps": [
+            "Turn it on with {key:virtualKeys}.",
+            "The **A** row is the white keys and the row above, the black ones.",
+            "**Z** and **X** change the octave; **C** and **V**, the velocity.",
+            "**Shift** is the sustain pedal."
+          ],
+          "notes": [
+            "While it's on, those letters don't work as shortcuts."
+          ]
+        },
+        {
+          "id": "patterns",
+          "title": "Repeat a pattern",
+          "keywords": "loop rhythm drums link same clips fl studio",
+          "intro": "Linked clips: editing one changes them all.",
+          "steps": [
+            "Right-click a MIDI clip → **Create pattern**.",
+            "Duplicate or copy the clip: the copy stays linked.",
+            "Stretch a clip by its right edge to repeat the loop.",
+            "**Make unique** takes a clip out of the pattern."
+          ],
+          "notes": [
+            "The **Patterns** tab lists them. Drag them onto any MIDI track."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smart",
+      "icon": "E945",
+      "title": "Analysis and separation",
+      "hint": "Split stems, extract MIDI and detect chords.",
+      "topics": [
+        {
+          "id": "stems",
+          "title": "Separate vocals, drums and bass",
+          "keywords": "stems demucs remove vocals karaoke isolate instruments backing track",
+          "intro": "Splits an audio clip into tracks. The original stays muted and untouched.",
+          "steps": [
+            "Right-click an audio clip → **Split into stems…**.",
+            "Choose how many: 2, 4 or 6.",
+            "Choose the quality. The estimated time is shown.",
+            "Each stem lands on its own track, in a new folder."
+          ],
+          "notes": [
+            "It needs the models: install them in **Settings → Components**. It's one undo step."
+          ],
+          "settings": "components",
+          "see": ["extract-midi"]
+        },
+        {
+          "id": "extract-midi",
+          "title": "Turn audio into MIDI notes",
+          "keywords": "transcribe extract convert sheet music",
+          "intro": "Pulls the notes of an audio clip onto a MIDI track.",
+          "steps": [
+            "Right-click the clip → **Extract MIDI**.",
+            "Choose **Chords** or **Melody**.",
+            "The notes land on a new MIDI track below. **Show notes** opens the piano roll."
+          ],
+          "see": ["midi-track", "scale"]
+        },
+        {
+          "id": "scale",
+          "title": "Detect the scale and chords",
+          "keywords": "key harmony what key is it figure out song",
+          "intro": "Listens to a clip and says what scale it's in.",
+          "steps": [
+            "Right-click an audio clip → **Detect scale and chords**.",
+            "Check the scale, its notes and the chords.",
+            "Check **Add the chords to the timeline** to see them above the ruler."
+          ],
+          "notes": [
+            "The percentages are estimates of how sure the reading is."
+          ],
+          "see": ["tempo", "extract-midi"]
+        }
+      ]
+    },
+    {
+      "id": "projects",
+      "icon": "E8B7",
+      "title": "Projects and files",
+      "hint": "Saving, takes, disk space and sharing.",
+      "topics": [
+        {
+          "id": "autosave",
+          "title": "Save the project",
+          "keywords": "autosave lose changes automatic saving",
+          "intro": "By default, each change is saved by itself after 1.5 seconds.",
+          "steps": [
+            "Check the status next to the project name: **Saved**, **Saving** or **Unsaved**.",
+            "To force it, use {key:save} or the disk icon.",
+            "In **Settings → Saving and export** you can choose when it saves: on each edit, every few minutes or by hand."
+          ],
+          "notes": [
+            "Takes and exports always save, whatever the mode."
+          ],
+          "settings": "save",
+          "see": ["undo-versions"]
+        },
+        {
+          "id": "library",
+          "title": "Find takes and free up space",
+          "keywords": "library deleted take recover disk full space unused recycle bin",
+          "intro": "**Library**, in the right panel, lists every take: used or not.",
+          "steps": [
+            "Listen to a take with its play button.",
+            "Drag it onto the timeline to use it again.",
+            "**Delete unused** sends what isn't on the timeline to the Recycle Bin."
+          ],
+          "notes": [
+            "Removing a clip from the timeline never deletes its file."
+          ],
+          "see": ["punch-in", "import"]
+        },
+        {
+          "id": "share-project",
+          "title": "Move a project to another PC",
+          "keywords": "share zip package backup copy transfer",
+          "intro": "A package is a ZIP with everything needed.",
+          "steps": [
+            "In **Projects**, click the row's package button.",
+            "Choose **To share** (what plays) or **Full backup** (also unused takes, versions and exports).",
+            "On the other side, **Open package…** brings it in as a new project."
+          ],
+          "see": ["new-project"]
+        }
+      ]
+    },
+    {
+      "id": "custom",
+      "icon": "E771",
+      "title": "Customize",
+      "hint": "Shortcuts, theme, window layout and language.",
+      "topics": [
+        {
+          "id": "shortcuts",
+          "title": "See and change shortcuts",
+          "keywords": "keyboard keys list combinations",
+          "intro": "The main ones, with the keys you have set:",
+          "steps": [
+            "Play and stop: {key:play}. Record: {key:record}. Arm: {key:arm}.",
+            "Click: {key:click}. Tuner: {key:tuner}. Loop: {key:loop}.",
+            "Mute: {key:mute}. Solo: {key:solo}. Mixer: {key:mixer}. Fit all: {key:fit}.",
+            "Split: {key:split}. Duplicate: {key:duplicate}. Undo: {key:undo}. Save: {key:save}."
+          ],
+          "notes": [
+            "**Keyboard shortcuts** has the full list, and any of them can be changed."
+          ],
+          "settings": "shortcuts"
+        },
+        {
+          "id": "look",
+          "title": "Change the color and layout",
+          "keywords": "theme accent appearance vertical panels hide full screen",
+          "intro": "It's all in the title bar.",
+          "steps": [
+            "The theme picker chooses the accent color and background.",
+            "The layout button switches between **Classic** and **Vertical**.",
+            "The two panel buttons hide the sides.",
+            "{key:fullScreen} goes full screen."
+          ]
+        },
+        {
+          "id": "language",
+          "title": "Change the language",
+          "keywords": "english spanish espanol translation",
+          "intro": "It applies when you restart the app. Projects don't change.",
+          "steps": [
+            "Choose the language.",
+            "Close and reopen XTreme."
+          ],
+          "settings": "language"
+        }
+      ]
+    },
+    {
+      "id": "trouble",
+      "icon": "E7BA",
+      "title": "If something doesn't work",
+      "hint": "No sound, dropouts, shifted takes, camera, plugins and FFmpeg.",
+      "topics": [
+        {
+          "id": "no-sound",
+          "title": "I can't hear anything",
+          "keywords": "no sound mute silent nothing plays",
+          "intro": "Check in this order.",
+          "steps": [
+            "See if the master meter moves. If it does, the problem is in the output.",
+            "Check **Output** in Settings and the volume on your interface and headphones.",
+            "Check that no track has **S** on and that yours doesn't have **M** on.",
+            "If **Buffer** says **No audio** on that page, click **Refresh devices**."
+          ],
+          "settings": "audio",
+          "see": ["audio-setup", "no-interface"]
+        },
+        {
+          "id": "no-interface",
+          "title": "My interface doesn't show up",
+          "keywords": "asio driver not found not detected sound card",
+          "intro": "XTreme needs an ASIO driver.",
+          "steps": [
+            "Install the ASIO driver from the interface's maker.",
+            "Connect it and turn it on.",
+            "Close other programs that are using it.",
+            "Click **Refresh devices**."
+          ],
+          "settings": "audio"
+        },
+        {
+          "id": "dropouts",
+          "title": "Audio drops out or clicks",
+          "keywords": "crackling glitch pops skips stutter buffer cpu dsp",
+          "intro": "It's nearly always a lack of processing time.",
+          "steps": [
+            "Check **DSP** in the title bar. If it's high, the processor can't keep up.",
+            "Raise the **Buffer** from **Driver panel**.",
+            "Turn off heavy instrument plugins while recording.",
+            "Try **FX** in the mixer: it bypasses all effects so you can compare."
+          ],
+          "notes": [
+            "It doesn't happen in exports: they aren't rendered in real time."
+          ],
+          "settings": "audio"
+        },
+        {
+          "id": "offset-take",
+          "title": "My take lands out of time",
+          "keywords": "out of sync shifted late click doesnt match",
+          "intro": "Your interface's real latency hasn't been measured yet.",
+          "steps": [
+            "Calibrate in **Settings → Sync**.",
+            "Record a new take: it's compensated automatically.",
+            "On an old take, use **Audio offset**, or move it with **Alt** to free it from the grid."
+          ],
+          "settings": "sync",
+          "see": ["latency"]
+        },
+        {
+          "id": "no-camera",
+          "title": "The camera doesn't show up",
+          "keywords": "no picture black webcam droidcam video not visible",
+          "intro": "Check in this order.",
+          "steps": [
+            "Make sure the project is **Video + audio**.",
+            "Close other programs that use the camera.",
+            "Choose it again in Settings.",
+            "For a phone, use **IP DroidCam** with the IP and port it shows."
+          ],
+          "notes": [
+            "The camera needs FFmpeg."
+          ],
+          "settings": "camera",
+          "see": ["no-ffmpeg"]
+        },
+        {
+          "id": "no-ffmpeg",
+          "title": "FFmpeg is missing",
+          "keywords": "cant export video mp3 disabled error components install",
+          "intro": "FFmpeg is needed for the camera, video, MP3 and some formats.",
+          "steps": [
+            "Open **Components**.",
+            "Install FFmpeg.",
+            "Try again."
+          ],
+          "settings": "components"
+        },
+        {
+          "id": "plugin-fail",
+          "title": "A plugin won't open or show up",
+          "keywords": "vst wont load crash closed error failure",
+          "intro": "A failing plugin doesn't bring the app down.",
+          "steps": [
+            "If it closed, click **Open it again** in the notice.",
+            "If it's not listed, click **Scan for new** in Plugins.",
+            "If it's among the ones that didn't open, read the reason and click **Try again**."
+          ],
+          "notes": [
+            "Only 64-bit VST3 plugins are supported."
+          ],
+          "settings": "plugins"
+        },
+        {
+          "id": "no-midi",
+          "title": "My MIDI keyboard makes no sound",
+          "keywords": "not detected controller no notes",
+          "intro": "Check in this order.",
+          "steps": [
+            "Check that the device's light blinks when you play. If not, nothing is arriving.",
+            "Make sure it's on and that no other program is using it.",
+            "Select a MIDI track: the keyboard plays on the selected track."
+          ],
+          "settings": "midi"
+        },
+        {
+          "id": "offline-clip",
+          "title": "A clip is gray",
+          "keywords": "offline missing file lost",
+          "intro": "Its file is missing from the project's **media** folder.",
+          "steps": [
+            "If you moved files out of the project folder, put them back.",
+            "Open the project again."
+          ],
+          "notes": [
+            "To move a project, use a package: it carries everything."
+          ],
+          "see": ["share-project"]
+        },
+        {
+          "id": "read-only",
+          "title": "The project opens read-only",
+          "keywords": "cant edit locked another window",
+          "intro": "Another XTreme window has that project open, or it was saved with a newer version.",
+          "steps": [
+            "Close the other window and open it again.",
+            "If it was saved with a newer version, update XTreme."
+          ]
+        }
+      ]
+    }
+  ]
+}

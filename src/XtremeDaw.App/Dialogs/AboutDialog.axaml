@@ -70,6 +70,8 @@
           </Grid>
         </Border>
 
+        <controls:ComponentList OnlyMissing="True" />
+
         <!-- the latest release on GitHub (UpdateCheck, asked by MainWindow.Updates.cs when the window opens) -->
         <Border Classes="section" Padding="12,10">
           <StackPanel Spacing="8">

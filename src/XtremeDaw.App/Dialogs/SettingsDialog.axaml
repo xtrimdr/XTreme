@@ -103,6 +103,9 @@
             <Button x:Name="PluginsTab" Classes="nav">
               <StackPanel Orientation="Horizontal" Spacing="10"><TextBlock Classes="icon" Text="&#xEA86;" FontSize="15" /><TextBlock Text="{loc:T settings.tab.plugins}" /></StackPanel>
             </Button>
+            <Button x:Name="ComponentsTab" Classes="nav">
+              <StackPanel Orientation="Horizontal" Spacing="10"><TextBlock Classes="icon" Text="&#xE896;" FontSize="15" /><TextBlock Text="{loc:T settings.tab.components}" /></StackPanel>
+            </Button>
             <Button x:Name="ShortcutsTab" Classes="nav">
               <StackPanel Orientation="Horizontal" Spacing="10"><TextBlock Classes="icon" Text="&#xE765;" FontSize="15" /><TextBlock Text="{loc:T settings.tab.shortcuts}" /></StackPanel>
             </Button>

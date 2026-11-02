@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="FFmpeg.AutoGen" Version="9.0.1.1" />
   </ItemGroup>
@@ -23,6 +23,19 @@
        (tools/get-basic-pitch.ps1). Without it the extractor says it is missing and the rest works. -->
   <ItemGroup>
     <None Include="..\..\lib\basic-pitch\*.onnx;..\..\lib\basic-pitch\*.txt" Link="basic-pitch\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- DirectML's own DLL next to the program: its package doesn't copy it for .NET, and then the one of each Windows runs,
+       whatever its version. StemSeparator checks a graphics card against the CPU either way. -->
+  <ItemGroup>
+    <None Include="$(NuGetPackageRoot)microsoft.ai.directml\1.15.4\bin\x64-win\DirectML.dll" Link="DirectML.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(NuGetPackageRoot)microsoft.ai.directml\1.15.4\bin\x64-win\DirectML.dll')" />
+  </ItemGroup>
+
+  <!-- Demucs' models for "Separar en stems" (StemSeparator): lib/demucs is kept out of git (tools/get-demucs.ps1) and out
+       of the installer, since the license of the weights is not clear. Without them that option says they are missing. -->
+  <ItemGroup>
+    <None Include="..\..\lib\demucs-graphs\*" Link="demucs-graphs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\lib\demucs\*.onnx" Link="demucs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
   <!-- wtvsthost.exe, the VST3 plugin host (src/XtremeDaw.VstHost, C++): built here with Visual Studio's MSBuild when the

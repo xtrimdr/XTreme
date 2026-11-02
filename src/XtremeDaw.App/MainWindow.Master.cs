@@ -12,17 +12,32 @@ namespace XtremeDaw.App;
 /// <summary>
 /// The Mastering view (native only, asked by the user): the third view beside Timeline and Mixer, in the mixer's place
 /// (<see cref="MixerHost"/>, so it keeps the mixer's height and its spot in solo audio), and what the master strip's
-/// button opens. It lays the chain out left to right, a panel per stage in the order the sound goes, so it reads at a
-/// glance: Limpieza (low cut, mud) → Multibanda (three bands, a single "Cuánto" knob each) → Color (lows, presence,
-/// air, tilt) → Cinta → Ancho (width, lows in mono) → Soft clip → Limitador (Empuje, Techo, Release) → Volumen (the
-/// Destino, <see cref="MasterLoudness"/>: LUFS, peak and how far from the Destino's loudness), as in <see cref="MasterChain"/> and <see cref="MixGraphBus"/>. Every stage has its ON.
-/// The master's ON only reaches up to the soft clip, so those stages sit in a box under it (dimmed while it is off)
-/// and the limiter and the meter stand outside it as Salida, which works either way (asked by the user).
-/// The view is as tall as the chain and does not resize: there is nothing more to show. Nothing is measured: each band follows its own level as it plays (<see cref="MasterBandComp"/>),
-/// so a knob is heard the moment it moves.
+/// button opens. It lays the master's chain out left to right, a module per effect in the order the sound goes: the
+/// same list as the master strip's (<see cref="MasterSettings.Slots"/>), so adding, removing or dragging one here or
+/// there is the same edit. Each module is the panel the effect has everywhere (<see cref="FxBody"/>) with its live meters
+/// around it. After the Look, which writes into the chain's knobs. The master's ON turns the chain on or off, with the soft
+/// clip after the Empuje or the Destino's gain, in Salida (the soft clip, the limiter and the Destino, always last and in
+/// that order, as in <see cref="MixGraphBus"/>). The view is as tall as the chain. Nothing is measured: each band follows
+/// its own level as it plays (<see cref="MasterBandComp"/>), so a knob is heard the moment it moves.
 /// </summary>
 public partial class MainWindow
 {
+    /// <summary>A module's live reduction: a whole effect's (<see cref="Band"/> -1) or one band of a Multibanda's (3 = the Púa).</summary>
+    sealed class ModuleMeter(string id, int band, Border bar, TextBlock text)
+    {
+        public readonly string Id = id;
+        public readonly int Band = band;
+        public readonly Border Bar = bar;
+        public readonly TextBlock Text = text;
+        public double Show, Shown = double.NaN;
+    }
+
+    readonly List<ModuleMeter> moduleMeters = [];
+    /// <summary>The gap between modules.</summary>
+    const double ModuleGap = 4;
+    /// <summary>An EQ module's width: its editor needs it.</summary>
+    const double EqModuleW = 320;
+
     /// <summary>Width of the reduction bars and the reduction they show full (dB).</summary>
     const double GrBarW = 72, GrBarH = 5, GrBarFullDb = 9;
     /// <summary>The view's knobs, bigger than the strips' (asked by the user), and the column each one takes.</summary>
@@ -45,20 +60,13 @@ public partial class MainWindow
     int masterCorShown = int.MaxValue;
 
     readonly List<Action> masterRefresh = [];
-    readonly Border?[] masterGrBars = new Border?[MasterBands.Count];
-    readonly TextBlock?[] masterGrText = new TextBlock?[MasterBands.Count];
-    readonly double[] masterGrShow = new double[MasterBands.Count];
-    readonly double[] masterGrShown = new double[MasterBands.Count];
     readonly ScrollViewer masteringScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, IsVisible = false };
     Border? masterLimBar;
     MasterBandsGraph? masterGraph;
-    Border? masterPickBar;
-    TextBlock? masterPickText;
-    double masterPickShow, masterPickShown = double.NaN;
     /// <summary>The Look panel's width.</summary>
     const double LookPanelW = 120;
-    /// <summary>The knobs a look sets (<see cref="MasterEdit"/>'s keys): moving one by hand leaves the look.</summary>
-    static readonly HashSet<string> LookKeys = ["lowCut", "mud", "lows", "presence", "air", "tilt", "band0", "band1", "band2", "tape", "width", "monoBass", "pick"];
+    /// <summary>The knobs a look sets (the end of <see cref="MasterEdit"/>'s keys): moving one by hand leaves the look.</summary>
+    static readonly HashSet<string> LookKeys = ["lowCut", "mud", "lows", "presence", "air", "tilt", "low", "mid", "high", "amount", "width", "monoBass", "pick"];
     TextBlock? masterLimText;
     /// <summary>The limiter's reduction: as <see cref="TickMixer"/> took it (dB, ≤ 0), as shown and as written.</summary>
     double masterLimDb, masterLimShow, masterLimShown = double.NaN;
@@ -76,9 +84,7 @@ public partial class MainWindow
 
     MasterSettings MasterSet => store?.Project.Settings.Master ?? new();
 
-    static readonly (Func<double, double> To, Func<double, double> From) MasterCutMap = LogMap(MasterEq.LowCutMin, MasterEq.LowCutMax),
-        LimReleaseMap = LogMap(MasterLimiter.ReleaseMinMs, MasterLimiter.ReleaseMaxMs),
-        MonoBassMap = LogMap(40, StereoWidth.MonoBassMaxHz);
+    static readonly (Func<double, double> To, Func<double, double> From) LimReleaseMap = LogMap(MasterLimiter.ReleaseMinMs, MasterLimiter.ReleaseMaxMs);
 
     static string FmtDb(double db) => $"{db:+0.0;-0.0;0.0} dB";
     /// <summary>A reduction (dB, ≥ 0) as the meters show it.</summary>
@@ -153,15 +159,24 @@ public partial class MainWindow
         if (syncing || restoring || store == null || store.ReadOnly) return;
         undo.Checkpoint(store.Project, "master:" + key);
         var m = store.Project.Settings.Master;
+        string slots = MasterSlotIds;
         change(m);
         // a knob the look set, moved by hand: the look's Cuánto no longer describes it
-        if (LookKeys.Contains(key)) m.Look = MasterLooks.Custom;
+        if (LookKeys.Contains(key[(key.LastIndexOf('.') + 1)..])) m.Look = MasterLooks.Custom;
         engine.ApplyMaster(m);
         MarkDirty();
         UpdateUndoButtons();
+        // a new list of effects: the view shows it (the strip rebuilds on its own)
+        if (slots != MasterSlotIds && masteringView && mixerView)
+        {
+            BuildMastering();
+            FitMasteringHeight();
+        }
         RefreshMasterPanel();
         RefreshMixer();
     }
+
+    string MasterSlotIds => string.Join("/", MasterSet.Slots.Select(s => s.Id));
 
     /// <summary>A new project or the same one again: the view rebuilds on its settings.</summary>
     void ResetMaster()
@@ -187,15 +202,20 @@ public partial class MainWindow
     void BuildMastering()
     {
         masterRefresh.Clear();
-        masteringScroll.Content = MasterBody();
+        moduleMeters.Clear();
+        masterGraph = null;
+        var body = MasterBody();
+        // a module that grows (the compressor's fine controls) takes the view with it
+        body.SizeChanged += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (masteringScroll.IsVisible) FitMasteringHeight(); });
+        masteringScroll.Content = body;
         masteringPin.Child = LiveMeter();
         RefreshMasterPanel();
     }
 
     /// <summary>
-    /// Two groups left to right, in the order the sound goes: the master's box (title, its ON, and a
-    /// panel per stage from Limpieza to Soft clip) and, outside it, Salida (Limitador → Volumen), which the master's ON
-    /// does not touch. Arrows between the panels.
+    /// Two groups left to right, in the order the sound goes: the master's box (title, its ON, "+ Efecto", the Look and a
+    /// module per effect of its chain) and, outside it, Salida (Soft clip → Limitador → Volumen), which is always last.
+    /// Arrows between the panels.
     /// </summary>
     Control MasterBody()
     {
@@ -211,6 +231,11 @@ public partial class MainWindow
         on.Margin = new Thickness(10, 0, 0, 0);
         on.VerticalAlignment = VerticalAlignment.Center;
         head.Children.Add(on);
+        var owner = MasterSlots();
+        var addSlot = AddSlotButton(owner);
+        addSlot.Margin = new Thickness(8, 0, 0, 0);
+        addSlot.IsEnabled = editable;
+        head.Children.Add(addSlot);
         suite.Children.Add(head);
 
         var chain = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
@@ -253,76 +278,8 @@ public partial class MainWindow
         lookBox.Children.Add(suggest);
         Add(InfoPanel(LookIcon, Loc.T("master.look"), Loc.T("master.look.tip"), lookBox));
 
-        // 1. cleanup before the multiband
-        var clean = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        clean.Children.Add(MasterKnob(Loc.T("master.eq.lowcut"), 0, 1, 0, () => MasterSet.LowCutHz <= 0 ? 0 : MasterCutMap.To(MasterSet.LowCutHz),
-            () => MasterSet.LowCutHz <= 0 ? Loc.T("master.off") : $"{FmtHz(MasterSet.LowCutHz)} Hz",
-            v => MasterEdit(m => m.LowCutHz = v < 0.02 ? 0 : Math.Round(MasterCutMap.From(v)), "lowCut"), Loc.T("master.eq.lowcut.tip")));
-        clean.Children.Add(EqKnob(Loc.T("master.eq.mud"), MasterEq.GainMax, () => MasterSet.MudDb, (m, v) => m.MudDb = v, "mud", Loc.T("master.eq.mud.tip")));
-        Add(StagePanel(FxIcon.Eq, Loc.T("master.stage.clean"), Loc.T("master.stage.clean.tip"), () => MasterSet.EqOn,
-            () => MasterEdit(m => m.EqOn = !m.EqOn, "eqOn"), clean));
-
-        // 2. multiband
-        var bands = new StackPanel { Spacing = 10 };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        for (int i = 0; i < MasterBands.Count; i++) row.Children.Add(BandColumn(i));
-        row.Children.Add(PickColumn());
-        bands.Children.Add(row);
-        // the bands' curves, sinking with what each compresses; the crossovers are dragged on it
-        var graph = new MasterBandsGraph { IsEnabled = editable };
-        ToolTip.SetTip(graph, Loc.T("master.cross.tip"));
-        graph.CrossoverDragged += (high, hz) =>
-        {
-            if (high) MasterEdit(m => m.HighXHz = Math.Round(hz / 100) * 100, "highX");
-            else MasterEdit(m => m.LowXHz = Math.Round(hz), "lowX");
-        };
-        masterRefresh.Add(() =>
-        {
-            var (lo, hi) = MasterBands.Crossovers(MasterSet.ToParams());
-            graph.SetCrossovers(lo, hi);
-            graph.Active = MasterSet.On && MasterSet.BandsOn;
-        });
-        masterGraph = graph;
-        bands.Children.Add(graph);
-        Add(StagePanel(FxIcon.Comp, Loc.T("master.bands"), Loc.T("master.bands.on.tip"), () => MasterSet.BandsOn,
-            () => MasterEdit(m => m.BandsOn = !m.BandsOn, "bandsOn"), bands));
-
-        // 3. colour after it
-        var color = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        color.Children.Add(EqKnob(Loc.T("master.eq.lows"), MasterEq.GainMax, () => MasterSet.LowsDb, (m, v) => m.LowsDb = v, "lows", Loc.T("master.eq.lows.tip")));
-        color.Children.Add(EqKnob(Loc.T("master.eq.presence"), MasterEq.GainMax, () => MasterSet.PresenceDb, (m, v) => m.PresenceDb = v, "presence", Loc.T("master.eq.presence.tip")));
-        color.Children.Add(EqKnob(Loc.T("master.eq.air"), MasterEq.GainMax, () => MasterSet.AirDb, (m, v) => m.AirDb = v, "air", Loc.T("master.eq.air.tip")));
-        color.Children.Add(EqKnob(Loc.T("master.eq.tilt"), MasterEq.TiltMax, () => MasterSet.TiltDb, (m, v) => m.TiltDb = v, "tilt", Loc.T("master.eq.tilt.tip")));
-        Add(StagePanel(FxIcon.Eq, Loc.T("master.stage.color"), Loc.T("master.stage.color.tip"), () => MasterSet.ColorOn,
-            () => MasterEdit(m => m.ColorOn = !m.ColorOn, "colorOn"), color));
-
-        // 4. tape
-        Add(StagePanel(FxIcon.Sat, Loc.T("master.stage.tape"), Loc.T("master.stage.tape.tip"), () => MasterSet.TapeOn,
-            () => MasterEdit(m => m.TapeOn = !m.TapeOn, "tapeOn"),
-            MasterKnob(Loc.T("master.tape.amount"), 0, 1, 0, () => MasterSet.TapeAmount,
-                () => MasterSet.TapeAmount <= 0 ? Loc.T("master.off") : $"{MasterSet.TapeAmount * 100:0}%",
-                v => MasterEdit(m => m.TapeAmount = Math.Round(v * 100) / 100, "tape"), Loc.T("master.tape.amount.tip"))));
-
-        // 5. width
-        var wide = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        wide.Children.Add(MasterKnob(Loc.T("master.width"), 0, StereoWidth.MaxWidth, 1, () => MasterSet.Width, () => $"{MasterSet.Width * 100:0}%",
-            v => MasterEdit(m => m.Width = Math.Round(v * 20) / 20, "width"), Loc.T("master.width.tip")));
-        wide.Children.Add(MasterKnob(Loc.T("master.monobass"), 0, 1, 0, () => MasterSet.MonoBassHz <= 0 ? 0 : MonoBassMap.To(MasterSet.MonoBassHz),
-            () => MasterSet.MonoBassHz <= 0 ? Loc.T("master.off") : $"{FmtHz(MasterSet.MonoBassHz)} Hz",
-            v => MasterEdit(m => m.MonoBassHz = v < 0.02 ? 0 : Math.Round(MonoBassMap.From(v)), "monoBass"), Loc.T("master.monobass.tip")));
-        Add(StagePanel(WidthIcon, Loc.T("master.stage.width"), Loc.T("master.stage.width.tip"), () => MasterSet.WidthOn,
-            () => MasterEdit(m => m.WidthOn = !m.WidthOn, "widthOn"), wide));
-
-        // 6. soft clip, into the limiter
-        var clip = new StackPanel { Spacing = 10 };
-        clip.Children.Add(MasterKnob(Loc.T("master.clip.amount"), 0, SoftClipper.MaxDb, 0, () => MasterSet.ClipDb, ClipReadout,
-            v => MasterEdit(m => m.ClipDb = Math.Round(v * 10) / 10, "clip"), Loc.T("master.clip.amount.tip")));
-        clip.Children.Add(GrMeter(out var clipBar, out var clipText, Loc.T("master.clip.gr.tip")));
-        masterClipBar = clipBar;
-        masterClipText = clipText;
-        masterClipShown = double.NaN;
-        Add(StagePanel(ClipIcon, Loc.T("master.stage.clip"), Loc.T("master.stage.clip.tip"), () => MasterSet.ClipOn,
-            () => MasterEdit(m => m.ClipOn = !m.ClipOn, "clipOn"), clip));
+        // the master's chain, a module per effect; dragged, they change the order the sound goes through them
+        Add(MasterModules(owner));
         Grid.SetRow(chain, 1);
         suite.Children.Add(chain);
         var suiteChain = chain;
@@ -335,7 +292,21 @@ public partial class MainWindow
         outHead.Children.Add(outTitle);
         chain = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
 
-        // 7. the limiter, with its own ON apart from the master's
+        // the soft clip, after the gain and into the limiter
+        var clip = new StackPanel { Spacing = 10 };
+        clip.Children.Add(MasterKnob(Loc.T("master.clip.amount"), 0, SoftClipper.MaxDb, 0, () => MasterSet.ClipDb, ClipReadout,
+            v => MasterEdit(m => m.ClipDb = Math.Round(v * 10) / 10, "clip"), Loc.T("master.clip.amount.tip")));
+        clip.Children.Add(GrMeter(out var clipBar, out var clipText, Loc.T("master.clip.gr.tip")));
+        masterClipBar = clipBar;
+        masterClipText = clipText;
+        masterClipShown = double.NaN;
+        var clipCard = StagePanel(ClipIcon, Loc.T("master.stage.clip"), Loc.T("master.stage.clip.tip"), () => MasterSet.ClipOn,
+            () => MasterEdit(m => m.ClipOn = !m.ClipOn, "clipOn"), clip);
+        // it needs the master on, like the chain before it
+        masterRefresh.Add(() => clipCard.Opacity = MasterSet.On ? 1 : 0.45);
+        Add(clipCard);
+
+        // the limiter, with its own ON apart from the master's
         var lim = new StackPanel { Spacing = 10 };
         var limKnobs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         // with a Destino the gain is the measured one: the knob shows it and waits
@@ -355,7 +326,7 @@ public partial class MainWindow
         Add(StagePanel(FxIcon.Comp, Loc.T("master.stage.lim"), Loc.T("master.stage.lim.tip"), () => MasterSet.LimOn,
             () => MasterEdit(m => m.LimOn = !m.LimOn, "limOn"), lim));
 
-        // 8. what comes out: where it is going (Destino) and a meter
+        // what comes out: where it is going (Destino) and a meter
         var volume = new StackPanel { Spacing = 8, Width = VolumePanelW };
         var destino = new SelectButton { IsEnabled = editable };
         destino.SetItems(MasterLoudness.All.Select(t => Loc.Or(TargetKey(t.Id), t.Label) + (t.Lufs is { } tl ? $" · {Lufs0(tl)} LUFS" : "")).ToArray());
@@ -521,9 +492,6 @@ public partial class MainWindow
         return b;
     }
 
-    Control EqKnob(string label, double max, Func<double> get, Action<MasterSettings, double> set, string key, string tip) =>
-        MasterKnob(label, -max, max, 0, get, () => FmtDb(get()), v => MasterEdit(m => set(m, Math.Round(v * 2) / 2), key), tip);
-
     /// <summary>A knob of the view: label on top, the knob (<see cref="MasterKnobSize"/>, smaller for the crossovers), the value under it.</summary>
     Control MasterKnob(string label, double min, double max, double reset, Func<double> get, Func<string> readout, Action<double> set, string tip,
         bool small = false, Func<bool>? enabled = null)
@@ -532,17 +500,15 @@ public partial class MainWindow
         knob.Changed += set;
         bool editable = store is { ReadOnly: false };
         knob.IsEnabled = editable;
-        var value = new TextBlock { Classes = { "mono" }, FontSize = 11, Foreground = Palette.Dim, HorizontalAlignment = HorizontalAlignment.Center };
+        var value = FxValue();
         masterRefresh.Add(() =>
         {
             knob.Value = get();
             value.Text = readout();
             if (enabled != null) knob.IsEnabled = editable && enabled();
         });
-        var col = new StackPanel { Spacing = 5, MinWidth = small ? 72 : MasterKnobColW };
-        col.Children.Add(new TextBlock { Text = label.ToUpperInvariant(), FontSize = 10, LetterSpacing = 0.8, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
-        col.Children.Add(knob);
-        col.Children.Add(value);
+        var col = FxCell(label, knob, value);
+        col.MinWidth = small ? 72 : MasterKnobColW;
         return col;
     }
 
@@ -560,19 +526,99 @@ public partial class MainWindow
         return col;
     }
 
-    /// <summary>A band: its "Cuánto" knob and the live reduction.</summary>
-    Control BandColumn(int i)
+    /// <summary>The master's chain, a module per effect in the order it sounds, each dragged by its grip to another place.</summary>
+    Control MasterModules(SlotOwner o)
     {
-        string id = MasterBands.All[i].Id;
-        var col = new StackPanel { Spacing = 8, MinWidth = MasterKnobColW + 8 };
-        col.Children.Add(MasterKnob(Loc.T("master.band." + id), 0, 1, MasterBands.DefaultAmount, () => MasterSet.Bands[i].Amount,
-            () => MasterSet.Bands[i].Amount <= 0 ? Loc.T("master.off") : $"{MasterSet.Bands[i].Amount * 100:0}%",
-            v => MasterEdit(m => m.Bands[i].Amount = Math.Round(v * 100) / 100, "band" + i), Loc.T("master.band." + id + ".tip")));
-        col.Children.Add(GrMeter(out var bar, out var text, Loc.T("master.gr.tip")));
-        masterGrBars[i] = bar;
-        masterGrText[i] = text;
-        masterGrShown[i] = double.NaN;
-        return col;
+        var slots = o.Slots();
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var drag = new SlotDrag(0, sideways: true);
+        drag.Moved += (id, anchor, after) => SlotsEdit(o, x => ChannelInserts.MoveNextTo(x, id, anchor, after), "move");
+        for (int i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            if (!slot.Known) continue;
+            int nth = 1;
+            for (int k = 0; k < i; k++) if (slots[k].Type == slot.Type) nth++;
+            row.Children.Add(MasterModule(o, slot, nth, drag, i > 0));
+        }
+        if (row.Children.Count > 0) return row;
+        var empty = new TextBlock { Text = Loc.T("master.empty"), FontSize = 12, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap, Width = LookPanelW + 40, VerticalAlignment = VerticalAlignment.Center };
+        return InfoPanel(FxIcon.Vst, Loc.T("mix.list.fx"), Loc.T("mix.slot.add.master.tip"), empty);
+    }
+
+    /// <summary>One effect of the chain: its card, with the panel it has everywhere, an arrow in front and its grip, ON and ⋯ on top.</summary>
+    Control MasterModule(SlotOwner o, InsertSlot slot, int nth, SlotDrag drag, bool arrow)
+    {
+        string id = slot.Id, kind = slot.Type;
+        bool on() => o.Slot(id)?.On == true;
+        string title = SlotTitle(SlotName(kind), nth);
+        var head = StageHead(kind, title, title, on);
+        var chip = OnChip(on, () => SlotEdit(o, id, s => s.On = !s.On, "on"), Loc.T("mix.list.on"));
+        var menu = SlotMenuButton(o, id);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(12, 0, 0, 0), Children = { chip, menu } };
+        Grid.SetColumn(actions, 2); head.Children.Add(actions);
+        var grip = new GripDots { Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(grip, Loc.T("mix.slot.drag.tip"));
+        var top = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Children = { grip, head } };
+        Grid.SetColumn(head, 1);
+        head.PointerReleased += (_, e) =>
+        {
+            if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Right || store == null) return;
+            e.Handled = true;
+            ShowSlotMenu(o, id, head, null);
+        };
+
+        bool bands = kind == TrackInserts.Bands && masterGraph == null;
+        var body = new StackPanel { Spacing = 8, Width = ModuleWidth(kind, bands) };
+        FxBody(body, o, slot, masterRefresh, hide: bands ? ["lowX", "highX"] : null);
+        if (bands) BandMeters(body, o, id);
+        else if (kind is TrackInserts.Clip or TrackInserts.Limit or TrackInserts.Bands or InsertSlot.CompKind or InsertSlot.GateKind)
+        {
+            body.Children.Add(GrMeter(out var bar, out var text, Loc.T("master.gr.tip")));
+            moduleMeters.Add(new ModuleMeter(id, -1, bar, text));
+        }
+        masterRefresh.Add(() => body.Opacity = on() ? 1 : 0.45);
+        var card = StageCard(new StackPanel { Children = { top, body } }, on);
+        var module = new StackPanel { Orientation = Orientation.Horizontal, Spacing = ModuleGap };
+        if (arrow) module.Children.Add(new TextBlock { Classes = { "icon" }, Text = "\ue76c", FontSize = 11, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(ModuleGap, 0, 0, 0) });
+        module.Children.Add(card);
+        return drag.Add(module, id, grip);
+    }
+
+    /// <summary>A module's width: its knobs in two rows at most, the Multibanda's in one over its graph.</summary>
+    static double ModuleWidth(string kind, bool bands)
+    {
+        if (kind == InsertSlot.EqKind) return EqModuleW;
+        int knobs = FxDefs.Params(kind).Count(p => !p.Fine) + FxDefs.Common(kind).Length - (bands ? 2 : 0);
+        int cols = bands ? knobs : Math.Clamp((knobs + 1) / 2, 2, 4);
+        return cols * FxCellW;
+    }
+
+    /// <summary>The first Multibanda's meters: a reduction per band and the Púa, and the curves with the crossovers to drag.</summary>
+    void BandMeters(StackPanel body, SlotOwner o, string id)
+    {
+        var meters = new UniformGrid { Rows = 1 };
+        for (int i = 0; i <= MasterBands.Count; i++)
+        {
+            var meter = GrMeter(out var bar, out var text, Loc.T(i < MasterBands.Count ? "master.gr.tip" : "master.band.pick.gr.tip"));
+            meters.Children.Add(meter);
+            moduleMeters.Add(new ModuleMeter(id, i, bar, text));
+        }
+        body.Children.Add(meters);
+        var graph = new MasterBandsGraph { IsEnabled = store is { ReadOnly: false } };
+        ToolTip.SetTip(graph, Loc.T("master.cross.tip"));
+        var ps = FxDefs.Params(TrackInserts.Bands);
+        FxParam low = ps.First(p => p.Id == "lowX"), high = ps.First(p => p.Id == "highX");
+        graph.CrossoverDragged += (isHigh, hz) => FxEdit(o, id, isHigh ? high : low, isHigh ? Math.Round(hz / 100) * 100 : Math.Round(hz));
+        masterRefresh.Add(() =>
+        {
+            if (o.Slot(id) is not { } s) return;
+            var (lo, hi) = MasterBands.Crossovers(FxDefs.ToMaster(s));
+            graph.SetCrossovers(lo, hi);
+            graph.Active = MasterSet.On && s.On;
+        });
+        masterGraph = graph;
+        body.Children.Add(graph);
     }
 
     /// <summary>The Destino's text key ("master.target.asis" for "as it is").</summary>
@@ -595,20 +641,6 @@ public partial class MainWindow
             : loudFailed ? Loc.T("master.target.failed")
             : double.IsFinite(loudLufs) ? Loc.T("master.target.done", FmtDb(MasterSet.TargetGainDb), Lufs0(Math.Round(loudLufs, 1)))
             : Loc.T("master.target.kept", FmtDb(MasterSet.TargetGainDb), Lufs0(goal));
-    }
-
-    /// <summary>The fourth band, Púa: its "Cuánto" (0 = off) and its live cut, beside the three bands.</summary>
-    Control PickColumn()
-    {
-        var col = new StackPanel { Spacing = 8, MinWidth = MasterKnobColW + 8 };
-        col.Children.Add(MasterKnob(Loc.T("master.band.pick"), 0, 1, 0, () => MasterSet.PickAmount,
-            () => MasterSet.PickAmount <= 0 ? Loc.T("master.off") : $"{MasterSet.PickAmount * 100:0}%",
-            v => MasterEdit(m => m.PickAmount = Math.Round(v * 100) / 100, "pick"), Loc.T("master.band.pick.tip")));
-        col.Children.Add(GrMeter(out var bar, out var text, Loc.T("master.band.pick.gr.tip")));
-        masterPickBar = bar;
-        masterPickText = text;
-        masterPickShown = double.NaN;
-        return col;
     }
 
     void RefreshMasterPanel()
@@ -660,20 +692,21 @@ public partial class MainWindow
     {
         if (!masteringScroll.IsVisible)
         {
-            for (int i = 0; i < MasterBands.Count; i++) engine.Master.TakeReductionDb(i);
-            engine.Master.TakePickReductionDb();
             engine.Buses.Clip.TakeReductionDb();
             return;
         }
         Meter(-masterLimDb, ref masterLimShow, ref masterLimShown, masterLimBar, masterLimText);
         Meter(-engine.Buses.Clip.TakeReductionDb(), ref masterClipShow, ref masterClipShown, masterClipBar, masterClipText);
         TickVolume();
-        for (int i = 0; i < MasterBands.Count; i++)
+        // a for over the list itself: the tick doesn't allocate
+        for (int i = 0; i < moduleMeters.Count; i++)
         {
-            Meter(-engine.Master.TakeReductionDb(i), ref masterGrShow[i], ref masterGrShown[i], masterGrBars[i], masterGrText[i]);
-            masterGraph?.SetReduction(i, masterGrShow[i]);
+            var m = moduleMeters[i];
+            var insert = engine.Buses.Slots.Find(m.Id);
+            double gr = insert == null ? 0 : m.Band < 0 ? insert.TakeGrDb() : insert is FxShell { Inner: BandsInsert bands } ? bands.TakeBandDb(m.Band) : 0;
+            Meter(-gr, ref m.Show, ref m.Shown, m.Bar, m.Text);
+            if (m.Band is >= 0 and < MasterBands.Count) masterGraph?.SetReduction(m.Band, m.Show);
         }
-        Meter(-engine.Master.TakePickReductionDb(), ref masterPickShow, ref masterPickShown, masterPickBar, masterPickText);
 
         static void Meter(double gr, ref double show, ref double shown, Border? bar, TextBlock? text)
         {

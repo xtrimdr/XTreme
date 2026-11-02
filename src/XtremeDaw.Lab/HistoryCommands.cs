@@ -21,7 +21,8 @@ static class HistoryCommands
                 ProjectHistory.RemoveFromTimeline(p, id);
                 break;
             case "usar":
-                ClipEditing.AddMedia(p, id, a.Get("pista"));
+                if (a.Get("en") != null) ClipEditing.PlaceMedia(p, id, a.Double("en", 0), a.Get("pista"));
+                else ClipEditing.AddMedia(p, id, a.Get("pista"));
                 break;
             case "borrar-no-usadas":
                 var r = ProjectHistory.PurgeUnused(store);

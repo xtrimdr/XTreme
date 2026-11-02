@@ -59,6 +59,9 @@ public sealed class PlaybackEngine : IDisposable
     /// <summary>How long a note cut by the next one takes to fade out (5 ms), so it doesn't click.</summary>
     const int NoteCutFade = 240;
 
+    /// <summary>The Biblioteca's sample preview, summed to the output like the click.</summary>
+    public SampleVoice Sample { get; } = new();
+
     /// <summary>The MIDI inputs the keys come from (<see cref="MidiInputs"/>), set by the window; null = none.</summary>
     volatile MidiInputs? midiInputs;
     /// <summary>The tracks that hear the keyboard now (<see cref="SetMidiListeners"/>), swapped whole.</summary>
@@ -442,17 +445,18 @@ public sealed class PlaybackEngine : IDisposable
     /// What <paramref name="r"/> sends, as the audio thread reads it: the sends that are on, above 0 and whose bus the
     /// engine has. Each takes the PDC delay of the send to the same bus in <paramref name="old"/>, so it keeps what it holds.
     /// </summary>
-    public static TrackSend[] SendsTo(IReadOnlyDictionary<string, BusDspChain>? map, IRouted r, TrackSend[]? old = null)
+    public static TrackSend[] SendsTo(IReadOnlyDictionary<string, BusDspChain>? map, IRouted r, TrackSend[]? old = null, Track? track = null)
     {
+        bool Sounds(Send s) => s.On && (s.Level > 0 || track != null && Automations.SendCurve(track, s.BusId) != null);
         int n = 0;
         foreach (var s in r.Sends)
-            if (s.On && s.Level > 0 && map != null && map.ContainsKey(s.BusId)) n++;
+            if (Sounds(s) && map != null && map.ContainsKey(s.BusId)) n++;
         if (n == 0) return [];
         var next = new TrackSend[n];
         int k = 0;
         foreach (var s in r.Sends)
-            if (s.On && s.Level > 0 && map!.TryGetValue(s.BusId, out var to))
-                next[k++] = new TrackSend(to, -1, (float)Math.Clamp(s.Level, 0, 1), s.Pre, old?.FirstOrDefault(o => o.To == to)?.Delay);
+            if (Sounds(s) && map!.TryGetValue(s.BusId, out var to))
+                next[k++] = new TrackSend(to, -1, (float)Math.Clamp(s.Level, 0, 1), s.Pre, old?.FirstOrDefault(o => o.To == to)?.Delay, track == null ? null : Automations.SendCurve(track, s.BusId));
         return next;
     }
 
@@ -488,6 +492,7 @@ public sealed class PlaybackEngine : IDisposable
             h.Add(n.Out);
             h.Add(n.Sends);
         }
+        h.Add(buses.Slots.LatencySamples);
         int key = h.ToHashCode();
         if (key == latencyKey) return;
         latencyKey = key;
@@ -507,7 +512,7 @@ public sealed class PlaybackEngine : IDisposable
             var sends = ns[j].Sends;
             for (int i = 0; i < sends.Length; i++) sends[i].Delay.Set(plan.NodeSends[j][i]);
         }
-        pdcFrames = plan.Master;
+        pdcFrames = plan.Master + buses.Slots.LatencySamples;
     }
 
     /// <summary>How late the whole mix is heard because of the VST3 effects (frames); 0 without them.</summary>
@@ -515,6 +520,9 @@ public sealed class PlaybackEngine : IDisposable
 
     /// <summary>A folder's or bus's node (for its strip's meter), or null.</summary>
     public BusDspChain? Node(string id) => nodeById.GetValueOrDefault(id);
+
+    /// <summary>One of the master's slots by its id, for what the window shows live.</summary>
+    public ITrackInsert? MasterInsert(string id) => buses.Slots.Find(id);
 
     public void SetTracks(IEnumerable<LiveTrack> list, ProjectSettings? settings = null)
     {
@@ -568,7 +576,11 @@ public sealed class PlaybackEngine : IDisposable
     }
 
     /// <summary>The master's EQ, multiband and limiter, live: on and off crossfade (<see cref="MasterChain"/>).</summary>
-    public void ApplyMaster(MasterSettings m) => buses.SetMaster(m.ToParams());
+    public void ApplyMaster(MasterSettings m)
+    {
+        buses.SetMaster(m.ToParams());
+        buses.Slots.Set(ChannelDsp.MasterSpecs(m, bpm, FxBypass));
+    }
 
     public double LengthSec => endFrame / (double)SampleRate;
     public double PlayStartSec => playStartSec;
@@ -1239,6 +1251,7 @@ public sealed class PlaybackEngine : IDisposable
             notePos += k;
             if (notePos >= heard.Length) note = null;
         }
+        if (Sample.Active) Sample.Mix(output[0], output[1], n);
 
         if (softwareMonitor)
         {

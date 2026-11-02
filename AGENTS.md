@@ -54,7 +54,7 @@ src/
   XtremeDaw.App        la ventana (Avalonia 11.3). Depende de Audio y Projects.
   XtremeDaw.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana.
   XtremeDaw.VstHost    wtvsthost.exe (C++, SDK de VST3): abre un plugin en su propio proceso. Lo compila el build de Audio.
-tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que renderiza Blender con tools/icon/vinilo.py; necesita solo Blender; hasta 96 px, una versión plana dibujada en el script; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
+tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que renderiza Blender con tools/icon/vinilo.py; necesita solo Blender; hasta 96 px, una versión plana dibujada en el script; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
 .github/workflows/instalador.yml   arma el instalador en GitHub Actions (un tag vX.Y.Z → release en borrador; firma con SignPath)
 ```
 
@@ -67,9 +67,18 @@ tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba
   en `lib\ffmpeg`, fuera de git; ver DETALLES.md).
 - Sin MVVM ni bindings: code-behind con controles con nombre. No metas un framework sin que el usuario lo pida.
 - Sin dependencias nuevas de NuGet sin preguntar. Hoy: Avalonia 11.3, NAudio 2.2, FFmpeg.AutoGen 9.0 y ONNX Runtime
-  (para Extraer MIDI; con el modelo de Basic Pitch de Spotify, Apache 2.0, `lib\basic-pitch`,
+  con DirectML (`Microsoft.ML.OnnxRuntime.DirectML`, decisión del usuario: sus versiones van atrás de las del paquete común; para Extraer MIDI, con el modelo de Basic Pitch de Spotify, Apache 2.0, `lib\basic-pitch`,
   `tools\get-basic-pitch.ps1`: decisión del usuario). Fuera de NuGet, el
   SDK de VST3 de Steinberg (MIT, `lib\vst3sdk`, `tools\get-vst3sdk.ps1`) para `wtvsthost.exe` (decisión del usuario).
+- **Separar en stems** (`StemSeparator`): Demucs por ONNX Runtime, en la placa de video (DirectML: NVIDIA, AMD, Intel) o
+  en la CPU. Los grafos llevan solo la red; la STFT y su inversa están en C#, iguales a las de Demucs (`wtlab separar
+  --sin-desplazar` contra PyTorch: -80 dB, en las dos). DirectML fusiona cada `Sigmoid` con la operación vecina y el audio
+  sale mal sin ningún error: por eso sus salidas van expuestas en el grafo (`make-demucs-onnx.py`), y por eso `Choose` no
+  confía en una placa hasta que cada modelo coincide con la CPU en un segmento del audio y le gana en tiempo. `lib\demucs` (`tools\get-demucs.ps1`) no va
+  en git ni en el instalador (`CopyToPublishDirectory="Never"`): la licencia de los pesos no está clara (ver PENDIENTES).
+- **Componentes opcionales** (`XtremeDaw.Audio/Components.cs`): lo que la app puede no tener (FFmpeg, modelos de stems). Uno nuevo se suma a `Components.All` y a sus textos `component.<id>.*`; se instala siempre por `ComponentInstall.Run` (uno a la vez, con progreso y cancelación) y se muestra con `ComponentList`. Lo que depende de él queda deshabilitado con un aviso. Las descargas pasan por `FileDownload` (`.part`, reanudación, SHA-256). Los modelos de stems no se alojan (decisión del usuario): se bajan los `.th` de Meta y `StemConverter` arma el ONNX en `%APPDATA%\XTreme\demucs` desde `lib\demucs-graphs` (grafos sin pesos, `tools\make-demucs-templates.py`). Tienen sus propios términos: nunca digas que son MIT.
+- **Decodificar** (`MediaDecoder`): NAudio lo que lee solo, ffmpeg.exe por pipe todo lo demás. Lo que vino de FFmpeg
+  entra al proyecto como WAV, para que un proyecto abra sin FFmpeg; abrir un proyecto no llama a FFmpeg.
 - **Plugins VST3** (`XtremeDaw.Audio/Vst`): cada instancia corre en su `wtvsthost.exe` (decisión del usuario: un plugin
   que se cuelga no tira abajo la grabación). Hablan por memoria compartida (`shared.h` ↔ `VstBridge`, los offsets tienen
   que coincidir) y líneas de texto por stdin/stdout. En vivo el hilo de audio nunca espera al plugin: lo oye un bloque
@@ -77,7 +86,7 @@ tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba
   (`InstrumentRender`, dentro de `MixRenderer`). En vivo se le anuncia el bloque real del driver (`--block`,
   `VstInsert.LiveBlock`), no el máximo: los plugins dimensionan su trabajo por ese número y pagan por lo que no usan
   (Splice INSTRUMENT, el doble); un bloque mayor igual funciona, el host lo parte en pedazos. Un instrumento que recién abre puede seguir cargando sus samples y
-perder las notas: antes de ponerlo en la pista y antes de exportar se prueba una nota hasta que suena (`InstrumentWarmup`). El host avisa dónde está la ventana del plugin (`editor-rect`, `editor-active`) para que el teclado virtual sepa dónde tocar, y la ventana se viste y se llena desde la app (`look`, `title`, `toolbar`, `keys-panel`: el panel del teclado es una ventana de la app hija de la del host). Un **efecto** es un slot más (`VstInsert`, tipo `vst`): en vivo manda
+perder las notas: antes de ponerlo en la pista y antes de exportar se prueba una nota hasta que suena (`InstrumentWarmup`). El host avisa dónde está la ventana del plugin (`editor-rect`, `editor-active`) para que el teclado virtual sepa dónde tocar, y la ventana se viste y se llena desde la app (`look`, `title`, `toolbar`, `keys-panel`: el panel del teclado es una ventana de la app hija de la del host). El host es per-monitor DPI aware: le da la escala de la pantalla al plugin (`setContentScaleFactor`), trabaja en píxeles reales y escala solo lo suyo (la barra y el panel, que la app le pide a 100 %); prender el panel no le avisa nada al plugin. Un **efecto** es un slot más (`VstInsert`, tipo `vst`): en vivo manda
   cada bloque y toma el anterior, así que se oye un bloque del driver (`VstInsert.LiveBlock`) más su latencia tarde; en
   la exportación abre su propia copia y espera cada bloque. La ventana de la app maneja procesos y estados
   (`MainWindow.Vst.cs` los instrumentos, `MainWindow.VstFx.cs` los efectos, que el motor encuentra por `LiveVst`).
@@ -112,11 +121,17 @@ perder las notas: antes de ponerlo en la pista y antes de exportar se prueba una
   ninguno, el usuario los suma (pedido del usuario, 2026-10-29; `ProjectBuses.Shown`, `ShowSend`); el timeline, el mixer y el inspector muestran solo esos. La versión 3 trajo esto: los campos de la 2
   (Reverb/Delay fijos, retornos, `reverbSend`…, el fader/M/S/slots de carpeta) se leen como `Old*` y se convierten al
   normalizar.
-- **Clip**: un pedazo de un media en una pista (`AtSec`, `TrimStartSec`, `TrimEndSec`, `GainDb`, `GainCurve`, encuadre).
+- **Clip**: un pedazo de un media en una pista (`AtSec`, `TrimStartSec`, `TrimEndSec`, `GainDb`, `GainCurve`, encuadre). Todo clip sigue el tempo (decisión del usuario, sin elegir cuáles, video incluido): `TempoFollow` multiplica por viejo/nuevo todos los tiempos del timeline (clips, automatización, marcadores, acordes, loop) y `Stretch` dice cuánto más largo suena su media; sus tiempos ya lo cuentan, lo que lee el media pasa por `MediaSec`. El sonido estirado es un render en `cache/` (`PitchShifter.Render`, `TransposeCache`) y mientras se hace el clip calla (decisión del usuario). "Detectar tempo" no estira: solo mueve la grilla (`SetGrid`). El deshacer guarda `ProjectSettings.TimeScale`, no el tempo. Con `Reversed` suena al revés sin tocar el archivo: sus tiempos cuentan en el sentido en que se oye (`ClipEditing.Reverse`).
+- **ChordMarker** (`Project.ChordMarkers`): un acorde detectado (`Sec`, `EndSec`, `Name`), aparte de `Project.Markers`
+  (decisión del usuario: no se pisan con los marcadores y se borran juntos). Las ediciones pasan por `ProjectMarkers`.
 - **Pista MIDI** (`Track.Kind = "midi"`, `TrackKinds`): en vez de clips tiene `MidiClips` (`MidiClip`: `AtSec` en
   segundos, `LengthBeats` y sus `MidiNote` en tiempos, así siguen al tempo); en una pista de audio `MidiClips` es null.
   Sin video; las tomas no entran en ella. Toca y graba del teclado MIDI: `MidiInput` (null = todas las entradas) y
-  `MidiChannel` (0 = todos). Las ediciones pasan por `MidiEditing` (`Midi.cs`).
+  `MidiChannel` (0 = todos). Las ediciones pasan por `MidiEditing` (`Midi.cs`). **Patrones** (`MidiPatterns`): clips
+  enlazados por `PatternId`, cada uno con su copia de las notas (sin lista propia en el proyecto); una vuelta de
+  `PatternBeats` se repite hasta el final del clip. Quien cambie `MidiClip.Notes` llama a `MidiPatterns.Sync`, y quien
+  lea lo que suena usa `Heard`/`Slice` y `Passes`. La pestaña Patrones (`MainWindow.Patterns.cs`) los lista desde `All`.
+- **Automatización** (`Automation.cs`, `Track.Automation`): cada `AutomationLane` es un parámetro de la pista (`Target`, `AutoTarget`: volumen, paneo, mute, envío, efecto nativo con su ON y las bandas del EQ, VST3 de efecto o de instrumento), hija de la pista en el timeline (decisión del usuario). Su curva vive en bloques (`AutomationBlock`, como los clips MIDI, en segundos: se mueven, recortan, copian y repiten; las copias son independientes), que se leen como una sola curva (`AutomationLane.Flat`, el motor no sabe de bloques; hay que llamar `Touch` después de editarlos): entre bloques mantiene el último valor. Los puntos guardan la posición del control (0..1), no el valor, y `Curve` dobla el tramo hasta el siguiente (-1..1, `AutoCurve.Shape`; 0 = recto, opcional por tramo: decisión del usuario). Nunca cambia el `Channel`: sin puntos o apagada, manda el canal. Un destino que ya no existe conserva su carril, en silencio, para que deshacer lo traiga. Las ediciones pasan por `Automations`.
 - **Entradas MIDI** (teclados, controladores): son de la máquina, no del proyecto (`MidiSettings`, `config.json` "midi",
   por nombre de aparato; `MidiSetup` en la ventana). `MidiInputs` (winmm vía NAudio) filtra canal y velocidad en su
   hilo y deja las notas en un anillo sin locks; el hilo de audio las reparte al empezar cada bloque
@@ -137,7 +152,7 @@ guitarcam.json.bak  el guardado anterior
 guitarcam.lock      mientras está abierto (una segunda ventana lo abre en solo lectura)
 historial/          copias para volver atrás
 media/              grabaciones e importados
-cache/              lo que se rehace desde media/ (tomas transpuestas, TransposeCache): borrarlo solo cuesta tiempo
+cache/              lo que se rehace desde media/ (tomas transpuestas y estiradas, TransposeCache): borrarlo solo cuesta tiempo
 exports/
 ```
 
@@ -178,16 +193,25 @@ saturación → compresor con su EQ de preset antes y después → EQ de pista, 
 master); los envíos salen del fader (post, por defecto) o de antes (PRE: después de los slots y el paneo; mute y solo
 igual los callan) hacia los buses. Carpetas y buses son nodos (`BusDspChain`: suma de lo que le llega → slots → paneo →
 fader/mute → su salida y sus envíos) que corren en orden, cada uno después de todo lo que lo alimenta
-(`ChannelDsp.Nodes`: primero las carpetas, después `ProjectBuses.Order`) → master → limitador. El click va por fuera
+(`ChannelDsp.Nodes`: primero las carpetas, después `ProjectBuses.Order`) → slots del master → Empuje o Destino → soft clip → limitador. El click va por fuera
 del limitador, atrasado la misma latencia. `TrackDspChain` (con `TrackSend`), `InsertRack` (los slots, de pista o
 bus), `BusDspChain` y `MixGraphBus` (`XtremeDaw.Audio/Dsp/MixRenderer.cs`) los usan igual la reproducción y la
 exportación: no los dupliques. La conversión proyecto → motor es una sola, `ChannelDsp` (`Track`, `Bus`, `Nodes`).
 `wtlab comprobar-dsp` corre las comprobaciones del DSP.
 
+Automatización en el motor: fader, paneo, mute y envíos se leen en el hilo de audio (`AutoCurve`, sin asignar) y glisan sample a sample hasta el valor del fin del bloque (`TrackDspChain.ProcessAutomated`, `AddSend`), a la hora del sonido que llega ahí (`Frame` menos la latencia de los slots). Los parámetros VST3 viajan con cada bloque por la memoria compartida (`VstParamCurves`, `VstBridge.QueueParam`, `MaxParams`), en vivo y en la exportación. Las perillas de efectos nativos no tienen forma de leerse en el hilo de audio: `InsertAutomator` trabaja sobre su copia del canal y le da los slots al motor cuando un carril se movió, desde el tick de la ventana (`LiveTrack.TickAutomation`) o cada `AutoStep` en la exportación (`MixTrackSpec.InsertsAt`). El decay, tono y ancho de la reverb arman un impulso nuevo: esos se leen cada 0,25 s y el impulso entra en un fundido (`ReverbBus.Convolve`); la exportación lo espera (`InsertSpec.Wait`).
+
 Slots: cada efecto es un `ITrackInsert` (`XtremeDaw.Audio/Dsp/TrackInserts.cs`); un VST3 es un tipo de slot
 más. `TrackDspChain.SetInserts` reusa el efecto de cada slot por su id (no pierde el estado al editar) y, si cambia la
 lista, el hilo de audio funde 5 ms de salida y 5 ms de entrada. La conversión canal → motor es una sola,
-`ChannelDsp.Specs` (en vivo, exportación y wtlab); las ediciones de la lista, `ChannelInserts`. La pestaña Canal y la
+`ChannelDsp.Specs` (en vivo, exportación y wtlab); las ediciones de la lista, `ChannelInserts`. Todo nativo va dentro de
+un `FxShell` (Dry, Wet, salida, fundido al prender y apagar; con Wet 100 %, Dry 0 % y 0 dB pasa bit a bit), salvo el Limitador,
+que tiene latencia propia, la declara y atrasa su Dry lo mismo. Un efecto nativo nuevo es una clase en `TrackInserts`/`MasterInserts` y su lista en
+`FxDefs`, que da el panel en todos los lugares (`FxBody`), y entra en su grupo del menú (`FxGroups`); nunca una interfaz aparte.
+La modulación (`ModInserts.cs`) sale sin lo directo: Dry y Wet arman el efecto contra la señal seca, por eso arranca al 50 % (`FxDefs.StartMix`).
+Una banda dinámica del EQ (`EqDynamics`) suma `k × filtro` a la señal: nunca calcula coeficientes en el hilo de audio. Las etapas del master son slots
+(`TrackInserts.IsStage`, el mismo DSP de siempre) y la cadena del master es `MasterSettings.Slots`: `MasterChain` queda
+solo para lo que no pasó por `Normalize` (`ChainInSlots`). Soft clip, Limitador y Destino siguen fijos al final (Salida). La pestaña Canal y la
 lista de la tira del mixer muestran la cadena entera (cada slot editado por su id); `Channel.Sat/Comp/Eq` son el
 primer slot de cada tipo, el atajo de las perillas del timeline.
 
@@ -219,4 +243,7 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
 5. Al terminar un ítem de PENDIENTES, sacalo de ahí y agregalo arriba de todo en HECHO con la fecha (AAAA-MM-DD) y una
    línea de qué se hizo y dónde. Ideas nuevas van en PENDIENTES, en su sección.
 6. Si cambiás atajos, comandos de `wtlab` o la estructura, actualizá DETALLES.md y DETALLES_EN.md.
-7. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.
+7. Si cambiás cómo se usa algo o el nombre de un control, actualizá su tema de la ayuda en todos los idiomas
+   (`src/XtremeDaw.App/Assets/Help`, ver "Ayuda" en docs/interfaz.md); una función nueva que alguien vendría a buscar
+   lleva su tema.
+8. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.

@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using XtremeDaw.Audio;
+using XtremeDaw.Audio.Dsp;
 using XtremeDaw.Projects;
 using NAudio.Wave;
 
@@ -6,6 +9,23 @@ namespace XtremeDaw.Lab;
 /// <summary>Regression cases for importing outside audio into a project (<see cref="AudioImport"/>).</summary>
 static class ImportChecks
 {
+    /// <summary>What each step of bringing a file in costs, to find out where an import spends its time.</summary>
+    public static int Times(Args a)
+    {
+        string file = a.Positional.FirstOrDefault() ?? throw new ArgumentException("Falta el archivo.");
+        var clock = Stopwatch.StartNew();
+        double Lap() { double s = clock.Elapsed.TotalSeconds; clock.Restart(); return s; }
+        var raw = AudioLoader.Load(file, 0);
+        Console.WriteLine($"{Path.GetFileName(file)}: {raw.DurationSec:0.0} s, {raw.SampleRate} Hz, {raw.SourceChannels} canales");
+        Console.WriteLine($"  decodificar {Lap():0.00} s");
+        var (l, r) = AudioLoader.Resample(raw.Left, raw.Right, raw.SampleRate, AudioLoader.DefaultSampleRate);
+        Console.WriteLine($"  remuestrear {Lap():0.00} s");
+        LevelAnalysis.Analyze([l, r], AudioLoader.DefaultSampleRate);
+        CompPresets.Analyze([l, r], AudioLoader.DefaultSampleRate);
+        Console.WriteLine($"  analizar   {Lap():0.00} s");
+        return 0;
+    }
+
     public static int Run()
     {
         int n = 0;
@@ -52,6 +72,18 @@ static class ImportChecks
             failed = false;
             try { AudioImport.CopyIn(proj, Path.Combine(tmp, "nota.txt")); } catch (InvalidDataException) { failed = true; }
             Check(failed, "una extensión que no es de audio avisa");
+
+            var noise = new Random(7);
+            var sig = new float[9000];
+            for (int i = 0; i < sig.Length; i++) sig[i] = (float)(0.5 * Math.Sin(i * 0.05) + 0.2 * (noise.NextDouble() - 0.5));
+            foreach (var (from, to) in new[] { (44100, 48000), (48000, 44100), (48000, 22050), (22050, 48000), (44100, 47999) })
+            {
+                var (l, r) = AudioLoader.Resample(sig, sig, from, to);
+                var slow = SlowResample(sig, from, to);
+                double worst = 0;
+                for (int i = 0; i < slow.Length; i++) worst = Math.Max(worst, Math.Abs(l[i] - slow[i]));
+                Check(l.Length == slow.Length && r.AsSpan().SequenceEqual(l) && worst < 1e-5, $"el remuestreo de {from} a {to} suena igual que el filtro calculado muestra por muestra");
+            }
         }
         finally
         {
@@ -59,5 +91,29 @@ static class ImportChecks
         }
         Console.WriteLine($"Importar audio: {n} comprobaciones bien.");
         return 0;
+    }
+
+    /// <summary>The resampling filter worked out for every sample, as the reference for the table in <see cref="AudioLoader"/>.</summary>
+    static float[] SlowResample(float[] src, int srcRate, int dstRate)
+    {
+        const int half = 16;
+        var dst = new float[(int)Math.Round((long)src.Length * dstRate / (double)srcRate)];
+        double ratio = srcRate / (double)dstRate, cutoff = Math.Min(1.0, dstRate / (double)srcRate) * 0.92;
+        for (int i = 0; i < dst.Length; i++)
+        {
+            double pos = i * ratio;
+            int center = (int)Math.Floor(pos);
+            double sum = 0, weight = 0;
+            for (int k = -half + 1; k <= half; k++)
+            {
+                double x = k - (pos - center), w = (x + half) / (2.0 * half), cx = x * cutoff;
+                double win = 0.42 - 0.5 * Math.Cos(2 * Math.PI * w) + 0.08 * Math.Cos(4 * Math.PI * w);
+                double c = (Math.Abs(cx) < 1e-8 ? 1 : Math.Sin(Math.PI * cx) / (Math.PI * cx)) * win * cutoff;
+                weight += c;
+                if ((uint)(center + k) < (uint)src.Length) sum += src[center + k] * c;
+            }
+            dst[i] = (float)(sum / weight);
+        }
+        return dst;
     }
 }

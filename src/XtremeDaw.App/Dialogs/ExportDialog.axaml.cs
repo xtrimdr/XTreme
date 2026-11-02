@@ -608,6 +608,12 @@ public sealed partial class ExportDialog : UserControl
         SetActiveSegment(QualityBorradorBtn, quality == ExportQuality.Borrador);
 
         SetActiveSegment(FormatWavBtn, audioFormat == AudioFormat.Wav);
+        // MP3 goes through FFmpeg; without it only WAV is on offer
+        bool canMp3 = XtremeDaw.Audio.Components.Ffmpeg.Ready;
+        FormatMp3Btn.IsEnabled = canMp3;
+        ToolTip.SetTip(FormatMp3Btn, Loc.T(canMp3 ? "exp.mp3.tip" : "exp.mp3.noFfmpeg"));
+        if (!canMp3) audioFormat = AudioFormat.Wav;
+        SetActiveSegment(FormatWavBtn, audioFormat == AudioFormat.Wav);
         SetActiveSegment(FormatMp3Btn, audioFormat == AudioFormat.Mp3);
 
         var qSpec = Mp4Exporter.GetQualitySpec(quality);
@@ -1192,7 +1198,7 @@ public sealed partial class ExportDialog : UserControl
             var m = p.FindMedia(c.MediaId);
             string videoPath = store.Resolve(m?.Video)!;
 
-            double dur = m?.DurationSec ?? 0;
+            double dur = (m?.DurationSec ?? 0) * c.Stretch;
             if (liveTracks != null)
             {
                 var lt = liveTracks.FirstOrDefault(x => x.Track.Id == trk.Id);
@@ -1204,7 +1210,7 @@ public sealed partial class ExportDialog : UserControl
                 try
                 {
                     var loaded = AudioLoader.Load(ap, PlaybackEngine.SampleRate);
-                    dur = loaded.DurationSec;
+                    dur = loaded.DurationSec * c.Stretch;
                 }
                 catch
                 {
@@ -1218,6 +1224,7 @@ public sealed partial class ExportDialog : UserControl
                 VideoPath = videoPath,
                 DurationSec = dur,
                 AtSec = c.AtSec,
+                Stretch = c.Stretch,
                 SyncMs = c.EffectiveSyncMs(m),
                 VideoOffsetMs = c.EffectiveVideoOffsetMs(m),
                 TrimStartSec = c.TrimStartSec,
@@ -1260,15 +1267,15 @@ public sealed partial class ExportDialog : UserControl
             {
                 var m = p.FindMedia(c.MediaId);
                 var lc = lt?.Clips.FirstOrDefault(x => x.Clip.Id == c.Id);
-                // what the clip plays when it is already its track's transpose, else the cache's (or made now)
+                // what the clip plays when it is already what its track and the tempo want, else the cache's (or made now)
                 float[]? l = null, r = null;
-                if (lc?.Sound is { } sound && lc.SoundSemis == trk.Transpose)
+                if (lc?.Sound is { } sound && lc.Plays(trk.Transpose))
                 {
                     l = sound.L;
                     r = sound.R;
                 }
                 else if (lc?.Audio is { } live && store.Resolve(m?.Audio) is { } livePath)
-                    (l, r) = store.TrackAudio(trk, livePath, live.L, live.R);
+                    (l, r) = store.TrackAudio(trk, c, livePath, live.L, live.R);
                 if (l == null || r == null)
                 {
                     if (store.Resolve(m?.Audio) is not { } audioPath || !File.Exists(audioPath)) continue;
@@ -1279,14 +1286,14 @@ public sealed partial class ExportDialog : UserControl
                         cached = (loaded.Left, loaded.Right, rms);
                         audioCache[audioPath] = cached;
                     }
-                    (l, r) = store.TrackAudio(trk, audioPath, cached.L, cached.R);
+                    (l, r) = store.TrackAudio(trk, c, audioPath, cached.L, cached.R);
                     firstRmsDb ??= cached.RmsDb;
                 }
                 mixClips.Add(new MixClipSpec
                 {
                     Left = l,
                     Right = r,
-                    DurationSec = m?.DurationSec ?? (l.Length / (double)sampleRate),
+                    DurationSec = m != null ? m.DurationSec * c.Stretch : l.Length / (double)sampleRate,
                     AtSec = c.AtSec,
                     TrimStartSec = c.TrimStartSec,
                     TrimEndSec = c.TrimEndSec,
@@ -1297,7 +1304,7 @@ public sealed partial class ExportDialog : UserControl
                     SyncMs = c.EffectiveSyncMs(m),
                     Transition = c.Transition,
                     TransitionSec = c.TransitionSec,
-                    TakeId = c.MediaId,
+                    TakeId = c.TakeKey(),
                 });
             }
 

@@ -96,6 +96,7 @@ public sealed partial class SettingsDialog : UserControl
         SaveTab.Click += (_, _) => ShowTab("save");
         ViewTab.Click += (_, _) => ShowTab("view");
         PluginsTab.Click += (_, _) => ShowTab("plugins");
+        ComponentsTab.Click += (_, _) => ShowTab("components");
         BuildLanguage();
         BuildPlugins();
         BuildMidi();
@@ -181,6 +182,7 @@ public sealed partial class SettingsDialog : UserControl
 
         // --- Cámara
         var camera = Section(Loc.T("set.camera"), cameraRes);
+        camera.Children.Add(new ComponentList { Only = "ffmpeg", OnlyMissing = true });
         var camKind = new UniformGrid { Columns = 2 };
         foreach (var (ip, text) in new[] { (false, Loc.T("set.cam.webcam")), (true, Loc.T("set.cam.ip")) })
         {
@@ -340,13 +342,14 @@ public sealed partial class SettingsDialog : UserControl
         SaveTab.Classes.Set("active", id == "save");
         ViewTab.Classes.Set("active", id == "view");
         PluginsTab.Classes.Set("active", id == "plugins");
+        ComponentsTab.Classes.Set("active", id == "components");
         MidiTab.Classes.Set("active", id == "midi");
         StopCapture();
         StopMidi();
         if (id == "save") { RefreshSave(); RefreshEncoder(); }
         if (id == "shortcuts") { shortcutNote = null; BuildShortcuts(); }
         if (id == "plugins") RefreshPlugins();
-        Body.Content = id switch { "midi" => midiPage, "plugins" => pluginsPage, "camera" => cameraPage, "sync" => syncPage, "shortcuts" => shortcutsPage, "language" => languagePage, "save" => savePage, "view" => viewPage, _ => audioPage };
+        Body.Content = id switch { "components" => componentsPage, "midi" => midiPage, "plugins" => pluginsPage, "camera" => cameraPage, "sync" => syncPage, "shortcuts" => shortcutsPage, "language" => languagePage, "save" => savePage, "view" => viewPage, _ => audioPage };
         if (id == "midi") RefreshMidi();
         Refresh();
     }
@@ -803,6 +806,8 @@ public sealed partial class SettingsDialog : UserControl
     }
 
     // --- building blocks (SettingsDialog.tsx Section / Field) ------------------------------------
+
+    readonly Control componentsPage = new ScrollViewer { Content = new ComponentList { Margin = new Thickness(16) } };
 
     static StackPanel Section(string title, Control? action = null)
     {

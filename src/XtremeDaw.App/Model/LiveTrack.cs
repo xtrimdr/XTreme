@@ -14,11 +14,30 @@ namespace XtremeDaw.App.Model;
 
 /// <summary>
 /// The samples a clip plays: its media's audio as recorded, or moved by its track's Transponer
-/// (<see cref="XtremeDaw.Audio.Dsp.PitchShifter"/>, same length). Never changed once built, so the audio thread can hold it.
+/// and stretched by the tempo (<see cref="XtremeDaw.Audio.Dsp.PitchShifter"/>). Never changed once built, so the audio thread can hold it.
 /// </summary>
 public sealed class ClipSound(float[] left, float[] right)
 {
     public readonly float[] L = left, R = right;
+    /// <summary>What a clip plays while its sound at this tempo is made (asked by the user: never another speed).</summary>
+    public static readonly ClipSound Silent = new([], []);
+
+    ClipSound? flipped;
+    /// <summary>
+    /// The same samples backward, for a reversed clip: a sound of its own, so the audio thread crossfades to it like
+    /// to any other and reads it the same way. Made the first time one asks, shared by the clips that play it.
+    /// </summary>
+    public ClipSound Flipped
+    {
+        get
+        {
+            if (flipped != null || L.Length == 0) return flipped ?? this;
+            var (l, r) = ((float[])L.Clone(), (float[])R.Clone());
+            Array.Reverse(l);
+            Array.Reverse(r);
+            return flipped = new ClipSound(l, r) { flipped = this };
+        }
+    }
 }
 
 /// <summary>
@@ -43,9 +62,11 @@ public sealed class MediaAudio
     public bool Mono { get; }
     public double LengthSec => L.Length / (double)SampleRate;
 
-    public MediaAudio(string path, int targetSampleRate = PlaybackEngine.SampleRate)
+    public MediaAudio(string path, int targetSampleRate = PlaybackEngine.SampleRate) : this(AudioLoader.Load(path, targetSampleRate)) { }
+
+    /// <summary>From audio already in memory (an import, which had to decode it to check it).</summary>
+    public MediaAudio(AudioLoader.LoadedAudio loaded)
     {
-        var loaded = AudioLoader.Load(path, targetSampleRate);
         L = loaded.Left;
         R = loaded.Right;
         Sound = new ClipSound(L, R);
@@ -98,12 +119,35 @@ public sealed class LiveClip
 
     volatile ClipSound? sound;
     /// <summary>
-    /// What it plays (its <see cref="Audio"/> as recorded, or transposed): the UI swaps it whole and the audio thread
-    /// crossfades to it over <see cref="LiveTrack.SoundFade"/> samples. The waveform and the level stay the recording's.
+    /// What it plays (its <see cref="Audio"/> as recorded, or transposed and stretched; <see cref="ClipSound.Silent"/>
+    /// while the one its length needs is made): the UI swaps it whole and the audio thread crossfades to it over
+    /// <see cref="LiveTrack.SoundFade"/> samples. The waveform and the level stay the recording's.
     /// </summary>
     public ClipSound? Sound { get => sound; set => sound = value; }
     /// <summary>The semitones <see cref="Sound"/> is moved by (UI thread).</summary>
-    public double SoundSemis { get; set; }
+    public double SoundSemis { get; private set; }
+    /// <summary>Whether <see cref="Sound"/> runs backward (UI thread).</summary>
+    public bool SoundReversed { get; private set; }
+    /// <summary>True while the sound it plays is the one for <paramref name="semis"/> at the clip's stretch and direction (UI thread).</summary>
+    public bool Plays(double semis) => SoundSemis == semis && SoundReversed == clip.Reversed && sound?.L.Length == SoundLength;
+
+    /// <summary>Plays <paramref name="forward"/>, moved by <paramref name="semis"/>, the way the clip runs (UI thread).</summary>
+    public void Play(ClipSound forward, double semis)
+    {
+        Sound = clip.Reversed ? forward.Flipped : forward;
+        SoundSemis = semis;
+        SoundReversed = clip.Reversed;
+    }
+
+    /// <summary>Keeps what it plays, the way the clip runs: for while the sound it wants is being made (UI thread).</summary>
+    public void TurnSound()
+    {
+        if (SoundReversed == clip.Reversed) return;
+        Sound = sound?.Flipped;
+        SoundReversed = clip.Reversed;
+    }
+    /// <summary>The samples its sound has at the clip's stretch, or 0 offline.</summary>
+    public int SoundLength => Audio == null ? 0 : PitchShifter.StretchedLength(Audio.L.Length, TransposeCache.Step(clip.Stretch));
     // audio thread only: the sound it last played and the one it is fading out of
     internal ClipSound? Heard, Fading;
     internal int FadeLeft;
@@ -154,11 +198,14 @@ public sealed class LiveClip
         RefreshCurve();
         Media = media;
         Audio = audio;
-        sound = audio?.Sound;
+        sound = clip.Stretch != 1 ? audio == null ? null : ClipSound.Silent : clip.Reversed ? audio?.Sound.Flipped : audio?.Sound;
+        SoundReversed = clip.Reversed;
     }
 
     public string Name => Media?.Name ?? Loc.T("track.noMedia");
-    public double LengthSec => Audio?.LengthSec ?? Media?.DurationSec ?? 0;
+    /// <summary>Its media's own length; <see cref="LengthSec"/> is what it takes on the timeline.</summary>
+    public double MediaLengthSec => Audio?.LengthSec ?? Media?.DurationSec ?? 0;
+    public double LengthSec => MediaLengthSec * Clip.Stretch;
     public ClipEnvelope.ClipWindow Window => ClipEnvelope.Window(LengthSec, Clip.AtSec, Clip.TrimStartSec, Clip.TrimEndSec, Clip.EffectiveSyncMs(Media));
     public double OffsetSec => Window.Origin;
     public double ClipStartSec => Window.Start;
@@ -189,7 +236,7 @@ public sealed class LiveClip
         bool inside = timelineSec >= ClipStartSec - Lead && timelineSec < ClipEndSec + Tail;
         bool changed = inside != InClip;
         InClip = inside;
-        double videoOffset = -OffsetSec + Clip.EffectiveVideoOffsetMs(Media) / 1000;
+        double videoOffset = Clip.EffectiveVideoOffsetMs(Media) / 1000;
         if (!inside)
         {
             // starting FFmpeg takes a few frames: done ahead of time, a cut doesn't freeze the picture
@@ -282,9 +329,9 @@ public sealed class LiveClip
     /// </summary>
     double VideoTime(double timelineSec, double videoOffset)
     {
-        double sec = timelineSec + videoOffset;
+        double sec = Clip.MediaSec(timelineSec - OffsetSec) + videoOffset;
         if (timelineSec < ClipStartSec) sec = Math.Max(0, sec);
-        if (timelineSec >= ClipEndSec) sec = Math.Min(sec, Math.Max(0, LengthSec - 2 / VideoDecoder.Fps));
+        if (timelineSec >= ClipEndSec) sec = Math.Min(sec, Math.Max(0, MediaLengthSec - 2 / VideoDecoder.Fps));
         return sec;
     }
 
@@ -317,7 +364,7 @@ public sealed class LiveClip
 /// </summary>
 public sealed class LiveTrack
 {
-    /// <summary>10 ms at 48 kHz: a clip that starts playing its transposed audio crossfades to it, never clicks.</summary>
+    /// <summary>10 ms at 48 kHz: a clip that starts playing its transposed audio, or goes silent or comes back from it, crossfades, never clicks.</summary>
     public const int SoundFade = 480;
     readonly int sampleRate;
 
@@ -369,6 +416,17 @@ public sealed class LiveTrack
     public CompPresets.TakeEnvelope? Envelope => Clips.FirstOrDefault(c => c.Audio != null)?.Audio!.Envelope;
 
     public bool HasPanel => Track.Video && Clips.Count > 0;
+
+    /// <summary>Both clips of a join have a picture on this track.</summary>
+    public bool Pictured(LiveClip from, LiveClip to) => Track.Video && from.VideoPath != null && to.VideoPath != null;
+
+    /// <summary>
+    /// A join offers a transition between videos only (asked by the user), in a project with video
+    /// (<paramref name="video"/>). One already stored stays reachable anywhere, so it can be changed or removed.
+    /// </summary>
+    public bool OffersTransition(LiveClip from, LiveClip to, bool video) =>
+        video && Pictured(from, to) || ClipTransitions.Parse(to.Clip.Transition) != TransitionKind.Cut;
+
     public double EndSec => Math.Max(MidiEndSec, Clips.Count == 0 ? 0 : Clips.Max(c => c.ClipEndSec));
 
     volatile NoteSequence? notes;
@@ -416,6 +474,7 @@ public sealed class LiveTrack
             {
                 value.Notes = notes;
                 value.Tempo = bpm;
+                value.Curves = Automations.InstrumentCurves(Track);
             }
             instrument = value;
         }
@@ -465,7 +524,7 @@ public sealed class LiveTrack
             secs[i] = c.Clip.TransitionSec;
             takes[i] = i;
             for (int k = 0; k < i; k++)
-                if (c.Media != null && clips[k].Media?.Id == c.Media.Id) { takes[i] = k; break; }
+                if (c.Media != null && clips[k].Media?.Id == c.Media.Id && clips[k].Clip.Reversed == c.Clip.Reversed) { takes[i] = k; break; }
             c.Lead = c.Tail = 0;
         }
 
@@ -522,9 +581,46 @@ public sealed class LiveTrack
         Chain.Pan = cur.Pan;
         Chain.Muted = cur.Muted;
         Chain.Solo = cur.Solo || ListenSolo;
+        ApplyAutomation();
         ApplyInserts();
         ApplySends();
     }
+
+    InsertAutomator? automator;
+    double autoSec;
+
+    /// <summary>The fader's lanes and the instrument's, swapped whole. The slots' and the sends' go with theirs.</summary>
+    void ApplyAutomation()
+    {
+        Chain.Automation = Automations.Compile(Track);
+        if (instrument is { } player) player.Curves = Automations.InstrumentCurves(Track);
+    }
+
+    /// <summary>
+    /// UI thread, every tick: the lanes on the native effects at the playhead (the fader's, the sends' and the plugins'
+    /// are read on the audio thread). Allocates only when a lane moved, as much as turning that knob by hand. True when
+    /// the fader or the pan a header shows moved.
+    /// </summary>
+    public bool TickAutomation(double sec, bool playing)
+    {
+        autoSec = sec;
+        if (!playing) Chain.Frame = (long)(sec * sampleRate);
+        if (automator?.At(sec) is { } specs) Chain.SetInserts(specs);
+        var a = Chain.Automation;
+        double? volume = a?.Volume?.At(sec), pan = a?.Pan?.At(sec);
+        bool moved = Far(volume, autoVolume) || Far(pan, autoPan);
+        if (moved) (autoVolume, autoPan) = (volume, pan);
+        return moved;
+    }
+
+    static bool Far(double? a, double? b) => a is { } x && b is { } y ? Math.Abs(x - y) >= ShownStep : a != b;
+
+    /// <summary>A lane's move the timeline's header waits for before it redraws.</summary>
+    const double ShownStep = 0.01;
+    double? autoVolume, autoPan;
+    /// <summary>Where the fader and the pan are, with their lanes: what the controls show.</summary>
+    public double ShownVolume => autoVolume ?? Channel.Volume;
+    public double ShownPan => autoPan ?? Channel.Pan;
 
     /// <summary>
     /// Hands the chain its sends to buses as a new immutable array (<see cref="TrackDspChain.Sends"/>): the ones that are
@@ -532,7 +628,7 @@ public sealed class LiveTrack
     /// </summary>
     public void ApplySends()
     {
-        var next = PlaybackEngine.SendsTo(Nodes, Channel, Chain.Sends);
+        var next = PlaybackEngine.SendsTo(Nodes, Channel, Chain.Sends, Track);
         if (next.Length > 0 || Chain.Sends.Length > 0) Chain.Sends = next;
     }
 
@@ -542,7 +638,9 @@ public sealed class LiveTrack
     public void ApplyInserts()
     {
         Channel.AdoptSpares();
-        Chain.SetInserts(ChannelDsp.Specs(Channel, RmsDb, bpm, LiveVst.Of(Track.Id), PlaybackEngine.FxBypass), fade: started);
+        var live = LiveVst.Of(Track.Id);
+        automator = InsertAutomator.Create(Track, RmsDb, bpm, Envelope ?? CompPresets.Analyze([], sampleRate), live, PlaybackEngine.FxBypass);
+        Chain.SetInserts(automator?.At(autoSec, force: true) ?? ChannelDsp.Specs(Track, RmsDb, bpm, live, PlaybackEngine.FxBypass), fade: started);
     }
 
     /// <summary>False only while the constructor sets the chain up, before the audio thread can run it.</summary>
@@ -584,6 +682,7 @@ public sealed class LiveTrack
         var br = Chain.BufferR(n);
         bl.Clear();
         br.Clear();
+        Chain.Frame = posFrame;
         var seq = notes;
         var inst = instrument;
         if (fromFrame < 0)
@@ -661,15 +760,16 @@ public sealed class LiveTrack
         {
             var c = clips[cIdx];
             var a = c.Sound;
-            if (a == null || a.L.Length == 0) continue;
+            if (a == null) continue;
             if (a != c.Heard)
             {
                 c.Fading = c.Heard;
                 c.Heard = a;
-                c.FadeLeft = c.Fading != null && c.Fading.L.Length == a.L.Length ? SoundFade : 0;
+                c.FadeLeft = c.Fading != null ? SoundFade : 0;
             }
             var old = c.FadeLeft > 0 ? c.Fading : null;
             int fadeLeft = c.FadeLeft;
+            if (a.L.Length == 0 && old == null) continue;
             var w = c.Window;
             if (w.End <= w.Start) continue;
             // a transition plays the clip past its edges, into the audio its trims hide (MixRenderer does the same)
@@ -685,6 +785,8 @@ public sealed class LiveTrack
             float k = 1, dk = 0;
             float[] left = a.L;
             float[] right = a.R;
+            // a sound of another length (the tempo changed) fades from the same place of the song
+            double oldStep = old == null || old.L.Length == left.Length ? 1 : old.L.Length / (w.Dur * sampleRate);
 
             for (int i = 0; i < n; i++)
             {
@@ -697,18 +799,21 @@ public sealed class LiveTrack
                 }
                 if (f < startFrame || f >= endFrame) continue;
                 long src = f - originFrame;
-                if (src < 0 || src >= left.Length) continue;
+                bool here = src >= 0 && src < left.Length;
+                if (!here && (old == null || fadeLeft <= 0 || src < 0)) continue;
                 double timeSec = f * invSr;
                 double g = join == null ? ClipEnvelope.GainAt(timeSec, w.Start, w.End, fades.FadeIn, fades.FadeOut)
                     : ClipEnvelope.GainAt(Math.Clamp(timeSec, w.Start, w.End), w.Start, w.End, fades.FadeIn, fades.FadeOut) * join.Gain(timeSec);
                 float env = (float)g * cg * (k + dk * (i % ClipGainCurve.Step));
                 if (!weight.IsEmpty) env *= weight[i];
-                float sl = left[src], sr = right[src];
+                float sl = here ? left[src] : 0, sr = here ? right[src] : 0;
                 if (old != null && fadeLeft > 0)
                 {
                     float wOld = fadeLeft-- / (float)SoundFade;
-                    sl += (old.L[src] - sl) * wOld;
-                    sr += (old.R[src] - sr) * wOld;
+                    long at = oldStep == 1 ? src : (long)(src * oldStep);
+                    float ol = at < old.L.Length ? old.L[at] : 0, or = at < old.L.Length ? old.R[at] : 0;
+                    sl += (ol - sl) * wOld;
+                    sr += (or - sr) * wOld;
                 }
                 bl[i] += sl * env;
                 br[i] += sr * env;

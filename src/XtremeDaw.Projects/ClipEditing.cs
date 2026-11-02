@@ -23,8 +23,9 @@ public static class ClipEditing
 {
     public static Clip Copy(Clip clip) => ProjectLibrary.Clone(clip);
 
+    /// <param name="durationSec">The clip's length on the timeline, when the caller knows it better than the media does.</param>
     public static ClipEnvelope.ClipWindow Window(Clip c, Media? m, double? durationSec = null) =>
-        ClipEnvelope.Window(durationSec ?? m?.DurationSec ?? 0, c.AtSec, c.TrimStartSec, c.TrimEndSec, c.EffectiveSyncMs(m));
+        ClipEnvelope.Window(durationSec ?? (m?.DurationSec ?? 0) * c.Stretch, c.AtSec, c.TrimStartSec, c.TrimEndSec, c.EffectiveSyncMs(m));
 
     public static double GridSeconds(string mode, double bpm) => (mode switch
     {
@@ -221,10 +222,7 @@ public static class ClipEditing
             previousClip = clipJson.Deserialize<Clip>(ProjectStore.Json);
         if (target == null)
         {
-            // an imported file comes back as it was imported: audio only and a neutral strip
-            bool imported = media.Kind == "import";
-            target = new Track { Name = media.Name, Video = !imported, Channel = previousChannel ?? (imported ? new Channel()
-                : new Channel { Comp = new CompSettings { On = true, Preset = p.Tracks.Count == 1 ? "lead" : "rhythm" } }) };
+            target = NewTrackFor(p, media, previousChannel);
             p.Tracks.Add(target);
         }
         else target.Name = media.Name;
@@ -233,6 +231,51 @@ public static class ClipEditing
         target.Clips.Add(clip);
         return target.Id;
     }
+
+    /// <summary>An imported file comes back as it was imported: a neutral strip, and a panel only if it brought a picture.</summary>
+    static Track NewTrackFor(Project p, Media media, Channel? previous)
+    {
+        bool imported = media.Kind == "import";
+        return new Track { Name = media.Name, Video = !imported || media.Video != null, Channel = previous ?? (imported ? new Channel()
+            : new Channel { Comp = new CompSettings { On = true, Preset = p.Tracks.Count == 1 ? "lead" : "rhythm" } }) };
+    }
+
+    /// <summary>
+    /// A take dragged to the timeline: a clip of it starting at <paramref name="atSec"/>, as many times as asked (unlike
+    /// <see cref="AddMedia"/>). <paramref name="trackId"/> takes it when it is empty or that stretch is free; if not, or
+    /// with no track, it goes on a new one. A take off the timeline keeps the cut and the strip it had.
+    /// </summary>
+    public static string PlaceMedia(Project p, string mediaId, double atSec, string? trackId)
+    {
+        var media = p.FindMedia(mediaId) ?? throw new ArgumentException(Texts.T("err.clip.mediaNotFound", "Canal no encontrado en el historial."));
+        bool used = p.Tracks.Any(t => t.Clips.Any(c => c.MediaId == mediaId));
+        Clip? previousClip = null;
+        Channel? previousChannel = null;
+        if (!used && media.Extra?.TryGetValue("lastTimelineClip", out var clipJson) == true)
+            previousClip = clipJson.Deserialize<Clip>(ProjectStore.Json);
+        if (!used && media.Extra?.TryGetValue("lastTimelineChannel", out var channelJson) == true)
+            previousChannel = channelJson.Deserialize<Channel>(ProjectStore.Json);
+        var clip = previousClip ?? new Clip { MediaId = media.Id };
+        clip.Id = Ids.New("clp");
+        clip.AtSec = ToSample(clip.AtSec + Math.Max(0, atSec) - Window(clip, media).Start);
+        var window = Window(clip, media);
+        var track = p.Tracks.Find(t => t.Id == trackId && !t.IsMidi && (t.Clips.Count == 0 || IsFree(p, t, window.Start, window.End)));
+        if (track == null)
+        {
+            track = NewTrackFor(p, media, previousChannel);
+            p.Tracks.Add(track);
+        }
+        else if (track.Clips.Count == 0) track.Name = media.Name;
+        track.Clips.Add(clip);
+        return track.Id;
+    }
+
+    /// <summary>A clip can land on that stretch of the track without covering anything; a locked track takes none.</summary>
+    public static bool IsFree(Project p, Track t, double start, double end) => !t.Locked && t.Clips.All(c =>
+    {
+        var w = Window(c, p.FindMedia(c.MediaId));
+        return w.End <= start || w.Start >= end;
+    });
 
     static void Remember(Project p, Track track, Clip clip)
     {
@@ -285,6 +328,28 @@ public static class ClipEditing
         Unlocked(track, clip);
         var w = Window(clip, p.FindMedia(clip.MediaId), durationSec);
         clip.TrimStartSec = ToSample(w.TrimStart + w.Cut);
+    }
+
+    /// <summary>Only sound goes backward: a clip with picture stays in step with its video.</summary>
+    public static bool CanReverse(Media? m) => string.IsNullOrEmpty(m?.Video);
+
+    /// <summary>
+    /// Turns a clip around where it stands (native only): the same stretch of the timeline plays the same audio backward.
+    /// What was hidden at its end is now hidden at its start and the volume curve goes with the sound; its fades
+    /// stay at the clip's edges. Applied twice it is the clip it was.
+    /// </summary>
+    public static void Reverse(Project p, string id, double? durationSec = null)
+    {
+        var (track, c) = Find(p, id);
+        Unlocked(track, c);
+        var m = p.FindMedia(c.MediaId);
+        if (!CanReverse(m)) throw new ArgumentException(Texts.T("err.clip.reverseVideo", "Un clip con video no se puede invertir."));
+        var w = Window(c, m, durationSec);
+        c.AtSec = ToSample(w.Start - w.TrimEnd);
+        c.TrimStartSec = w.TrimEnd;
+        c.TrimEndSec = w.TrimStart + w.Cut;
+        c.GainCurve = [.. c.GainCurve.Select(g => new GainPoint { Sec = w.Dur - g.Sec, Db = g.Db, Extra = g.Extra }).OrderBy(g => g.Sec)];
+        c.Reversed = !c.Reversed;
     }
 
     /// <summary>
@@ -377,6 +442,7 @@ public static class ClipEditing
         foreach (string id in ids)
         {
             changed += DeleteRange(p, id, startSec, endSec, lengthOf);
+            Automations.CloseGap(p.Tracks.Find(t => t.Id == id)!, startSec, endSec);
             // after the cut every clip on the track is either before the range or from its end on
             foreach (var clip in p.Tracks.Find(t => t.Id == id)!.Clips)
             {

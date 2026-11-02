@@ -11,7 +11,12 @@ public readonly record struct EqBandSpec(
     double Freq,
     double Gain = 0,
     double Q = 1,
-    int Slope = 12)
+    int Slope = 12,
+    bool Dyn = false,
+    double DynThreshold = EqDynamics.DefaultThresholdDb,
+    double DynRange = EqDynamics.DefaultRangeDb,
+    double DynAttackMs = EqDynamics.DefaultAttackMs,
+    double DynReleaseMs = EqDynamics.DefaultReleaseMs)
 {
     public static EqBandSpec FromStrings(bool on, string? type, double freq, double gain, double q, int slope, BiquadType fallbackType = BiquadType.Peaking) =>
         new(
@@ -26,8 +31,9 @@ public readonly record struct EqBandSpec(
 public sealed record EqPresetDef(string Id, string Label, string Hint, EqBandSpec[] Bands);
 
 /// <summary>
-/// Port of <c>GuitarCam/src/audio/eq.ts</c>: per-track 6-band parametric EQ (low cut, 4 bells, high cut),
-/// 2 biquad stages per band (12 Biquads in series, zero latency, zero allocations in <see cref="Process"/>).
+/// Port of <c>GuitarCam/src/audio/eq.ts</c>: per-track 7-band parametric EQ (low cut, 5 bells, high cut),
+/// 2 biquad stages per band (14 Biquads in series, zero latency, zero allocations in <see cref="Process"/>). A bell or
+/// shelf can also move with the signal (<see cref="EqDynamics"/>); those run after the static curve.
 /// </summary>
 public sealed class TrackEq
 {
@@ -36,7 +42,7 @@ public sealed class TrackEq
     public const double GainMax = 18;
     public const double QMin = 0.3;
     public const double QMax = 12;
-    public const int BandCount = 6;
+    public const int BandCount = 7;
     public const int StagesPerBand = 2;
     public const int TotalStages = BandCount * StagesPerBand;
 
@@ -51,6 +57,7 @@ public sealed class TrackEq
         new(false, BiquadType.Peaking, 800, 0, 1, 12),
         new(false, BiquadType.Peaking, 2000, 0, 1, 12),
         new(false, BiquadType.Peaking, 4500, 0, 1, 12),
+        new(false, BiquadType.Peaking, 8000, 0, 1, 12),
         new(false, BiquadType.Lowpass, 12000, 0, 0.7, 12),
     ];
 
@@ -65,6 +72,7 @@ public sealed class TrackEq
             DefaultBands[3],
             DefaultBands[4],
             DefaultBands[5],
+            DefaultBands[6],
         ]),
         new("lead", "Punteo", "Doma lo chirriante (3–4 kHz) y corta el fizz de arriba",
         [
@@ -73,7 +81,8 @@ public sealed class TrackEq
             DefaultBands[2],
             DefaultBands[3],
             DefaultBands[4] with { On = true, Freq = 3500, Gain = -3, Q = 1.4 },
-            DefaultBands[5] with { On = true, Freq = 9000 },
+            DefaultBands[5],
+            DefaultBands[6] with { On = true, Freq = 9000 },
         ]),
         new("acoustic", "Acústica", "Menos retumbe de caja, un poco de brillo",
         [
@@ -83,6 +92,7 @@ public sealed class TrackEq
             DefaultBands[3],
             DefaultBands[4] with { On = true, Type = BiquadType.Highshelf, Freq = 8000, Gain = 2 },
             DefaultBands[5],
+            DefaultBands[6],
         ]),
         new("front", "Al frente", "Más presencia para que la guitarra se escuche adelante",
         [
@@ -92,6 +102,7 @@ public sealed class TrackEq
             DefaultBands[3] with { On = true, Freq = 2200, Gain = 2.5, Q = 0.9 },
             DefaultBands[4],
             DefaultBands[5],
+            DefaultBands[6],
         ]),
     ];
 
@@ -99,6 +110,7 @@ public sealed class TrackEq
 
     readonly double fs;
     readonly Biquad[] stages = new Biquad[TotalStages];
+    readonly EqDynamics[] dynamics = new EqDynamics[BandCount];
     volatile EqConfig config;
 
     public TrackEq(double sampleRate)
@@ -111,7 +123,11 @@ public sealed class TrackEq
             flat[i] = Biquad.FlatCoeffs;
         }
         config = new EqConfig(false, flat);
+        for (int i = 0; i < BandCount; i++) dynamics[i] = new EqDynamics(sampleRate);
     }
+
+    /// <summary>What a band's dynamics are doing now (dB), for the graph.</summary>
+    public double DynamicDb(int band) => dynamics[band].NowDb;
 
     public static bool IsCut(BiquadType t) => t is BiquadType.Highpass or BiquadType.Lowpass;
 
@@ -224,18 +240,129 @@ public sealed class TrackEq
             if (!specs[i].IsFlat) any = true;
         }
         config = new EqConfig(any, stageCoeffs);
+        for (int i = 0; i < BandCount; i++) dynamics[i].Set(i < bands.Length && eqOn ? bands[i] : DefaultBands[i]);
     }
 
     public void Reset()
     {
         for (int i = 0; i < TotalStages; i++) stages[i].Reset();
+        for (int i = 0; i < BandCount; i++) dynamics[i].Reset();
     }
 
     public void Process(Span<float> left, Span<float> right)
     {
         var cfg = config;
-        if (!cfg.Active) return;
-        for (int i = 0; i < TotalStages; i++)
-            stages[i].Process(left, right, cfg.StageCoeffs[i]);
+        if (cfg.Active)
+            for (int i = 0; i < TotalStages; i++)
+                stages[i].Process(left, right, cfg.StageCoeffs[i]);
+        for (int i = 0; i < BandCount; i++) dynamics[i].Process(left, right);
+    }
+}
+
+/// <summary>
+/// A band that moves with the signal: it listens to its own stretch of the spectrum and, as that goes over
+/// <see cref="EqBandSpec.DynThreshold"/>, adds up to <see cref="EqBandSpec.DynRange"/> dB there (usually a cut: it tames a
+/// resonance or a pick only when it jumps out). Reached <see cref="SpanDb"/> over the threshold. A band filter is both the
+/// detector and what is added back: out = in + k·band, with k from the gain, so k = 0 is the input bit for bit and no
+/// coefficient is ever worked out on the audio thread. A bell uses a band pass at its frequency and Q, a shelf a low or
+/// high pass. Zero latency, nothing allocated.
+/// </summary>
+public sealed class EqDynamics
+{
+    public const double DefaultThresholdDb = -24, DefaultRangeDb = -6, DefaultAttackMs = 5, DefaultReleaseMs = 120;
+    public const double ThresholdMinDb = -60, RangeMaxDb = 18, AttackMinMs = 0.5, AttackMaxMs = 100, ReleaseMinMs = 10, ReleaseMaxMs = 1000;
+    /// <summary>How far over the threshold the band reaches its whole range.</summary>
+    const double SpanDb = 12;
+    /// <summary>Under this (dB) the band counts as at rest.</summary>
+    const double RestDb = 1e-3;
+    /// <summary>A shelf's detector, Butterworth (in dB, as <see cref="Biquad"/> reads Q for a low or high pass).</summary>
+    static readonly double ButterQDb = 20 * Math.Log10(Math.Sqrt(0.5));
+
+    sealed record Shape(bool On, Biquad.Coeffs Filter, double Threshold, double Range, double Attack, double Release);
+
+    readonly double fs;
+    readonly Biquad filter;
+    volatile Shape shape;
+    double env, gain;
+    volatile float now;
+    bool idle = true;
+
+    public EqDynamics(double sampleRate)
+    {
+        fs = sampleRate;
+        filter = new Biquad(sampleRate);
+        shape = new Shape(false, Biquad.FlatCoeffs, DefaultThresholdDb, 0, 0, 0);
+    }
+
+    public double NowDb => now;
+
+    public void Set(EqBandSpec b)
+    {
+        bool on = b.On && b.Dyn && !TrackEq.IsCut(b.Type) && Math.Abs(b.DynRange) >= 0.05;
+        if (!on)
+        {
+            shape = shape with { On = false };
+            return;
+        }
+        double hz = Math.Clamp(b.Freq, TrackEq.MinHz, Math.Min(TrackEq.MaxHz, fs * 0.45));
+        Biquad.Coeffs c;
+        if (b.Type == BiquadType.Lowshelf) c = Biquad.Compute(fs, new BiquadSpec(BiquadType.Lowpass, hz, ButterQDb));
+        else if (b.Type == BiquadType.Highshelf) c = Biquad.Compute(fs, new BiquadSpec(BiquadType.Highpass, hz, ButterQDb));
+        else
+        {
+            // RBJ band pass with 0 dB at the centre
+            double w0 = 2 * Math.PI * hz / fs, q = Math.Clamp(b.Q, TrackEq.QMin, TrackEq.QMax), alpha = Math.Sin(w0) / (2 * q), a0 = 1 + alpha;
+            c = new Biquad.Coeffs(new BiquadSpec(BiquadType.Peaking, hz, q), alpha / a0, 0, -alpha / a0, -2 * Math.Cos(w0) / a0, (1 - alpha) / a0);
+        }
+        double attack = Math.Clamp(b.DynAttackMs, AttackMinMs, AttackMaxMs) / 1000, release = Math.Clamp(b.DynReleaseMs, ReleaseMinMs, ReleaseMaxMs) / 1000;
+        shape = new Shape(true, c, b.DynThreshold, Math.Clamp(b.DynRange, -RangeMaxDb, RangeMaxDb), Math.Exp(-1 / (attack * fs)), Math.Exp(-1 / (release * fs)));
+    }
+
+    public void Reset()
+    {
+        filter.Reset();
+        env = gain = 0;
+        now = 0;
+        idle = true;
+    }
+
+    public void Process(Span<float> left, Span<float> right)
+    {
+        var s = shape;
+        // off and let go, nothing to do; the filter starts clean when it comes back
+        if (!s.On && Math.Abs(gain) < RestDb)
+        {
+            gain = 0;
+            now = 0;
+            idle = true;
+            return;
+        }
+        if (idle)
+        {
+            filter.Reset();
+            env = 0;
+            idle = false;
+        }
+        var c = s.Filter;
+        double e = env, g = gain;
+        double aR = s.On ? s.Release : Math.Exp(-1 / (ReleaseMinMs / 1000 * fs));
+        for (int i = 0; i < left.Length; i++)
+        {
+            double l = left[i], r = right[i];
+            double bl = filter.ProcessSample(l, 0, c), br = filter.ProcessSample(r, 1, c);
+            double x = Math.Max(Math.Abs(bl), Math.Abs(br));
+            e = x > e ? s.Attack * e + (1 - s.Attack) * x : aR * e + (1 - aR) * x;
+            double target = 0;
+            if (s.On && e > 1e-6)
+                target = s.Range * Math.Clamp((20 * Math.Log10(e) - s.Threshold) / SpanDb, 0, 1);
+            g = s.On ? target : aR * g;
+            if (Math.Abs(g) < RestDb) continue;
+            double k = Math.Pow(10, g / 20) - 1;
+            left[i] = (float)(l + k * bl);
+            right[i] = (float)(r + k * br);
+        }
+        env = e;
+        gain = g;
+        now = (float)g;
     }
 }

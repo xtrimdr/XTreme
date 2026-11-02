@@ -36,6 +36,26 @@ public partial class MainWindow
     /// <summary>The grid's spacing options for the ruler's menu (<see cref="TimelineView.GridMode"/>): auto, the snap's, or fixed.</summary>
     static readonly string[] GridIds = ["auto", "snap", "bar", "1/2", "1/4", "1/8", "1/8T", "1/16", "1/32", "1/64"];
 
+    /// <summary>Column widths from which each piece of the corner toolbar fits (their widths add up from the left, the
+    /// clear toggles at the right edge) and from which the footer keeps its height slider and its zoom icon.</summary>
+    const double ToolbarSnapClipsAt = TimelineView.DefaultHeaderW, ToolbarFitAt = 248, ToolbarClearAt = 220, ToolbarSnapAt = 160, FooterHeightAt = 200, FooterZoomIconAt = 120;
+
+    /// <summary>The bars above and below the track headers are as wide as the column: as it narrows, what doesn't fit
+    /// goes, least used first, so nothing overlaps and the ruler mode and the zoom always stay.</summary>
+    void FitTimelineBars(double w)
+    {
+        SnapClipsPanel.IsVisible = w >= ToolbarSnapClipsAt;
+        TimelineFitButton.IsVisible = w >= ToolbarFitAt;
+        ClearTogglesPanel.IsVisible = w >= ToolbarClearAt;
+        SnapPanel.IsVisible = w >= ToolbarSnapAt;
+        bool height = w >= FooterHeightAt;
+        HeightIcon.IsVisible = TrackHeightSlider.IsVisible = ResetHeightsButton.IsVisible = height;
+        // a star column keeps its share with nothing in it
+        TimelineFooterGrid.ColumnDefinitions[3].Width = height ? GridLength.Star : new GridLength(0);
+        ZoomSlider.Margin = new Thickness(0, 0, height ? 16 : 0, 0);
+        ZoomIcon.IsVisible = w >= FooterZoomIconAt;
+    }
+
     void SetRulerMode(bool bars)
     {
         Timeline.RulerInBars = bars;
@@ -254,6 +274,7 @@ public partial class MainWindow
         Timeline.HeaderWidthChanged += w =>
         {
             TimelineToolbar.Width = TimelineFooter.Width = w;
+            FitTimelineBars(w);
             Prefs();
         };
         if (double.TryParse(AppConfig.Get("headerWidth"), CultureInfo.InvariantCulture, out double headerW))
@@ -288,6 +309,7 @@ public partial class MainWindow
             Timeline.PickTracks(ids);
         };
         InitFolders();
+        InitAutomation();
         Timeline.RemoveTrackRequested += AskRemoveTrack;
         Timeline.NewTrackRequested += ShowNewTrackMenu;
         Timeline.ClipContextRequested += ShowTimelineMenu;
@@ -345,6 +367,8 @@ public partial class MainWindow
         var liveClips = tracks.SelectMany(t => t.Clips).ToDictionary(c => c.Clip.Id);
         var audio = tracks.SelectMany(t => t.Clips).Where(c => c.Media != null)
             .GroupBy(c => c.Media!.Id).ToDictionary(g => g.Key, g => g.First().Audio);
+        foreach (var (id, a) in importedAudio) audio[id] = a;
+        importedAudio.Clear();
         var missing = p.Tracks.SelectMany(t => t.Clips).Where(c => !audio.ContainsKey(c.MediaId))
             .Select(c => p.FindMedia(c.MediaId)).OfType<Media>().DistinctBy(m => m.Id).ToList();
         if (missing.Count > 0)
@@ -635,8 +659,8 @@ public partial class MainWindow
 
     /// <summary>A <see cref="MenuChoice(Func{ValueTuple{string, string}}, Action, List{Action}, string?, string?, bool)"/>
     /// checked while <paramref name="isOn"/>, one of a set of options.</summary>
-    static MenuItem MenuCheck(string label, Func<bool> isOn, Action apply, List<Action> refresh, string? hint = null, string? tip = null) =>
-        MenuChoice(() => (label, isOn() ? "" : " "), apply, refresh, hint, tip);
+    static MenuItem MenuCheck(string label, Func<bool> isOn, Action apply, List<Action> refresh, string? hint = null, string? tip = null, bool enabled = true) =>
+        MenuChoice(() => (label, isOn() ? "" : " "), apply, refresh, hint, tip, enabled);
 
     ContextMenu Popup(IEnumerable<object> items, double width) => new()
     {
@@ -769,17 +793,18 @@ public partial class MainWindow
             bool under = at > clip.ClipStartSec + ClipEnvelope.MinClipSec && at < clip.ClipEndSec - ClipEnvelope.MinClipSec;
             // a locked clip keeps its place and length: what would change them is greyed out
             bool free = !ClipEditing.IsLocked(track.Track, clip.Clip);
+            // the boxed clips, when this is one of them, are duplicated, copied, aligned (or removed) all at once
+            var boxed = Timeline.BoxedClipIds.Contains(id) ? Timeline.BoxedClipIds.ToList() : [id];
+            list.Add(MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled && free));
+            list.Add(MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")));
+            list.Add(MenuAction(Loc.T("menu.duplicate"), () => DuplicateClips(boxed), Shortcuts.Label("duplicate"), enabled));
             list.Add(MenuAction(Loc.T("menu.split"), async () =>
             {
                 string? right = null;
                 await EditTimeline(p => { right = ClipEditing.Split(p, id, at, clip.LengthSec); return track.Track.Id; }, "clip-split");
                 if (right != null) Timeline.SelectClip(Timeline.Selected, right);
             }, "Alt+X", enabled && under && free));
-            // the boxed clips, when this is one of them, are duplicated, copied, aligned (or removed) all at once
-            var boxed = Timeline.BoxedClipIds.Contains(id) ? Timeline.BoxedClipIds.ToList() : [id];
-            list.Add(MenuAction(Loc.T("menu.duplicate"), () => DuplicateClips(boxed), Shortcuts.Label("duplicate"), enabled));
-            list.Add(MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")));
-            list.Add(MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled && free));
+            list.Add(new Separator());
             list.Add(MenuAction(Loc.T("menu.toStart"), () => Command(p => ClipEditing.ToStart(p, id, clip.LengthSec), "clip-moved"), enabled: enabled && free));
             // where clips overlap the last one shows: this is on only when one over it covers part of it
             bool covered = track.Clips.SkipWhile(o => o != clip).Skip(1).Any(o => o.ClipStartSec < clip.ClipEndSec && o.ClipEndSec > clip.ClipStartSec);
@@ -796,16 +821,23 @@ public partial class MainWindow
                 }, "clip-aligned", id);
                 Timeline.BoxClips(boxed);
             }, enabled: enabled && grid > 0 && (free || boxed.Count > 1), tip: grid > 0 ? Loc.T("menu.alignGrid.tip", Timeline.SnapMode == "bar" ? Loc.T("snap.label.1") : Timeline.SnapMode) : Loc.T("menu.alignGrid.off")));
+            list.Add(ClipLockItem(track, clip, enabled));
+            list.Add(new Separator());
             var w = ClipEditing.Window(clip.Clip, clip.Media, clip.LengthSec);
             list.Add(MenuAction(Loc.T("menu.fixCut"), () => Command(p => ClipEditing.FixCut(p, id, clip.LengthSec), "clip-trimmed"),
                 w.AnchorCut > 0.0005 ? $"{w.AnchorCut:0.00} s" : null, enabled && free && w.AnchorCut > 0.0005));
             var c = clip.Clip;
             list.Add(MenuAction(Loc.T("menu.resetClip"), () => Command(p => ClipEditing.Reset(p, id), "clip-reset"),
                 enabled: enabled && free && (c.TrimStartSec != 0 || c.TrimEndSec != 0 || c.FadeInSec != 0 || c.FadeOutSec != 0 || c.VideoFadeInSec != 0 || c.VideoFadeOutSec != 0)));
-            list.Add(DetectTempoItem(clip, point, enabled));
-            list.Add(ExtractMidiItem(track, clip, enabled));
+            bool reversible = ClipEditing.CanReverse(clip.Media);
+            list.Add(MenuCheck(Loc.T("menu.reverse"), () => clip.Clip.Reversed, () => _ = ReverseClips(track, clip, boxed), [],
+                tip: Loc.T(reversible ? "menu.reverse.tip" : "menu.reverse.video"), enabled: enabled && free && reversible));
             list.AddRange(TransitionItems(track, clip, point));
-            list.Add(ClipLockItem(track, clip, enabled));
+            list.Add(new Separator());
+            list.Add(DetectTempoItem(clip, point, enabled));
+            list.Add(DetectScaleItem(clip, enabled));
+            list.Add(ExtractMidiItem(track, clip, enabled));
+            list.Add(StemsItem(track, clip, enabled));
             list.Add(new Separator());
             list.Add(MenuAction(boxed.Count > 1 ? Loc.T("menu.removeClips", boxed.Count) : Loc.T("menu.removeClip"),
                 () => boxed.Count > 1 ? DeleteTimelineSelection() : Command(p => ClipEditing.RemoveClip(p, id), "clip-removed"), "Supr", enabled && (free || boxed.Count > 1), danger: true));
@@ -819,6 +851,19 @@ public partial class MainWindow
         OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
     }
 
+    /// <summary>The clip's "Invertir": the boxed clips it is one of end up going its new way, skipping what can't turn.</summary>
+    async Task ReverseClips(LiveTrack track, LiveClip clip, List<string> boxed)
+    {
+        bool reversed = !clip.Clip.Reversed;
+        var turned = tracks.SelectMany(t => t.Clips).Where(c => boxed.Contains(c.Clip.Id) && c.Clip.Reversed != reversed && ClipEditing.CanReverse(c.Media)).ToList();
+        await EditTimeline(p =>
+        {
+            foreach (var c in turned.Where(c => !ClipEditing.IsLocked(p, c.Clip.Id))) ClipEditing.Reverse(p, c.Clip.Id, c.LengthSec);
+            return track.Track.Id;
+        }, "clip-reversed", clip.Clip.Id);
+        Timeline.BoxClips(boxed);
+    }
+
     /// <summary>A track's own actions, the same from its timeline header and from its mixer strip (asked by the user).
     /// <paramref name="anchor"/> and <paramref name="point"/> place what they open; <paramref name="look"/> adds
     /// its color and icon, for the strip (the timeline's header has its badge for that).</summary>
@@ -826,12 +871,16 @@ public partial class MainWindow
     {
         bool enabled = store is { ReadOnly: false };
         var list = new List<object>();
+        list.Add(MenuAction(Loc.T("menu.paste"), PasteClips, Shortcuts.Label("paste"), enabled && clipboard != null, icon: "", tip: Loc.T("menu.paste.tip")));
+        if (track.Track.IsMidi) list.Add(InsertPatternItem(track, enabled));
+        list.Add(new Separator());
+        list.Add(MenuAction(Loc.T("menu.renameTrack") + "…", () => { rename(); return Task.CompletedTask; }, enabled: enabled, icon: ""));
+        if (look) list.Add(MenuAction(Loc.T("look.bus.menu"), () => { ShowTrackLook(track, anchor); return Task.CompletedTask; }, enabled: enabled, icon: "\ue790"));
         if (!AudioOnly && !track.Track.IsMidi)
             list.Add(MenuAction(track.Track.Video ? Loc.T("menu.hideVideo") : Loc.T("menu.showVideo"), () => SetInVideo(track, !track.Track.Video),
                 enabled: enabled, icon: ""));
-        list.Add(MenuAction(Loc.T("menu.renameTrack") + "…", () => { rename(); return Task.CompletedTask; }, enabled: enabled, icon: ""));
-        if (look) list.Add(MenuAction(Loc.T("look.bus.menu"), () => { ShowTrackLook(track, anchor); return Task.CompletedTask; }, enabled: enabled, icon: "\ue790"));
-        list.Add(FolderSubmenu(track, enabled));
+        if (!track.Track.IsMidi) list.Add(TrackLockItem(track, enabled));
+        list.Add(new Separator());
         if (track.Track.IsMidi)
             list.Add(new MenuItem { Header = MenuHeader(Loc.T("vst.menu", track.Track.Instrument?.Name ?? Loc.T("vst.testTone")), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }),
                 ItemsSource = InstrumentItems(track, enabled) });
@@ -847,15 +896,53 @@ public partial class MainWindow
         var sendsIcon = FxIcon.Create(FxIcon.Bus, 12);
         sendsIcon.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         list.Add(new MenuItem { Header = MenuHeader(Loc.T("send.menu"), sendsIcon), ItemsSource = SendChoices(RouterOf(track)), IsEnabled = enabled });
+        var fxIcon = FxIcon.Create(FxIcon.Eq, 12);
+        fxIcon.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        list.Add(new MenuItem { Header = MenuHeader(Loc.T("mix.list.fx"), fxIcon), ItemsSource = TrackFxItems(track, anchor), IsEnabled = enabled });
+        list.Add(new MenuItem { Header = MenuHeader(Loc.T("auto.menu"), new TextBlock { Classes = { "icon" }, Text = "\uE9D2", FontSize = 12 }), ItemsSource = AutomationItems(track), IsEnabled = enabled });
+        list.Add(new Separator());
+        list.Add(FolderSubmenu(track, enabled));
         list.Add(MenuAction(Loc.T("separator.addAbove"), () => NewSeparatorAbove(track), enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")));
+        list.Add(new Separator());
         list.Add(MenuAction(Loc.T("preset.save") + "…", () => { SavePreset(track, anchor, point); return Task.CompletedTask; }, enabled: true, icon: "", tip: Loc.T("preset.save.tip")));
         if (!track.Track.IsMidi) list.Add(ApplyPresetSubmenu(track, enabled));
-        if (!track.Track.IsMidi) list.Add(TrackLockItem(track, enabled));
-        list.Add(MenuAction(Loc.T("menu.paste"), PasteClips, Shortcuts.Label("paste"), enabled && clipboard != null, icon: "", tip: Loc.T("menu.paste.tip")));
         list.Add(new Separator());
         list.Add(MenuAction(Loc.T("menu.removeTrack"), () => EditTimeline(p => { ClipEditing.RemoveTrack(p, track.Track.Id); return null; }, "track-removed"),
             "Supr", enabled && !ClipEditing.HasLock(track.Track), danger: true, tip: ClipEditing.HasLock(track.Track) ? Loc.T("lock.remove.tip") : null));
         return list;
+    }
+
+    /// <summary>A track's effects in its menu: each opens in the same window as from the mixer (a loaded VST3, its own), then "+ Efecto".</summary>
+    List<object> TrackFxItems(LiveTrack track, Control anchor)
+    {
+        var o = SlotsOf(track);
+        var slots = o.Slots();
+        var items = new List<object>();
+        for (int i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            if (!slot.Known) continue;
+            int nth = 1;
+            for (int k = 0; k < i; k++) if (slots[k].Type == slot.Type) nth++;
+            string id = slot.Id;
+            items.Add(MenuAction(SlotLabel(slots, slot, nth), () =>
+            {
+                // once the menu has closed, so the window stays open
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (o.Slot(id)?.Type == InsertSlot.VstKind && EffectStateOf(o.OwnerId, id) == EffectState.Ready) OpenEffectWindow(o.OwnerId, id);
+                    else ShowSlotWindow(o, id, anchor, atPointer: true);
+                });
+                return Task.CompletedTask;
+            }));
+        }
+        if (items.Count > 0) items.Add(new Separator());
+        items.Add(MenuAction(Loc.T("mix.slot.add") + "…", () =>
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowAddSlotMenu(o, anchor));
+            return Task.CompletedTask;
+        }, icon: ""));
+        return items;
     }
 
     /// <summary>Rough height of a popup menu, to place it inside the window before it opens (it can't be measured

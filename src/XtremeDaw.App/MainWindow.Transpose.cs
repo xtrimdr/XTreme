@@ -13,15 +13,18 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// The track's Transponer (native only, asked by the user): its takes play moved by <see cref="Track.Transpose"/>
-/// semitones, the same length, so they stay in sync with the video. Moving a take takes seconds
+/// semitones, the same length, so they stay in sync with the video. The tempo goes the same way: a clip plays its media
+/// made <see cref="Clip.Stretch"/> times as long (<see cref="TempoFollow"/>). Rendering a take takes seconds
 /// (<see cref="XtremeDaw.Audio.Dsp.PitchShifter"/>), so it runs in the background and is kept in the project's cache
-/// (<see cref="TransposeCache"/>); meanwhile the clip keeps playing what it played, and switches with a short
-/// crossfade on the audio thread when the new one is ready (<see cref="LiveClip.Sound"/>). A value that is no longer
-/// wanted (the slider moved on, the project closed) cancels its work. The export uses the same cache.
+/// (<see cref="TransposeCache"/>); meanwhile a clip of the same length keeps playing what it played and one that
+/// changed length stays silent (asked by the user: never at another speed), and it comes in with a short crossfade on
+/// the audio thread when the new sound is ready (<see cref="LiveClip.Sound"/>). A tempo change renders every take, so
+/// they go one at a time, after a moment in which the tempo may move on. A value that is no longer wanted (the slider
+/// moved on, the project closed) cancels its work. The export uses the same cache.
 /// </summary>
 public partial class MainWindow
 {
-    readonly record struct TransposeKey(string MediaId, double Semis);
+    readonly record struct TransposeKey(string MediaId, double Semis, double Stretch);
 
     sealed class TransposeJob(string trackId)
     {
@@ -35,6 +38,12 @@ public partial class MainWindow
 
     /// <summary>A transpose that took at least this long says so with a toast when it is ready.</summary>
     static readonly TimeSpan TransposeToastAfter = TimeSpan.FromSeconds(1);
+    /// <summary>A stretch waits this long before it starts: the tempo's wheel and arrows go through many values.</summary>
+    static readonly TimeSpan StretchSettle = TimeSpan.FromMilliseconds(300);
+    /// <summary>One render at a time: each already uses every core, and a tempo change asks for all the takes at once.</summary>
+    static readonly SemaphoreSlim renderTurn = new(1, 1);
+    /// <summary>The card that shows how far a tempo change is; null when none is being made.</summary>
+    ToastProgress? stretchToast;
     /// <summary>The cache of the open project was cleaned of unused transposes (once per project: the ones tried
     /// meanwhile stay, so going back to a value is immediate).</summary>
     bool transposePruned;
@@ -53,6 +62,7 @@ public partial class MainWindow
         transposeClock.Tick += (_, _) => RefreshTransposeNote();
         inspectorRefresh.Add(RefreshTransposeNote);
         Timeline.TransposeProgress = TransposeProgress;
+        Timeline.FittingTempo = t => transposing.Any(j => j.Key.Stretch != 1 && j.Value.TrackId == t.Track.Id);
     }
 
     /// <summary>The selected track's Transponer, from the inspector.</summary>
@@ -132,20 +142,22 @@ public partial class MainWindow
             foreach (var lc in lt.Clips)
             {
                 if (lc.Audio is not { } audio || lc.Media is not { } media) continue;
-                if (semis == 0)
+                double stretch = TransposeCache.Step(lc.Clip.Stretch);
+                if (semis == 0 && stretch == 1)
                 {
-                    lc.Sound = audio.Sound;
-                    lc.SoundSemis = 0;
+                    lc.Play(audio.Sound, 0);
                     continue;
                 }
-                var key = new TransposeKey(media.Id, semis);
+                var key = new TransposeKey(media.Id, semis, stretch);
                 wanted.Add(key);
                 if (transposed.TryGetValue(key, out var sound))
                 {
-                    lc.Sound = sound;
-                    lc.SoundSemis = semis;
+                    lc.Play(sound, semis);
+                    continue;
                 }
-                else if (!transposing.ContainsKey(key) && !transposeFailed.Contains(key) && st.Resolve(media.Audio) is { } path)
+                lc.TurnSound();
+                if (lc.Sound?.L.Length != lc.SoundLength) lc.Sound = ClipSound.Silent;
+                if (!transposing.ContainsKey(key) && !transposeFailed.Contains(key) && st.Resolve(media.Audio) is { } path)
                     StartTranspose(st, key, path, audio, lt.Track.Id, string.IsNullOrWhiteSpace(lt.Track.Name) ? media.Name : lt.Track.Name);
             }
         }
@@ -164,12 +176,32 @@ public partial class MainWindow
         RefreshTransposeNote();
     }
 
+    /// <summary>The card of a tempo change: one bar for all its takes, gone when the last one is ready.</summary>
+    void RefreshStretchToast()
+    {
+        var jobs = transposing.Where(j => j.Key.Stretch != 1).Select(j => j.Value).ToList();
+        if (jobs.Count == 0)
+        {
+            stretchToast?.Close();
+            stretchToast = null;
+            return;
+        }
+        stretchToast ??= Toasts.ShowProgress(Loc.T("stretch.working"));
+        stretchToast.Report(jobs.Average(j => j.Progress));
+    }
+
     void StartTranspose(ProjectStore st, TransposeKey key, string path, MediaAudio audio, string trackId, string name)
     {
         var job = new TransposeJob(trackId);
         transposing[key] = job;
         var ct = job.Cts.Token;
-        Task.Run(() => TransposeCache.Get(st.CachePath, path, audio.L, audio.R, key.Semis, p => job.Progress = (float)p, ct), ct)
+        Task.Run(() =>
+            {
+                if (key.Stretch != 1 && ct.WaitHandle.WaitOne(StretchSettle)) ct.ThrowIfCancellationRequested();
+                renderTurn.Wait(ct);
+                try { return TransposeCache.Get(st.CachePath, path, audio.L, audio.R, key.Semis, key.Stretch, p => job.Progress = (float)p, ct); }
+                finally { renderTurn.Release(); }
+            }, ct)
             .ContinueWith(t => Dispatcher.UIThread.Post(() =>
             {
                 if (!transposing.TryGetValue(key, out var current) || current != job) return; // no longer wanted
@@ -178,14 +210,14 @@ public partial class MainWindow
                 {
                     transposed[key] = new ClipSound(t.Result.Left, t.Result.Right);
                     // the last of the track's takes is ready: say so, unless it came straight from the cache
-                    if (job.Clock.Elapsed >= TransposeToastAfter && !transposing.Values.Any(j => j.TrackId == trackId)
+                    if (key.Stretch == 1 && job.Clock.Elapsed >= TransposeToastAfter && !transposing.Values.Any(j => j.TrackId == trackId)
                         && tracks.FirstOrDefault(x => x.Track.Id == trackId) is { } lt && lt.Track.Transpose == key.Semis)
                         Toast(Loc.T("transpose.done", name, TransposeText(key.Semis)));
                 }
                 else if (!t.IsCanceled)
                 {
                     transposeFailed.Add(key);
-                    Status(Loc.T("transpose.error", name, t.Exception?.GetBaseException().Message ?? ""));
+                    Status(Loc.T(key.Stretch != 1 ? "stretch.error" : "transpose.error", name, t.Exception?.GetBaseException().Message ?? ""));
                 }
                 RefreshTranspose();
             }), TaskScheduler.Default);
@@ -196,6 +228,7 @@ public partial class MainWindow
     void RefreshTransposeNote()
     {
         var progress = sel == null ? null : TransposeProgress(sel);
+        RefreshStretchToast();
         transposeNote.IsVisible = progress != null;
         if (progress is { } p) transposeNote.Text = Loc.T("insp.transpose.working", $"{p * 100:0}");
         if (mx != null && mixerView && !masteringView) foreach (var r in mx.Transpose) r();
@@ -206,13 +239,11 @@ public partial class MainWindow
     void PruneTransposeCache(ProjectStore st)
     {
         if (st.ReadOnly) return;
-        var used = new List<(string Path, int Length, double Semis)>();
+        var used = new List<(string Path, int Length, double Semis, double Stretch)>();
         foreach (var lt in tracks)
-        {
-            if (lt.Track.Transpose == 0) continue;
             foreach (var lc in lt.Clips)
-                if (lc.Audio != null && st.Resolve(lc.Media?.Audio) is { } path) used.Add((path, lc.Audio.L.Length, lt.Track.Transpose));
-        }
-        _ = Task.Run(() => TransposeCache.Prune(st.CachePath, used.Select(u => TransposeCache.PathFor(st.CachePath, u.Path, u.Length, u.Semis)).ToList()));
+                if ((lt.Track.Transpose != 0 || lc.Clip.Stretch != 1) && lc.Audio != null && st.Resolve(lc.Media?.Audio) is { } path)
+                    used.Add((path, lc.Audio.L.Length, lt.Track.Transpose, lc.Clip.Stretch));
+        _ = Task.Run(() => TransposeCache.Prune(st.CachePath, used.Select(u => TransposeCache.PathFor(st.CachePath, u.Path, u.Length, u.Semis, u.Stretch)).ToList()));
     }
 }

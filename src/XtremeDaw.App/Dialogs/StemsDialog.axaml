@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:XtremeDaw.App"
+             x:Class="XtremeDaw.App.Dialogs.StemsDialog"
+             AutomationProperties.Name="{loc:T stems.title}"
+             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+
+  <!-- same frame as UnsavedDialog: how many stems and how good, before a job that can take minutes -->
+  <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center"
+          Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <StackPanel Margin="24,22,24,20" Spacing="14">
+      <StackPanel Spacing="2">
+        <TextBlock Text="{loc:T stems.title}" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock x:Name="ClipName" Classes="dim" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="{loc:T stems.count}" />
+        <Border Classes="seg" HorizontalAlignment="Left">
+          <StackPanel Orientation="Horizontal">
+            <ToggleButton x:Name="Two" Classes="seg" Content="{loc:T stems.two}" ToolTip.Tip="{loc:T stems.two.tip}" />
+            <ToggleButton x:Name="Four" Classes="seg" Content="{loc:T stems.four}" ToolTip.Tip="{loc:T stems.four.tip}" />
+            <ToggleButton x:Name="Six" Classes="seg" Content="{loc:T stems.six}" ToolTip.Tip="{loc:T stems.six.tip}" />
+          </StackPanel>
+        </Border>
+        <TextBlock x:Name="CountHelp" Classes="dim" TextWrapping="Wrap" />
+      </StackPanel>
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="{loc:T stems.quality}" />
+        <Border Classes="seg" HorizontalAlignment="Left">
+          <StackPanel Orientation="Horizontal">
+            <ToggleButton x:Name="Fast" Classes="seg" Content="{loc:T stems.fast}" />
+            <ToggleButton x:Name="High" Classes="seg" Content="{loc:T stems.high}" />
+            <ToggleButton x:Name="Max" Classes="seg" Content="{loc:T stems.max}" />
+          </StackPanel>
+        </Border>
+        <TextBlock x:Name="Estimate" Classes="dim mono" />
+      </StackPanel>
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <Button Grid.Column="1" x:Name="CancelButton" Classes="btn" Margin="8,0,0,0" Content="{loc:T transport.count.cancel}" />
+        <Button Grid.Column="2" x:Name="SeparateButton" Classes="btn primary" Margin="8,0,0,0" Padding="16,0" Content="{loc:T stems.go}" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

@@ -14,6 +14,10 @@ namespace XtremeDaw.App.Controls;
 public sealed class FxIcon : Control
 {
     public const string Sat = "sat", Comp = "comp", Eq = "eq", Reverb = "reverb", Delay = "delay", Gate = "gate", Transpose = "transpose", Vst = "vst";
+    /// <summary>The master's effects, by their slot kinds; Limpieza and Color are EQs, Multibanda a compressor, Cinta a saturation.</summary>
+    public const string Clean = "clean", Bands = "bands", Color = "color", Tape = "tape", WidthFx = "width", ClipFx = "softclip", Limit = "limiter";
+    /// <summary>The modulation effects, by their slot kinds.</summary>
+    public const string Chorus = "chorus", Flanger = "flanger", Phaser = "phaser", Tremolo = "tremolo";
     /// <summary>Not an effect: the timeline's Mano tool (its button and pointer), because Segoe has no open hand.</summary>
     public const string Hand = "hand";
     /// <summary>Not an effect: a bus, whatever its slots hold, and the badge of one without an icon of its own.</summary>
@@ -30,6 +34,19 @@ public sealed class FxIcon : Control
         [Delay] = Geometry.Parse("M17 2l4 4-4 4 M3 11v-1a4 4 0 0 1 4-4h14 M7 22l-4-4 4-4 M21 13v1a4 4 0 0 1-4 4H3"),
         // lucide "door-open"
         [Gate] = Geometry.Parse("M11 20H2 M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z M11 4H8a2 2 0 0 0-2 2v14 M14 12h.01 M22 20h-3"),
+        [Clean] = Geometry.Parse("M10 8h4 M12 21v-9 M12 8V3 M17 16h4 M19 12V3 M19 21v-5 M3 14h4 M5 10V3 M5 21v-7"),
+        [Color] = Geometry.Parse("M10 8h4 M12 21v-9 M12 8V3 M17 16h4 M19 12V3 M19 21v-5 M3 14h4 M5 10V3 M5 21v-7"),
+        [Bands] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),
+        [Tape] = Geometry.Parse("M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4"),
+        // lucide "move-horizontal", "audio-waveform" and "arrow-down-to-line"
+        [WidthFx] = Geometry.Parse("M8 8l-4 4 4 4 M16 8l4 4-4 4 M2 12h20"),
+        [ClipFx] = Geometry.Parse("M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2"),
+        [Limit] = Geometry.Parse("M12 17V3 M6 11l6 6 6-6 M19 21H5"),
+        // drawn for this grid: two waves side by side, one fast wave, a phase wheel; lucide "activity" for the tremolo
+        [Chorus] = Geometry.Parse("M2 9q5-8 10 0t10 0 M2 15q5-8 10 0t10 0"),
+        [Flanger] = Geometry.Parse("M2 12q2.5-9 5 0t5 0 5 0 5 0"),
+        [Phaser] = Geometry.Parse("M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20 M12 2v20 M2 12h20"),
+        [Tremolo] = Geometry.Parse("M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"),
         // lucide "plug": a VST3 effect, whatever it does
         [Vst] = Geometry.Parse("M12 22v-5 M9 8V2 M15 8V2 M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"),
         // lucide "music": a note for the track's pitch (Transponer)

@@ -22,6 +22,9 @@ Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `wtlab`. Lo g
 - Para **Extraer MIDI**: el modelo de Basic Pitch (Spotify, Apache 2.0, ~230 KB) en `lib\basic-pitch`, que baja
   `tools\get-basic-pitch.ps1` (fuera de git). El build lo copia a `basic-pitch\` junto al exe; sin él, "Extraer MIDI"
   queda deshabilitado y lo dice. Corre con ONNX Runtime (NuGet).
+- Para **Separar en stems**: los modelos de Demucs (Meta, ~425 MB) en `lib\demucs`, que arma `tools\get-demucs.ps1`
+  (fuera de git, necesita [uv](https://docs.astral.sh/uv/)). El build los copia a `demucs\` junto al exe, pero no van en
+  el instalador: la licencia de los pesos no está clara. Sin ellos, la opción queda deshabilitada y lo dice.
 
 ## Compilar y ejecutar
 
@@ -74,6 +77,7 @@ Todos se pueden cambiar en ⚙ Configuración → Atajos de teclado (menos Esc).
 | Ctrl+S | guardar ya |
 | B / P | plegar o abrir el panel del canal / del proyecto (si está oculto con su botón de la barra de título, lo vuelve a mostrar) |
 | F11 | pantalla completa (otra vez F11 vuelve a como estaba) |
+| F1 | ayuda (otra vez F1 la cierra) |
 | Rueda, Shift+rueda, Ctrl+rueda, Alt+rueda | subir y bajar, zoom, desplazar a los costados, alto de pista (los modificadores y el sentido de cada uno, con "Invertir", se cambian en Configuración → Atajos de teclado; zoom y alto también con los sliders al pie de los encabezados). En el mixer, la rueda sola y Ctrl+rueda lo desplazan a los costados y Shift+rueda (o la barra de su cabecera) agranda o achica el ancho de los canales |
 
 En el clip seleccionado, un clic sobre su línea de volumen agrega un punto; los puntos se arrastran y un
@@ -90,7 +94,8 @@ Las herramientas del timeline están en el centro de la barra del proyecto: **Se
 (un clic corta el clip ahí, en la grilla), **Borrar** (saca los clips que toca), **Escuchar** (mantené apretado sobre
 un clip para oír esa pista sola desde ahí), **Zoom** (clic acerca, Alt+clic aleja, arrastrar muestra ese tramo) y
 **Mano** (arrastrar mueve la vista). Donde dos clips de una pista se pisan, el clic derecho → **Traer al frente**
-elige cuál se ve. **Bloquear clip** o **Bloquear pista** (clic derecho) deja una toma que ya quedó bien fija: no se
+elige cuál se ve. **Invertir** (clic derecho en un clip de audio) lo hace sonar de atrás para adelante, sin tocar el
+archivo; no aplica a clips con video. **Bloquear clip** o **Bloquear pista** (clic derecho) deja una toma que ya quedó bien fija: no se
 mueve, no se recorta, no se borra y grabar no la pisa; el volumen, los fades y el encuadre se siguen tocando.
 
 Cada pista o carpeta puede tener su propio alto: arrastrá el borde de abajo de su encabezado (doble clic en el borde
@@ -117,7 +122,7 @@ guitarcam.json        el proyecto
 guitarcam.json.bak    el guardado anterior
 historial/            copias para volver atrás
 media/                grabaciones e importados (nunca se reescriben)
-cache/                tomas transpuestas (se rehacen solas si se borran)
+cache/                tomas transpuestas y estiradas por el tempo (se rehacen solas si se borran)
 exports/              videos y audios exportados
 ```
 
@@ -131,7 +136,7 @@ la consola, sin abrir la ventana.
 | `dispositivos` / `panel` | drivers ASIO y dispositivos WASAPI / panel del driver (tamaño de buffer) |
 | `latencia [--modo cable\|tocando] [--ver] [--borrar]` | mide la latencia ida y vuelta, o muestra / borra la guardada |
 | `grabar --monitor --sat valvula` | graba sobre el click; con `--monitor` te escuchás con el efecto (también `--ganancia`, `--descartar`, `--entradas 1,2,3-4`) |
-| `mezclar proyecto\|toma.wav [--salida mezcla.wav] [--cadena vida,comp,eq,puerta]` | renderiza la mezcla offline, con el mismo grafo que la reproducción; con un WAV, `--cadena` arma los slots en ese orden (se pueden repetir) |
+| `mezclar proyecto\|toma.wav [--salida mezcla.wav] [--cadena vida,comp,eq,puerta,reverb,limitador…]` | renderiza la mezcla offline, con el mismo grafo que la reproducción; con un WAV, `--cadena` arma los slots en ese orden (se pueden repetir) |
 | `procesar toma.wav --sat cinta --comp-estilo punteo --eq ritmica --reverb cuarto --delay punteada` | aplica efectos a un WAV |
 | `click` | escribe todos los sonidos de click a un WAV |
 | `sistema [--segundos 5] [--instalar-ffmpeg]` | CPU, GPU y RAM, si FFmpeg está en el PATH y con qué placa de video exporta; `--instalar-ffmpeg` lo instala antes con winget, como el aviso de la ventana |
@@ -141,6 +146,7 @@ la consola, sin abrir la ventana.
 | `looks [--look id] [--salida look.cube] [--blancos n] [--negros n] [--luz n]` | los looks de color con colores de prueba, comprobación de rango y, con `--look`, el LUT `.cube` de ese look con Blancos, Negros y Sensación de luz |
 | `masterizar archivo.wav [--cuanto 0.35] [--banda-graves\|--banda-medios\|--banda-agudos 0..1] [--corte] [--barro] [--graves] [--presencia] [--aire] [--inclinacion] [--cinta] [--ancho] [--graves-mono] [--recorte] [--empuje] [--techo] [--release] [--sin-limitador] [--volumen youtube\|instagram\|tiktok\|spotify\|apple] [--pua 0..1] [--look natural\|glue\|bright\|warm\|front\|pick [--cuanto-look 1]] [--sugerime]` | el mastering de la ventana sobre un WAV: cuánto comprime cada banda (y la Púa), cuánto recortan el soft clip (Auto incluido) y el limitador y los LUFS de entrada y salida; `--volumen` es el Destino del master (mide el archivo y usa esa ganancia en vez del Empuje), `--look` pone un look, `--sugerime` muestra qué oye y qué propone, y masteriza con eso |
 | `midi ver\|pista\|clip\|nota\|acordes\|quitar carpeta` | pistas MIDI, sus clips y sus notas (`clip --pista n --en 0 --compases 4`, `nota --clip id --altura C4 --pulso 0 --largo 1 --vel 100`, `acordes --clip id` escribe Do, Sol, Lam, Fa); `mezclar carpeta` las renderiza |
+| `midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]`, `patron-insertar --clip id --pista n [--en 0]`, `patron-unico --clip id`, `patron-disolver --clip id`, `patron-borrar --clip id` | hace de un clip un patrón (clips enlazados, una vuelta que se repite), suma otro clip del patrón, saca uno sonando igual, termina el patrón dejando todos sus clips únicos o lo borra con sus clips |
 | `midi cuantizar carpeta --clip id [--grilla 1/16]` | mueve el comienzo de las notas a la grilla de la canción (1/4, 1/8, 1/16, 1/32, 1/8T) |
 | `midi velocidad carpeta --clip id [--rango 100]` | escala las velocidades alrededor de su promedio (50 las acerca, 0 las empareja, 150 da más dinámica) |
 | `midi humanizar carpeta --clip id [--cantidad 10] [--semilla n]` | mueve cada velocidad al azar hasta ± cantidad |
@@ -154,12 +160,19 @@ la consola, sin abrir la ventana.
 | `colas [--proyecto carpeta] [--bloque 192] [--segundos 3] [--silencio 120] [--paso 5] [--nivel 0.1] [--caida dB/s]` | lo que cuestan por bloque los buses y el master mientras se apagan sus colas; `--caida` apaga la entrada de a poco, como la cola de un instrumento |
 | `vst vivo "nombre" [--segundos 4] [--bloque 256] [--tope 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--prioridad] [--mmcss] [--ventana] [--salida x.wav]` | toca el instrumento como la reproducción, en bloques del driver a tiempo real, y cuenta los bloques perdidos y los que salieron con sonido, lo que tarda cada bloque en el hilo de audio y en el del plugin, y la CPU de su proceso. `--tope` es el bloque máximo que se le anuncia (por defecto, el del driver), `--prioridad` y `--mmcss` suben este hilo a la prioridad de uno de driver. `--desde` arranca en ese segundo (en medio de una nota), `--espera` lo deja parado antes, `--sin-carga` no espera a que suene y `--apuro 20` adelanta los bloques para que el plugin llegue siempre tarde |
 | `vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--apagado]` | pasa audio (o acordes de prueba) por un efecto como la exportación y en vivo, en bloques del driver a tiempo real; escribe los dos WAV y comprueba que en vivo llega justo un bloque después (lo que cuenta la compensación de latencia) |
+| `vst parametros "nombre" [--mover "parámetro"] [--segundos 2]` | lista lo que el plugin deja automatizar; con `--mover`, pasa un carril de 0 a 1 por ese parámetro como la exportación y comprueba que el sonido cambia |
 | `midi comprobar` | el sonido de las notas: igual en cualquier tamaño de bloque, termina con el release, la exportación suena como la reproducción y el clip pasa a notas con el tempo; y el teclado: una tecla suena como la nota escrita, el pedal, las tomas, cuantizar y el clip grabado (también corre en `comprobar-dsp`) |
 | `transponer archivo.wav [--semitonos 2] [--salida x.wav]` | cambia el tono sin cambiar el largo, como el Transponer de la pista (de −12 a +12, admite cents) |
+| `estirar archivo.wav [--razon 1.25 \| --de 120 --a 100] [--semitonos 0] [--salida x.wav] [--comprobar]` | cambia el largo sin cambiar el tono, como un clip que sigue el tempo; `--comprobar` corre solo sus filas de `comprobar-dsp` |
+| `proyecto editar carpeta tempo bpm` | cambia el tempo con todo en su compás y deja los clips estirados en `cache/` |
 | `proyecto editar carpeta transponer pista semitonos` | el Transponer de esa pista; deja sus tomas transpuestas en `cache/` |
+| `tiempos-carga archivo` | cuánto tarda cada paso de cargar un audio: decodificar, remuestrear y analizar |
+| `samples listar carpeta [--buscar "kick 808"]`, `samples leer archivo` | los samples de una carpeta, como los busca la Biblioteca; decodifica un archivo y dice si fue nativo o por FFmpeg |
 | `lufs archivo` / `afinar archivo [--en segundos] [--umbral -50]` | volumen integrado de un archivo / la nota que oye el afinador en ese momento, con la sensibilidad de la ventana (dB) |
 | `tempo archivo [--desde s] [--hasta s]` | los BPM de un archivo (o de ese tramo), su primer golpe y qué tan seguro está, como "Detectar tempo" en el clic derecho de un clip |
+| `escala archivo [--desde s] [--hasta s] [--callado] [--espectro] [--bajo stem.wav]` | la escala de un archivo (o de ese tramo), sus notas, la afinación y los acordes con su tiempo, como "Detectar escala y acordes" en un clip; `--espectro` no prueba otros métodos; `--bajo` compara los acordes con ese stem de bajo; `--comprobar` corre solo sus comprobaciones |
 | `extraer-midi archivo [--melodia] [--desde s] [--hasta s] [--inicio 0.5] [--nota 0.3] [--min-ms 70] [--midi x.mid] [--bpm 120] [--verdad notas.json] [--callado]` | las notas de un archivo, como "Extraer MIDI" en un clip; `--midi` las guarda en un .mid y `--verdad` las puntúa contra notas conocidas (`[[inicio s, largo s, nota], …]`); `--comprobar` corre solo sus comprobaciones |
+| `separar archivo [--stems 2\|4\|6] [--calidad rapida\|alta\|maxima] [--sin-desplazar] [--desde s] [--hasta s] [--salida carpeta] [--cancelar s] [--cpu]` | separa el archivo y deja un WAV por stem, como "Separar en stems" en un clip; `--sin-desplazar` hace una pasada sin correr el audio, para comparar versiones; `--comprobar` corre solo sus comprobaciones |
 | `nitidez [video\|imagen] [--en 1] [--nitidez 60] [--claridad 60] [--resplandor 0] [--look hdr\|dreamy] [--intensidad 100] [--alto 1080] [--ancho-preview 640] [--carpeta dir]` | compara Nitidez, Claridad y Resplandor (y lo que suman los looks HDR y Soñado) de la exportación (FFmpeg) con los de la preview sobre el mismo cuadro, a tamaño de exportación y al ancho que muestra la preview; mide cuánto cuestan por cuadro y deja PNG para mirarlas |
 | `leer-video archivo [--cpu] [--saltos 20] [--cuadro 12.5 --salida x.bmp] [--comparar]` | mide el decodificador de la preview (FFmpeg dentro de la app): abrir, leer seguido, saltar y memoria por cuadro; `--comparar` lo mide contra ffmpeg.exe (tiempo por salto y diferencia de imagen) |
 | `camara [listar]` | las cámaras que ve FFmpeg y sus formatos |
@@ -175,7 +188,7 @@ la consola, sin abrir la ventana.
 | `proyecto abrir\|clips\|versiones\|volver carpeta` | abre un proyecto, lista pistas y clips, y recorre el historial |
 | `proyecto guardar-version carpeta [nombre] \| nombrar-version carpeta n [nombre]` | guarda una versión ahora / le pone nombre a la n de la lista (con nombre no se borra sola; sin nombre se lo saca) |
 | `proyecto toma\|cortar carpeta [--camara]` | graba un tono como la ventana / lo corta sin cerrar, para probar la recuperación |
-| `proyecto editar carpeta mover\|recortar-inicio\|recortar-final\|fade-in\|fade-out clip delta` | edita un clip como en el timeline (más: `a-pista`, `dividir`, `duplicar` (varios ids con comas), `pegar`, `ganancia`, `curva`, `quitar-clip`, `nueva-pista`…) |
+| `proyecto editar carpeta mover\|recortar-inicio\|recortar-final\|fade-in\|fade-out clip delta` | edita un clip como en el timeline (más: `a-pista`, `dividir`, `duplicar` (varios ids con comas), `pegar`, `ganancia`, `curva`, `invertir`, `quitar-clip`, `nueva-pista`…) |
 | `proyecto mezcla carpeta [ab\|copiar\|olvidar]` | el A \| B del mixer: pasa a la otra mezcla, copia esta sobre la otra u olvida la otra |
 | `proyecto verificar-ab` | comprueba el A/B de la mezcla |
 | `proyecto editar carpeta bloquear\|desbloquear clip\|pista` | fija un clip (o toda la pista): no se mueve, no se recorta, no se borra y grabar no lo pisa |
@@ -189,8 +202,8 @@ la consola, sin abrir la ventana.
 | `proyecto marcadores carpeta [agregar\|mover\|renombrar\|quitar … \| capitulos]`, `proyecto repetir carpeta [desde hasta \| --quitar]` | marcadores del tema y rango A–B del loop (`capitulos`: los marcadores como capítulos de YouTube) |
 | `proyecto duracion carpeta` | cuánto dura el tema y si entra en cada red (historias, X, Reels · Shorts, TikTok) |
 | `proyecto historial carpeta` | tomas en uso y no usadas, exportaciones y actividad |
-| `proyecto insertos carpeta pista [agregar vida\|comp\|eq\|puerta [--en n] \| agregar vst --plugin "nombre" \| quitar n \| mover n m \| duplicar n \| prender n \| apagar n \| plegar n]` | los slots de efectos de la pista en su orden; sin operación, los lista (`plegar` lo pliega en el mixer) |
-| `proyecto insertos carpeta --bus id\|n [agregar reverb\|delay\|vida\|comp\|eq\|puerta … \| quitar n \| …]` | lo mismo para un bus (la reverb y el delay solo van en buses) |
+| `proyecto insertos carpeta pista [agregar vida\|comp\|eq\|puerta\|reverb\|delay\|limpieza\|multibanda\|color\|cinta\|ancho\|softclip\|limitador\|chorus\|flanger\|phaser\|tremolo [--en n] \| agregar vst --plugin "nombre" \| quitar n \| mover n m \| duplicar n \| prender n \| apagar n \| plegar n]` | los slots de efectos de la pista en su orden; sin operación, los lista (`plegar` lo pliega en el mixer) |
+| `proyecto insertos carpeta --bus id\|n [agregar … \| quitar n \| …]`, `proyecto insertos carpeta [agregar … \| cadena \| quitar n \| …] --master` | lo mismo para un bus o el master; `cadena` (solo `--master`) es "Cadena completa": agrega las etapas que falten |
 | `proyecto buses carpeta [agregar [nombre] [--tipo reverb\|delay\|vacio] \| quitar n \| renombrar n nombre \| volumen n x \| paneo n x \| mute n \| color n #rrggbb\|ninguno \| icono n id\|ninguno]` | los buses, en el orden en que suenan, con sus slots, su salida y sus envíos; quitar uno se lleva los envíos que le llegaban |
 | `proyecto envios carpeta quien [bus [nivel] [--pre\|--post] [--apagar\|--prender] [--quitar\|--sumar]] [--salida bus\|master]` | la salida y los envíos de una pista (número o id) o `carpeta:n`; un bus (`bus:n`) sale solo al master, así que lo rechaza; `--quitar`/`--sumar` saca o vuelve a poner un bus en su lista |
 | `proyecto verificar-deshacer\|verificar-pasos\|verificar-clips\|verificar-tomas\|verificar-importar\|verificar-historial\|verificar-carpetas\|verificar-marcadores\|verificar-paquete` | pruebas automáticas sobre una carpeta temporal |
@@ -201,3 +214,9 @@ la consola, sin abrir la ventana.
 
 En `proyecto` y `proyectos`, `--datos X` usa otra carpeta para la configuración, los recientes y las
 plantillas (para probar sin tocar los tuyos), y `--raiz X` otra carpeta de proyectos.
+
+`wtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: estado de los componentes opcionales, instalación y prueba de la descarga contra un servidor local.
+
+## Modelos de Separar en stems
+
+Los modelos son de Meta (Demucs, https://github.com/facebookresearch/demucs). XTreme no los incluye ni los aloja: se bajan de su fuente original a tu PC cuando los instalás. Tienen sus propios términos y no están cubiertos por la licencia de XTreme. La app funciona sin ellos.

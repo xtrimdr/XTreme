@@ -38,6 +38,11 @@ public static class EditSteps
         return new("mic", [P(T("step.recordedMany", "Grabaste {0}", Channels(takes.Count + midiTracks.Count)))]);
     }
 
+    /// <summary>The labels of what the Patrones tab does to a whole pattern: the diff would only see its clips.</summary>
+    public static Label PatternRenamed(string name) => new("edit", [P(T("step.patternRenamed", "Renombraste el patrón ")), Q(name)]);
+    public static Label PatternRemoved(string name) => new("trash", [P(T("step.patternRemoved", "Borraste el patrón ")), Q(name)]);
+    public static Label PatternDissolved(string name) => new("edit", [P(T("step.patternDissolved", "Dejaste como únicos los clips de ")), Q(name)]);
+
     static string Channels(int n) => n == 1 ? T("act.oneChannel", "un canal") : T("act.nChannels", "{0} canales", n);
 
     /// <summary>The label of the step that took the editable state from <paramref name="before"/> to <paramref name="after"/>.</summary>
@@ -59,11 +64,23 @@ public static class EditSteps
         var busNames = ById(b["buses"] as JsonArray).Concat(ById(a["buses"] as JsonArray))
             .GroupBy(kv => kv.Key).ToDictionary(g => g.Key, g => Name(g.First().Value));
         Tracks(a, b, changes, mediaName, busNames);
+        Automation(a["tracks"] as JsonArray, b["tracks"] as JsonArray, changes);
         Folders(a["folders"] as JsonArray, b["folders"] as JsonArray, changes, busNames);
         Buses(a["buses"] as JsonArray, b["buses"] as JsonArray, changes, busNames);
         Markers(a["markers"] as JsonArray, b["markers"] as JsonArray, changes);
+        if (!JsonNode.DeepEquals(a["chordMarkers"], b["chordMarkers"]))
+            changes.Add(new("marker", [P(T("step.chords", "Cambiaste los acordes detectados"))], "chords", null));
         Settings(a, b, changes);
         return Combine(changes);
+    }
+
+    /// <summary>A track whose lanes changed, whichever way (<see cref="Automations"/>).</summary>
+    static void Automation(JsonArray? before, JsonArray? after, List<Change> changes)
+    {
+        var old = ById(before);
+        foreach (var (id, t) in ById(after))
+            if (old.TryGetValue(id, out var was) && !JsonNode.DeepEquals(was["automation"], t["automation"]))
+                changes.Add(new("volume", [P(T("step.automation", "Automatización de ")), Q(Name(t))], "track-automation", Name(t)));
     }
 
     static Label Combine(List<Change> changes)
@@ -288,7 +305,7 @@ public static class EditSteps
     {
         InsertSlot.ReverbKind => !Bool(s["reverb"] as JsonObject, "muted"),
         InsertSlot.DelayKind => !Bool(s["delay"] as JsonObject, "muted"),
-        { } kind => Bool(s[kind] as JsonObject, "on"),
+        { } kind => Bool((s[kind] ?? s["stage"]) as JsonObject, "on"),
         _ => false,
     };
 

@@ -114,10 +114,10 @@ static class TransposeCommands
         return v.ToString((v >= 0 ? "+0." : "0.") + new string('0', decimals));
     }
 
-    static void Row(string what, string got, string want, bool pass) =>
+    internal static void Row(string what, string got, string want, bool pass) =>
         Console.WriteLine($"{what,-36} {got,12} {want,10}  {(pass ? "igual" : "DISTINTO")}");
 
-    static float[] Tone(int n, Func<int, double> f)
+    internal static float[] Tone(int n, Func<int, double> f)
     {
         var x = new float[n];
         for (int i = 0; i < n; i++) x[i] = (float)f(i);
@@ -125,7 +125,7 @@ static class TransposeCommands
     }
 
     /// <summary>A sine's frequency from its interpolated rising zero crossings.</summary>
-    static double Frequency(float[] x, int from, int to)
+    internal static double Frequency(float[] x, int from, int to)
     {
         double first = -1, last = -1;
         int count = 0;
@@ -142,9 +142,9 @@ static class TransposeCommands
         return count * Sr / (last - first);
     }
 
-    static double Rms(float[] x, int from, int to) => Math.Sqrt(Energy(x, from, to) / (to - from));
+    internal static double Rms(float[] x, int from, int to) => Math.Sqrt(Energy(x, from, to) / (to - from));
 
-    static double Energy(float[] x, int from, int to)
+    internal static double Energy(float[] x, int from, int to)
     {
         double e = 0;
         for (int i = Math.Max(0, from); i < Math.Min(x.Length, to); i++) e += x[i] * (double)x[i];

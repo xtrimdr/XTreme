@@ -11,7 +11,8 @@ public readonly record struct MasterBandParams(double Amount);
 /// <see cref="MasterLimiter"/>'s, apart from the master's ON: its own ON (<see cref="LimOn"/>), Empuje (gain into it),
 /// Techo and Release. <see cref="TargetLufs"/> is the Destino (null = as it is) and <see cref="TargetGainDb"/> the gain
 /// measured to land on it (<see cref="MasterLoudness"/>), which then takes the Empuje's place. <see cref="PickAmount"/>
-/// is the multiband's fourth band, Púa (<see cref="MasterPickTamer"/>, 0 = off).
+/// is the multiband's fourth band, Púa (<see cref="MasterPickTamer"/>, 0 = off). <see cref="ChainInSlots"/>: the chain up to
+/// the soft clip lives in the master's slots (<see cref="MixBusSpec.MasterInserts"/>), so <see cref="MasterChain"/> stays out.
 /// </summary>
 public sealed record MasterParams(
     bool On,
@@ -42,7 +43,8 @@ public sealed record MasterParams(
     double ClipDb = 0,
     double? TargetLufs = null,
     double TargetGainDb = 0,
-    double PickAmount = 0)
+    double PickAmount = 0,
+    bool ChainInSlots = false)
 {
     /// <summary>The most the limiter's Empuje pushes the mix into it.</summary>
     public const double DriveMaxDb = 12;
@@ -589,8 +591,111 @@ public sealed class StereoWidth
 }
 
 /// <summary>
+/// The master's three-band compressor: <see cref="Crossover3"/> and one <see cref="MasterBandComp"/> per band, added back.
+/// Apart from <see cref="MasterChain"/> so a slot (<see cref="BandsInsert"/>) runs the very same thing. The UI hands it
+/// a whole <see cref="Config"/>; the audio thread takes it at the next block. Buffers preallocated
+/// (<see cref="TrackDspChain.MaxBlockSize"/>), nothing allocated in <see cref="Process"/>.
+/// </summary>
+public sealed class MasterMultiband
+{
+    const int Max = TrackDspChain.MaxBlockSize;
+
+    readonly record struct Shape(double Headroom, double Ratio, double Knee, double Attack, double Release);
+    sealed record Config(Shape[] Bands, double LowX, double HighX);
+
+    readonly Crossover3 xo;
+    readonly MasterBandComp[] comps = new MasterBandComp[MasterBands.Count];
+    readonly float[][] bandL = new float[MasterBands.Count][], bandR = new float[MasterBands.Count][];
+    readonly float[] grMin = new float[MasterBands.Count];
+    volatile Config config;
+    Config? applied;
+
+    public MasterMultiband(double sampleRate)
+    {
+        xo = new Crossover3(sampleRate);
+        for (int i = 0; i < MasterBands.Count; i++)
+        {
+            comps[i] = new MasterBandComp(sampleRate);
+            bandL[i] = new float[Max];
+            bandR[i] = new float[Max];
+        }
+        config = Build(MasterParams.Off);
+    }
+
+    static Config Build(MasterParams p)
+    {
+        var bands = new Shape[MasterBands.Count];
+        for (int i = 0; i < MasterBands.Count; i++)
+        {
+            var b = p.Band(i);
+            var (headroom, ratio, knee, attack, release) = MasterBands.Shape(i, b.Amount);
+            bool active = p.BandsOn && b.Amount > 0;
+            bands[i] = new Shape(headroom, active ? ratio : 1, knee, attack, release);
+        }
+        var (lo, hi) = MasterBands.Crossovers(p);
+        return new Config(bands, lo, hi);
+    }
+
+    public void Set(MasterParams p)
+    {
+        var c = Build(p);
+        xo.Set(c.LowX, c.HighX);
+        config = c;
+    }
+
+    public void Reset()
+    {
+        xo.Reset();
+        foreach (var c in comps) c.Reset();
+    }
+
+    /// <summary>For a band's meter: the deepest reduction since the last call, in dB (≤ 0).</summary>
+    public double TakeReductionDb(int band) => Interlocked.Exchange(ref grMin[band], 0f);
+
+    /// <summary>Splits the block, compresses each band (with its own make-up) and adds them back, in place.</summary>
+    public void Process(Span<float> x, Span<float> y)
+    {
+        int n = x.Length;
+        var c = config;
+        if (!ReferenceEquals(c, applied))
+        {
+            for (int i = 0; i < MasterBands.Count; i++)
+            {
+                var b = c.Bands[i];
+                var comp = comps[i];
+                comp.Headroom = b.Headroom;
+                comp.Ratio = b.Ratio;
+                comp.Knee = b.Knee;
+                comp.Attack = b.Attack;
+                comp.Release = b.Release;
+            }
+            applied = c;
+        }
+        var lowL = bandL[0].AsSpan(0, n); var lowR = bandR[0].AsSpan(0, n);
+        var midL = bandL[1].AsSpan(0, n); var midR = bandR[1].AsSpan(0, n);
+        var highL = bandL[2].AsSpan(0, n); var highR = bandR[2].AsSpan(0, n);
+        xo.Split(x, y, lowL, lowR, midL, midR, highL, highR);
+        x.Clear();
+        y.Clear();
+        for (int b = 0; b < MasterBands.Count; b++)
+        {
+            var bl = bandL[b].AsSpan(0, n);
+            var br = bandR[b].AsSpan(0, n);
+            comps[b].Process(bl, br);
+            float gr = (float)comps[b].TakeMeter();
+            if (gr < grMin[b]) grMin[b] = gr;
+            for (int i = 0; i < n; i++)
+            {
+                x[i] += bl[i];
+                y[i] += br[i];
+            }
+        }
+    }
+}
+
+/// <summary>
 /// The master chain, between the returns and the limiter (<see cref="MixGraphBus"/>), the same in playback and export:
-/// low cut + mud → three-band compressor (<see cref="Crossover3"/>, one <see cref="MasterBandComp"/> per band, each with its
+/// low cut + mud → three-band compressor (<see cref="MasterMultiband"/>, each band with its
 /// self-set threshold and level-keeping make-up) and the Púa (<see cref="MasterPickTamer"/>) → lows, presence, air and tilt → Cinta (the tracks' tape
 /// <see cref="Saturator"/>, gentler) → Ancho (<see cref="StereoWidth"/>). The soft clip and the limiter come after, in
 /// <see cref="MixGraphBus"/>. Turning it on or off and each stage on or off crossfade over <see cref="FadeSec"/>, so nothing clicks. Off and faded out, it costs nothing. Buffers preallocated (<see cref="TrackDspChain.MaxBlockSize"/>):
@@ -605,24 +710,26 @@ public sealed class MasterChain
     /// <summary>The level the tape's drive is set for: where a mix usually sits (the tracks' tape reads its take's).</summary>
     const double MixLevelDb = -18;
 
+    /// <summary>The Cinta at <paramref name="amount"/> (0 to 1, 0 = off), here and in a slot (<see cref="TapeInsert"/>).</summary>
+    public static SatParams TapeParams(double amount)
+    {
+        double t = Math.Clamp(double.IsFinite(amount) ? amount : 0, 0, 1);
+        return SatParams.From(t > 0, SatMode.Tape, t * TapeScale, MixLevelDb);
+    }
+
     const int Max = TrackDspChain.MaxBlockSize;
 
-    sealed record Config(bool On, bool EqOn, bool ColorOn, bool TapeOn, bool WidthOn, MasterBandShape[] Bands, double LowX, double HighX);
-    readonly record struct MasterBandShape(double Headroom, double Ratio, double Knee, double Attack, double Release);
+    sealed record Config(bool On, bool EqOn, bool ColorOn, bool TapeOn, bool WidthOn);
 
     readonly double fs;
     readonly MasterEq eq;
-    readonly Crossover3 xo;
+    readonly MasterMultiband bands;
     readonly Saturator tape;
     readonly StereoWidth width;
     readonly MasterPickTamer pick;
-    readonly MasterBandComp[] comps = new MasterBandComp[MasterBands.Count];
     readonly float[] dryL = new float[Max], dryR = new float[Max], tmpL = new float[Max], tmpR = new float[Max];
-    readonly float[][] bandL = new float[MasterBands.Count][], bandR = new float[MasterBands.Count][];
-    readonly float[] grMin = new float[MasterBands.Count];
 
     volatile Config config;
-    Config? applied;
     bool running;
     double wet, eqWet, colorWet, tapeWet, widthWet;
 
@@ -630,50 +737,29 @@ public sealed class MasterChain
     {
         fs = sampleRate;
         eq = new MasterEq(sampleRate);
-        xo = new Crossover3(sampleRate);
+        bands = new MasterMultiband(sampleRate);
         tape = new Saturator(sampleRate);
         width = new StereoWidth(sampleRate);
         pick = new MasterPickTamer(sampleRate);
-        for (int i = 0; i < MasterBands.Count; i++)
-        {
-            comps[i] = new MasterBandComp(sampleRate);
-            bandL[i] = new float[Max];
-            bandR[i] = new float[Max];
-        }
         config = Build(MasterParams.Off);
     }
 
-    static Config Build(MasterParams p)
-    {
-        var bands = new MasterBandShape[MasterBands.Count];
-        for (int i = 0; i < MasterBands.Count; i++)
-        {
-            var b = p.Band(i);
-            var (headroom, ratio, knee, attack, release) = MasterBands.Shape(i, b.Amount);
-            bool active = p.BandsOn && b.Amount > 0;
-            bands[i] = new MasterBandShape(headroom, active ? ratio : 1, knee, attack, release);
-        }
-        var (lo, hi) = MasterBands.Crossovers(p);
-        return new Config(p.On, p.EqOn, p.ColorOn, p.TapeOn, p.WidthOn, bands, lo, hi);
-    }
+    static Config Build(MasterParams p) => new(p.On, p.EqOn, p.ColorOn, p.TapeOn, p.WidthOn);
 
     public void Set(MasterParams p)
     {
         eq.Set(p);
-        double t = Math.Clamp(double.IsFinite(p.TapeAmount) ? p.TapeAmount : 0, 0, 1);
-        tape.Set(SatParams.From(t > 0, SatMode.Tape, t * TapeScale, MixLevelDb));
+        tape.Set(TapeParams(p.TapeAmount));
         width.Set(p.Width, p.MonoBassHz);
         pick.Set(p.BandsOn ? p.PickAmount : 0);
-        var c = Build(p);
-        xo.Set(c.LowX, c.HighX);
-        config = c;
+        bands.Set(p);
+        config = Build(p);
     }
 
     public void Reset()
     {
         eq.Reset();
-        xo.Reset();
-        foreach (var c in comps) c.Reset();
+        bands.Reset();
         tape.Reset();
         width.Reset();
         pick.Reset();
@@ -687,7 +773,7 @@ public sealed class MasterChain
     }
 
     /// <summary>For the band's meter: the deepest reduction since the last call, in dB (≤ 0).</summary>
-    public double TakeReductionDb(int band) => Interlocked.Exchange(ref grMin[band], 0f);
+    public double TakeReductionDb(int band) => bands.TakeReductionDb(band);
 
     /// <summary>For the Púa's meter: its deepest cut since the last call, in dB (≤ 0).</summary>
     public double TakePickReductionDb() => pick.TakeReductionDb();
@@ -708,8 +794,7 @@ public sealed class MasterChain
         {
             // starting from off: old filter states would be a burst of the past; the fade-in hides the restart
             eq.Reset();
-            xo.Reset();
-            foreach (var comp in comps) comp.Reset();
+            bands.Reset();
             tape.Reset();
             width.Reset();
             pick.Reset();
@@ -718,20 +803,6 @@ public sealed class MasterChain
             tapeWet = c.TapeOn ? 1 : 0;
             widthWet = c.WidthOn ? 1 : 0;
             running = true;
-        }
-        if (!ReferenceEquals(c, applied))
-        {
-            for (int i = 0; i < MasterBands.Count; i++)
-            {
-                var b = c.Bands[i];
-                var comp = comps[i];
-                comp.Headroom = b.Headroom;
-                comp.Ratio = b.Ratio;
-                comp.Knee = b.Knee;
-                comp.Attack = b.Attack;
-                comp.Release = b.Release;
-            }
-            applied = c;
         }
 
         var x = l[..n];
@@ -750,25 +821,7 @@ public sealed class MasterChain
         if (eq0 > 0 || eq1 > 0) Stage(x, y, eq0, eq1, StagePre);
 
         // three bands, each compressed (with its own make-up), added back
-        var lowL = bandL[0].AsSpan(0, n); var lowR = bandR[0].AsSpan(0, n);
-        var midL = bandL[1].AsSpan(0, n); var midR = bandR[1].AsSpan(0, n);
-        var highL = bandL[2].AsSpan(0, n); var highR = bandR[2].AsSpan(0, n);
-        xo.Split(x, y, lowL, lowR, midL, midR, highL, highR);
-        x.Clear();
-        y.Clear();
-        for (int b = 0; b < MasterBands.Count; b++)
-        {
-            var bl = bandL[b].AsSpan(0, n);
-            var br = bandR[b].AsSpan(0, n);
-            comps[b].Process(bl, br);
-            float gr = (float)comps[b].TakeMeter();
-            if (gr < grMin[b]) grMin[b] = gr;
-            for (int i = 0; i < n; i++)
-            {
-                x[i] += bl[i];
-                y[i] += br[i];
-            }
-        }
+        bands.Process(x, y);
 
         // the fourth band, Púa: part of the multiband, before the colour
         pick.Process(x, y);

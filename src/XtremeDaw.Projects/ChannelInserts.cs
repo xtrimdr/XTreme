@@ -16,8 +16,26 @@ public static class ChannelInserts
         if (!Audio.Dsp.TrackInserts.IsKind(kind) || kind == InsertSlot.VstKind) return null;
         var slot = InsertSlot.New(kind);
         slot.On = true;
+        (slot.Wet, slot.Dry) = FxDefs.StartLevels(kind);
         slots.Insert(Math.Clamp(at ?? slots.Count, 0, slots.Count), slot);
         return slot;
+    }
+
+    /// <summary>
+    /// "Cadena completa": the master's stages that aren't in its list yet, at its end, and the master on. Null if all are.
+    /// </summary>
+    public static List<InsertSlot>? AddMasterChain(MasterSettings m)
+    {
+        var added = new List<InsertSlot>();
+        foreach (string kind in Audio.Dsp.TrackInserts.MasterOrder)
+            if (!m.Slots.Exists(s => s.Type == kind)) added.Add(FxDefs.FromMaster(kind, m));
+        if (added.Count == 0) return null;
+        // whoever asks for the chain wants it sounding
+        if (!m.On) foreach (var slot in added) slot.On = true;
+        m.Slots.AddRange(added);
+        m.On = true;
+        m.ChainInSlots = true;
+        return added;
     }
 
     /// <summary>Adds a VST3 effect at <paramref name="at"/> (the end when null), on, with the plugin's own sound (no saved state).</summary>

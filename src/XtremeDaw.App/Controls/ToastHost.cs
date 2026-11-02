@@ -19,6 +19,8 @@ public sealed class ToastHost : StackPanel
 {
     static readonly TimeSpan Life = TimeSpan.FromSeconds(6);
     const int MaxShown = 3;
+    /// <summary>How long slow work runs before its card appears.</summary>
+    static readonly TimeSpan ProgressDelay = TimeSpan.FromMilliseconds(300);
 
     public ToastHost()
     {
@@ -31,10 +33,11 @@ public sealed class ToastHost : StackPanel
     /// <summary>
     /// Shows a toast (UI thread). <paramref name="title"/> goes above as a section label; <paramref name="action"/>
     /// adds a button under the text ("Mostrar" on a finished export) that runs it and closes the toast.
+    /// Returns what closes it, for a sticky toast about something that ends by itself.
     /// </summary>
-    public void Show(string text, string? title = null, bool sticky = false, (string Label, Action Run)? action = null)
+    public Action Show(string text, string? title = null, bool sticky = false, (string Label, Action Run)? action = null)
     {
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (string.IsNullOrWhiteSpace(text)) return () => { };
         Border? card = null;
         DispatcherTimer? timer = null;
         void Close()
@@ -87,7 +90,108 @@ public sealed class ToastHost : StackPanel
 
         Children.Add(card);
         // the oldest plain toast makes room first; sticky ones only go when closed
-        while (Children.Count > MaxShown && Children.OfType<Border>().FirstOrDefault(c => c != card && c.Tag is Action) is { Tag: Action closeOld })
+        Trim(card);
+        return Close;
+    }
+
+    /// <summary>
+    /// A card with a progress bar for slow work (UI thread): it stays until <see cref="ToastProgress.Close"/>, can't be
+    /// closed by hand because the work goes on anyway, and only shows after <see cref="ProgressDelay"/>, so what
+    /// finishes at once doesn't flash on screen.
+    /// </summary>
+    public ToastProgress ShowProgress(string text)
+    {
+        var card = new ToastProgress(text, ProgressDelay, c => Children.Remove(c));
+        Children.Add(card);
+        Trim(card);
+        return card;
+    }
+
+    void Trim(Control keep)
+    {
+        while (Children.Count > MaxShown && Children.OfType<Border>().FirstOrDefault(c => c != keep && c.Tag is Action) is { Tag: Action closeOld })
             closeOld();
+    }
+}
+
+/// <summary>
+/// The card of <see cref="ToastHost.ShowProgress"/>: the text, the percentage and a bar. <see cref="Report"/> can be
+/// called from any thread as often as it likes; a timer takes the value to the screen.
+/// </summary>
+public sealed class ToastProgress : Border
+{
+    static readonly TimeSpan Refresh = TimeSpan.FromMilliseconds(100);
+    const float Unknown = -1;
+
+    readonly DispatcherTimer timer = new() { Interval = Refresh };
+    readonly TextBlock label, percent;
+    readonly Grid bar, top;
+    readonly Action<ToastProgress> remove;
+    volatile float value;
+    float shown = -1;
+
+    internal ToastProgress(string text, TimeSpan delay, Action<ToastProgress> remove)
+    {
+        this.remove = remove;
+        label = new TextBlock { Text = text, FontSize = 14, LineHeight = 20, Foreground = Palette.Fg, TextTrimming = TextTrimming.CharacterEllipsis };
+        percent = new TextBlock { Classes = { "dim", "mono" }, VerticalAlignment = VerticalAlignment.Center };
+        top = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 12 };
+        top.Children.Add(label);
+        Grid.SetColumn(percent, 1);
+        top.Children.Add(percent);
+
+        bar = new Grid { ColumnDefinitions = new ColumnDefinitions("0*,1*"), Height = 4 };
+        bar.Children.Add(new Border { Background = Palette.Accent, CornerRadius = new CornerRadius(2) });
+        var track = new Border { Background = Palette.Hover, CornerRadius = new CornerRadius(2), ClipToBounds = true, Child = bar };
+
+        Padding = new Thickness(16, 14);
+        CornerRadius = new CornerRadius(8);
+        Background = Palette.Raised;
+        BorderBrush = Palette.Line;
+        BorderThickness = new Thickness(1);
+        Child = new StackPanel { Spacing = 10, Children = { top, track } };
+        IsVisible = false;
+
+        var started = DateTime.UtcNow;
+        timer.Tick += (_, _) =>
+        {
+            if (!IsVisible && DateTime.UtcNow - started >= delay) IsVisible = true;
+            Update();
+        };
+        timer.Start();
+        Update();
+    }
+
+    /// <summary>The fraction done, 0 to 1; below 0 when it can't be known, which hides the percentage.</summary>
+    public void Report(double fraction) => value = fraction < 0 ? Unknown : (float)Math.Clamp(fraction, 0, 1);
+
+    /// <summary>Adds a button that stops the work (UI thread).</summary>
+    public void Cancelable(string text, Action run)
+    {
+        var b = new Button { Classes = { "btn", "sm" }, Content = text };
+        b.Click += (_, _) => run();
+        Grid.SetColumn(b, 2);
+        top.Children.Add(b);
+    }
+
+    /// <summary>What is being worked on (UI thread).</summary>
+    public string Text { set => label.Text = value; }
+
+    /// <summary>Takes the card away (UI thread).</summary>
+    public void Close()
+    {
+        timer.Stop();
+        remove(this);
+    }
+
+    void Update()
+    {
+        float v = value;
+        if (v == shown) return;
+        shown = v;
+        percent.Text = v == Unknown ? "" : $"{v:0%}";
+        v = Math.Max(v, 0);
+        bar.ColumnDefinitions[0].Width = new GridLength(v, GridUnitType.Star);
+        bar.ColumnDefinitions[1].Width = new GridLength(1 - v, GridUnitType.Star);
     }
 }

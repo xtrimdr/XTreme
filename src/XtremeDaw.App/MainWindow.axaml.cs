@@ -70,7 +70,7 @@ public partial class MainWindow : Window
             // the export opens its own copies of the plugins with their saved state: what was just changed in a plugin's
             // window goes in first
             if (PluginStatesDue && !store.ReadOnly) await SavePluginStates();
-            if (store == null) return;
+            if (store == null || !store.Project.Settings.AudioOnly && NeedFfmpeg()) return;
             if (Export.TryOpen(store, tracks, out var error)) { engine.Pause(); engine.Seek(0); }
             else if (error != null) Toast(error);
         };
@@ -98,6 +98,10 @@ public partial class MainWindow : Window
             if (Projects.IsVisible || Export.IsVisible || Settings.IsVisible || RecordingBusy) return;
             About.Show();
         };
+        HelpButton.Click += (_, _) => OpenHelp();
+        Projects.HelpRequested += OpenHelp;
+        HelpPanel.Dismissed += () => { if (Projects.IsVisible) Projects.Focus(); else Timeline.Focus(); };
+        HelpPanel.SettingsRequested += tab => { if (!RecordingBusy) Settings.Show(tab); };
         Live.OpenInputs += () =>
         {
             if (Projects.IsVisible || Export.IsVisible || RecordingBusy) return;
@@ -421,6 +425,7 @@ public partial class MainWindow : Window
     {
         engine.Stop();
         takePreview.Stop();
+        StopSample();
         DropAllInstruments();
         DropAllEffects();
         historyConfirmPurge = false;
@@ -575,7 +580,7 @@ public partial class MainWindow : Window
         [
             (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"), (VirtualKeysButton, Loc.T("sc.virtualKeys"), "virtualKeys"),
             (ToStartButton, Loc.T("transport.start.tip"), "toStart"), (LoopToggle, Loc.T("transport.loop.tip"), "loop"),(CountInToggle, Loc.T("transport.countin.tip"), "countIn"),
-            (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (FitButton, Loc.T("transport.fit.tip"), "fit"),
+            (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (FitButton, Loc.T("transport.fit.tip"), "fit"), (HelpButton, Loc.T("help.title"), "help"),
         ]);
         ApplyShortcutTips();
         Shortcuts.Changed += ApplyShortcutTips;
@@ -595,10 +600,24 @@ public partial class MainWindow : Window
         RefreshMixer();
     }
 
+    /// <summary>Over the manager too, the first thing someone new sees; not while a dialog or a take has the keys.</summary>
+    void OpenHelp()
+    {
+        if (Export.IsVisible || Settings.IsVisible || About.IsVisible || RecordingBusy) return;
+        HelpPanel.Show(canOpenSettings: !Projects.IsVisible);
+    }
+
     async void OnKey(object? sender, KeyEventArgs e)
     {
         if (Unsaved.HandleKey(e)) return;
-        if (FfmpegHelp.HandleKey(e)) return;
+        if (Stems.HandleKey(e)) return;
+        if (ScaleResult.HandleKey(e)) return;
+        if (ComponentsHelp.HandleKey(e)) return;
+        if (HelpPanel.IsVisible)
+        {
+            HelpPanel.HandleKey(e);
+            return;
+        }
         if (Export.IsVisible)
         {
             Export.HandleKey(e);
@@ -615,12 +634,15 @@ public partial class MainWindow : Window
             return;
         }
         // shortcuts are off while the manager is open; Esc goes to it
+        bool typing = e.Source is Control source && source.FindAncestorOfType<TextBox>(true) != null;
         if (Projects.IsVisible)
         {
+            if (!typing && Shortcuts.Find(e) == "help") OpenHelp();
             if (Projects.HandleKey(e)) e.Handled = true;
             return;
         }
-        if (e.Source is Control source && source.FindAncestorOfType<TextBox>(true) != null) return;
+        if (typing) return;
+        if (e.Source == sampleList && sampleList.HandleKey(e)) { e.Handled = true; return; }
         if (VirtualKeyDown(e)) { e.Handled = true; return; }
         if (restoring) { e.Handled = true; return; }
         if (RecordingBusy && await RecordingKey(e)) return;
@@ -653,7 +675,14 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 await SplitAtPlayhead();
                 return;
+            case "duplicate" or "delete" or "copy" or "paste" when BlockShortcut(action):
+                break;
             case "delete":
+                if (Timeline.ChordMarks.Count > 0)
+                {
+                    RemoveChords(Timeline.ChordMarks.ToList());
+                    break;
+                }
                 await (Timeline.Range != null ? DeleteRangeSelection() : sel == null && SelectedFolder is { } gone ? RemoveFolder(gone) : DeleteTimelineSelection());
                 break;
             case "deleteClose":
@@ -748,6 +777,9 @@ public partial class MainWindow : Window
             case "fullScreen":
                 ToggleFullScreen();
                 break;
+            case "help":
+                OpenHelp();
+                break;
             default:
                 return;
         }
@@ -793,6 +825,7 @@ public partial class MainWindow : Window
             t.GrPeak = gr;
             t.GrShow = gr < t.GrShow ? gr : t.GrShow + (gr - t.GrShow) * 0.12;
         }
+        FollowLanes(pos);
         Timeline.SetPlayhead(pos, engine.Playing);
         pianoRoll.SetPlayhead(pos);
         bool newFrame = false;
@@ -962,7 +995,7 @@ public partial class MainWindow : Window
                 Timeline.UpdateTracks(tracks, st.Project.Folders);
                 UpdateResetHeights();
                 engine.SetSettings(st.Project.Settings, glideDelay: true);
-                RefreshMasterPanel();
+                if (masteringView && mixerView) BuildMastering();
                 Timeline.Bpm = st.Project.Settings.Bpm;
                 Timeline.InvalidateVisual();
                 Preview.SetProject(tracks, st.Project.Settings);
@@ -982,7 +1015,7 @@ public partial class MainWindow : Window
         {
             restoring = false;
             Timeline.IsEnabled = TimelineToolbar.IsEnabled = TimelineFooter.IsEnabled = SessionChip.IsEnabled = true;
-            Inspector.IsEnabled = sel != null;
+            Inspector.IsEnabled = sel != null || SelectedFolder != null || SelectedBus != null;
             RefreshColorPanel();
             ApplyMode();
             RefreshMixer();

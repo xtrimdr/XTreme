@@ -320,6 +320,39 @@ static class ClipChecks
         Check(cutLeft[3500] > 0.99 && cutLeft[3999] < 1.42 && cutLeft[4000] > 1.3, "tomas distintas: a potencia constante (sube hasta √2 con la misma señal)");
         b.AtSec += 1;
         Check(ClipEditing.Joins(tp, tp.Tracks[0]).Count == 0, "si el clip se separa, la unión desaparece (y la transición queda guardada sin efecto)");
+        // reverse: the same stretch of the timeline plays the same samples backward
+        var sample = new Media { DurationSec = 10, Audio = "media/sample.wav" };
+        var turned = new Clip { MediaId = sample.Id, AtSec = 3, TrimStartSec = 1, TrimEndSec = 4, FadeInSec = 0.2, FadeOutSec = 0.5, GainCurve = [new() { Sec = 2, Db = -3 }, new() { Sec = 5, Db = -6 }] };
+        var turnedProject = new Project { Media = [sample], Tracks = [new Track { Clips = [turned] }] };
+        var beforeTurn = ClipEditing.Window(turned, sample);
+        var ramp = Enumerable.Range(0, 10 * xr).Select(i => (float)i / (10 * xr)).ToArray();
+        float[] Heard(Clip c, float[] audio)
+        {
+            var (hl, hr) = (new float[20 * xr], new float[20 * xr]);
+            TrackDspChain.SampleClips([new MixClipSpec { Left = audio, Right = audio, DurationSec = 10, AtSec = c.AtSec, TrimStartSec = c.TrimStartSec, TrimEndSec = c.TrimEndSec }], 0, hl.Length, xr, hl, hr);
+            return hl;
+        }
+        var ahead = Heard(turned, ramp);
+        ClipEditing.Reverse(turnedProject, turned.Id);
+        var afterTurn = ClipEditing.Window(turned, sample);
+        Check(turned.Reversed && Near(afterTurn.Start, beforeTurn.Start) && Near(afterTurn.End, beforeTurn.End), "invertir deja el clip en el mismo lugar y con el mismo largo");
+        Check(Near(turned.TrimStartSec, 4) && Near(turned.TrimEndSec, 1) && turned.FadeInSec == 0.2 && turned.FadeOutSec == 0.5, "lo escondido cambia de punta y los fades quedan en sus bordes");
+        Check(Near(turned.GainCurve[0].Sec, 5) && Near(turned.GainCurve[1].Sec, 8) && turned.GainCurve[0].Db == -6, "la curva de volumen sigue al sonido");
+        var backward = Heard(turned, [.. ramp.Reverse()]);
+        int from = (int)Math.Round(beforeTurn.Start * xr), to = (int)Math.Round(beforeTurn.End * xr);
+        Check(Enumerable.Range(0, to - from).All(i => Math.Abs(backward[from + i] - ahead[to - 1 - i]) < 2f / (10 * xr)), "suena el mismo tramo, de atrás para adelante");
+        var turnedRight = ClipEditing.Find(turnedProject, ClipEditing.Split(turnedProject, turned.Id, 6)).Clip;
+        Check(turnedRight.Reversed && turned.TakeKey() == turnedRight.TakeKey() && turned.TakeKey() != sample.Id, "al dividirlo, los dos pedazos siguen invertidos y son una misma toma");
+        ClipEditing.Reverse(turnedProject, turnedRight.Id);
+        Check(!turnedRight.Reversed, "invertir dos veces vuelve al original");
+        var filmed = new Media { DurationSec = 10, Audio = "media/take.wav", Video = "media/take.mp4" };
+        var filmedClip = new Clip { MediaId = filmed.Id };
+        var filmedProject = new Project { Media = [filmed], Tracks = [new Track { Clips = [filmedClip] }] };
+        bool noVideo = false;
+        try { ClipEditing.Reverse(filmedProject, filmedClip.Id); } catch (ArgumentException) { noVideo = true; }
+        Check(noVideo && !filmedClip.Reversed, "un clip con video no se invierte");
+        var turnedJson = System.Text.Json.JsonSerializer.Serialize(turned, ProjectStore.Json);
+        Check(System.Text.Json.JsonSerializer.Deserialize<Clip>(turnedJson, ProjectStore.Json)!.Reversed && !System.Text.Json.JsonSerializer.Serialize(new Clip(), ProjectStore.Json).Contains("reversed"), "se guarda solo si está invertido");
         Console.WriteLine($"Edición de clips: {n} comprobaciones correctas (sin modificar archivos).");
         return 0;
     }

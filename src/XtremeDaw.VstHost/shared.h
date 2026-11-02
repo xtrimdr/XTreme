@@ -12,9 +12,10 @@
 namespace gcvst {
 
 constexpr int32_t Magic = 0x53564347; // "GCVS"
-constexpr int32_t Version = 1;
+constexpr int32_t Version = 2;
 constexpr int32_t MaxBlock = 8192;
 constexpr int32_t MaxEvents = 512;
+constexpr int32_t MaxParams = 128;
 
 enum EventType : int32_t { NoteOn = 0, NoteOff = 1 };
 // Reset: the plugin forgets its tails and delay lines before the block (an effect, when the transport starts)
@@ -30,6 +31,13 @@ struct Event
     float velocity;   // 0..1
 };
 
+// an automated parameter's new value, for the start of the block
+struct ParamChange
+{
+    uint32_t id;
+    float value;      // normalized, 0..1
+};
+
 struct Slot
 {
     int64_t seq;          // the block this slot holds
@@ -42,6 +50,9 @@ struct Slot
     Event events[MaxEvents];
     float in[2][MaxBlock];
     float out[2][MaxBlock];
+    int32_t numParams;
+    int32_t pad2;
+    ParamChange params[MaxParams];
 };
 
 struct Shared
@@ -65,11 +76,13 @@ static_assert(sizeof(Event) == 16);
 static_assert(offsetof(Slot, events) == 40);
 static_assert(offsetof(Slot, in) == 8232);
 static_assert(offsetof(Slot, out) == 73768);
-static_assert(sizeof(Slot) == 139304);
+static_assert(offsetof(Slot, numParams) == 139304);
+static_assert(offsetof(Slot, params) == 139312);
+static_assert(sizeof(Slot) == 140336);
 static_assert(offsetof(Shared, requested) == 32);
 static_assert(offsetof(Shared, done) == 40);
 static_assert(offsetof(Shared, error) == 48);
 static_assert(offsetof(Shared, slots) == 560);
-static_assert(sizeof(Shared) == 279168);
+static_assert(sizeof(Shared) == 281232);
 
 } // namespace gcvst

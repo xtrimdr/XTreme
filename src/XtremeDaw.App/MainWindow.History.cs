@@ -61,10 +61,11 @@ public partial class MainWindow
         reveal.Foreground = Palette.Dim;
         var takes = ColorSection("Canales", "\uE714", action: reveal, host: libraryPanel, scope: "history");
         var seg = new UniformGrid { Rows = 1 };
-        foreach (var (key, text) in new[] { ("all", Loc.T("hist.filter.all")), ("timeline", Loc.T("hist.filter.timeline")), ("unused", Loc.T("hist.filter.unused")) })
+        foreach (var (key, text, glyph) in new[] { ("all", Loc.T("hist.filter.all"), "\uE8FD"), ("timeline", Loc.T("hist.filter.timeline"), "\uE73E"), ("unused", Loc.T("hist.filter.unused"), "\uE738") })
         {
             var count = new TextBlock { Classes = { "mono" }, FontSize = 10, Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center };
             var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            label.Children.Add(HistoryIcon(glyph, 11));
             label.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
             label.Children.Add(count);
             var b = new ToggleButton { Classes = { "seg" }, Content = label, Padding = new Thickness(4, 0) };
@@ -114,6 +115,7 @@ public partial class MainWindow
     /// <summary>Rebuilds the lists (only while the tab is on screen; showing it refreshes it).</summary>
     void RefreshHistory()
     {
+        RefreshPatterns();
         if (!HistoryVisible) return;
         historyTakes.Children.Clear();
         historyExports.Children.Clear();
@@ -254,13 +256,15 @@ public partial class MainWindow
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var nameLine = new TrimRow { Spacing = 8 };
         nameLine.Children.Add(new TextBlock { Text = m.Name, FontSize = 13, Foreground = inTimeline ? Palette.Fg : Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis });
-        Border Badge(string text) => new()
+        Border Badge(string text, string? glyph = null)
         {
-            Background = Palette.Hover, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1), VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock { Text = text, FontSize = 10, FontWeight = FontWeight.Medium, Foreground = Palette.Faint },
-        };
+            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            if (glyph != null) label.Children.Add(HistoryIcon(glyph, 10, Palette.Faint));
+            label.Children.Add(new TextBlock { Text = text, FontSize = 10, FontWeight = FontWeight.Medium, Foreground = Palette.Faint });
+            return new() { Background = Palette.Hover, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1), VerticalAlignment = VerticalAlignment.Center, Child = label };
+        }
         // where it came from (native only: the web has no imports)
-        nameLine.Children.Add(Badge(m.Kind == "import" ? Loc.T("hist.kind.import") : Loc.T("hist.kind.recording")));
+        nameLine.Children.Add(Badge(m.Kind == "import" ? Loc.T("hist.kind.import") : Loc.T("hist.kind.recording"), m.Video != null ? "\uE714" : m.Kind == "import" ? "\uE896" : "\uE720"));
         if (!inTimeline) nameLine.Children.Add(Badge(Loc.T("hist.unusedBadge")));
         text.Children.Add(nameLine);
         text.Children.Add(new TextBlock
@@ -301,9 +305,28 @@ public partial class MainWindow
             action = use;
         }
         Grid.SetColumn(action, 4); grid.Children.Add(action);
-        if (!current) return HistoryRow(grid, hover, new Thickness(8, 6, 16, 6));
+        if (!current) return DraggableTake(HistoryRow(grid, hover, new Thickness(8, 6, 16, 6)), m, editable);
         (takePlayer.Parent as Panel)?.Children.Remove(takePlayer); // it moves with the take across refreshes
-        return HistoryRow(new StackPanel { Children = { grid, takePlayer } }, hover, new Thickness(8, 6, 16, 8));
+        return DraggableTake(HistoryRow(new StackPanel { Children = { grid, takePlayer } }, hover, new Thickness(8, 6, 16, 8)), m, editable);
+    }
+
+    /// <summary>A press on the row itself (its buttons and the wave keep theirs) that travels becomes a drag to the timeline.</summary>
+    Control DraggableTake(Border row, Media m, bool editable)
+    {
+        if (!editable) return row;
+        Point? from = null;
+        row.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(row).Properties.IsLeftButtonPressed) from = e.GetPosition(row);
+        };
+        row.PointerReleased += (_, _) => from = null;
+        row.PointerMoved += (_, e) =>
+        {
+            if (from is not { } start || Point.Distance(start, e.GetPosition(row)) < LibraryDragStart) return;
+            from = null;
+            CarryToTimeline(TakeDrag, m.Id, e);
+        };
+        return row;
     }
 
     /// <summary>The inline "send to the Recycle Bin?" of one unused take (like an export's).</summary>
@@ -514,6 +537,7 @@ public partial class MainWindow
         try
         {
             if (st.Resolve(m.Audio) is not { } path || !File.Exists(path)) throw new FileNotFoundException();
+            StopSample();
             takePreview.Play(m.Id, path);
             takeTimeShown = -1;
             LoadTakePeaks(m.Id, path);

@@ -44,6 +44,7 @@ public sealed partial class AboutDialog : UserControl
             TestChip.IsVisible = true;
             TestText.Text = Loc.T("splash.test");
         }
+        ComponentInstall.Changed += () => SetFfmpeg(XtremeDaw.Audio.Components.Ffmpeg.Version);
         AudioText.Text = $"ASIO · NAudio {Short(typeof(NAudio.Wave.WaveFormat).Assembly)}";
         UiText.Text = $"Avalonia {Short(typeof(Avalonia.Application).Assembly)} · .NET {Environment.Version.ToString(3)}";
     }

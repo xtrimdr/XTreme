@@ -14,6 +14,8 @@ sus reglas en [Controls/AGENTS.md](Controls/AGENTS.md).
   varios pasos para grabar o reproducir.
 - **Siempre se ve el estado**: qué está sonando, si hay audio, si un archivo falta, si se guardó.
 - Lo que no está hecho se muestra deshabilitado o con un aviso. Nunca un botón que no hace nada y no dice nada.
+- **Un efecto, un panel** (pedido del usuario): sus controles salen de `FxBody` en todo lugar; lo que es de un solo
+  lugar (medidores de reducción, gráfico del multibanda) va alrededor, no adentro.
 - No hay MVVM ni bindings: code-behind con controles con nombre (`x:Name`). Las ediciones del inspector pasan por
   `Edit(t => ...)` (marca sucio, refresca textos, redibuja el timeline); el flag `syncing` evita que llenar el
   inspector dispare ediciones.
@@ -153,6 +155,10 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
   carpeta, ocultar separador) van con `MenuCheck` / `MenuChoice` (pedido del usuario): clic izquierdo elige y cierra,
   clic derecho elige y deja el menú abierto, y el tilde o el texto se actualizan en el lugar. Lo que se lee al
   aplicar se busca de nuevo (por id), porque el menú sigue abierto mientras cambia. Las acciones comunes, con `MenuAction`.
+- El menú de un clip y el de una pista van por grupos separados (pedido del usuario): en el clip, edición (cortar, copiar,
+  duplicar, dividir); lugar (inicio, frente, grilla, bloquear); recorte y transiciones; análisis (tempo, escala, MIDI,
+  stems); quitar. En la pista: pegar; la pista (nombre, look, video, bloquear); sonido (instrumento, entrada, envíos);
+  orden (carpeta, separador); plantillas; quitar. Una entrada nueva va en su grupo, no al final.
 
 ## Mensajes al usuario
 
@@ -161,3 +167,4 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 - Nada de diálogos modales para errores, ni stack traces, ni jerga ("excepción", "null").
 - Un archivo que falta no rompe nada: el clip queda **offline** (gris, "Sin conexión: falta el archivo de audio").
 - Cargas largas en segundo plano (`Task.Run`) con un aviso; la UI nunca se congela esperando disco, FFmpeg o el driver.
+  Si se puede saber cuánto falta, toast con barra (`Toasts.ShowProgress`).

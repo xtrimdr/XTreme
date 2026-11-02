@@ -467,10 +467,18 @@ public sealed class ProjectStore : IDisposable
     /// <summary>
     /// A take's audio as it plays on <paramref name="track"/>: moved by its <see cref="Track.Transpose"/>, from the
     /// cache or computed now (seconds per minute of audio: call it off the UI thread), or the audio itself at 0.
+    /// A reversed clip gets its own copy, backward.
     /// </summary>
-    public (float[] Left, float[] Right) TrackAudio(Track track, string audioPath, float[] left, float[] right,
-        Action<double>? progress = null, CancellationToken ct = default) =>
-        TransposeCache.Get(CachePath, audioPath, left, right, track.Transpose, progress, ct);
+    public (float[] Left, float[] Right) TrackAudio(Track track, Clip clip, string audioPath, float[] left, float[] right,
+        Action<double>? progress = null, CancellationToken ct = default)
+    {
+        var (l, r) = TransposeCache.Get(CachePath, audioPath, left, right, track.Transpose, clip.Stretch, progress, ct);
+        if (!clip.Reversed) return (l, r);
+        (l, r) = ((float[])l.Clone(), (float[])r.Clone());
+        Array.Reverse(l);
+        Array.Reverse(r);
+        return (l, r);
+    }
 
     public string? Resolve(string? rel) => string.IsNullOrEmpty(rel) ? null : Path.IsPathRooted(rel) ? rel : Path.Combine(Dir, rel);
 

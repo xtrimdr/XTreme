@@ -20,8 +20,9 @@ _Ideas y mejoras para la nativa._
 - [x] Ganancia por clip con su curva de volumen, y la onda dibujada con la curva aplicada (hecho, ver [HECHO.md](HECHO.md))
 - [x] Varios clips por pista: se reproducen, se dibujan, se exportan (comparten el panel), se graba desde el cabezal y
   "Traer al frente" elige cuál se ve donde se pisan (hecho, ver [HECHO.md](HECHO.md))
-- [x] Importar audio externo (hecho, ver [HECHO.md](HECHO.md)). Falta: que el clip importado siga el tempo del proyecto (hoy se
-  usa tal cual) y importar el audio de un video
+- [x] Importar audio externo (hecho, ver [HECHO.md](HECHO.md))
+- [ ] Time-stretch: los ataques se corren con los cambios grandes (hasta ±20 %: 4 ms; a ×1,5: 9 ms antes de lo que
+  van). Probar reiniciar las fases en cada ataque. Una toma tocada sin click se estira parejo: no se ajusta a la grilla.
 - [ ] Transponer: probar si conviene un modo "fino" en cents. Límite conocido: dos armónicos a menos de ~7 Hz (la 3ª
   de un acorde grave) mantienen su batido original
 - [x] Efectos en slots por canal, con los internos y los VST3, su latencia compensada y el estado del plugin guardado
@@ -83,8 +84,8 @@ _Ideas y mejoras para la nativa._
 
 #### 3. MIDI
 **Prioridad del usuario (2026-10-28): un editor para armar bases con instrumentos virtuales.** Decidido:
-- **Clips MIDI por pista**, como Logic o Studio One: cada clip tiene sus notas y se edita en un piano roll. Sin
-  patrones reusables ni step sequencer (se puede sumar después).
+- **Clips MIDI por pista**, como Logic o Studio One: cada clip tiene sus notas y se edita en un piano roll. Los
+  patrones son clips enlazados (hecho, ver [HECHO.md](HECHO.md)); sin step sequencer (se puede sumar después).
 - El piano roll va **abajo, en lugar del mixer** (se alternan), sin esperar a los paneles desacoplables.
 - Primero un **sampler propio** (tus WAV), después VST3 (punto 2).
 
@@ -110,6 +111,14 @@ Etapas (cada una sirve sola):
   - [ ] Salidas MIDI (synths de hardware, clock hacia afuera) y Windows MIDI Services (varias apps con el mismo
     teclado a la vez).
 - [ ] Después: importar y exportar .mid.
+- [ ] Importar proyectos de FL Studio (.flp) (pedido del usuario, 2026-11-01): una sola vía, crea un proyecto nuevo y
+  avisa lo que no entró. Trae tempo y compás, notas de los patterns (pistas MIDI), colocación de la playlist, clips de
+  audio y samples (copiados a `media/`), nombres, colores, volumen y paneo. Los plugins propios de FL no se pueden traer
+  (la pista queda con sus notas); el ruteo entre inserts no entra entero porque un bus sale solo al Master; los VST de
+  terceros están por ver, y las automatizaciones quedan fuera de la primera etapa. Lector propio en C# en
+  `XtremeDaw.Projects`, sin dependencias, con su comando de `wtlab`. El formato no está documentado y cambia con cada
+  versión de FL: PyFLP (GPL v3) sirve como referencia, sin copiar su código. Hacen falta `.flp` reales del usuario para
+  probarlo.
 
 Otras de MIDI (se apoyan en las entradas de la etapa 4):
 - [ ] Mapear perillas y faders de un controlador al mixer (MIDI learn)
@@ -176,7 +185,73 @@ opcional que se abre desde el clip, como el piano roll: no suma pasos a "grabo, 
   porque en una toma con cámara desfasa lo que se canta de lo que se ve.
 - [ ] **Etapa 7: autotune automático.** Elegir escala y tonalidad y que corrija sola, con la velocidad de la etapa 3.
   El resultado son curvas comunes, así se retoca a mano después.
+- [ ] **Medir los aciertos de la detección de escala** (idea, 2026-11-01): correrla contra canciones de escala conocida. La seguridad en % es una estimación; en la batería sola da alta sin sentido.
+- [ ] **Usar la escala detectada** (idea, 2026-11-01): resaltar sus notas en el piano roll y proponerla en la etapa 7; hoy `ScaleDetector` solo la muestra.
 - [ ] (Para después, si hace falta) Autotune en vivo mientras se graba: otro algoritmo, de baja latencia y peor sonido.
+
+#### 9. Efectos nativos a nivel profesional (pedido 2026-11-01)
+
+Pedido: mejorar los efectos propios, poder usar los del master, una sola interfaz escalable y completa en inspector,
+timeline, mixer y master, y una colección que compita con la stock de FL Studio. Nada de esto está hecho ni decidido.
+
+**Relevado en el código (no medido con audio):**
+- Reverb: impulso de ruido sintético. Al cambiar Decay, Tone o Width el convolver se reemplaza sin crossfade y pierde
+  la cola; el predelay salta sin deslizarse. Va contra "nada de clics": probarlo con `AudioGapLog`.
+- Compresor solo de picos, sin RMS, sidechain, lookahead ni Mix. Delay sin modulación ni saturación en la realimentación.
+- Saturación sin oversampling (ADAA de primer orden) y con dos modos.
+- No hay transient, de-esser, amp/cab ni pitch en tiempo real. Ningún efecto tiene
+  sidechain ni A/B.
+
+**FL Studio como referencia** (manual y comparación de Image-Line, 2026-11-01): 53 / 59 / 65 / 71 efectos según la
+edición, contando utilidades, controladores, VFX y versiones repetidas. El objetivo es cubrir sus funciones, no su
+número. Lo que hace fuerte a su colección: Fruity Parametric EQ 2 (7 bandas, hasta 48 dB/oct, fase lineal, espectro),
+Fruity Limiter (comp + limitador + gate con sidechain y A/B), Maximus (multibanda con lookahead), Fruity Delay 3,
+Reeverb 2 y LuxeVerb, Convolver (impulsos propios), Hardcore (amp, gabinete y pedales), Gross Beat, Pitcher.
+XTreme ya tiene algo que el Fruity Limiter no trae por defecto: techo en pico real, y además LUFS y Destino.
+
+**Base, antes de cualquier efecto nuevo:**
+- [ ] Para todos: A/B y presets del usuario (Dry, Wet, salida y fundido ya están, ver HECHO).
+- [ ] Una fila o botón de efectos dibujado en el encabezado del timeline (hoy se abren desde el menú de la pista).
+- [ ] VST3 en el master: hoy su lista lleva solo nativos, hace falta que la ventana abra su proceso (`LiveVst`).
+- [ ] Oversampling común (2× / 4×) y latencia declarada: la PDC ya existe, hay que sacar el "cero" de los nativos.
+- [ ] Sidechain: fuente elegible en el ruteo. Es el cambio más grande del motor (`MixLatency`, `ChannelDsp.Nodes`).
+
+**Fase 1: subir lo que hay**
+- [ ] EQ: notch y bandpass, pendientes hasta 48 dB/oct, solo de banda, mid/side, detección dinámica externa.
+- [ ] Compresor: pico/RMS, lookahead, Mix, gráfico de reducción, sidechain; todo editable en cualquier lugar.
+- [ ] Reverb algorítmica nueva (primeras reflexiones, tamaño, difusión, modulación), con cambios sin cortes.
+- [ ] Delay: modos cinta y digital, modulación, saturación y filtro en la realimentación.
+- [ ] Saturación con más modos y oversampling. Compuerta con rango, hold, release y sidechain.
+
+**Fase 2: lo que le sirve a la guitarra**
+- [ ] Amp y gabinete con impulsos propios (reusa el convolver), distorsión de pedal, transient, de-esser, filtro con LFO.
+- [ ] Modulación a tempo (velocidad en divisiones del compás) y presets de chorus, flanger, phaser y tremolo.
+
+**Fase 3: creativos y de mezcla fina**
+- [ ] Reverb por convolución, stutter y gate por pasos, pitch en tiempo real, armonizador, vocoder, shifter de
+  frecuencia, delay multibanda, analizador de espectro y estéreo.
+
+Notas: DSP propio, sin paquetes nuevos. Nombres genéricos en la app: no usar marcas ni copiar interfaces ajenas. Los
+proyectos viejos tienen que sonar igual: los modos nuevos entran como opción y la reverb actual queda disponible.
+
+#### 10. Biblioteca de samples: lo que sigue (pedido 2026-11-01)
+
+La etapa 1 está hecha (ver [HECHO.md](HECHO.md)). Falta:
+
+- [ ] Escuchar en contexto: sincronizado con el proyecto, entrando en el compás.
+- [ ] BPM y tonalidad en segundo plano, leídos del nombre o detectados, con filtros por rango y por tono.
+- [ ] Que un loop tome el tempo de su nombre o detectado al insertarlo: hoy entra a su velocidad y recién sigue los
+  cambios de tempo del proyecto desde ahí (`Clip.Stretch`). Lo mismo para un importado.
+- [ ] Colecciones propias, etiquetas (automáticas por el nombre y manuales) y últimos usados.
+- [ ] Marcar un pedazo de la onda y arrastrar solo eso. Selección múltiple en la lista.
+- [ ] Más adelante: buscar parecidos, clasificar por contenido, archivos .mid, duplicados, procesar antes de insertar.
+
+### Separar en stems: antes de publicarlo
+
+- [ ] El instalador no lleva `lib\demucs-graphs` (fuera de git): hay que llevarlos a GitHub Actions, por repo o release, ya que sin ellos stems dice que la conversión no está incluida. Se regeneran con `tools\make-demucs-templates.py`.
+
+- [ ] Probar la separación en una placa NVIDIA (`wtlab separar`): solo se probó en una RX 6800 XT. Si falla, sigue en la
+  CPU sola, sin dar audio equivocado.
 
 ### Sugerencias (para decidir)
 
@@ -193,7 +268,7 @@ _Ideas que surgieron charlando. Todas apuntan al video._
   por defecto). La preview es fácil; lo difícil es la exportación, que hoy usa rectángulos fijos en el
   `filter_complex`: o se usan expresiones de FFmpeg con `t` (`overlay`, `scale` con `eval=frame`, y el
   encuadre acompañando) o se componen los cuadros en .NET y se le mandan a FFmpeg por pipe.
-- [ ] **Automatización** de volumen, paneo y efectos en el timeline (base para lo anterior)
+- [ ] **Automatización, lo que sigue**: escribirla moviendo los controles (Touch / Latch), bloques enlazados como los patrones MIDI, seleccionar y mover varios puntos, copiarla con los clips, MIDI CC y pitch bend, y carriles en buses y master. La base está hecha (ver [HECHO.md](HECHO.md)).
 - [ ] **Varias cámaras por toma**: plano general + primer plano de la mano, y elegir cuál se ve en cada momento
 - [ ] **Importar video del celular** y sincronizarlo solo por el audio de la cámara (correlación,
   como la calibración de latencia)

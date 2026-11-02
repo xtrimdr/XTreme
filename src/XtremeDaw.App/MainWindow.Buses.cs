@@ -69,10 +69,13 @@ public partial class MainWindow
         public bool Folder { get; init; }
         /// <summary>A bus's own id: it never sends to itself.</summary>
         public string? BusId { get; init; }
+        /// <summary>The track it is: only a track's sends have lanes.</summary>
+        public LiveTrack? Track { get; init; }
     }
 
     Router RouterOf(LiveTrack t) => new()
     {
+        Track = t,
         Get = () => t.Channel,
         Edit = (change, key) =>
         {
@@ -101,7 +104,7 @@ public partial class MainWindow
         return new() { Get = () => BusById(id), Edit = (change, key) => BusEdit(id, b => change(store!.Project, b), key), BusId = id };
     }
 
-    /// <summary>A bus's slots, for the panels (<see cref="SlotPanels"/>): its "+ Efecto" also offers reverb and delay.</summary>
+    /// <summary>A bus's slots, for the panels (<see cref="SlotPanel"/>).</summary>
     SlotOwner SlotsOf(Bus bus)
     {
         string id = bus.Id;
@@ -112,6 +115,7 @@ public partial class MainWindow
             Slots = () => B().Inserts,
             Edit = (change, key) => BusEdit(id, x => change(x.Inserts), key),
             Recalculate = c => RecalculateBusComp(id, c),
+            Insert = slot => engine.Node(id)?.Find(slot),
             AddTip = Loc.T("mix.slot.add.bus.tip"),
             ReturnKinds = true,
         };
@@ -253,6 +257,7 @@ public partial class MainWindow
                 return Task.CompletedTask;
             }, enabled: enabled, icon: "\ue7e8"),
         };
+        if (r.Track is { } automated) items.Add(AutomateItem(automated, AutoTarget.Send(busId)));
         if (!r.Folder)
             items.Add(MenuAction(Loc.T(pre ? "send.menu.post" : "send.menu.pre"), () =>
             {
@@ -434,7 +439,7 @@ public partial class MainWindow
 
     /// <summary>
     /// The inspector of the selected bus, like a folder's: its badge (the color and icon picker) and name, what it
-    /// holds, its color and icon, where it goes, and "Quitar bus". Its effects are edited in its mixer strip.
+    /// holds, its effects (the same tray as a track's, moved here), its color and icon, where it goes, and "Quitar bus".
     /// </summary>
     void InitBusInspector()
     {
@@ -455,6 +460,7 @@ public partial class MainWindow
         var info = new TextBlock { FontSize = 11, Foreground = Palette.Faint, Margin = new Thickness(36, -6, 0, 0) };
         busPanel.Children.Add(head);
         busPanel.Children.Add(info);
+        busPanel.Children.Add(busChain);
 
         var card = new StackPanel { Spacing = 14 };
         card.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("look.color").ToUpperInvariant() });
@@ -482,6 +488,9 @@ public partial class MainWindow
         });
         Inspector.Children.Add(busPanel);
     }
+
+    /// <summary>Where the effects tray goes while a bus is selected.</summary>
+    readonly StackPanel busChain = new();
 
     /// <summary>Called from the mixer's tick: the folders' and buses' meters.</summary>
     void TickNodes()
@@ -516,134 +525,8 @@ public partial class MainWindow
         r.GrShow = gr < r.GrShow ? gr : r.GrShow + (gr - r.GrShow) * 0.12;
     }
 
-    // --- reverb and delay slots (in a bus's chain) ---------------------------------------------------
-
     static readonly ReverbSettings GoneReverb = new();
     static readonly DelaySettings GoneDelay = new();
-
-    void ReverbSlotPanel(StackPanel fx, SlotOwner o, string id, int nth, Control menu)
-    {
-        ReverbSettings V() => o.Slot(id)?.Reverb ?? GoneReverb;
-        void Set(Action<ReverbSettings> edit, string key) => SlotEdit(o, id, s => edit(s.Reverb!), "reverb." + key);
-        var panel = FxPanel(fx, SlotTitle("Reverb", nth), FxIcon.Reverb, () => o.Slot(id)?.On == true, () => SlotEdit(o, id, s => s.On = !s.On, "reverb.on"),
-            on => Loc.T(on ? "mix.slot.reverb.off" : "mix.slot.reverb.on"), menu);
-        var defaults = new ReverbSettings();
-        var presets = StripSelect([]);
-        ToolTip.SetTip(presets, Loc.T("mix.reverb.presets.tip"));
-        presets.Selected += i =>
-        {
-            int k = i - (ReverbBus.PresetOf(ToParams(V())) == "" ? 1 : 0);
-            if (k < 0) return;
-            string label = ReverbBus.Presets[k].Label;
-            Set(r =>
-            {
-                var p = ReverbBus.ApplyPreset(ToParams(r), label);
-                r.Decay = p.Decay; r.PreDelayMs = p.PreDelayMs; r.Tone = p.Tone; r.LowCut = p.LowCut; r.Width = p.Width;
-            }, "preset");
-        };
-        mx.Refresh.Add(() =>
-        {
-            string p = ReverbBus.PresetOf(ToParams(V()));
-            presets.SetItems((p == "" ? new[] { Loc.T("mix.custom.f") } : []).Concat(ReverbBus.Presets.Select(x => BusPresetName("reverb", x.Label))).ToArray(),
-                (p == "" ? new string?[] { null } : []).Concat(ReverbBus.Presets.Select(x => (string?)BusPresetHint("reverb", x.Label, x.Hint))).ToArray());
-            presets.SelectedIndex = p == "" ? 0 : Array.FindIndex(ReverbBus.Presets, x => x.Label == p);
-        });
-        var knobs = new UniformGrid { Columns = 3, Margin = new Thickness(0, 6, 0, 0) };
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.decay"), 0, 1, DecayMap.To(defaults.Decay), () => DecayMap.To(V().Decay), () => $"{V().Decay:0.0}s",
-            p => Set(r => r.Decay = DecayMap.From(p), "decay"), () => Loc.T("mix.hint.reverb.decay")));
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.pre"), 0, 1, defaults.PreDelayMs / 200, () => V().PreDelayMs / 200, () => $"{Math.Round(V().PreDelayMs):0}",
-            p => Set(r => r.PreDelayMs = Math.Round(p * 200), "preDelayMs"), () => Loc.T("mix.hint.reverb.pre")));
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.tone"), 0, 1, ToneMap.To(defaults.Tone), () => ToneMap.To(V().Tone), () => FmtHz(V().Tone),
-            p => Set(r => r.Tone = Math.Round(ToneMap.From(p)), "tone"), () => Loc.T("mix.hint.reverb.tone")));
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.lowcut"), 0, 1, LowCutMap.To(defaults.LowCut), () => LowCutMap.To(V().LowCut), () => FmtHz(V().LowCut),
-            p => Set(r => r.LowCut = Math.Round(LowCutMap.From(p)), "lowCut"), () => Loc.T("mix.hint.reverb.lowcut")));
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.width"), 0, 1, defaults.Width, () => V().Width, () => $"{V().Width * 100:0}%",
-            v => Set(r => r.Width = v, "width"), () => Loc.T("mix.hint.reverb.width")));
-        panel.Body.Children.Add(presets);
-        panel.Body.Children.Add(knobs);
-    }
-
-    void DelaySlotPanel(StackPanel fx, SlotOwner o, string id, int nth, Control menu)
-    {
-        DelaySettings V() => o.Slot(id)?.Delay ?? GoneDelay;
-        void Set(Action<DelaySettings> edit, string key) => SlotEdit(o, id, s => edit(s.Delay!), "delay." + key);
-        double Bpm() => store?.Project.Settings.Bpm ?? 110;
-        var panel = FxPanel(fx, SlotTitle("Delay", nth), FxIcon.Delay, () => o.Slot(id)?.On == true, () => SlotEdit(o, id, s => s.On = !s.On, "delay.on"),
-            on => Loc.T(on ? "mix.slot.delay.off" : "mix.slot.delay.on"), menu);
-        var defaults = new DelaySettings();
-        var presets = StripSelect([]);
-        ToolTip.SetTip(presets, Loc.T("mix.delay.presets.tip"));
-        presets.Selected += i =>
-        {
-            int k = i - (DelayBus.PresetOf(ToParams(V())) == "" ? 1 : 0);
-            if (k < 0) return;
-            string label = DelayBus.Presets[k].Label;
-            Set(d =>
-            {
-                var p = DelayBus.ApplyPreset(ToParams(d), label);
-                d.Mode = DelayParams.ModeToString(p.Mode); d.Sync = p.Sync; d.Division = p.Division; d.TimeMs = p.TimeMs;
-                d.Feedback = p.Feedback; d.Tone = p.Tone; d.LowCut = p.LowCut; d.Width = p.Width; d.Duck = p.Duck;
-            }, "preset");
-        };
-        mx.Refresh.Add(() =>
-        {
-            string p = DelayBus.PresetOf(ToParams(V()));
-            presets.SetItems((p == "" ? new[] { Loc.T("mix.custom.m") } : []).Concat(DelayBus.Presets.Select(x => BusPresetName("delay", x.Label))).ToArray(),
-                (p == "" ? new string?[] { null } : []).Concat(DelayBus.Presets.Select(x => (string?)BusPresetHint("delay", x.Label, x.Hint))).ToArray());
-            presets.SelectedIndex = p == "" ? 0 : Array.FindIndex(DelayBus.Presets, x => x.Label == p);
-        });
-        // mode, then the note value (or "Libre (ms)") under it
-        var modes = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var (mode, label, tip) in new[]
-        {
-            ("stereo", Loc.T("mix.delay.stereo.short"), Loc.T("mix.delay.stereo.tip")),
-            ("pingpong", Loc.T("mix.delay.pingpong.short"), Loc.T("mix.delay.pingpong.tip")),
-        })
-        {
-            var b = new ToggleButton { Classes = { "seg", "pick" }, Content = label, FontSize = 10, Height = 22, MinHeight = 22, Padding = new Thickness(6, 0) };
-            ToolTip.SetTip(b, tip);
-            b.Click += (_, _) => Set(d => d.Mode = mode, "mode");
-            mx.Refresh.Add(() => b.IsChecked = V().Mode == mode);
-            modes.Children.Add(b);
-        }
-        var division = StripSelect(DelayBus.Divisions.Select(d => Loc.Or("mix.div." + d.Id, d.Label)).Append(Loc.T("mix.delay.free")).ToArray());
-        division.Margin = new Thickness(0, 6, 0, 0);
-        division.Selected += i =>
-        {
-            if (i == DelayBus.Divisions.Length)
-                Set(d => { d.TimeMs = Math.Round(DelayBus.DelayTimeSec(ToParams(d), Bpm()) * 1000); d.Sync = false; }, "sync,timeMs");
-            else
-            {
-                string div = DelayBus.Divisions[i].Id;
-                Set(d => { d.Sync = true; d.Division = div; }, "division,sync");
-            }
-        };
-        mx.Refresh.Add(() =>
-        {
-            var d = V();
-            division.SelectedIndex = d.Sync ? Math.Max(0, Array.FindIndex(DelayBus.Divisions, x => x.Id == d.Division)) : DelayBus.Divisions.Length;
-            ToolTip.SetTip(division, Loc.T("mix.delay.time.tip", $"{Math.Round(DelayBus.DelayTimeSec(ToParams(d), Bpm()) * 1000):0}", d.Sync ? Loc.T("mix.delay.at", $"{Bpm():0.##}") : ""));
-        });
-        var knobs = new UniformGrid { Columns = 3, Margin = new Thickness(0, 6, 0, 0) };
-        var time = MiniKnob(Loc.T("mix.knob.time"), 0, 1, DelayMsMap.To(defaults.TimeMs), () => DelayMsMap.To(V().TimeMs), () => $"{Math.Round(V().TimeMs):0}",
-            p => Set(d => d.TimeMs = Math.Round(DelayMsMap.From(p)), "timeMs"), () => Loc.T("mix.hint.delay.time"));
-        mx.Refresh.Add(() => time.IsVisible = !V().Sync);
-        knobs.Children.Add(time);
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.repeats"), 0, 1, defaults.Feedback / 0.9, () => V().Feedback / 0.9, () => $"{V().Feedback * 100:0}%",
-            p => Set(d => d.Feedback = Math.Round(p * 90) / 100, "feedback"), () => Loc.T("mix.hint.delay.repeats")));
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.tone"), 0, 1, ToneMap.To(defaults.Tone), () => ToneMap.To(V().Tone), () => FmtHz(V().Tone),
-            p => Set(d => d.Tone = Math.Round(ToneMap.From(p)), "tone"), () => Loc.T("mix.hint.delay.tone")));
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.lowcut"), 0, 1, LowCutMap.To(defaults.LowCut), () => LowCutMap.To(V().LowCut), () => FmtHz(V().LowCut),
-            p => Set(d => d.LowCut = Math.Round(LowCutMap.From(p)), "lowCut"), () => Loc.T("mix.hint.delay.lowcut")));
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.width"), 0, 1, defaults.Width, () => V().Width, () => $"{V().Width * 100:0}%",
-            v => Set(d => d.Width = v, "width"), () => Loc.T("mix.hint.delay.width")));
-        knobs.Children.Add(MiniKnob(Loc.T("mix.knob.duck"), 0, 1, defaults.Duck, () => V().Duck, () => $"{V().Duck * 100:0}%",
-            v => Set(d => d.Duck = v, "duck"), () => Loc.T("mix.hint.delay.duck")));
-        panel.Body.Children.Add(presets);
-        panel.Body.Children.Add(new Border { Classes = { "seg" }, Child = modes, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0) });
-        panel.Body.Children.Add(division);
-        panel.Body.Children.Add(knobs);
-    }
 
     // --- the Canal tab's output and send sections -----------------------------------------------------
 

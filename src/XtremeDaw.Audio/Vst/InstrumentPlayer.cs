@@ -34,6 +34,10 @@ public sealed class InstrumentPlayer(VstBridge bridge)
     /// <summary>The project's tempo, for the plugin's transport (arpeggiators, synced LFOs).</summary>
     public double Tempo { get; set; } = 120;
 
+    volatile VstParamCurves? curves;
+    /// <summary>The instrument's automated parameters, swapped whole by the UI. They go as early as the notes.</summary>
+    public VstParamCurves? Curves { get => curves; set => curves = value; }
+
     readonly VstNote[] buf = new VstNote[VstBridge.MaxEvents];
     int count;
     /// <summary>The block that could not be sent: its notes go at the start of the next one.</summary>
@@ -93,6 +97,11 @@ public sealed class InstrumentPlayer(VstBridge bridge)
         }
         Auditions(n);
         Keys(keys, flags);
+        if (curves is { } c)
+        {
+            if ((flags & VstBridge.FlagAllNotesOff) != 0) c.Resend();
+            c.Push(Bridge, from);
+        }
         Send(n, from, flags, l, r);
     }
 
@@ -332,6 +341,11 @@ public sealed class InstrumentRender : IDisposable
     readonly int sampleRate;
     bool started;
 
+    /// <summary>The instrument's automated parameters.</summary>
+    public VstParamCurves? Curves { get; init; }
+    /// <summary>Its block with <see cref="Curves"/> (10.7 ms at 48 kHz, about how often they move live).</summary>
+    const int AutoBlock = 512;
+
     /// <summary>How long the export waits for an instrument to sound (<see cref="InstrumentWarmup"/>).</summary>
     public const double WarmSec = 10;
 
@@ -356,9 +370,11 @@ public sealed class InstrumentRender : IDisposable
     /// <summary>Renders frames <c>[pos .. pos + n)</c> into <paramref name="l"/> / <paramref name="r"/>, in blocks of at most <see cref="VstBridge.MaxBlock"/>.</summary>
     public void Render(long pos, int n, Span<float> l, Span<float> r)
     {
-        for (int off = 0; off < n; off += VstBridge.MaxBlock)
+        // lanes move between blocks: with any, the blocks are short enough for them to glide
+        int block = Curves != null ? AutoBlock : VstBridge.MaxBlock;
+        for (int off = 0; off < n; off += block)
         {
-            int len = Math.Min(VstBridge.MaxBlock, n - off);
+            int len = Math.Min(block, n - off);
             long from = pos + off + bridge.Latency;
             int count = 0;
             if (notes is { } seq)
@@ -379,6 +395,7 @@ public sealed class InstrumentRender : IDisposable
             }
             int flags = VstBridge.FlagPlaying | (started ? 0 : VstBridge.FlagAllNotesOff);
             started = true;
+            Curves?.Push(bridge, from);
             bridge.Render(buf.AsSpan(0, count), len, from, tempo, flags, l.Slice(off, len), r.Slice(off, len));
         }
     }

@@ -32,7 +32,7 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
     /// <summary>Only the editable state; serialized before every edit, never the immutable recordings.</summary>
     sealed record Editable(List<Track> Tracks, string Layout, string Aspect, ColorGrade Color, VideoFx VideoFx,
         string? Mode = null, List<Folder>? Folders = null, List<Marker>? Markers = null, List<Bus>? Buses = null,
-        MixCompareState? Compare = null);
+        MixCompareState? Compare = null, List<ChordMarker>? ChordMarkers = null, double TimeScale = 1, double Bpm = 0);
 
     public bool CanUndo => undo.Count > 0;
     public bool CanRedo => redo.Count > 0;
@@ -139,6 +139,7 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
         project.Tracks = state.Tracks;
         project.Folders = state.Folders ?? [];
         project.Markers = state.Markers ?? [];
+        project.ChordMarkers = state.ChordMarkers ?? [];
         var s = project.Settings;
         s.Layout = state.Layout;
         s.Aspect = state.Aspect;
@@ -147,13 +148,18 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
         s.Mode = state.Mode ?? s.Mode;
         s.Buses = state.Buses ?? [];
         s.Compare = state.Compare;
+        // the tempo stays as it is now, so a step from another tempo comes back at this one
+        double speed = s.TimeScale / state.TimeScale;
+        TempoFollow.Rescale(project, speed);
+        // what a change of grid moved (only the MIDI clips) isn't in the time scale
+        if (state.Bpm > 0) TempoFollow.Regrid(project, state.Bpm / s.Bpm / speed);
         project.Normalize();
         lastKey = "";
         Version++;
     }
 
     static string Capture(Project p) => JsonSerializer.Serialize(new Editable(p.Tracks, p.Settings.Layout,
-        p.Settings.Aspect, p.Settings.Color, p.Settings.VideoFx, p.Settings.Mode, p.Folders, p.Markers, p.Settings.Buses, p.Settings.Compare), ProjectStore.Json);
+        p.Settings.Aspect, p.Settings.Color, p.Settings.VideoFx, p.Settings.Mode, p.Folders, p.Markers, p.Settings.Buses, p.Settings.Compare, p.ChordMarkers, p.Settings.TimeScale, p.Settings.Bpm), ProjectStore.Json);
 
     public void Clear()
     {

@@ -38,6 +38,7 @@ public partial class MainWindow
     const double ToolGap = 12;
 
     readonly Dictionary<TimelineTool, ToggleButton> toolButtons = [];
+    ToggleButton markerStripButton = null!, chordStripButton = null!;
     /// <summary>The track Escuchar is playing (while held), the one still alone until its fade ends, where the playhead
     /// was before, and which listen a late unsolo belongs to.</summary>
     LiveTrack? listening, listenSolo;
@@ -65,6 +66,12 @@ public partial class MainWindow
             ToolStrip.Children.Add(b);
             if (ToolGroupEnds.Contains(tool)) ToolStrip.Children.Add(new Border { Classes = { "tsep" }, Margin = new Thickness(3, 0) });
         }
+        ToolStrip.Children.Add(new Border { Classes = { "tsep" }, Margin = new Thickness(3, 0) });
+        const string MarkerStripKey = "timeline.markerStrip", ChordStripKey = "timeline.chordStrip";
+        markerStripButton = StripButton("\ue7c1", "strip.markers.tip", MarkerStripKey, on => Timeline.MarkerStripShown = on);
+        chordStripButton = StripButton("\ue90b", "strip.chords.tip", ChordStripKey, on => Timeline.ChordStripShown = on);
+        chordStripButton.IsEnabled = false;
+        ToolTip.SetShowOnDisabled(chordStripButton, true);
         ProjectRow.SizeChanged += (_, _) => PlaceTools();
         SessionChip.SizeChanged += (_, _) => PlaceTools();
         ExportButton.SizeChanged += (_, _) => PlaceTools();
@@ -84,6 +91,31 @@ public partial class MainWindow
         };
         Timeline.ListenStarted += StartListening;
         Timeline.ListenEnded += StopListening;
+    }
+
+    /// <summary>A button that shows or hides one of the timeline's strips, remembered for the app, not per project.</summary>
+    ToggleButton StripButton(string glyph, string tip, string key, Action<bool> show)
+    {
+        bool on = true;
+        try { on = AppConfig.Get(key) != "off"; }
+        catch { }
+        var b = new ToggleButton
+        {
+            Classes = { "mode" }, Width = 32, Padding = new Thickness(0), IsChecked = on,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Content = new TextBlock { Classes = { "icon" }, Text = glyph, FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        ToolTip.SetTip(b, Loc.T(tip));
+        AutomationProperties.SetName(b, Loc.T(tip));
+        b.IsCheckedChanged += (_, _) =>
+        {
+            show(b.IsChecked == true);
+            try { AppConfig.Set(key, b.IsChecked == true ? "on" : "off"); }
+            catch { }
+        };
+        show(on);
+        ToolStrip.Children.Add(b);
+        return b;
     }
 
     void SetTool(TimelineTool tool)

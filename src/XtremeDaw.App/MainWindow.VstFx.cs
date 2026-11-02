@@ -320,12 +320,12 @@ public partial class MainWindow
     }
 
     /// <summary>A VST3 slot's section in the Canal tab: ON, "Abrir" and how it is going, in one short line.</summary>
-    void VstSection(LiveTrack t, string id, SlotDrag drag)
+    void VstSection(SlotOwner o, string id, SlotDrag drag)
     {
-        string owner = t.Track.Id;
-        VstSlotSettings V() => t.Channel.Slot(id)?.Vst ?? GoneVst;
+        string owner = o.OwnerId;
+        VstSlotSettings V() => o.Slot(id)?.Vst ?? GoneVst;
         // its name alone (asked by the user: the maker adds nothing once it is in the chain)
-        var section = SlotSection(t, id, VstTitle(t.Channel.Slots, id), 1, FxIcon.Vst, () => V().On, on => SlotEdit(t, id, s => s.On = on, "vst.on"), drag);
+        var section = SlotSection(o, id, VstTitle(o.Slots(), id), 1, FxIcon.Vst, () => V().On, on => SlotEdit(o, id, s => s.On = on, "vst.on"), drag);
         var open = EffectOpenButton(owner, id);
         var status = new TextBlock { FontSize = 12, Foreground = Palette.Dim, TextWrapping = TextWrapping.Wrap };
         chainRefresh.Add(() =>

@@ -13,9 +13,10 @@ namespace XtremeDaw.App.Controls;
 /// settled does <see cref="Moved"/> get the slot id and its new index, so the chain rebuilt in the new order looks
 /// exactly like what was on screen. The cards move by their own <see cref="TranslateTransform"/> (made once per drag,
 /// changed in place every frame: no garbage while it animates). A press that never moves past <see cref="Threshold"/>
-/// is a click (<see cref="Clicked"/>: the mixer folds or unfolds the slot with it).
+/// is a click (<see cref="Clicked"/>: the mixer folds or unfolds the slot with it). A chain that runs left to right
+/// (<paramref name="sideways"/>: the Mastering view) drags along X.
 /// </summary>
-public sealed class SlotDrag(double gap)
+public sealed class SlotDrag(double gap, bool sideways = false)
 {
     /// <summary>How far (px) the pointer moves before a press on a handle becomes a drag.</summary>
     const double Threshold = 4;
@@ -27,7 +28,7 @@ public sealed class SlotDrag(double gap)
     double[] target = [];
     DispatcherTimer? timer;
     int from = -1, landing = -1;
-    double startY, pointerDy;
+    double start, pointerDelta;
     bool dragging, settling;
 
     /// <summary>Once the drop has settled: the slot id, the slot it lands next to, and whether it goes after that one.</summary>
@@ -40,7 +41,7 @@ public sealed class SlotDrag(double gap)
     {
         int index = items.Count;
         items.Add((card, id));
-        handle.Cursor = new Cursor(StandardCursorType.SizeNorthSouth);
+        handle.Cursor = new Cursor(sideways ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth);
         handle.PointerPressed += (_, e) =>
         {
             if (e.Handled || settling || !e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed || card.Parent is not Visual host) return;
@@ -48,18 +49,18 @@ public sealed class SlotDrag(double gap)
             from = index;
             landing = index;
             dragging = false;
-            startY = e.GetPosition(host).Y;
+            start = Along(e.GetPosition(host));
             e.Pointer.Capture(handle);
         };
         handle.PointerMoved += (_, e) =>
         {
             if (from != index || settling || card.Parent is not Visual host) return;
-            double dy = e.GetPosition(host).Y - startY;
-            if (!dragging && Math.Abs(dy) < Threshold) return;
+            double delta = Along(e.GetPosition(host)) - start;
+            if (!dragging && Math.Abs(delta) < Threshold) return;
             if (!dragging) Lift();
-            pointerDy = dy;
-            shift[from].Y = dy;
-            int k = LandingFor(items[from].Card.Bounds.Center.Y + dy);
+            pointerDelta = delta;
+            Move(from, delta);
+            int k = LandingFor(Along(items[from].Card.Bounds.Center) + delta);
             if (k != landing)
             {
                 landing = k;
@@ -96,6 +97,14 @@ public sealed class SlotDrag(double gap)
         return card;
     }
 
+    double Along(Point p) => sideways ? p.X : p.Y;
+
+    void Move(int i, double to)
+    {
+        if (sideways) shift[i].X = to;
+        else shift[i].Y = to;
+    }
+
     void Lift()
     {
         dragging = true;
@@ -112,19 +121,20 @@ public sealed class SlotDrag(double gap)
         timer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, (_, _) => Step());
     }
 
-    /// <summary>Where the dragged card would end (0..count-1) with its center at <paramref name="y"/>: before every other card whose center is lower.</summary>
-    int LandingFor(double y)
+    /// <summary>Where the dragged card would end (0..count-1) with its center at <paramref name="at"/>: before every other card whose center is further on.</summary>
+    int LandingFor(double at)
     {
         int k = 0;
         for (int i = 0; i < items.Count; i++)
-            if (i != from && items[i].Card.Bounds.Center.Y < y) k++;
+            if (i != from && Along(items[i].Card.Bounds.Center) < at) k++;
         return k;
     }
 
-    /// <summary>The others slide by the dragged card's height (and the gap) to open its room at <see cref="landing"/>.</summary>
+    /// <summary>The others slide by the dragged card's size (and the gap) to open its room at <see cref="landing"/>.</summary>
     void MakeRoom()
     {
-        double h = items[from].Card.Bounds.Height + gap;
+        var size = items[from].Card.Bounds;
+        double h = (sideways ? size.Width : size.Height) + gap;
         for (int i = 0; i < items.Count; i++)
             if (i != from) target[i] = from < i && i <= landing ? -h : landing <= i && i < from ? h : 0;
         timer!.Start();
@@ -135,7 +145,9 @@ public sealed class SlotDrag(double gap)
     {
         if (landing == from) return 0;
         var me = items[from].Card.Bounds;
-        return landing > from ? items[landing].Card.Bounds.Bottom - me.Bottom : items[landing].Card.Bounds.Top - me.Top;
+        var to = items[landing].Card.Bounds;
+        if (sideways) return landing > from ? to.Right - me.Right : to.Left - me.Left;
+        return landing > from ? to.Bottom - me.Bottom : to.Top - me.Top;
     }
 
     void Step()
@@ -145,11 +157,11 @@ public sealed class SlotDrag(double gap)
         {
             // while dragging, the grabbed card is the pointer's
             if (i == from && !settling) continue;
-            double y = shift[i].Y, t = target[i];
+            double y = sideways ? shift[i].X : shift[i].Y, t = target[i];
             y += (t - y) * SlideEase;
             if (Math.Abs(t - y) < 0.5) y = t;
             else still = false;
-            shift[i].Y = y;
+            Move(i, y);
         }
         if (!still || !settling) { if (still) timer!.Stop(); return; }
         timer!.Stop();

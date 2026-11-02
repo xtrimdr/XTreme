@@ -67,12 +67,15 @@ Más detalles en [Requisitos](DETALLES.md#requisitos).
 ### Editar
 
 - **Timeline** con varias pistas: clips que se mueven, recortan, dividen y duplican, fades, ganancia por clip con su
-  **curva de volumen**, rango de borrado, deshacer y rehacer ilimitados, e importación de audio (WAV, MP3, FLAC, OGG,
+  **curva de volumen**, rango de borrado, deshacer y rehacer ilimitados, e importación de casi cualquier audio o video (WAV, MP3, FLAC, OGG,
   M4A, AIFF). **Detectar tempo** en cualquier clip (clic derecho) y poner el proyecto a esos BPM.
 - **Pistas MIDI** con **piano roll**: doble clic en su carril crea un clip y lo abre. Clic escribe una nota, arrastrar
   la mueve o la alarga, clic derecho la borra, y abajo va la velocidad de cada nota.
+- **Detectar escala y acordes**: la escala de un clip, sus notas y sus acordes en un resumen, y los acordes en su propia franja del timeline si querés.
 - **Extraer MIDI**: las notas de un clip de audio (acordes o melodía) pasan a una pista MIDI, con el clic derecho o
   arrastrando el clip a una pista MIDI (Basic Pitch de Spotify, en la CPU).
+- **Separar en stems**: un clip de audio se separa en 2, 4 o 6 pistas (voz, batería, bajo, guitarra, piano y resto), con
+  calidad Rápida, Alta o Máxima, desde el clic derecho (Demucs, en la placa de video o en la CPU).
 - **Carpetas** que se pliegan y agrupan pistas; varias pistas se marcan con Ctrl+clic / Shift+clic y se mueven juntas.
   Cada pista tiene su **color** (24, en orden de arco iris), un **ícono de instrumento** (guitarras, bajo, batería,
   synths, cuerdas, vientos, percusión…), su propio alto y sus knobs de Vida, Comp, Reverb, Delay y Tono en el
@@ -95,7 +98,7 @@ Más detalles en [Requisitos](DETALLES.md#requisitos).
 ### Mezclar
 
 - Cadena de efectos por canal, en el orden que quieras: saturación (**Vida**, válvula o cinta), **compresor** con
-  presets (Rasgueo / Arpegio / Punteo), **EQ de 6 bandas** con espectro en vivo y **puerta de ruido**, más paneo
+  presets (Rasgueo / Arpegio / Punteo), **EQ de 7 bandas** con espectro en vivo, bandas dinámicas y vista grande y **puerta de ruido**, más paneo
   con plantillas, botón **MONO** para chequear la mezcla y **FX** para escucharla sin efectos.
 - **Transponer** por pista (−12 a +12 semitonos) sin cambiar el largo: se calcula en segundo plano (unos 4 s por
   3 min) con un vocoder de fase de alta calidad, se ve el progreso sobre los clips y queda guardada en `cache/`.
@@ -182,3 +185,6 @@ nunca en la PC de nadie, así lo que bajás sale de este código. Firma gratuita
 versión nueva consultando la última release en GitHub (se apaga en Acerca de) y se conecta a la cámara por red que
 configures.
 
+## Modelos de Separar en stems
+
+Los modelos son de Meta (Demucs, https://github.com/facebookresearch/demucs). XTreme no los incluye ni los aloja: se bajan de su fuente original a tu PC cuando los instalás. Tienen sus propios términos y no están cubiertos por la licencia de XTreme. La app funciona sin ellos.

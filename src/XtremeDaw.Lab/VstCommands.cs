@@ -60,10 +60,12 @@ static class VstCommands
                 return Try(a);
             case "efecto":
                 return Effect(a);
+            case "parametros":
+                return Parameters(a);
             case "vivo":
                 return LivePlay(a);
             default:
-                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado]");
+                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado] | parametros \"nombre\" [--mover \"parámetro\"] [--segundos 2]");
         }
     }
 
@@ -255,6 +257,54 @@ static class VstCommands
     /// <c>--bloque</c> at the speed of real time: writes both and checks that the live one is the same sound one block
     /// later (a plugin that changes with time, like a modulated reverb, only lines up roughly).
     /// </summary>
+    /// <summary>
+    /// What a plugin lets a host automate; with --mover, a lane on that parameter from 0 to 1 over the sound, the way the
+    /// export plays one, against the same sound with no lane: they must differ, or the value isn't reaching the plugin.
+    /// </summary>
+    static int Parameters(Args a)
+    {
+        string name = a.Positional.Skip(1).FirstOrDefault() ?? throw new ArgumentException("vst parametros \"nombre del plugin\"");
+        var plugin = PluginCatalog.Find(PluginCatalog.Plugins(PluginCatalog.Load()), name)
+            ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con vst escanear.");
+        const int sr = 48000, quantum = 128;
+        using var bridge = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, sr, offline: true);
+        var list = bridge.GetParamsAsync().Result;
+        if (list == null) throw new InvalidOperationException("El plugin no contestó la lista de parámetros.");
+        if (a.Get("mover") is not { } wanted)
+        {
+            foreach (var p in list) Console.WriteLine($"{p.Id,12}  {p.Value:0.000}  {(p.Steps > 0 ? $"{p.Steps} pasos" : "continuo"),-9}  {p.Title}");
+            Console.WriteLine($"{list.Count} parámetros.");
+            return 0;
+        }
+        var param = list.FirstOrDefault(p => p.Title.Contains(wanted, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ArgumentException($"No hay un parámetro \"{wanted}\": corré vst parametros sin --mover.");
+        double sec = a.Double("segundos", 2);
+        var input = new float[(int)(sec * sr)];
+        for (int i = 0; i < input.Length; i++) input[i] = (float)(0.3 * Math.Sin(2 * Math.PI * 220 * i / sr));
+        float[] Run(VstParamCurves? curves)
+        {
+            var fx = new VstInsert(sr);
+            fx.Set(new VstSlotSpec(new VstInstance(plugin.Path, plugin.ClassId, plugin.Name, null), true) { Offline = true, Curves = curves }, 120);
+            var l = (float[])input.Clone();
+            var r = (float[])input.Clone();
+            for (int at = 0; at < l.Length; at += quantum)
+            {
+                int len = Math.Min(quantum, l.Length - at);
+                fx.Frame = at;
+                fx.Process(l.AsSpan(at, len), r.AsSpan(at, len));
+            }
+            fx.Dispose();
+            return l;
+        }
+        var still = Run(null);
+        var moved = Run(new VstParamCurves([param.Id], [new AutoCurve([0, sec], [0, 1])]));
+        double diff = 0;
+        for (int i = 0; i < still.Length; i++) diff = Math.Max(diff, Math.Abs(still[i] - moved[i]));
+        bool ok = diff > 1e-4;
+        Console.WriteLine($"{(ok ? "ok   " : "FALLA")} {plugin.Name} · {param.Title}: diferencia {diff:0.0000} con el carril");
+        return ok ? 0 : 1;
+    }
+
     static int Effect(Args a)
     {
         string name = a.Positional.Skip(1).FirstOrDefault() ?? throw new ArgumentException("vst efecto \"nombre del plugin\"");

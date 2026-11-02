@@ -130,7 +130,7 @@ public static partial class ProjectLibrary
             var p = ProjectStore.Parse(File.ReadAllText(Path.Combine(dir, ProjectStore.FileName), Encoding.UTF8));
             var used = p.Tracks.Where(t => t.Clips.Count > 0).ToList();
             double duration = used.SelectMany(t => t.Clips)
-                .Select(c => c.AtSec + (p.FindMedia(c.MediaId)?.DurationSec ?? 0) - c.TrimEndSec)
+                .Select(c => c.AtSec + (p.FindMedia(c.MediaId)?.DurationSec ?? 0) * c.Stretch - c.TrimEndSec)
                 .DefaultIfEmpty(0)
                 .Max();
             long bytes = 0;

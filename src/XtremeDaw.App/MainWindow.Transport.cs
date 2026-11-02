@@ -53,15 +53,37 @@ public partial class MainWindow
         if (transportKeys.Remove(e.Key)) e.Handled = true;
     }
 
-    void SetTempo(double value)
+    void SetTempo(double value) => SetTempo(value, follow: true);
+
+    /// <summary>
+    /// The project's tempo. With <paramref name="follow"/> the whole song changes speed and the playhead stays on its
+    /// bar (<see cref="TempoFollow"/>; the clips' sounds are made in the background, <see cref="RefreshTranspose"/>);
+    /// without it, or while recording, only the grid moves.
+    /// </summary>
+    void SetTempo(double value, bool follow)
     {
         if (store == null || store.ReadOnly || restoring || store.Project.Settings.Bpm == value) return;
+        var p = store.Project;
+        follow &= !RecordingBusy;
+        double f = p.Settings.Bpm / value, at = engine.PositionSec;
         // no undo step: the tempo stays outside the snapshots, like the web's setBpm
-        store.Project.Settings.Bpm = value;
+        if (follow) TempoFollow.SetBpm(p, value);
+        else TempoFollow.SetGrid(p, value);
         engine.Bpm = value;
         Timeline.Bpm = value;
         // MIDI notes are in beats: they follow the tempo
         foreach (var t in tracks) t.SetMidi(value);
+        if (follow)
+        {
+            foreach (var t in tracks)
+            {
+                foreach (var c in t.Clips) c.RefreshCurve();
+                t.ApplyChannel(); // the lanes moved with the clips
+            }
+            RefreshMarkers();
+            RefreshTranspose();
+            engine.Seek(at * f);
+        }
         engine.RefreshClipTiming();
         Timeline.LengthSec = engine.LengthSec;
         Tempo.Set(value);

@@ -19,11 +19,14 @@
 //         toolbar id=icon:text|-|id=:text...   the buttons of the bar above the plugin, "-" between groups; nothing sent = no bar
 //         toolbar-track <rrggbb>|<track>|<plugin>   who it plays for, on the left of the bar (no color = the accent)
 //         toolbar-state id=0 id=1...   which buttons are lit
-//         keys-panel <pixels>   room at the bottom of the window for a panel of the app; 0 = none. It answers "editor-panel <hwnd>"
+//         keys-panel <height>   room at the bottom of the window for a panel of the app, at 100 % (this scales it to the
+//                               window's DPI); 0 = none. It answers "editor-panel <hwnd>"
 //         stats                 -> "stats <blocks> <frames> <wall us> <worst wall us> <cpu us>" since the last stats
+//         params                -> "param <id> <value> <steps> <title>" per automatable parameter, then "params-end"
 //         quit
 //       and it says on stdout: "ready <latency> <outputs> <instrument>", "error <message>", "dirty" (a parameter
-//       changed in its window), "latency <frames>" (the plugin changed its latency), "editor-open", "editor-closed",
+//       changed in its window), "touched <id>" (the parameter grabbed in its window), "latency <frames>" (the plugin
+//       changed its latency), "editor-open", "editor-closed",
 //       "editor-rect <left> <top> <right> <bottom>" (where its window is now; no numbers = minimized), "editor-active",
 //       "editor-inactive" (it took or lost the keyboard), "toolbar <id>" (a button of the bar was clicked),
 //       "editor-panel <hwnd>" (where the app puts its panel, as a child window).
@@ -36,6 +39,7 @@
 #include "shared.h"
 
 #include "pluginterfaces/gui/iplugview.h"
+#include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstevents.h"
@@ -200,11 +204,18 @@ class ComponentHandler : public IComponentHandler
 public:
     std::mutex lock;
     std::vector<std::pair<ParamID, ParamValue>> pending;
+    /// Lanes' values the plugin's window hasn't shown yet: its knobs follow them (same lock).
+    std::vector<std::pair<ParamID, ParamValue>> toShow;
+    std::atomic<ParamID> lastTouched {kNoParamId};
     std::atomic<ULONGLONG> lastDirty {0};
     /// The plugin said its latency changed: read again before the next block.
     std::atomic<bool> latencyChanged {false};
 
-    tresult PLUGIN_API beginEdit(ParamID) override { return kResultOk; }
+    tresult PLUGIN_API beginEdit(ParamID id) override
+    {
+        if (id != lastTouched.exchange(id)) Say("touched " + std::to_string(id));
+        return kResultOk;
+    }
     tresult PLUGIN_API performEdit(ParamID id, ParamValue value) override
     {
         {
@@ -265,8 +276,10 @@ public:
 
     Host* host = nullptr;
     HWND hwnd = nullptr, plug = nullptr, panelHost = nullptr;
-    /// The room for the app's panel at the bottom of the window.
-    int panelHeight = 0;
+    /// The room for the app's panel at the bottom of the window, at 100 %.
+    int panelUnits = 0;
+    /// The window's DPI: this process is per-monitor aware, so everything here is in real pixels.
+    int dpi = USER_DEFAULT_SCREEN_DPI;
     IPtr<IPlugView> view;
     std::vector<ToolButton> buttons;
     std::wstring title, trackName, pluginName;
@@ -274,14 +287,23 @@ public:
     COLORREF panel = RGB(0x13, 0x13, 0x16), raised = RGB(0x1c, 0x1c, 0x20), fg = RGB(0xec, 0xec, 0xef), dim = RGB(0xa1, 0xa1, 0xaa),
         accent = RGB(0x22, 0xd3, 0xee), line = RGB(0x27, 0x27, 0x2c), trackColor = accent;
 
-    int Bar() const { return buttons.empty() ? 0 : BarHeight; }
+    int Scaled(int units) const { return MulDiv(units, dpi, USER_DEFAULT_SCREEN_DPI); }
+    int Bar() const { return buttons.empty() ? 0 : Scaled(BarHeight); }
+    int Panel() const { return Scaled(panelUnits); }
+
+    /// The window's outer size for a plugin of that size, with the bar and the panel.
+    SIZE WindowFor(int width, int height, DWORD style, DWORD exStyle) const
+    {
+        RECT wr {0, 0, width, height + Bar() + Panel()};
+        AdjustWindowRectExForDpi(&wr, style, FALSE, exStyle, dpi);
+        return {wr.right - wr.left, wr.bottom - wr.top};
+    }
 
     tresult PLUGIN_API resizeView(IPlugView* v, ViewRect* r) override
     {
         if (!hwnd || !r) return kInvalidArgument;
-        RECT wr {0, 0, r->getWidth(), r->getHeight() + Bar() + panelHeight};
-        AdjustWindowRectEx(&wr, GetWindowLong(hwnd, GWL_STYLE), FALSE, GetWindowLong(hwnd, GWL_EXSTYLE));
-        SetWindowPos(hwnd, nullptr, 0, 0, wr.right - wr.left, wr.bottom - wr.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        auto size = WindowFor(r->getWidth(), r->getHeight(), GetWindowLong(hwnd, GWL_STYLE), GetWindowLong(hwnd, GWL_EXSTYLE));
+        SetWindowPos(hwnd, nullptr, 0, 0, size.cx, size.cy, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         v->onSize(r);
         return kResultOk;
     }
@@ -299,7 +321,7 @@ public:
     uint32 PLUGIN_API release() override { return 1; }
 };
 
-// the bar above the plugin, in pixels and with the app's token for a mute that is on
+// the bar above the plugin, in pixels at 100 % and with the app's token for a mute that is on
 constexpr int BarMargin = 12, ChipHeight = 30, ChipGap = 4, GroupGap = 17, LabelGap = 10, IconSize = 15, MinIdentity = 200;
 constexpr float ChipRadius = 6;
 constexpr COLORREF Amber = RGB(0xf5, 0x9e, 0x0b);
@@ -466,6 +488,29 @@ struct Host
             handler.pending.clear();
             handler.lock.unlock();
         }
+        // what the lanes moved: the processor hears it now, the window sees it soon
+        int32 automated = std::min(s.numParams, gcvst::MaxParams);
+        if (automated > 0)
+        {
+            bool show = handler.lock.try_lock();
+            for (int32 i = 0; i < automated; i++)
+            {
+                auto& p = s.params[i];
+                int32 index = 0;
+                if (auto* queue = params.addParameterData(p.id, index)) queue->addPoint(0, p.value, index);
+                if (show) handler.toShow.emplace_back(p.id, p.value);
+            }
+            if (show)
+            {
+                handler.lock.unlock();
+                ULONGLONG now = GetTickCount64();
+                if (editor.hwnd && now - lastShown >= ShowEveryMs)
+                {
+                    lastShown = now;
+                    PostMessageW(messages, WM_COMMAND_LINE, 0, reinterpret_cast<LPARAM>(new std::string("show-params")));
+                }
+            }
+        }
         context.state = ProcessContext::kTempoValid | ProcessContext::kProjectTimeMusicValid | ProcessContext::kTimeSigValid |
             ((s.flags & gcvst::Playing) ? ProcessContext::kPlaying : 0);
         context.tempo = s.tempo > 0 ? s.tempo : 120;
@@ -517,6 +562,38 @@ struct Host
                 params.clearQueue();
             }
         }
+    }
+
+    /// How often the plugin's window follows its lanes.
+    static constexpr ULONGLONG ShowEveryMs = 33;
+    ULONGLONG lastShown = 0;
+
+    /// What the lanes moved reaches the plugin's window: its controller is the window thread's, like everything in it.
+    void ShowParams()
+    {
+        std::vector<std::pair<ParamID, ParamValue>> list;
+        {
+            std::lock_guard<std::mutex> g(handler.lock);
+            list.swap(handler.toShow);
+        }
+        if (controller) for (auto& [id, value] : list) controller->setParamNormalized(id, value);
+    }
+
+    /// Lists what a host can automate: the plugin's own flags say which, and hidden ones stay hidden.
+    void SayParams()
+    {
+        if (controller)
+            for (int32 i = 0, n = controller->getParameterCount(); i < n; i++)
+            {
+                ParameterInfo p {};
+                if (controller->getParameterInfo(i, p) != kResultOk) continue;
+                if (!(p.flags & ParameterInfo::kCanAutomate) || (p.flags & ParameterInfo::kIsHidden)) continue;
+                std::wstring title(reinterpret_cast<const wchar_t*>(p.title));
+                char head[96];
+                std::snprintf(head, sizeof head, "param %u %.6f %d ", static_cast<unsigned>(p.id), controller->getParamNormalized(p.id), p.stepCount);
+                Say(head + Utf8(title.c_str()));
+            }
+        Say("params-end");
     }
 
     void AddNote(bool on, int32 offset, int16 pitch, float velocity)
@@ -633,21 +710,24 @@ struct Host
             Say("error el plugin no tiene ventana propia");
             return;
         }
-        ViewRect r {};
-        editor.view->getSize(&r);
         bool resizable = editor.view->canResize() == kResultTrue;
         DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN | (resizable ? WS_THICKFRAME | WS_MAXIMIZEBOX : 0);
-        int width = std::max<int32>(r.getWidth(), 100), height = std::max<int32>(r.getHeight(), 60);
-        RECT wr {0, 0, width, height + editor.Bar() + editor.panelHeight};
-        AdjustWindowRectEx(&wr, style, FALSE, 0);
         std::wstring title = !editor.title.empty() ? editor.title : Wide(name);
+        // the size comes after the window: what the plugin measures depends on the scale of the screen it landed on
         editor.hwnd = CreateWindowExW(0, L"WtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
-            wr.right - wr.left, wr.bottom - wr.top, owner, nullptr, GetModuleHandleW(nullptr), this);
+            640, 480, owner, nullptr, GetModuleHandleW(nullptr), this);
         editor.host = this;
+        editor.dpi = GetDpiForWindow(editor.hwnd);
+        TellScale();
+        ViewRect r {};
+        editor.view->getSize(&r);
+        int width = std::max<int32>(r.getWidth(), 100), height = std::max<int32>(r.getHeight(), 60);
+        auto size = editor.WindowFor(width, height, style, 0);
+        SetWindowPos(editor.hwnd, nullptr, 0, 0, size.cx, size.cy, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         DressWindow();
         editor.plug = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, editor.Bar(), width, height,
             editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
-        if (editor.panelHeight > 0) MakePanelHost();
+        if (editor.panelUnits > 0) MakePanelHost();
         editor.view->setFrame(&editor);
         if (editor.view->attached(editor.plug, kPlatformTypeHWND) != kResultOk)
         {
@@ -655,17 +735,39 @@ struct Host
             Say("error no pude abrir la ventana del plugin");
             return;
         }
+        // some plugins only take the scale once they have a window; those answer with resizeView
+        TellScale();
         ShowWindow(editor.hwnd, SW_SHOWNORMAL);
         SetForegroundWindow(editor.hwnd);
         Say("editor-open");
+    }
+
+    /// The screen's scale to the plugin, which then draws and measures in real pixels. One that doesn't take it keeps its size.
+    void TellScale()
+    {
+        FUnknownPtr<IPlugViewContentScaleSupport> scale(editor.view);
+        if (scale) scale->setContentScaleFactor(static_cast<float>(editor.dpi) / USER_DEFAULT_SCREEN_DPI);
+    }
+
+    /// The window went to a screen with another scale: the plugin rescales (or not) and the window fits it around.
+    void DpiChanged(int dpi, const RECT& suggested)
+    {
+        editor.dpi = dpi;
+        TellScale();
+        ViewRect r {};
+        editor.view->getSize(&r);
+        auto size = editor.WindowFor(r.getWidth(), r.getHeight(), GetWindowLong(editor.hwnd, GWL_STYLE), GetWindowLong(editor.hwnd, GWL_EXSTYLE));
+        SetWindowPos(editor.hwnd, nullptr, suggested.left, suggested.top, size.cx, size.cy, SWP_NOZORDER | SWP_NOACTIVATE);
+        InvalidateRect(editor.hwnd, nullptr, FALSE);
     }
 
     void MakePanelHost()
     {
         RECT client {};
         GetClientRect(editor.hwnd, &client);
-        editor.panelHost = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, client.bottom - editor.panelHeight,
-            client.right, editor.panelHeight, editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+        int panel = editor.Panel();
+        editor.panelHost = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, client.bottom - panel,
+            client.right, panel, editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
         Say("editor-panel " + std::to_string(reinterpret_cast<intptr_t>(editor.panelHost)));
     }
 
@@ -673,10 +775,10 @@ struct Host
     void SetPanel(int height)
     {
         height = std::max(0, height);
-        if (height == editor.panelHeight) return;
+        if (height == editor.panelUnits) return;
         if (!editor.hwnd)
         {
-            editor.panelHeight = height;
+            editor.panelUnits = height;
             return;
         }
         if (height == 0 && editor.panelHost)
@@ -684,8 +786,8 @@ struct Host
             DestroyWindow(editor.panelHost);
             editor.panelHost = nullptr;
         }
-        int grow = height - editor.panelHeight;
-        editor.panelHeight = height;
+        int grow = editor.Scaled(height) - editor.Panel();
+        editor.panelUnits = height;
         RECT r {};
         GetWindowRect(editor.hwnd, &r);
         SetWindowPos(editor.hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top + grow, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -794,10 +896,10 @@ struct Host
     }
 
     /// A button's box, as the app's chips: outlined; lit, tinted with its color.
-    static void DrawChip(Gdiplus::Graphics& g, const RECT& r, COLORREF border, BYTE borderAlpha, COLORREF fill, BYTE fillAlpha)
+    static void DrawChip(Gdiplus::Graphics& g, const RECT& r, float radius, COLORREF border, BYTE borderAlpha, COLORREF fill, BYTE fillAlpha)
     {
         Gdiplus::GraphicsPath path;
-        Rounded(path, r, ChipRadius);
+        Rounded(path, r, radius);
         if (fillAlpha > 0)
         {
             Gdiplus::SolidBrush brush(Tint(fill, fillAlpha));
@@ -810,16 +912,16 @@ struct Host
     static HFONT Font(int size, int weight, const wchar_t* face) { return CreateFontW(-size, 0, 0, 0, weight, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, face); }
 
     /// Windows 11's icon font, or the one Windows 10 has with the same glyphs.
-    static HFONT IconFont(HDC dc)
+    static HFONT IconFont(HDC dc, int size)
     {
-        HFONT font = Font(IconSize, FW_NORMAL, L"Segoe Fluent Icons");
+        HFONT font = Font(size, FW_NORMAL, L"Segoe Fluent Icons");
         auto old = SelectObject(dc, font);
         wchar_t face[LF_FACESIZE] {};
         GetTextFaceW(dc, LF_FACESIZE, face);
         SelectObject(dc, old);
         if (wcscmp(face, L"Segoe Fluent Icons") == 0) return font;
         DeleteObject(font);
-        return Font(IconSize, FW_NORMAL, L"Segoe MDL2 Assets");
+        return Font(size, FW_NORMAL, L"Segoe MDL2 Assets");
     }
 
     static int TextWidth(HDC dc, HFONT font, const std::wstring& text)
@@ -837,10 +939,13 @@ struct Host
     {
         int height = editor.Bar();
         if (height == 0 || width <= 0) return;
+        auto s = [this](int units) { return editor.Scaled(units); };
+        int margin = s(BarMargin), chip = s(ChipHeight), chipGap = s(ChipGap), groupGap = s(GroupGap), labelGap = s(LabelGap);
+        float radius = ChipRadius * editor.dpi / USER_DEFAULT_SCREEN_DPI;
         HDC dc = CreateCompatibleDC(target);
         HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
         auto oldBitmap = SelectObject(dc, bitmap);
-        HFONT label = Font(12, FW_NORMAL, L"Segoe UI"), strong = Font(13, FW_SEMIBOLD, L"Segoe UI"), icons = IconFont(dc);
+        HFONT label = Font(s(12), FW_NORMAL, L"Segoe UI"), strong = Font(s(13), FW_SEMIBOLD, L"Segoe UI"), icons = IconFont(dc, s(IconSize));
         auto oldFont = SelectObject(dc, label);
         SetBkMode(dc, TRANSPARENT);
         RECT all {0, 0, width, height}, under {0, height - 1, width, height};
@@ -853,38 +958,38 @@ struct Host
         int total = 0, labels = 0;
         for (auto& b : editor.buttons)
         {
-            if (b.id == "-") total += GroupGap;
-            else if (b.icon.empty()) total += ChipHeight + ChipGap;
+            if (b.id == "-") total += groupGap;
+            else if (b.icon.empty()) total += chip + chipGap;
             else
             {
-                total += ChipHeight + ChipGap;
-                labels += TextWidth(dc, label, b.text) + LabelGap;
+                total += chip + chipGap;
+                labels += TextWidth(dc, label, b.text) + labelGap;
             }
         }
-        bool room = width - total - labels >= MinIdentity;
+        bool room = width - total - labels >= s(MinIdentity);
         if (room) total += labels;
 
         Gdiplus::Graphics g(dc);
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-        int top = (height - 1 - ChipHeight) / 2, x = width - BarMargin - total + ChipGap;
+        int top = (height - 1 - chip) / 2, x = width - margin - total + chipGap;
         for (size_t i = 0; i < editor.buttons.size(); i++)
         {
             auto& b = editor.buttons[i];
             if (b.id == "-")
             {
-                RECT sep {x + (GroupGap - ChipGap) / 2, top + 4, x + (GroupGap - ChipGap) / 2 + 1, top + ChipHeight - 4};
+                RECT sep {x + (groupGap - chipGap) / 2, top + s(4), x + (groupGap - chipGap) / 2 + 1, top + chip - s(4)};
                 Gdiplus::SolidBrush brush(Tint(editor.line));
                 g.FillRectangle(&brush, static_cast<int>(sep.left), static_cast<int>(sep.top), 1, static_cast<int>(sep.bottom - sep.top));
-                x += GroupGap;
+                x += groupGap;
                 b.rect = {};
                 continue;
             }
             bool hover = static_cast<int>(i) == editor.hover, wide = room && !b.icon.empty();
-            int w = ChipHeight + (wide ? TextWidth(dc, label, b.text) + LabelGap : 0);
-            b.rect = {x, top, x + w, top + ChipHeight};
+            int w = chip + (wide ? TextWidth(dc, label, b.text) + labelGap : 0);
+            b.rect = {x, top, x + w, top + chip};
             COLORREF lit = b.id == "mute" ? Amber : editor.accent;
-            if (b.on) DrawChip(g, b.rect, lit, 0x66, lit, 0x24);
-            else DrawChip(g, b.rect, editor.line, 255, editor.line, hover ? 255 : 0);
+            if (b.on) DrawChip(g, b.rect, radius, lit, 0x66, lit, 0x24);
+            else DrawChip(g, b.rect, radius, editor.line, 255, editor.line, hover ? 255 : 0);
             COLORREF ink = b.on ? lit : hover ? editor.fg : editor.dim;
             SetTextColor(dc, ink);
             g.Flush(Gdiplus::FlushIntentionSync);
@@ -897,33 +1002,33 @@ struct Host
             else
             {
                 SelectObject(dc, icons);
-                RECT ir {r.left, r.top, r.left + ChipHeight, r.bottom};
+                RECT ir {r.left, r.top, r.left + chip, r.bottom};
                 DrawTextW(dc, b.icon.c_str(), -1, &ir, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 if (wide)
                 {
                     SelectObject(dc, label);
-                    RECT tr {r.left + ChipHeight - 4, r.top, r.right - 8, r.bottom};
+                    RECT tr {r.left + chip - s(4), r.top, r.right - s(8), r.bottom};
                     DrawTextW(dc, b.text.c_str(), -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
                 }
             }
-            x += w + ChipGap;
+            x += w + chipGap;
         }
 
         // who it plays for: the track's color, its name, and the plugin after it
-        int limit = width - BarMargin - total - 12;
+        int limit = width - margin - total - s(12);
         Gdiplus::SolidBrush stripe(Tint(editor.trackColor));
         Gdiplus::GraphicsPath path;
-        RECT bar {BarMargin, top + 3, BarMargin + 4, top + ChipHeight - 3};
-        Rounded(path, bar, 1.5f);
+        RECT bar {margin, top + s(3), margin + s(4), top + chip - s(3)};
+        Rounded(path, bar, radius / 4);
         g.FillPath(&stripe, &path);
         g.Flush(Gdiplus::FlushIntentionSync);
-        int text = BarMargin + 13;
+        int text = margin + s(13);
         RECT name {text, 0, std::max(text, limit), height - 1};
         SelectObject(dc, strong);
         SetTextColor(dc, editor.fg);
         DrawTextW(dc, editor.trackName.c_str(), -1, &name, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        int after = text + TextWidth(dc, strong, editor.trackName) + 10;
-        if (after + 40 < limit)
+        int after = text + TextWidth(dc, strong, editor.trackName) + s(10);
+        if (after + s(40) < limit)
         {
             RECT plugin {after, 0, limit, height - 1};
             SelectObject(dc, label);
@@ -971,6 +1076,8 @@ struct Host
         else if (cmd == "keys-panel") SetPanel(std::atoi(arg.c_str()));
         else if (cmd == "state") Say("state " + GetState());
         else if (cmd == "stats") Say(Stats());
+        else if (cmd == "params") SayParams();
+        else if (cmd == "show-params") ShowParams();
         else if (cmd == "load-state") Say(SetState(arg) ? "loaded" : "error no pude cargar el estado guardado del plugin");
         else if (cmd == "editor") OpenEditor(arg.empty() ? nullptr : reinterpret_cast<HWND>(static_cast<intptr_t>(std::stoll(arg))));
         else if (cmd == "editor-close") CloseEditor();
@@ -1024,7 +1131,9 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_SIZE:
         if (host && host->editor.plug)
         {
-            int bar = host->editor.Bar(), panel = host->editor.panelHeight, width = LOWORD(lp), height = std::max(0, HIWORD(lp) - bar - panel);
+            int bar = host->editor.Bar(), panel = host->editor.Panel(), width = LOWORD(lp), height = std::max(0, HIWORD(lp) - bar - panel);
+            RECT was {};
+            GetClientRect(host->editor.plug, &was);
             MoveWindow(host->editor.plug, 0, bar, width, height, TRUE);
             if (host->editor.panelHost)
             {
@@ -1033,12 +1142,21 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 if (HWND content = GetWindow(host->editor.panelHost, GW_CHILD))
                     SetWindowPos(content, nullptr, 0, 0, width, panel, SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
             }
-            if (host->editor.view && host->editor.view->canResize() == kResultTrue)
+            // the panel coming and going leaves the plugin alone: asked to resize, some rescale themselves
+            bool resized = was.right != width || was.bottom != height;
+            if (resized && host->editor.view && host->editor.view->canResize() == kResultTrue)
             {
                 ViewRect r {0, 0, width, height};
                 host->editor.view->onSize(&r);
             }
             host->RedrawBar();
+        }
+        break;
+    case WM_DPICHANGED:
+        if (host && host->editor.plug)
+        {
+            host->DpiChanged(LOWORD(wp), *reinterpret_cast<RECT*>(lp));
+            return 0;
         }
         break;
     case WM_ERASEBKGND:
@@ -1223,6 +1341,8 @@ int wmain(int argc, wchar_t** argv)
         else if (a == L"--offline") offline = true;
         else if (a == L"--parent") parent = static_cast<DWORD>(std::stoul(next()));
     }
+    // before any window: left to Windows, plugins are stretched and never hear the screen's scale
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     // a plugin's message box or crash dialog must not hang an invisible process
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     if (!scan.empty()) return Scan(scan);

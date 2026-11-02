@@ -178,6 +178,9 @@
               <TextBlock Classes="icon" Text="&#xE80A;" />
             </Button>
             <c:ThemePicker x:Name="ThemePick" VerticalAlignment="Center" />
+            <Button x:Name="HelpButton" Classes="ghost" AutomationProperties.Name="{loc:T help.title}">
+              <TextBlock Classes="icon" Text="&#xE897;" />
+            </Button>
             <Button x:Name="SettingsButton" Classes="ghost" ToolTip.Tip="{loc:T settings.title}">
               <TextBlock Classes="icon" Text="&#xE713;" />
             </Button>
@@ -350,7 +353,7 @@
               <TextBlock Classes="icon" Text="&#xE9A6;" FontSize="14" />
             </Button>
             <!-- Cubase's "deactivate all mute / solo states" (native only): lit while any track has one (MainWindow.Timeline.cs) -->
-            <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="4" Margin="0,0,8,0" VerticalAlignment="Center">
+            <StackPanel Grid.Column="5" x:Name="ClearTogglesPanel" Orientation="Horizontal" Spacing="4" Margin="0,0,8,0" VerticalAlignment="Center">
               <Button x:Name="ClearMutesButton" Classes="chip" Width="24" Height="24" MinHeight="24" Padding="0" CornerRadius="4"
                       HorizontalContentAlignment="Center" VerticalContentAlignment="Center" ToolTip.Tip="{loc:T timeline.noMutes}">
                 <TextBlock Text="M" FontSize="10.5" FontWeight="SemiBold" />
@@ -373,7 +376,7 @@
               <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#ffffff" />
               <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#ffffff" />
             </Border.Resources>
-            <Grid ColumnDefinitions="Auto,*,Auto,*,Auto" Margin="12,0,6,0">
+            <Grid x:Name="TimelineFooterGrid" ColumnDefinitions="Auto,*,Auto,*,Auto" Margin="12,0,6,0">
               <TextBlock x:Name="ZoomIcon" Classes="icon" Text="&#xE8A3;" FontSize="15" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="0,0,8,0" />
               <Slider x:Name="ZoomSlider" Grid.Column="1" Minimum="0" Maximum="1" Value="0"
                       VerticalAlignment="Center" Margin="0,0,16,0" AutomationProperties.Name="{loc:T timeline.zoom}" />
@@ -538,7 +541,10 @@
     <d:ExportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Export" IsVisible="False" AutomationProperties.Name="{loc:T export.name}" />
     <d:SettingsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Settings" IsVisible="False" />
     <d:AboutDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="About" IsVisible="False" />
-    <d:FfmpegDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="FfmpegHelp" IsVisible="False" />
+    <d:StemsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Stems" IsVisible="False" />
+    <d:ComponentsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="ComponentsHelp" IsVisible="False" />
+    <d:ScaleDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="ScaleResult" IsVisible="False" />
+    <d:HelpDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="HelpPanel" IsVisible="False" />
     <d:UnsavedDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Unsaved" IsVisible="False" />
     <!-- toasts float over everything (the manager and the dialogs too), above the transport bar -->
     <c:ToastHost Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Toasts" Margin="0,0,16,68" />

@@ -86,6 +86,8 @@ public partial class MainWindow
         if (int.TryParse(AppConfig.Get("virtualTranspose"), out int transpose)) virtualKeys.Transpose = transpose;
         if (int.TryParse(AppConfig.Get("virtualRange"), out int range)) virtualRange = Math.Clamp(range, VirtualKeyboardView.MinOctaves, VirtualKeyboardView.MaxOctaves);
         VirtualKeysHost.Child = NewVirtualPanel().Root;
+        // issue #2: the whole window growing, with nothing in the app that scales it
+        ScalingChanged += (_, _) => SessionLog.Write($"escala de la ventana {RenderScaling:0.###}  tamaño {ClientSize.Width:0}x{ClientSize.Height:0}  teclado {VirtualKeysOn}{Environment.NewLine}{new StackTrace(1, false)}");
 
         virtualKeys.Changed += () => Dispatcher.UIThread.Post(ShowVirtualKeys);
         ShowVirtualKeys();
@@ -306,9 +308,9 @@ public partial class MainWindow
         ShowVirtualTarget();
     }
 
-    /// <summary>The room for the panel in an instrument's window, by the mode: the host answers where it goes (<see cref="EmbedPanel"/>).</summary>
+    /// <summary>The room for the panel in an instrument's window, by the mode, at 100 % (the host scales it to its screen): it answers where it goes (<see cref="EmbedPanel"/>).</summary>
     void TellPluginPanel(XtremeDaw.Audio.Vst.VstBridge bridge) =>
-        bridge.Command($"keys-panel {(VirtualKeysOn ? (int)Math.Ceiling(VirtualHeight * RenderScaling) : 0)}");
+        bridge.Command($"keys-panel {(VirtualKeysOn ? (int)VirtualHeight : 0)}");
 
     /// <summary>
     /// The panel inside the plugin's window: a window of ours made a child of the host's, so it moves and minimizes with
@@ -326,6 +328,7 @@ public partial class MainWindow
             Content = new Border { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(10, 6), Child = panel.Root },
         };
         window.SizeChanged += (_, e) => panel.Settings.IsVisible = e.NewSize.Width >= VirtualSettingsWidth;
+        window.ScalingChanged += (_, _) => SessionLog.Write($"escala del panel del teclado {window.RenderScaling:0.###}");
         window.Closed += (_, _) =>
         {
             if (pluginPanels.TryGetValue(trackId, out var now) && now.Window == window) pluginPanels.Remove(trackId);
@@ -425,7 +428,7 @@ public partial class MainWindow
     /// <summary>Every tick: whether a key may play now, the same conditions as <see cref="OnKey"/> reaching <see cref="VirtualKeyDown"/>.</summary>
     void UpdateVirtualLive()
     {
-        bool open = Unsaved.IsVisible || FfmpegHelp.IsVisible || Export.IsVisible || Settings.IsVisible || About.IsVisible || Projects.IsVisible;
+        bool open = Unsaved.IsVisible || Stems.IsVisible || ComponentsHelp.IsVisible || Export.IsVisible || Settings.IsVisible || About.IsVisible || HelpPanel.IsVisible || Projects.IsVisible;
         virtualLive = VirtualKeysOn && !open && (FocusManager?.GetFocusedElement() as Visual)?.FindAncestorOfType<TextBox>(true) == null;
         ShowPluginBars();
     }

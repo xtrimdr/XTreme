@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using XtremeDaw.Audio.Dsp;
 using XtremeDaw.Audio.Midi;
 using XtremeDaw.Projects;
@@ -21,7 +22,7 @@ static class MidiCommands
         if (sub == "escuchar") return Listen(a.Get("entrada"), a.Double("segundos", 10));
         if (sub == "teclas") return RawKeyList(a.Double("segundos", 10));
         string? dir = a.Positional.Skip(1).FirstOrDefault();
-        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|cuantizar|velocidad|humanizar|quitar|instrumento <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
+        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|cuantizar|velocidad|humanizar|quitar|instrumento|patron|patron-insertar|patron-unico|patron-disolver|patron-borrar <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
         using var store = ProjectStore.Open(Path.GetFullPath(dir));
         var p = store.Project;
         if (sub != "ver" && store.ReadOnly) throw new IOException(store.ReadOnlyReason);
@@ -73,6 +74,7 @@ static class MidiCommands
                 string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip.");
                 var (_, c) = MidiEditing.Find(p, clip);
                 Console.WriteLine($"{MidiEditing.ScaleVelocity(c.Notes, a.Double("rango", 100))} notas cambiadas.");
+                MidiPatterns.Sync(p, c);
                 break;
             }
             case "humanizar":
@@ -81,6 +83,37 @@ static class MidiCommands
                 var (_, c) = MidiEditing.Find(p, clip);
                 var random = a.Get("semilla") != null ? new Random(a.Int("semilla", 0)) : new Random();
                 Console.WriteLine($"{MidiEditing.HumanizeVelocity(c.Notes, a.Int("cantidad", 10), random)} notas cambiadas.");
+                MidiPatterns.Sync(p, c);
+                break;
+            }
+            case "patron":
+            {
+                // the clip becomes a pattern (if it wasn't one), with these name and pass; --repetir stretches it
+                string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip.");
+                var c = MidiPatterns.Create(p, clip);
+                if (a.Get("nombre") is { } name) MidiPatterns.Rename(p, clip, name);
+                if (a.Get("compases") != null) MidiPatterns.SetBeats(p, clip, a.Double("compases", 4) * 4);
+                if (a.Get("repetir") != null) MidiEditing.Place(p, clip, c.AtSec, c.CellBeats * a.Double("repetir", 1));
+                break;
+            }
+            case "patron-insertar":
+            {
+                string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip (uno del patrón).");
+                var t = TrackOf(p, a.Get("pista")) ?? throw new ArgumentException("Falta --pista (número o id de una pista MIDI).");
+                string pattern = MidiEditing.Find(p, clip).Clip.PatternId ?? throw new ArgumentException("Ese clip no es un patrón.");
+                Console.WriteLine(MidiPatterns.Insert(p, t.Id, pattern, a.Double("en", 0)).Id);
+                break;
+            }
+            case "patron-unico":
+                MidiPatterns.MakeUnique(p, a.Get("clip") ?? throw new ArgumentException("Falta --clip."));
+                break;
+            case "patron-disolver":
+            case "patron-borrar":
+            {
+                string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip (uno del patrón).");
+                string pattern = MidiEditing.Find(p, clip).Clip.PatternId ?? throw new ArgumentException("Ese clip no es un patrón.");
+                if (sub == "patron-borrar") Console.WriteLine($"{MidiPatterns.Remove(p, pattern)} clips borrados.");
+                else MidiPatterns.Dissolve(p, pattern);
                 break;
             }
             case "instrumento":
@@ -210,11 +243,110 @@ static class MidiCommands
             Console.WriteLine($"{p.Tracks.IndexOf(t) + 1}. {t.Id} · {t.Name} · {(t.Instrument is { } i ? i.Name + (i.State != null ? " (con su estado)" : "") : "tono de prueba")}");
             foreach (var c in t.MidiClips ?? [])
             {
-                Console.WriteLine($"   {c.Id} · {c.AtSec:0.000}–{c.EndSec(bpm):0.000} s · {c.LengthBeats / 4:0.##} compases · {c.Notes.Count} notas");
+                string pattern = c.PatternId == null ? "" : $" · {c.PatternName} ({c.CellBeats / 4:0.##} compases, {c.Passes} vueltas, {MidiPatterns.Clips(p, c.PatternId).Count()} clips)";
+                Console.WriteLine($"   {c.Id} · {c.AtSec:0.000}–{c.EndSec(bpm):0.000} s · {c.LengthBeats / 4:0.##} compases · {c.Notes.Count} notas{pattern}");
                 foreach (var n in c.Notes)
                     Console.WriteLine($"      {MidiNote.Name(n.Pitch),-4} pulso {n.Beat,6:0.###} · largo {n.Beats:0.###} · vel {n.Velocity}");
             }
         }
+    }
+
+    /// <summary>Patterns: an edit reaches every clip, a clip repeats its pass cut at its end, and leaving one keeps its sound.</summary>
+    static bool CheckPatterns(int sr)
+    {
+        var p = new Project();
+        p.Settings.Bpm = 120;
+        string m1 = MidiEditing.AddTrack(p), m2 = MidiEditing.AddTrack(p);
+        var first = MidiEditing.AddClip(p, m1, 0, 4);
+        MidiEditing.AddNote(p, first.Id, 60, 3, 2);
+        MidiPatterns.Create(p, first.Id);
+        var board = ClipClipboard.Take(p, [first.Id])!;
+        var second = MidiPatterns.Insert(p, m2, first.PatternId!, 10);
+        var copy = MidiEditing.Find(p, MidiEditing.Duplicate(p, second.Id)).Clip;
+        MidiEditing.AddNote(p, second.Id, 64, 0);
+        var pasted = MidiEditing.Find(p, board.Paste(p, m2, 20)[0]).Clip;
+        bool linked = first.Notes.Count == 2 && copy.Notes.Count == 2 && pasted.Notes.Count == 2 && pasted.Notes[0] != first.Notes[0]
+            && MidiPatterns.All(p) is [{ Clips: 4, Name: "Patrón 1" }];
+
+        // 2.5 passes of 4 beats: 64 on 0, 4 and 8; 60 on 3 and 7, cut at the end of its pass; the third one starts past the end
+        MidiEditing.Place(p, first.Id, 0, 10);
+        var built = ChannelDsp.Notes(p.Tracks[0], 120, sr);
+        bool repeats = built is { Notes.Length: 5 } && built.Notes[1].Start == (long)(1.5 * sr) && built.Notes[1].Length == sr / 2
+            && built.Notes[3].Start == (long)(3.5 * sr) && built.Notes[4].Start == 4 * sr;
+
+        // a clip a pass long follows a new pass, a longer one keeps its length
+        MidiPatterns.SetBeats(p, second.Id, 8);
+        bool length = second.LengthBeats == 8 && first.LengthBeats == 10 && first.CellBeats == 8;
+        MidiPatterns.SetBeats(p, second.Id, 4);
+
+        var before = ChannelDsp.Notes(p.Tracks[0], 120, sr)!.Notes;
+        MidiPatterns.MakeUnique(p, first.Id);
+        var after = ChannelDsp.Notes(p.Tracks[0], 120, sr)!.Notes;
+        MidiEditing.AddNote(p, second.Id, 67, 1);
+        bool unique = first.PatternId == null && first.Notes.Count == 5 && before.SequenceEqual(after) && second.Notes.Count == 3
+            && !first.Notes.Any(n => n.Pitch == 67);
+
+        var round = JsonSerializer.Deserialize<MidiClip>(JsonSerializer.Serialize(second, ProjectStore.Json), ProjectStore.Json)!;
+        bool saved = round.PatternId == second.PatternId && round.PatternBeats == 4 && round.PatternName == "Patrón 1"
+            && !JsonSerializer.Serialize(first, ProjectStore.Json).Contains("pattern", StringComparison.OrdinalIgnoreCase);
+
+        // ending a pattern: its clips stay, sounding the same, or leave with it; what is outside it isn't touched
+        var ending = MidiPatterns.Insert(p, m1, second.PatternId!, 30);
+        string kept = ending.Id, ended = second.PatternId!;
+        MidiEditing.Place(p, kept, 30, 10);
+        var heard = ChannelDsp.Notes(p.Tracks[0], 120, sr)!.Notes;
+        int others = MidiPatterns.Clips(p, ended).Count();
+        MidiPatterns.Dissolve(p, ended);
+        bool dissolved = MidiPatterns.All(p).Count == 0 && heard.SequenceEqual(ChannelDsp.Notes(p.Tracks[0], 120, sr)!.Notes)
+            && others == 4 && MidiEditing.TryFind(p, kept) is { PatternId: null, PatternName: null };
+        int clips = p.Tracks.Sum(t => t.MidiClips?.Count ?? 0);
+        MidiPatterns.Create(p, kept);
+        var other = MidiEditing.Find(p, MidiEditing.Duplicate(p, kept)).Clip;
+        int removed = MidiPatterns.Remove(p, other.PatternId!);
+        bool gone = removed == 2 && MidiPatterns.All(p).Count == 0 && p.Tracks.Sum(t => t.MidiClips?.Count ?? 0) == clips - 1 && MidiEditing.TryFind(p, first.Id) != null;
+
+        bool ok = linked && repeats && length && unique && saved && dissolved && gone;
+        Console.WriteLine($"{"MIDI: patrones",-36} {built?.Notes.Length ?? 0,12} {"5",10}  {(ok ? "igual" : "DISTINTO")}");
+        return ok;
+    }
+
+    /// <summary>A new tempo keeps every clip on its bar and beat, side by side, also through undo and after many changes.</summary>
+    static bool CheckTempo()
+    {
+        var p = new Project();
+        p.Settings.Bpm = 120;
+        string tid = MidiEditing.AddTrack(p);
+        var first = MidiEditing.AddClip(p, tid, 0, 4);
+        MidiEditing.AddNote(p, first.Id, 60, 0);
+        MidiPatterns.Create(p, first.Id);
+        MidiPatterns.Insert(p, tid, first.PatternId!, 2);
+        MidiPatterns.Insert(p, tid, first.PatternId!, 4);
+        MidiEditing.AddClip(p, tid, 7, 1);
+        double[] beats = [0, 4, 8, 14];
+        bool OnBeats()
+        {
+            double bpm = p.Settings.Bpm;
+            var list = p.Tracks[0].MidiClips!;
+            bool ok = list.Count == beats.Length && Math.Abs(list[0].EndSec(bpm) - list[1].AtSec) < 1e-9 && Math.Abs(list[1].EndSec(bpm) - list[2].AtSec) < 1e-9;
+            for (int i = 0; ok && i < beats.Length; i++) ok = Math.Abs(list[i].AtSec * bpm / 60 - beats[i]) < 1e-9;
+            return ok;
+        }
+
+        var history = new UndoManager();
+        history.Checkpoint(p);
+        TempoFollow.SetBpm(p, 90);
+        bool follows = OnBeats();
+        TempoFollow.SetGrid(p, 75); // "Detectar tempo": the audio stays, the clips still follow
+        bool grid = OnBeats();
+        bool undone = history.Undo(p) && p.Settings.Bpm == 75 && OnBeats();
+        bool redone = history.Redo(p) && p.Settings.Bpm == 75 && OnBeats();
+        foreach (double bpm in new[] { 20.0, 300, 137.3, 61.7 }) TempoFollow.SetBpm(p, bpm);
+        TempoFollow.SetBpm(p, 120);
+        bool drift = OnBeats();
+
+        bool good = follows && grid && undone && redone && drift;
+        Console.WriteLine($"{"MIDI: los clips siguen su compás",-36} {(good ? "en su compás" : "corridos"),12} {"",10}  {(good ? "igual" : "DISTINTO")}");
+        return good;
     }
 
     /// <summary>The notes' sound: block size and position don't change it, the release ends, and the export matches.</summary>
@@ -299,6 +431,8 @@ static class MidiCommands
         ok &= pasteOk;
         Console.WriteLine($"{"MIDI: copiar y pegar clips",-36} {pastedClip.Notes.Count,12} {"2",10}  {(pasteOk ? "igual" : "DISTINTO")}");
 
+        ok &= CheckPatterns(sr);
+        ok &= CheckTempo();
         ok &= CheckLive(sr);
         ok &= CheckVirtualKeyboard();
 

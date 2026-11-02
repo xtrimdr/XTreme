@@ -6,9 +6,9 @@ using XtremeDaw.Audio.Dsp;
 namespace XtremeDaw.Audio;
 
 /// <summary>
-/// Transposed copies of a take's audio on disk (<see cref="PitchShifter"/> takes seconds, the playback wants them at
-/// once on the next open), in the project's cache folder. The original media is never touched. A file's name says
-/// which take and how many semitones; its hash covers the source file's path, size and date, its length and the
+/// Transposed and stretched copies of a take's audio on disk (<see cref="PitchShifter"/> takes seconds, the playback
+/// wants them at once on the next open), in the project's cache folder. The original media is never touched. A file's
+/// name says which take, how many semitones and how much longer; its hash covers the source file's path, size and date, its length and the
 /// algorithm's version, so an edited source or a better algorithm makes a new one. Raw float32 behind a short header,
 /// written to a temporary file and renamed, so a crash halfway leaves no broken cache, at most a stray ".tmp".
 /// </summary>
@@ -18,27 +18,33 @@ public static class TransposeCache
     const int HeaderBytes = 12;
     const string Extension = ".f32";
 
-    /// <summary>The cache file for that source moved by <paramref name="semitones"/>, whether it exists or not.</summary>
-    public static string PathFor(string cacheDir, string sourcePath, int length, double semitones)
+    /// <summary>A stretch rounded to what the cache tells apart, the same in the name and in the render.</summary>
+    public static double Step(double stretch) => Math.Round(stretch, 6);
+
+    /// <summary>The cache file for that source moved by <paramref name="semitones"/> and made <paramref name="stretch"/> times as long, whether it exists or not.</summary>
+    public static string PathFor(string cacheDir, string sourcePath, int length, double semitones, double stretch = 1)
     {
         var info = new FileInfo(sourcePath);
         string key = $"{Path.GetFullPath(sourcePath).ToLowerInvariant()}|{(info.Exists ? info.Length : 0)}|{(info.Exists ? info.LastWriteTimeUtc.Ticks : 0)}|{length}|{PitchShifter.Version}";
         string hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(key)))[..10].ToLowerInvariant();
         string semis = semitones.ToString("+0.00;-0.00", System.Globalization.CultureInfo.InvariantCulture);
-        return Path.Combine(cacheDir, $"{Path.GetFileNameWithoutExtension(sourcePath)}.{semis}st.{hash}{Extension}");
+        string longer = Step(stretch) == 1 ? "" : "." + Step(stretch).ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture) + "x";
+        return Path.Combine(cacheDir, $"{Path.GetFileNameWithoutExtension(sourcePath)}.{semis}st{longer}.{hash}{Extension}");
     }
 
     /// <summary>
-    /// The take moved by <paramref name="semitones"/>: from the cache when it is there, else computed and saved
-    /// (a cache that can't be written only costs the next open the wait). 0 semitones gives the take itself.
+    /// The take moved by <paramref name="semitones"/> and made <paramref name="stretch"/> times as long: from the cache
+    /// when it is there, else computed and saved (a cache that can't be written only costs the next open the wait).
+    /// Neither gives the take itself.
     /// </summary>
     public static (float[] Left, float[] Right) Get(string cacheDir, string sourcePath, float[] left, float[] right, double semitones,
-        Action<double>? progress = null, CancellationToken ct = default)
+        double stretch = 1, Action<double>? progress = null, CancellationToken ct = default)
     {
-        if (Math.Abs(semitones) < 1e-6) return (left, right);
-        string path = PathFor(cacheDir, sourcePath, left.Length, semitones);
-        if (TryRead(path, left.Length) is { } cached) return cached;
-        var shifted = PitchShifter.Shift(left, right, semitones, progress, ct);
+        stretch = Step(stretch);
+        if (Math.Abs(semitones) < 1e-6 && stretch == 1) return (left, right);
+        string path = PathFor(cacheDir, sourcePath, left.Length, semitones, stretch);
+        if (TryRead(path, PitchShifter.StretchedLength(left.Length, stretch)) is { } cached) return cached;
+        var shifted = PitchShifter.Render(left, right, semitones, stretch, progress, ct);
         try { Write(path, shifted.Left, shifted.Right); }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
@@ -86,8 +92,8 @@ public static class TransposeCache
     }
 
     /// <summary>
-    /// Deletes the cache files (and stray temporaries) that are not in <paramref name="keep"/>: the transposes no
-    /// track uses any more. A file in use is left for the next time.
+    /// Deletes the cache files (and stray temporaries) that are not in <paramref name="keep"/>: the renders no
+    /// clip uses any more. A file in use is left for the next time.
     /// </summary>
     public static void Prune(string cacheDir, IReadOnlyCollection<string> keep)
     {

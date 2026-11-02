@@ -25,7 +25,7 @@ public sealed class Knob : Control
     public double Min { get; init; } = -1;
     public double Max { get; init; } = 1;
     public double ResetTo { get; init; }
-    public double Size { get; }
+    public double Size { get; private set; }
     public event Action<double>? Changed;
 
     public Knob(double size = 22, string? tip = null)
@@ -35,6 +35,15 @@ public sealed class Knob : Control
         Focusable = true;
         Cursor = new Cursor(StandardCursorType.SizeNorthSouth);
         Tip = tip;
+    }
+
+    /// <summary>Follows the room it has (the effect panels scale with their width).</summary>
+    public void Resize(double size)
+    {
+        if (size == Size) return;
+        Size = size;
+        Width = Height = size;
+        InvalidateVisual();
     }
 
     public string? Tip

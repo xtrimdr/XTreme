@@ -233,6 +233,45 @@ public sealed class ReverbBus
         preWrite = 0;
         busTailRemaining = 0;
         convolver.Reset();
+        heard = convolver;
+        fading = null;
+    }
+
+    /// <summary>A new impulse takes over in a crossfade this long (0.2 s at 48 kHz): an automated decay never cuts the tail.</summary>
+    const int SwapFadeFrames = 9600;
+    // audio thread: the impulse in use and the one it is fading out of
+    ConvolverPair? heard, fading;
+    int fadeLeft;
+    readonly float[] oldL = new float[TrackDspChain.MaxBlockSize], oldR = new float[TrackDspChain.MaxBlockSize];
+
+    void Convolve(Span<float> left, Span<float> right)
+    {
+        var now = convolver;
+        if (now != heard)
+        {
+            fading = heard;
+            heard = now;
+            fadeLeft = fading == null ? 0 : SwapFadeFrames;
+            if (fadeLeft == 0) fading = null;
+        }
+        if (fading is not { } old)
+        {
+            now.Process(left, right);
+            return;
+        }
+        int n = left.Length;
+        left.CopyTo(oldL);
+        right.CopyTo(oldR);
+        old.Process(oldL.AsSpan(0, n), oldR.AsSpan(0, n));
+        now.Process(left, right);
+        for (int i = 0; i < n; i++)
+        {
+            float g = fadeLeft / (float)SwapFadeFrames;
+            if (fadeLeft > 0) fadeLeft--;
+            left[i] += (oldL[i] - left[i]) * g;
+            right[i] += (oldR[i] - right[i]) * g;
+        }
+        if (fadeLeft == 0) fading = null;
     }
 
     static bool HasAnySignal(ReadOnlySpan<float> l, ReadOnlySpan<float> r)
@@ -290,7 +329,7 @@ public sealed class ReverbBus
             if (++preWrite == preMax) preWrite = 0;
         }
 
-        convolver.Process(left, right);
+        Convolve(left, right);
 
         float g = cfg.ReturnGain;
         for (int i = 0; i < left.Length; i++)

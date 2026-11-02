@@ -60,12 +60,16 @@ public sealed partial class ProjectsDialog : UserControl
     /// <summary>The manager was dismissed with a project open (Cerrar or Esc).</summary>
     public event Action? Dismissed;
 
+    /// <summary>The ? of the header; the window shows the help over the manager.</summary>
+    public event Action? HelpRequested;
+
     bool CanCancel => CurrentDir != null;
 
     public ProjectsDialog()
     {
         InitializeComponent();
         CloseButton.Click += (_, _) => Cancel();
+        HelpButton.Click += (_, _) => HelpRequested?.Invoke();
         NewButton.Click += (_, _) => StartNew();
         OpenFolderButton.Click += async (_, _) => await OpenFolder();
         UnpackButton.Click += async (_, _) => await Unpack();

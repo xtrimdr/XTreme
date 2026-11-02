@@ -37,6 +37,9 @@ public sealed class Project
     public List<Folder> Folders { get; set; } = [];
     /// <summary>Native only: named points of the song (Intro, Solo…), in time order (<see cref="ProjectMarkers"/>).</summary>
     public List<Marker> Markers { get; set; } = [];
+    /// <summary>Native only: the chords "Detectar escala y acordes" found, apart from the user's markers, in time order
+    /// (<see cref="ProjectMarkers"/>).</summary>
+    public List<ChordMarker> ChordMarkers { get; set; } = [];
     public List<ExportRecord> Exports { get; set; } = [];
     public List<LogEntry> Log { get; set; } = [];
 
@@ -47,7 +50,7 @@ public sealed class Project
     public void AddLog(string type, string? name = null) => Log.Add(new LogEntry { Type = type, Name = name });
 
     /// <summary>Fills what a hand-edited or older file left out, so the rest of the app never sees nulls.</summary>
-    internal void Normalize()
+    public void Normalize()
     {
         Settings ??= new();
         Settings.Normalize();
@@ -70,6 +73,11 @@ public sealed class ProjectSettings
 {
     /// <summary>110 like a new project in the web app.</summary>
     public double Bpm { get; set; } = 110;
+    /// <summary>
+    /// What the tempo changes have multiplied the timeline's times by so far (<see cref="TempoFollow"/>). Native only:
+    /// an undo step keeps it, so one from before a tempo change comes back at the tempo there is now.
+    /// </summary>
+    public double TimeScale { get; set; } = 1;
     /// <summary>
     /// video | audio (native only). Audio hides the stage and the camera and exports the mix instead of an MP4;
     /// nothing is deleted, so switching back to video shows everything again.
@@ -141,6 +149,7 @@ public sealed class ProjectSettings
     internal void Normalize()
     {
         if (!(Bpm is >= 20 and <= 400)) Bpm = 110;
+        if (!double.IsFinite(TimeScale) || TimeScale <= 0) TimeScale = 1;
         Mode = Mode == "audio" ? Mode : "video";
         Layout = Layout == "top-to-bottom" ? Layout : "side-by-side";
         Aspect ??= "16:9";
@@ -234,6 +243,14 @@ public sealed class MasterSettings
     public double LookAmount { get; set; } = Dsp.MasterLooks.DefaultAmount;
     /// <summary>The multiband's fourth band, Púa: how hard it holds 2–5 kHz down when the pick hits (0 = off).</summary>
     public double PickAmount { get; set; }
+    /// <summary>The master's chain, a list like a bus's: what its strip and the Mastering view show. <see cref="On"/> turns it all on or off.</summary>
+    public List<InsertSlot> Slots { get; set; } = [];
+    /// <summary>
+    /// The chain lives in <see cref="Slots"/>; the knobs' fields above it (EQ, bands, Cinta, Ancho) only pass values to a
+    /// look or a suggestion. Off, a project from before: <see cref="Normalize"/> moves them, once, so it sounds the same.
+    /// The soft clip and the limiter stay here, in Salida.
+    /// </summary>
+    public bool ChainInSlots { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     public static List<MasterBand> Defaults() => [new(), new(), new()];
@@ -247,6 +264,7 @@ public sealed class MasterSettings
         LowCutHz = v.LowCutHz; MudDb = v.MudDb; LowsDb = v.LowsDb; PresenceDb = v.PresenceDb; AirDb = v.AirDb; TiltDb = v.TiltDb;
         Bands[0].Amount = v.Low; Bands[1].Amount = v.Mid; Bands[2].Amount = v.High;
         TapeAmount = v.Tape; Width = v.Width; MonoBassHz = v.MonoBassHz; PickAmount = v.Pick;
+        if (ChainInSlots) FxDefs.SyncStages(this);
     }
 
     /// <summary>Takes what "Sugerime" proposed (<see cref="Dsp.MasterSuggest"/>): the EQ, the bands and the Púa; by hand from then on.</summary>
@@ -257,13 +275,14 @@ public sealed class MasterSettings
         LowCutHz = p.LowCutHz; MudDb = p.MudDb; LowsDb = p.LowsDb; PresenceDb = p.PresenceDb; AirDb = p.AirDb; TiltDb = p.TiltDb;
         Bands[0].Amount = p.Low.Amount; Bands[1].Amount = p.Mid.Amount; Bands[2].Amount = p.High.Amount;
         PickAmount = p.PickAmount;
+        if (ChainInSlots) FxDefs.SyncStages(this);
     }
 
     public Dsp.MasterParams ToParams()
     {
         Dsp.MasterBandParams B(int i) => new(Bands[i].Amount);
         return new(On, EqOn, LowCutHz, MudDb, LowsDb, PresenceDb, AirDb, TiltDb, BandsOn, LowXHz, HighXHz, B(0), B(1), B(2), ColorOn, LimDriveDb, LimCeilingDb, LimReleaseMs, LimOn,
-            TapeOn, TapeAmount, WidthOn, Width, MonoBassHz, ClipOn, ClipDb, Dsp.MasterLoudness.Get(Target).Lufs, TargetGainDb, PickAmount);
+            TapeOn, TapeAmount, WidthOn, Width, MonoBassHz, ClipOn, ClipDb, Dsp.MasterLoudness.Get(Target).Lufs, TargetGainDb, PickAmount, ChainInSlots);
     }
 
     internal void Normalize()
@@ -294,6 +313,21 @@ public sealed class MasterSettings
         while (Bands.Count < Dsp.MasterBands.Count) Bands.Add(new());
         if (Bands.Count > Dsp.MasterBands.Count) Bands.RemoveRange(Dsp.MasterBands.Count, Bands.Count - Dsp.MasterBands.Count);
         foreach (var b in Bands) b.Normalize();
+        Slots ??= [];
+        InsertSlot.NormalizeList(Slots);
+        if (!ChainInSlots) MoveChainToSlots();
+    }
+
+    /// <summary>A project from before the chain was its slots: what was in use becomes slots, in the order it sounded.</summary>
+    void MoveChainToSlots()
+    {
+        var fresh = new MasterSettings();
+        bool touched = LowCutHz != 0 || MudDb != 0 || LowsDb != 0 || PresenceDb != 0 || AirDb != 0 || TiltDb != 0 || TapeAmount != 0 || Width != 1 || MonoBassHz != 0
+            || PickAmount != 0 || Bands.Exists(b => b.Amount != Dsp.MasterBands.DefaultAmount);
+        // slots from the short while they sounded ahead of the box, which "Cadena completa" left off: they stay, and sound
+        if (Slots.Count > 0) On = true;
+        else if (On || touched) Slots.AddRange(Dsp.TrackInserts.MasterOrder.Select(k => FxDefs.FromMaster(k, this)));
+        ChainInSlots = true;
     }
 }
 
@@ -497,10 +531,20 @@ public sealed class Track
     public string? MidiInput { get; set; }
     /// <summary>The channel it takes from that input, 1..16; 0 = all (not written, so other tracks' files don't change). Native only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int MidiChannel { get; set; }
+    /// <summary>Its automated parameters (<see cref="Automations"/>), each a lane under it in the timeline; null = none. Native only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<AutomationLane>? Automation { get; set; }
+    /// <summary>Its lanes are folded under it (they keep playing). A view setting, like a folder's fold.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool AutomationFolded { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     internal void Normalize()
     {
+        if (Automation != null)
+        {
+            Automation.RemoveAll(l => l == null);
+            foreach (var l in Automation) l.Normalize();
+            if (Automation.Count == 0) Automation = null;
+        }
         Kind = TrackKinds.Normalize(Kind);
         if (IsMidi)
         {
@@ -863,7 +907,7 @@ public sealed class InsertSlot
         VstKind = Dsp.TrackInserts.Vst;
 
     public string Id { get; set; } = Ids.New("fx");
-    /// <summary>sat | comp | eq | gate | reverb | delay (the last two, in a return's chain) | vst</summary>
+    /// <summary>sat | comp | eq | gate | reverb | delay | vst | a master stage (<see cref="Dsp.TrackInserts.IsStage"/>)</summary>
     public string Type { get; set; } = EqKind;
     public SatSettings? Sat { get; set; }
     public CompSettings? Comp { get; set; }
@@ -874,6 +918,14 @@ public sealed class InsertSlot
     public GateSettings? Gate { get; set; }
     /// <summary>A VST3 effect slot's plugin and its ON.</summary>
     public VstSlotSettings? Vst { get; set; }
+    /// <summary>A master effect's ON and its values (<see cref="FxDefs"/>).</summary>
+    public StageSettings? Stage { get; set; }
+    /// <summary>The effect's level, 0 to 1 (<see cref="Dsp.FxShell"/>).</summary>
+    public double Wet { get; set; } = 1;
+    /// <summary>The dry signal's level, 0 to 1, on its own knob: both at 100 % is a parallel effect.</summary>
+    public double Dry { get; set; }
+    /// <summary>Its output, dB.</summary>
+    public double OutputDb { get; set; }
     /// <summary>
     /// Folded in the mixer (asked by the user): only its title row, with a summary, so a long chain fits. A view choice
     /// kept with the project, like a folder's fold; it changes nothing in the sound.
@@ -890,7 +942,7 @@ public sealed class InsertSlot
         get => Type switch
         {
             SatKind => Sat?.On == true, CompKind => Comp?.On == true, EqKind => Eq?.On == true,
-            ReverbKind => Reverb?.Muted == false, DelayKind => Delay?.Muted == false, GateKind => Gate?.On == true, VstKind => Vst?.On == true, _ => false,
+            ReverbKind => Reverb?.Muted == false, DelayKind => Delay?.Muted == false, GateKind => Gate?.On == true, VstKind => Vst?.On == true, _ => Stage?.On == true,
         };
         set
         {
@@ -904,6 +956,7 @@ public sealed class InsertSlot
                 case DelayKind: Delay!.Muted = !value; break;
                 case GateKind: Gate!.On = value; break;
                 case VstKind: Vst!.On = value; break;
+                default: if (Stage != null) Stage.On = value; break;
             }
         }
     }
@@ -929,6 +982,23 @@ public sealed class InsertSlot
     internal void Normalize()
     {
         if (string.IsNullOrEmpty(Id)) Id = Ids.New("fx");
+        // a slot saved with the single Mix knob they replaced: the same balance on the two
+        if (Extra?.Remove("mix", out var mix) == true && mix.TryGetDouble(out double m) && double.IsFinite(m))
+        {
+            Wet = Math.Clamp(m, 0, 1);
+            Dry = 1 - Wet;
+        }
+        Wet = double.IsFinite(Wet) ? Math.Clamp(Wet, 0, 1) : 1;
+        Dry = double.IsFinite(Dry) ? Math.Clamp(Dry, 0, 1) : 0;
+        OutputDb = double.IsFinite(OutputDb) ? Math.Clamp(OutputDb, FxDefs.Output.Min, FxDefs.Output.Max) : 0;
+        if (Dsp.TrackInserts.IsStage(Type) || Dsp.TrackInserts.IsMod(Type))
+        {
+            Stage ??= new();
+            Stage.Normalize(Type);
+            Sat = null; Comp = null; Eq = null; Reverb = null; Delay = null; Gate = null; Vst = null;
+            return;
+        }
+        Stage = null;
         switch (Type)
         {
             case SatKind: Sat ??= new(); Comp = null; Eq = null; Reverb = null; Delay = null; Gate = null; Vst = null; break;
@@ -938,6 +1008,27 @@ public sealed class InsertSlot
             case DelayKind: Delay ??= new(); Delay.Mode ??= "stereo"; Delay.Division ??= "1/8."; Sat = null; Comp = null; Eq = null; Reverb = null; Gate = null; Vst = null; break;
             case GateKind: Gate ??= new(); Gate.Normalize(); Sat = null; Comp = null; Eq = null; Reverb = null; Delay = null; Vst = null; break;
             case VstKind: Vst ??= new(); Vst.Plugin ??= new(); Vst.Plugin.Normalize(); Sat = null; Comp = null; Eq = null; Reverb = null; Delay = null; Gate = null; break;
+        }
+    }
+}
+
+/// <summary>A master effect in a slot: its ON and its knobs by their <see cref="FxParam.Id"/>; what is missing starts at its default.</summary>
+public sealed class StageSettings
+{
+    public bool On { get; set; }
+    public Dictionary<string, double> Values { get; set; } = [];
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
+    public double Get(string id, double fallback) => Values.TryGetValue(id, out double v) ? v : fallback;
+
+    internal void Normalize(string kind)
+    {
+        Values ??= [];
+        foreach (var p in FxDefs.Params(kind))
+        {
+            double v = Get(p.Id, p.Default);
+            bool off = p.OffAtZero && v <= 0;
+            Values[p.Id] = off ? 0 : double.IsFinite(v) ? Math.Clamp(v, p.Min, p.Max) : p.Default;
         }
     }
 }
@@ -1009,7 +1100,7 @@ public sealed class CompEq
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-/// <summary>Track EQ: always 6 bands (low cut, 4 bells, high cut), any band can change type.</summary>
+/// <summary>Track EQ: always 7 bands (low cut, 5 bells, high cut), any band can change type.</summary>
 public sealed class EqSettings
 {
     public bool On { get; set; }
@@ -1023,16 +1114,22 @@ public sealed class EqSettings
         new() { Type = "peaking", Freq = 800 },
         new() { Type = "peaking", Freq = 2000 },
         new() { Type = "peaking", Freq = 4500 },
+        new() { Type = "peaking", Freq = 8000 },
         new() { Type = "lowpass", Freq = 12000, Q = 0.7 },
     ];
+
+    /// <summary>The bands an EQ had before the seventh: it goes in, off, before the last one, so the high cut stays last.</summary>
+    const int OldBandCount = 6;
 
     internal void Normalize()
     {
         Bands ??= [];
         Bands.RemoveAll(b => b == null);
         var d = Defaults();
+        if (Bands.Count == OldBandCount) Bands.Insert(OldBandCount - 1, d[OldBandCount - 1]);
         while (Bands.Count < d.Count) Bands.Add(d[Bands.Count]);
         if (Bands.Count > d.Count) Bands.RemoveRange(d.Count, Bands.Count - d.Count);
+        foreach (var b in Bands) b.Normalize();
     }
 }
 
@@ -1046,7 +1143,22 @@ public sealed class EqBand
     public double Q { get; set; } = 1;
     /// <summary>12 or 24 dB/oct, cuts only.</summary>
     public int Slope { get; set; } = 12;
+    /// <summary>A bell or shelf that also moves with the signal (<see cref="Dsp.EqDynamics"/>): where it starts, how far it goes and how fast.</summary>
+    public bool Dyn { get; set; }
+    public double DynThreshold { get; set; } = Dsp.EqDynamics.DefaultThresholdDb;
+    public double DynRange { get; set; } = Dsp.EqDynamics.DefaultRangeDb;
+    public double DynAttackMs { get; set; } = Dsp.EqDynamics.DefaultAttackMs;
+    public double DynReleaseMs { get; set; } = Dsp.EqDynamics.DefaultReleaseMs;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
+    internal void Normalize()
+    {
+        static double Fin(double v, double lo, double hi, double fallback) => double.IsFinite(v) ? Math.Clamp(v, lo, hi) : fallback;
+        DynThreshold = Fin(DynThreshold, Dsp.EqDynamics.ThresholdMinDb, 0, Dsp.EqDynamics.DefaultThresholdDb);
+        DynRange = Fin(DynRange, -Dsp.EqDynamics.RangeMaxDb, Dsp.EqDynamics.RangeMaxDb, Dsp.EqDynamics.DefaultRangeDb);
+        DynAttackMs = Fin(DynAttackMs, Dsp.EqDynamics.AttackMinMs, Dsp.EqDynamics.AttackMaxMs, Dsp.EqDynamics.DefaultAttackMs);
+        DynReleaseMs = Fin(DynReleaseMs, Dsp.EqDynamics.ReleaseMinMs, Dsp.EqDynamics.ReleaseMaxMs, Dsp.EqDynamics.DefaultReleaseMs);
+    }
 }
 
 /// <summary>A piece of a media on a track.</summary>
@@ -1056,6 +1168,12 @@ public sealed class Clip
     public string MediaId { get; set; } = "";
     /// <summary>Timeline time of the media's sample 0 (includes the sync correction).</summary>
     public double AtSec { get; set; }
+    /// <summary>
+    /// How many times longer than its media it plays: where the tempo left it (<see cref="TempoFollow"/>), 1 = as
+    /// recorded. Every time of the clip is a time of the timeline, so they already count it; what reads the media
+    /// goes through <see cref="MediaSec"/>.
+    /// </summary>
+    public double Stretch { get; set; } = 1;
     /// <summary>Optional per-clip correction; null inherits the immutable recording correction.</summary>
     public double? SyncMs { get; set; }
     /// <summary>Optional camera latency; null inherits the recording's camera latency.</summary>
@@ -1063,13 +1181,24 @@ public sealed class Clip
     /// <summary>Its place and length are fixed, like every clip of a locked track (<see cref="ClipEditing.IsLocked"/>). Native only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Locked { get; set; }
+    /// <summary>
+    /// Native only: it plays its media backward (<see cref="ClipEditing.Reverse"/>); the file stays as it is. Its trims,
+    /// <see cref="AtSec"/> and curve count in the direction it is heard, so sample 0 is the media's last one.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Reversed { get; set; }
+    /// <summary>What it plays, for the transitions: two pieces of one take only join as one going the same way.</summary>
+    public string TakeKey() => Reversed ? MediaId + "<" : MediaId;
 
     public double EffectiveSyncMs(Media? media) => SyncMs ?? media?.SyncMs ?? 0;
     public double EffectiveVideoOffsetMs(Media? media) => VideoOffsetMs ?? media?.VideoOffsetMs ?? 80;
+    /// <summary>A length on the timeline as a length of the media.</summary>
+    public double MediaSec(double sec) => sec / Stretch;
 
     internal void Normalize()
     {
         Framing ??= new();
+        if (!double.IsFinite(Stretch) || Stretch <= 0) Stretch = 1;
         if (SyncMs is { } sync && !double.IsFinite(sync)) SyncMs = null;
         if (VideoOffsetMs is { } video && !double.IsFinite(video)) VideoOffsetMs = null;
         if (!double.IsFinite(GainDb)) GainDb = 0;
@@ -1156,6 +1285,17 @@ public sealed class Marker
     public string Id { get; set; } = Ids.New("mrk");
     public string Name { get; set; } = "";
     public double Sec { get; set; }
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+
+/// <summary>A detected chord: its own kind of mark, a block in time on its own strip, so a re-detection can replace
+/// them and they can go all at once without touching what the user wrote.</summary>
+public sealed class ChordMarker
+{
+    public string Id { get; set; } = Ids.New("chd");
+    public string Name { get; set; } = "";
+    public double Sec { get; set; }
+    public double EndSec { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 

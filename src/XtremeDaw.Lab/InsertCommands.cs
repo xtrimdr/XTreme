@@ -15,9 +15,9 @@ static class InsertCommands
     const int Block = 128;
 
     /// <summary>
-    /// wtlab proyecto insertos carpeta (pista | --bus id|n) [agregar tipo [--en n] | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n]
-    /// Reverb and delay slots only go in a bus's chain, like the mixer's "+ Efecto" offers them; <c>agregar vst
-    /// --plugin "nombre"</c> adds a VST3 effect from the scanned plugins (<c>vst escanear</c>).
+    /// wtlab proyecto insertos carpeta (pista | --bus id|n) [agregar tipo [--en n] | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n | cadena]
+    /// <c>agregar vst --plugin "nombre"</c> adds a VST3 effect from the scanned plugins (<c>vst escanear</c>); <c>cadena</c>
+    /// is the master's "Cadena completa". With <c>--master</c>, at the end of the line, it works on the master's list.
     /// </summary>
     public static int Run(string dir, Args a)
     {
@@ -27,7 +27,14 @@ static class InsertCommands
         string name;
         int first;
         bool isReturn = false;
-        if (a.Get("bus") is { } busId)
+        bool master = a.Flag("master");
+        if (master)
+        {
+            slots = p.Settings.Master.Slots;
+            name = "Master";
+            first = 2;
+        }
+        else if (a.Get("bus") is { } busId)
         {
             var bus = ProjectBuses.Find(p, busId) ?? throw new ArgumentException($"No encontré ese bus (hay {p.Settings.Buses.Count}).");
             slots = bus.Inserts;
@@ -56,12 +63,13 @@ static class InsertCommands
             "agregar" when v1.Equals("vst", StringComparison.OrdinalIgnoreCase) =>
                 ChannelInserts.AddVst(slots, Plugin(a), a.Get("en") is { } at ? int.Parse(at) - 1 : null) != null,
             "agregar" => ChannelInserts.Add(slots, KindFor(v1, isReturn), a.Get("en") is { } at ? int.Parse(at) - 1 : null) != null,
+            "cadena" when master => ChannelInserts.AddMasterChain(p.Settings.Master) != null,
             "quitar" => ChannelInserts.Remove(slots, Id(v1)),
             "mover" => ChannelInserts.Move(slots, Id(v1), int.Parse(v2) - int.Parse(v1)),
             "duplicar" => ChannelInserts.Duplicate(slots, Id(v1)) != null,
             "prender" or "apagar" => Toggle(slots.Find(s => s.Id == Id(v1))!, op == "prender"),
             "plegar" => Fold(slots.Find(s => s.Id == Id(v1))!),
-            _ => throw new ArgumentException("insertos: agregar vida|comp|eq|puerta (y reverb|delay en un bus) | agregar vst --plugin \"nombre\" | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n"),
+            _ => throw new ArgumentException("insertos: agregar vida|comp|eq|puerta|reverb|delay|limpieza|multibanda|color|cinta|ancho|softclip|limitador | agregar vst --plugin \"nombre\" | cadena (con --master) | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n"),
         };
         if (changed)
         {
@@ -97,17 +105,24 @@ static class InsertCommands
         "comp" or "compresor" => TrackInserts.Comp,
         "eq" => TrackInserts.Eq,
         "puerta" or "gate" => TrackInserts.Gate,
-        _ => throw new ArgumentException($"No conozco el efecto «{name}»: vida, comp, eq o puerta."),
+        "reverb" => TrackInserts.Reverb,
+        "delay" => TrackInserts.Delay,
+        "limpieza" => TrackInserts.Clean,
+        "multibanda" => TrackInserts.Bands,
+        "color" => TrackInserts.Color,
+        "cinta" => TrackInserts.Tape,
+        "ancho" => TrackInserts.Width,
+        "softclip" => TrackInserts.Clip,
+        "limitador" => TrackInserts.Limit,
+        "chorus" => TrackInserts.Chorus,
+        "flanger" => TrackInserts.Flanger,
+        "phaser" => TrackInserts.Phaser,
+        "tremolo" => TrackInserts.Tremolo,
+        _ => throw new ArgumentException($"No conozco el efecto «{name}»: vida, comp, eq, puerta, reverb, delay, limpieza, multibanda, color, cinta, ancho, softclip, limitador, chorus, flanger, phaser o tremolo."),
     };
 
-    /// <summary>The kind to add to a chain: a return's also takes reverb and delay.</summary>
-    static string KindFor(string name, bool isReturn) => name.ToLowerInvariant() switch
-    {
-        "reverb" when isReturn => TrackInserts.Reverb,
-        "delay" when isReturn => TrackInserts.Delay,
-        "reverb" or "delay" => throw new ArgumentException("La reverb y el delay van en un retorno (--retorno): las pistas les mandan con sus envíos."),
-        _ => Kind(name),
-    };
+    /// <summary>The kind to add to a chain: every native effect goes in any of them.</summary>
+    static string KindFor(string name, bool isReturn) => Kind(name);
 
     static string ReverbPreset(ReverbSettings r) => ReverbBus.PresetOf(ChannelDsp.Reverb(r)) is { Length: > 0 } p ? p + " · " : "";
 
@@ -131,6 +146,7 @@ static class InsertCommands
             InsertSlot.ReverbKind => $"{on} Reverb {ReverbPreset(s.Reverb!)}{s.Reverb!.Decay:0.0} s",
             InsertSlot.GateKind => $"{on} Puerta {(s.Gate!.Mode switch { "soft" => "suave", "hard" => "firme", _ => "normal" })} {s.Gate.Threshold:0.#} dB",
             InsertSlot.DelayKind => $"{on} Delay {(s.Delay!.Sync ? s.Delay.Division : $"{s.Delay.TimeMs:0} ms")} · repite {s.Delay.Feedback * 100:0}%",
+            _ when TrackInserts.IsStage(s.Type) || TrackInserts.IsMod(s.Type) => $"{on} {s.Type} " + string.Join(" · ", FxDefs.Params(s.Type).Select(p => $"{p.Id} {p.Get(s):0.##}")),
             InsertSlot.VstKind when s.Known => $"{on} VST3 {s.Vst!.Plugin.Name}{(s.Vst.Plugin.Vendor.Length > 0 ? $" · {s.Vst.Plugin.Vendor}" : "")}{(s.Vst.Plugin.State != null ? " (con su ajuste guardado)" : "")}",
             _ => $"--- {s.Type} (desconocido: se guarda tal cual y no suena)",
         } + $"  [{s.Id}]";
@@ -148,7 +164,8 @@ static class InsertCommands
             TrackInserts.Sat => new InsertSpec($"s{i}", TrackInserts.Sat) { Sat = sat },
             TrackInserts.Comp => new InsertSpec($"s{i}", TrackInserts.Comp) { Comp = comp },
             TrackInserts.Gate => new InsertSpec($"s{i}", TrackInserts.Gate) { Gate = GateParams.Defaults with { On = true } },
-            _ => new InsertSpec($"s{i}", TrackInserts.Eq) { EqOn = eqOn, EqBands = eqBands },
+            TrackInserts.Eq => new InsertSpec($"s{i}", TrackInserts.Eq) { EqOn = eqOn, EqBands = eqBands },
+            var other => new InsertSpec($"s{i}", other) { Stage = FxDefs.ToMaster(InsertSlot.New(other)), Mod = FxDefs.ToMod(InsertSlot.New(other)), Wet = FxDefs.StartLevels(other).Wet, Dry = FxDefs.StartLevels(other).Dry, StageOn = true },
         }).ToArray();
     }
 

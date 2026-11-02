@@ -13,8 +13,9 @@ namespace XtremeDaw.App.Controls;
 /// another time and another MIDI track, with the grid's magnet; Alt, free), its right edge changes its length by grid
 /// steps, a double click opens it in the piano roll and a double click on an empty stretch of the lane makes a new one
 /// there. Ctrl+click and the selection box pick several, takes and MIDI clips together (asked by the user): grabbing one
-/// of them by its body carries them all by the same time, each on its own track (<see cref="ClipsMoved"/>). The window
-/// does the edit (<see cref="MidiClipChanged"/>): the control never touches the project.
+/// of them by its body carries them all by the same time, each on its own track (<see cref="ClipsMoved"/>). A pattern's
+/// clip shows its name and every pass, a seam between them, and its right edge adds passes. The window does the edit
+/// (<see cref="MidiClipChanged"/>): the control never touches the project.
 /// </summary>
 public sealed partial class TimelineView
 {
@@ -48,14 +49,16 @@ public sealed partial class TimelineView
     /// <summary>
     /// A MIDI track's instrument chip, in the header's first row (asked by the user: the instrument shows on the channel
     /// and changes from there): from the name to just before the ● (an armed MIDI track records the keyboard; armed,
-    /// before its input chip). It never overlaps them: with no room it folds to its arrow.
+    /// before its input chip). It never overlaps them: with no room it folds to its arrow, and with no room for that
+    /// (an armed track in a folder at the narrowest full column) it goes, like in a compact header.
     /// </summary>
     Rect InstrumentRect(int i)
     {
+        if (Compact) return NoRect;
         double right = armed.Contains(i) && !Recording && InputLabel != null ? InputRect(i).X - 4 : ArmRect(i).X - 6;
         double w = Math.Min(ChipMaxW, right - (58 + Indent(i) + NameShift(i) + ChipNameW));
         if (w < ChipTextW) w = ChipFoldedW;
-        return new(right - w, LaneY(i) + 8, w, 24);
+        return right - w < BadgeRect(i).Right ? NoRect : new(right - w, LaneY(i) + 8, w, 24);
     }
 
     InstrumentState StateOf(LiveTrack t) =>
@@ -178,7 +181,7 @@ public sealed partial class TimelineView
             if (notes.Count == 0)
             {
                 if (r.Height >= 26 && r.Width > 60)
-                    ctx.DrawText(Loc.T("midi.clip.empty"), 11, Palette.Faint, new Point(Math.Max(x0, HeaderW) + 8, y + 9), Palette.Ui);
+                    ctx.DrawText(c.PatternName ?? Loc.T("midi.clip.empty"), 11, Palette.Faint, new Point(Math.Max(x0, HeaderW) + 8, y + 9), Palette.Ui);
                 return;
             }
             int lo = 127, hi = 0;
@@ -190,16 +193,27 @@ public sealed partial class TimelineView
             double rowH = Math.Max(1, Math.Min(4, h / span));
             var fill = Palette.Alpha(color, sel ? 1 : 0.85);
             double beatPx = BeatSec * pps;
-            foreach (var n in notes)
+            // as the gesture has it: a pattern's clip dragged longer shows its repeats while it moves
+            double length = (end - start) / BeatSec, cell = c.PatternId != null ? c.CellBeats : length;
+            var seam = Palette.Pen(Palette.Alpha(color, 0.45));
+            for (int pass = Math.Max(0, (int)Math.Floor((HeaderW - x0) / (cell * beatPx))); pass * cell < length - 1e-9; pass++)
             {
-                if (n.Beat >= c.LengthBeats) break;
-                double nx = x0 + n.Beat * beatPx;
-                if (nx > W) break;
-                double nw = Math.Max(1.5, Math.Min(n.EndBeat, c.LengthBeats) * beatPx - n.Beat * beatPx - 1);
-                if (nx + nw < HeaderW) continue;
-                double ny = top + (span - 1 - (n.Pitch - lo)) / (double)span * h;
-                ctx.FillRectangle(fill, new Rect(nx, ny, nw, rowH));
+                double px = x0 + pass * cell * beatPx;
+                if (px > W) break;
+                if (pass > 0) ctx.DrawLine(seam, new Point(Math.Round(px) + 0.5, r.Top), new Point(Math.Round(px) + 0.5, r.Bottom));
+                foreach (var n in notes)
+                {
+                    if (!MidiClip.Slice(n, pass, cell, length, out double from, out double to)) continue;
+                    double nx = x0 + from * beatPx;
+                    if (nx > W) break;
+                    double nw = Math.Max(1.5, (to - from) * beatPx - 1);
+                    if (nx + nw < HeaderW) continue;
+                    double ny = top + (span - 1 - (n.Pitch - lo)) / (double)span * h;
+                    ctx.FillRectangle(fill, new Rect(nx, ny, nw, rowH));
+                }
             }
+            if (c.PatternName is { } name && r.Height >= 26 && r.Width > 60)
+                ctx.DrawText(name, 11, Palette.Dim, new Point(Math.Max(x0, HeaderW) + 8, y + 7), Palette.Ui);
         }
     }
 

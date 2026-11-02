@@ -93,6 +93,7 @@ public sealed class ClipClipboard
             var copy = item.Clip.Copy();
             copy.AtSec = ClipEditing.ToSample(Math.Max(0, copy.AtSec + shift));
             (p.Tracks[at + item.Lane].MidiClips ??= []).Add(copy);
+            MidiPatterns.Adopt(p, copy);
             pasted.Add(copy.Id);
         }
         return pasted;

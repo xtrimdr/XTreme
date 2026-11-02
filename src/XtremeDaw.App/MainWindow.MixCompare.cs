@@ -93,7 +93,7 @@ public partial class MainWindow
         RefreshMixer();
         if (sel != null)
         {
-            RebuildInspectorChain(sel);
+            RebuildInspectorChain(SlotsOf(sel), sel);
             RebuildInspectorSends(sel);
         }
         RefreshInspectorText();

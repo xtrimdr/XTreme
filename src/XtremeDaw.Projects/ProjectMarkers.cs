@@ -31,7 +31,43 @@ public static class ProjectMarkers
             m.Sec = double.IsFinite(m.Sec) ? Math.Max(0, m.Sec) : 0;
         }
         Sort(p);
+        p.ChordMarkers ??= [];
+        p.ChordMarkers.RemoveAll(c => c == null || !double.IsFinite(c.Sec) || !double.IsFinite(c.EndSec) || c.EndSec <= c.Sec);
+        foreach (var c in p.ChordMarkers)
+        {
+            if (string.IsNullOrEmpty(c.Id) || !ids.Add(c.Id)) c.Id = Ids.New("chd");
+            ids.Add(c.Id);
+            c.Name ??= "";
+            c.Sec = Math.Max(0, c.Sec);
+        }
+        SortChords(p);
     }
+
+    static void SortChords(Project p)
+    {
+        var sorted = p.ChordMarkers.OrderBy(c => c.Sec).ToList();
+        p.ChordMarkers.Clear();
+        p.ChordMarkers.AddRange(sorted);
+    }
+
+    /// <summary>Puts newly detected chords in: what was detected before in that stretch of the timeline goes, so
+    /// detecting a clip again replaces its chords. Returns how many there are now from it.</summary>
+    public static int SetChords(Project p, double fromSec, double toSec, IEnumerable<(double Sec, double EndSec, string Name)> found)
+    {
+        p.ChordMarkers.RemoveAll(c => c.Sec < toSec && c.EndSec > fromSec);
+        int added = 0;
+        foreach (var (sec, end, name) in found)
+        {
+            p.ChordMarkers.Add(new ChordMarker { Name = name, Sec = sec, EndSec = end });
+            added++;
+        }
+        SortChords(p);
+        return added;
+    }
+
+    public static void RemoveChords(Project p, IReadOnlyCollection<string> ids) => p.ChordMarkers.RemoveAll(c => ids.Contains(c.Id));
+
+    public static void ClearChords(Project p) => p.ChordMarkers.Clear();
 
     static void Sort(Project p)
     {
@@ -89,6 +125,9 @@ public static class ProjectMarkers
             moved++;
         }
         Sort(p);
+        double Closed(double t) => t <= startSec ? t : t >= endSec ? t - (endSec - startSec) : startSec;
+        foreach (var c in p.ChordMarkers) (c.Sec, c.EndSec) = (Closed(c.Sec), Closed(c.EndSec));
+        p.ChordMarkers.RemoveAll(c => c.EndSec <= c.Sec);
         return moved;
     }
 

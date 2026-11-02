@@ -144,8 +144,6 @@ public partial class MainWindow
     /// <summary>Knobs for wide ranges move on a log scale (0..1 knob position), like the web's logMap.</summary>
     static (Func<double, double> To, Func<double, double> From) LogMap(double lo, double hi) =>
         (v => Math.Log(Math.Clamp(v, lo, hi) / lo) / Math.Log(hi / lo), p => Math.Round(lo * Math.Pow(hi / lo, p) * 100) / 100);
-    static readonly (Func<double, double> To, Func<double, double> From) DecayMap = LogMap(0.2, 10), ToneMap = LogMap(1000, 18000),
-        LowCutMap = LogMap(20, 1000), DelayMsMap = LogMap(20, 2000);
 
     static ReverbParams ToParams(ReverbSettings r) => new(r.Decay, r.PreDelayMs, r.Tone, r.LowCut, r.Width, r.ReturnGain, r.Muted);
     static DelayParams ToParams(DelaySettings d) => new(DelayParams.ParseMode(d.Mode), d.Sync, d.Division, d.TimeMs, d.Feedback, d.Tone, d.LowCut, d.Width, d.Duck, d.ReturnGain, d.Muted);
@@ -353,6 +351,7 @@ public partial class MainWindow
         Audio.PlaybackEngine.FxBypass = on;
         foreach (var t in tracks) t.ApplyInserts();
         engine.ApplyBusSlots(Buses);
+        engine.ApplyMaster(MasterSet);
         RefreshMixer();
     }
 
@@ -454,7 +453,15 @@ public partial class MainWindow
     {
         if (!mixerView) return;
         miniTimeline.SetTracks(tracks);
-        if (masteringView) return;
+        if (masteringView)
+        {
+            // an effect's window over the Mastering view follows its slot
+            bool quiet = syncing;
+            syncing = true;
+            try { if (slotWindowRefresh is { } open) foreach (var r in open) r(); }
+            finally { syncing = quiet; }
+            return;
+        }
         // tracks and buses take the zoom's width (folder strips, separators and the master keep their own)
         double stripW = mixerStripW;
         // a new width or layout only resizes the cards or shows the other layout (see compactMixer)
@@ -463,7 +470,7 @@ public partial class MainWindow
             + "|" + string.Join(",", Folders.Select(f => f.Id + ":" + f.Index + ":" + f.MixerCollapsed + ":" + f.Separator + ":" + f.MixerSide + ":" + string.Join("/", f.Sends.Where(s => !s.Hidden).Select(s => s.BusId))))
             // a bus's routing changes which buses the others can send to: their send panels come and go
             + "|" + string.Join(",", Buses.Select(b => b.Id + ":" + b.Name + ":" + b.MixerSide + ":" + b.Output + ":" + string.Join("/", b.Sends.Select(x => x.BusId)) + ":" + string.Join("/", b.Inserts.Select(s => s.Id + s.Type))))
-;
+            + "|" + string.Join("/", MasterSet.Slots.Select(s => s.Id + s.Type));
         if (key != mixerKey)
         {
             mixerKey = key;
@@ -532,7 +539,7 @@ public partial class MainWindow
         bool listScrolls = false;
         for (var v = e.Source as Visual; v != null && v != mixerScroll; v = v.GetVisualParent())
         {
-            if (v is Knob or InspectorKnob or Fader or HBar or EqEditor) return;
+            if (v is Knob or Fader or HBar or EqEditor) return;
             if (v is ScrollViewer s && s.Extent.Height > s.Viewport.Height + 0.5) listScrolls = true;
         }
         // some mice and drivers turn a modified wheel into a sideways delta, so take whichever axis moved
@@ -752,8 +759,7 @@ public partial class MainWindow
     };
 
     /// <summary>Puts a strip's parts on the rows every strip shares (<see cref="StripHeadH"/>…), so all faders and meters
-    /// start and end at the same height whatever the name, the strip type or its controls (the master has none: its
-    /// row stays empty).</summary>
+    /// start and end at the same height whatever the name, the strip type or its controls.</summary>
     Grid StripLayout(Control head, Control? controls, Control faders, Control foot)
     {
         var g = new Grid { Margin = new Thickness(6, 8, 6, 6) };
@@ -822,6 +828,11 @@ public partial class MainWindow
         fader.Changed += v => EditTrack(t, x => x.Channel.Volume = v, "volume");
         var db = new TextBlock { Classes = { "mono" }, FontSize = 10, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
         mx.Refresh.Add(() => { fader.Value = t.Channel.Volume; db.Text = $"{Fader.Db(t.Channel.Volume)} dB"; });
+        AutomateOn(fader, () => t, AutoTarget.Volume, k =>
+        {
+            fader.Value = Fader.ToVol(k);
+            db.Text = $"{Fader.Db(Fader.ToVol(k))} dB";
+        });
         var meter = new MixerMeter();
         var faders = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         faders.Children.Add(fader); faders.Children.Add(meter);
@@ -960,6 +971,59 @@ public partial class MainWindow
         var g = new Grid();
         void Section(List<(RowDefinition, Control, bool)> rows, Control head, Control list) => ListSection(g, rows, head, list);
 
+        var (fxList, grBar) = SlotList(o);
+        var fxBox = ListBox(fxList, false);
+        // the mixer's FX switch puts them all in bypass
+        mx.Refresh.Add(() => fxBox.Opacity = Audio.PlaybackEngine.FxBypass ? 0.4 : 1);
+        Section(mx.FxRows, ListHead(Loc.T("mix.list.fx"), Loc.T("mix.slot.add.tip"), b => ShowAddSlotMenu(o, b)), fxBox);
+
+        if (sends != null)
+            Section(mx.SendRows, ListHead(Loc.T("mix.list.sends"), Loc.T("send.add.tip"), b => OpenAnchoredMenu(Popup(SendChoices(sends), 220), b)), ListBox(CompactSends(sends), true));
+        else Section(mx.SendRows, new Border(), new Border());
+
+        var pan = new HBar { Bipolar = true, ResetTo = 0, Margin = new Thickness(0, 4, 0, 6) };
+        pan.Changed += setPan;
+        AutomateOn(pan, () => TrackOf(o), AutoTarget.Pan, k => pan.Value = k * 2 - 1);
+        mx.Refresh.Add(() =>
+        {
+            double v = panOf();
+            pan.Value = v;
+            pan.Readout = FmtPan(v);
+            ToolTip.SetTip(pan, Loc.T("tl.tip.pan", FmtPan(v)));
+        });
+        Grid.SetRow(pan, g.RowDefinitions.Count); g.RowDefinitions.Add(new RowDefinition(PanRowH, GridUnitType.Pixel)); g.Children.Add(pan);
+
+        // M S ● share the width (each at most its usual size), so they still fit a very narrow strip
+        var buttons = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Top, MaxWidth = toggles.Length * (ToggleMaxW + 2) };
+        foreach (var toggle in toggles)
+        {
+            toggle.Width = double.NaN;
+            toggle.MaxWidth = ToggleMaxW;
+            toggle.HorizontalAlignment = HorizontalAlignment.Stretch;
+            toggle.Margin = new Thickness(1, 0);
+            Grid.SetColumn(toggle, buttons.ColumnDefinitions.Count);
+            buttons.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
+            buttons.Children.Add(toggle);
+        }
+        // too narrow for three, ● gives way (it is also in the track's header in the timeline)
+        if (toggles.Length > 2)
+            buttons.SizeChanged += (_, e) =>
+            {
+                bool fits = e.NewSize.Width >= toggles.Length * MinToggleW;
+                toggles[^1].IsVisible = fits;
+                buttons.ColumnDefinitions[^1].Width = fits ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            };
+        Grid.SetRow(buttons, g.RowDefinitions.Count); g.RowDefinitions.Add(new RowDefinition(TogglesRowH, GridUnitType.Pixel)); g.Children.Add(buttons);
+        var meterBar = grBar;
+        return (g, gr => { if (meterBar != null && meterBar.Parent is Control p) meterBar.Width = p.Bounds.Width * Math.Clamp(-gr / 24, 0, 1); });
+    }
+
+    /// <summary>
+    /// A chain as a list of rows, in a strip or the Mastering view: a click opens the effect in its window, dragged it
+    /// moves in the chain, its power switch turns it on or off. With the bar under its first compressor's row.
+    /// </summary>
+    (Control List, Border? Gr) SlotList(SlotOwner o)
+    {
         var fxList = new StackPanel { Spacing = 1 };
         var drag = new SlotDrag(1);
         drag.Moved += (id, anchor, after) => SlotsEdit(o, x => ChannelInserts.MoveNextTo(x, id, anchor, after), "move");
@@ -998,49 +1062,7 @@ public partial class MainWindow
             else if (fxList.Children.OfType<Border>().FirstOrDefault(c => c.Tag as string == id) is { } r) ShowSlotWindow(o, id, r);
         };
         foreach (var c in fxList.Children.OfType<Border>()) c.Cursor = new Cursor(StandardCursorType.Hand);
-        var fxBox = ListBox(fxList, false);
-        // the mixer's FX switch puts them all in bypass
-        mx.Refresh.Add(() => fxBox.Opacity = Audio.PlaybackEngine.FxBypass ? 0.4 : 1);
-        Section(mx.FxRows, ListHead(Loc.T("mix.list.fx"), Loc.T("mix.slot.add.tip"), b => ShowAddSlotMenu(o, b)), fxBox);
-
-        if (sends != null)
-            Section(mx.SendRows, ListHead(Loc.T("mix.list.sends"), Loc.T("send.add.tip"), b => OpenAnchoredMenu(Popup(SendChoices(sends), 220), b)), ListBox(CompactSends(sends), true));
-        else Section(mx.SendRows, new Border(), new Border());
-
-        var pan = new HBar { Bipolar = true, ResetTo = 0, Margin = new Thickness(0, 4, 0, 6) };
-        pan.Changed += setPan;
-        mx.Refresh.Add(() =>
-        {
-            double v = panOf();
-            pan.Value = v;
-            pan.Readout = FmtPan(v);
-            ToolTip.SetTip(pan, Loc.T("tl.tip.pan", FmtPan(v)));
-        });
-        Grid.SetRow(pan, g.RowDefinitions.Count); g.RowDefinitions.Add(new RowDefinition(PanRowH, GridUnitType.Pixel)); g.Children.Add(pan);
-
-        // M S ● share the width (each at most its usual size), so they still fit a very narrow strip
-        var buttons = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Top, MaxWidth = toggles.Length * (ToggleMaxW + 2) };
-        foreach (var toggle in toggles)
-        {
-            toggle.Width = double.NaN;
-            toggle.MaxWidth = ToggleMaxW;
-            toggle.HorizontalAlignment = HorizontalAlignment.Stretch;
-            toggle.Margin = new Thickness(1, 0);
-            Grid.SetColumn(toggle, buttons.ColumnDefinitions.Count);
-            buttons.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
-            buttons.Children.Add(toggle);
-        }
-        // too narrow for three, ● gives way (it is also in the track's header in the timeline)
-        if (toggles.Length > 2)
-            buttons.SizeChanged += (_, e) =>
-            {
-                bool fits = e.NewSize.Width >= toggles.Length * MinToggleW;
-                toggles[^1].IsVisible = fits;
-                buttons.ColumnDefinitions[^1].Width = fits ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-            };
-        Grid.SetRow(buttons, g.RowDefinitions.Count); g.RowDefinitions.Add(new RowDefinition(TogglesRowH, GridUnitType.Pixel)); g.Children.Add(buttons);
-        var meterBar = grBar;
-        return (g, gr => { if (meterBar != null && meterBar.Parent is Control p) meterBar.Width = p.Bounds.Width * Math.Clamp(-gr / 24, 0, 1); });
+        return (fxList, grBar);
     }
 
     /// <summary>
@@ -1080,6 +1102,11 @@ public partial class MainWindow
             };
             line.Children.Add(power);
             Grid.SetColumn(bar, 1); line.Children.Add(bar);
+            if (router.Track != null) FollowLane(bar, () => router.Track, AutoTarget.Send(id), k =>
+            {
+                bar.Value = k;
+                bar.Readout = $"{k * 100:0}";
+            });
             mx.Refresh.Add(() =>
             {
                 var (level, on, _) = S();
@@ -1193,6 +1220,14 @@ public partial class MainWindow
         InsertSlot.ReverbKind => "Reverb",
         InsertSlot.DelayKind => "Delay",
         InsertSlot.GateKind => Loc.T("fx.gate"),
+        TrackInserts.Clean => Loc.T("master.stage.clean"),
+        TrackInserts.Bands => Loc.T("master.bands"),
+        TrackInserts.Color => Loc.T("master.stage.color"),
+        TrackInserts.Tape => Loc.T("master.stage.tape"),
+        TrackInserts.Width => Loc.T("master.stage.width"),
+        TrackInserts.Clip => Loc.T("master.stage.clip"),
+        TrackInserts.Limit => Loc.T("master.stage.lim"),
+        TrackInserts.Chorus or TrackInserts.Flanger or TrackInserts.Phaser or TrackInserts.Tremolo => Loc.T("fx." + type),
         _ => "EQ",
     };
 
@@ -1294,7 +1329,8 @@ public partial class MainWindow
             case InsertSlot.EqKind when s.Eq is { } e:
                 return EqEditor.PresetIndex(e) is var i and >= 0 ? EqPresetName(TrackEq.Presets[i]) : Loc.T("mix.custom.m");
             default:
-                return "";
+                // a master effect: its first knob
+                return FxDefs.Params(s.Type) is { Length: > 0 } ps ? FxText(ps[0], ps[0].Get(s)) : "";
         }
     }
 
@@ -1314,8 +1350,16 @@ public partial class MainWindow
         public required Action<CompSettings> Recalculate { get; init; }
         /// <summary>The "+ Efecto" tooltip: what a new effect works on.</summary>
         public string AddTip { get; init; } = Loc.T("mix.slot.add.tip");
-        /// <summary>A bus's chain: "+ Efecto" also offers reverb and delay (a track's doesn't).</summary>
+        /// <summary>A bus's or the master's chain: a new reverb or delay starts all wet (on a track, mixed with the dry signal).</summary>
         public bool ReturnKinds { get; init; }
+        /// <summary>The master's chain: "+ Efecto" also offers the whole chain, and no VST3 (no process runs for it yet).</summary>
+        public bool Master { get; init; }
+        /// <summary>A slot's running effect by its id, for what the window shows live.</summary>
+        public Func<string, ITrackInsert?> Insert { get; init; } = _ => null;
+        /// <summary>What a compressor's reset goes back to.</summary>
+        public Func<string> DefaultPreset { get; init; } = () => "rhythm";
+        /// <summary>Called before an edit of a compressor (a clip remembers what role it had).</summary>
+        public Action<CompSettings>? CompEdited { get; init; }
         public InsertSlot? Slot(string id) => Slots().Find(s => s.Id == id);
     }
 
@@ -1326,22 +1370,30 @@ public partial class MainWindow
         Slots = () => t.Channel.Slots,
         Edit = (change, key) => EditTrack(t, x => change(x.Channel.Slots), key),
         Recalculate = c => { if (t.Envelope != null) RecalculateInspectorComp(t, c); },
+        Insert = t.Chain.Find,
+        DefaultPreset = () => InspectorEditing.DefaultCompPreset(SelectedInspectorClip?.Clip, tracks.IndexOf(t) == 1 ? "lead" : "rhythm"),
+        CompEdited = c =>
+        {
+            if (SelectedInspectorClip is not { } clip) return;
+            clip.Clip.Extra ??= [];
+            clip.Clip.Extra.TryAdd("role", System.Text.Json.JsonSerializer.SerializeToElement(c.Preset == "lead" ? "solo" : "base"));
+        },
     };
 
     /// <summary>One slot's panel by its kind, for its window (<see cref="ShowSlotWindow"/>).</summary>
     void SlotPanel(StackPanel fx, SlotOwner o, InsertSlot slot, int nth)
     {
         var menu = SlotMenuButton(o, slot.Id);
-        switch (slot.Type)
+        if (slot.Type == InsertSlot.VstKind)
         {
-            case InsertSlot.SatKind: SatPanel(fx, o, slot.Id, nth, menu); break;
-            case InsertSlot.CompKind: CompPanel(fx, o, slot.Id, nth, menu); break;
-            case InsertSlot.ReverbKind: ReverbSlotPanel(fx, o, slot.Id, nth, menu); break;
-            case InsertSlot.DelayKind: DelaySlotPanel(fx, o, slot.Id, nth, menu); break;
-            case InsertSlot.GateKind: GatePanel(fx, o, slot.Id, nth, menu); break;
-            case InsertSlot.VstKind: VstPanel(fx, o, slot.Id, menu); break;
-            default: EqPanel(fx, o, slot.Id, nth, menu); break;
+            VstPanel(fx, o, slot.Id, menu);
+            return;
         }
+        string id = slot.Id;
+        var panel = FxPanel(fx, SlotTitle(SlotName(slot.Type), nth), slot.Type, () => o.Slot(id)?.On == true, () => SlotEdit(o, id, s => s.On = !s.On, "on"),
+            on => Loc.T(on ? "mix.list.off" : "mix.list.on"), menu);
+        panel.Body.Spacing = 8;
+        FxBody(panel.Body, o, slot, mx.Refresh);
     }
 
     // what a panel reads while its slot is already gone (removed, an undo) and the strips aren't rebuilt yet
@@ -1353,25 +1405,13 @@ public partial class MainWindow
     /// <summary>The gate's modes in their order, with their names' and hints' keys.</summary>
     static readonly string[] GateModes = [GateParams.Soft, GateParams.Normal, GateParams.Hard];
 
-    /// <summary>The gate's threshold (dBFS) on a 0–1 knob and back, in half dB steps.</summary>
-    static double GateKnob(double db) => (db - GateParams.MinThresholdDb) / (GateParams.MaxThresholdDb - GateParams.MinThresholdDb);
-    static double GateDb(double v) => Math.Round((GateParams.MinThresholdDb + Math.Clamp(v, 0, 1) * (GateParams.MaxThresholdDb - GateParams.MinThresholdDb)) * 2) / 2;
-
     static string SlotTitle(string name, int nth) => nth > 1 ? $"{name} {nth}" : name;
 
     /// <summary>An edit of one slot's settings, found by id (the channel object changes with every undo).</summary>
-    void SlotEdit(LiveTrack t, string id, Action<InsertSlot> edit, string key) => SlotEdit(SlotsOf(t), id, edit, key);
-
     void SlotEdit(SlotOwner o, string id, Action<InsertSlot> edit, string key) =>
         o.Edit(slots => { if (slots.Find(s => s.Id == id) is { } s) edit(s); }, $"{id}.{key}");
 
     /// <summary>Adds, removes or moves slots: each its own undo step; the strips rebuild with the new list.</summary>
-    Task SlotsEdit(LiveTrack t, Action<LiveTrack> change, string key)
-    {
-        EditTrack(t, change, $"fx.{key}.{++slotEdits}");
-        return Task.CompletedTask;
-    }
-
     Task SlotsEdit(SlotOwner o, Action<List<InsertSlot>> change, string key)
     {
         o.Edit(change, $"fx.{key}.{++slotEdits}");
@@ -1388,152 +1428,7 @@ public partial class MainWindow
 
     int slotEdits;
 
-    void SatPanel(StackPanel fx, SlotOwner o, string id, int nth, Control menu)
-    {
-        SatSettings S() => o.Slot(id)?.Sat ?? GoneSat;
-        var sat = FxPanel(fx, SlotTitle("Sat", nth), FxIcon.Sat, () => S().On, () => SlotEdit(o, id, s => s.On = !s.On, "sat.on"),
-            on => Loc.T(on ? "insp.power.sat.off" : "insp.power.sat.on"), menu);
-        var satKnob = FxKnob(sat, "vida", 0.3, () => S().Amount, v => SlotEdit(o, id, s => { s.Sat!.Amount = v; s.Sat.On = true; }, "sat.amount"),
-            () => Loc.T("mix.sat.knob.tip"));
-        var satSide = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        var modes = new[] { ("tube", Loc.T("insp.sat.tube"), Loc.T("insp.sat.tube.hint")),
-            ("tape", Loc.T("insp.sat.tape"), Loc.T("insp.sat.tape.hint")) };
-        var mode = new SelectButton();
-        mode.SetItems(modes.Select(m => m.Item2).ToArray(), modes.Select(m => (string?)m.Item3).ToArray());
-        mode.Selected += i => { string m = modes[i].Item1; SlotEdit(o, id, s => { s.Sat!.Mode = m; s.Sat.On = true; }, "sat.mode"); };
-        var satLabel = new TextBlock { FontSize = 12, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis };
-        mx.Refresh.Add(() =>
-        {
-            int i = Array.FindIndex(modes, m => m.Item1 == S().Mode);
-            mode.SelectedIndex = Math.Max(0, i);
-            ToolTip.SetTip(mode, modes[Math.Max(0, i)].Item3);
-            double a = S().Amount;
-            satLabel.Text = $"{Loc.T(a < .2 ? "insp.life.0" : a < .45 ? "insp.life.1" : a < .7 ? "insp.life.2" : a < .9 ? "insp.life.3" : "insp.life.4")} · {a * 100:0}%";
-        });
-        satSide.Children.Add(mode); satSide.Children.Add(satLabel);
-        sat.Body.Children.Add(Row(satKnob, satSide));
-    }
-
-    void GatePanel(StackPanel fx, SlotOwner o, string id, int nth, Control menu)
-    {
-        GateSettings G() => o.Slot(id)?.Gate ?? GoneGate;
-        var gate = FxPanel(fx, SlotTitle(Loc.T("fx.gate"), nth), FxIcon.Gate, () => G().On, () => SlotEdit(o, id, s => s.On = !s.On, "gate.on"),
-            on => Loc.T(on ? "insp.power.gate.off" : "insp.power.gate.on"), menu);
-        var knob = FxKnob(gate, Loc.T("mix.gate.knob"), GateKnob(GateParams.DefaultThresholdDb), () => GateKnob(G().Threshold),
-            v => SlotEdit(o, id, s => { s.Gate!.Threshold = GateDb(v); s.Gate.On = true; }, "gate.threshold"), () => Loc.T("mix.gate.knob.tip"));
-        var side = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        var mode = new SelectButton();
-        mode.SetItems(GateModes.Select(m => Loc.T("gate.mode." + m)).ToArray(), GateModes.Select(m => (string?)Loc.T($"gate.mode.{m}.hint")).ToArray());
-        mode.Selected += i => { string m = GateModes[i]; SlotEdit(o, id, s => { s.Gate!.Mode = m; s.Gate.On = true; }, "gate.mode"); };
-        var label = new TextBlock { FontSize = 12, FontWeight = FontWeight.Medium, Classes = { "mono" }, TextTrimming = TextTrimming.CharacterEllipsis };
-        mx.Refresh.Add(() =>
-        {
-            int i = Math.Max(0, Array.IndexOf(GateModes, G().Mode));
-            mode.SelectedIndex = i;
-            ToolTip.SetTip(mode, Loc.T($"gate.mode.{GateModes[i]}.hint"));
-            label.Text = $"{G().Threshold:0.#} dB";
-        });
-        side.Children.Add(mode); side.Children.Add(label);
-        gate.Body.Children.Add(Row(knob, side));
-    }
-
-    void CompPanel(StackPanel fx, SlotOwner o, string id, int nth, Control menu)
-    {
-        CompSettings C() => o.Slot(id)?.Comp ?? GoneComp;
-        var lim = new Button { Content = "LIM", Classes = { "chip", "mono" }, FontSize = 10, FontWeight = FontWeight.Bold, Height = 24, MinHeight = 24, Padding = new Thickness(5, 0), CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1) };
-        lim.Click += (_, _) => StripComp(o, id, c => c.Limit = !c.Limit, "limit");
-        mx.Refresh.Add(() =>
-        {
-            var c = C();
-            lim.Classes.Set("lit", c.Limit && c.On);
-            lim.Background = c.Limit && c.On ? Palette.AccentSoft : Brushes.Transparent;
-            lim.Foreground = c.Limit && c.On ? Palette.Accent : Palette.Faint;
-            lim.BorderBrush = c.Limit && c.On ? Palette.Alpha(Palette.AccentColor, 0.6) : c.Limit ? Palette.Alpha(Palette.FaintColor, 0.6) : Palette.Line;
-            ToolTip.SetTip(lim, Loc.T(c.Limit ? "mix.lim.on" : "mix.lim.off") + (c.On ? "" : Loc.T("mix.lim.note")));
-        });
-        var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Children = { lim, menu } };
-        var comp = FxPanel(fx, SlotTitle("Comp", nth), FxIcon.Comp, () => C().On, () => StripComp(o, id, c => c.On = !c.On, "on"),
-            on => Loc.T(on ? "insp.power.comp.off" : "insp.power.comp.on"), head);
-        var compKnob = FxKnob(comp, "cantidad", 0.5, () => C().Amount, v => StripComp(o, id, c => { c.Amount = v; c.On = true; }, "amount"),
-            () => C().Preset == "custom" ? Loc.T("mix.comp.knob.manual") : Loc.T("mix.comp.knob.tip"));
-        mx.Refresh.Add(() => { bool custom = C().Preset == "custom"; compKnob.Opacity = custom ? 0.4 : 1; compKnob.IsHitTestVisible = !custom; });
-        var compSide = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        var preset = StripSelect([]);
-        preset.Selected += i =>
-        {
-            if (i >= CompPresets.All.Length) return;
-            string p = CompPresets.All[i].Id;
-            StripComp(o, id, c => { c.Preset = p; c.On = true; }, "preset");
-        };
-        var compLabel = new TextBlock { FontSize = 12, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis };
-        mx.Refresh.Add(() =>
-        {
-            var c = C();
-            bool custom = c.Preset == "custom";
-            preset.SetItems(CompPresets.All.Select(CompPresetName).Concat(custom ? new[] { Loc.T("insp.comp.manual") } : []).ToArray(),
-                CompPresets.All.Select(p => (string?)CompPresetHint(p)).Concat(custom ? new string?[] { null } : []).ToArray());
-            int i = Array.FindIndex(CompPresets.All, p => p.Id == c.Preset);
-            preset.SelectedIndex = custom ? CompPresets.All.Length : i;
-            ToolTip.SetTip(preset, i >= 0 ? CompPresetHint(CompPresets.All[i]) : Loc.T("mix.comp.custom.tip"));
-            compLabel.Text = custom ? Loc.T("mix.comp.custom") : AmountLabel(c.Amount);
-            ToolTip.SetTip(compLabel, (custom ? "" : Loc.T("mix.comp.reduces", $"{EstimatedCompression(c):0}") + " · ") + Loc.T("mix.comp.detail", $"{c.Threshold:0}", $"{c.Ratio:0.0}", $"{c.Makeup:+0.0;-0.0;0.0}"));
-        });
-        compSide.Children.Add(preset); compSide.Children.Add(compLabel);
-        comp.Body.Children.Add(Row(compKnob, compSide));
-    }
-
-    void EqPanel(StackPanel fx, SlotOwner o, string id, int nth, Control menu)
-    {
-        EqSettings E() => o.Slot(id)?.Eq ?? GoneEq;
-        var eq = FxPanel(fx, SlotTitle("EQ", nth), FxIcon.Eq, () => E().On, () => SlotEdit(o, id, s => s.On = !s.On, "eq.on"),
-            on => Loc.T(on ? "insp.power.eq.off" : "insp.power.eq.on"), menu);
-        // a summary; a click opens its bands (the first EQ is also the one in the Canal tab)
-        var graph = new EqGraph(interactive: false, height: 54) { Cursor = new Cursor(StandardCursorType.Hand) };
-        ToolTip.SetTip(graph, Loc.T("mix.eq.open.tip"));
-        graph.PointerPressed += (_, e) =>
-        {
-            if (!e.GetCurrentPoint(graph).Properties.IsLeftButtonPressed || !mixerStrips.IsEnabled) return;
-            e.Handled = true;
-            ShowSlotEq(o, id, graph);
-        };
-        var eqPreset = StripSelect([]);
-        eqPreset.Margin = new Thickness(0, 6, 0, 0);
-        eqPreset.Selected += index =>
-        {
-            int i = index - (EqEditor.PresetIndex(E()) < 0 ? 1 : 0);
-            if (i >= 0) SlotEdit(o, id, s => s.Eq = EqEditor.FromPreset(i, s.Eq!), "eq");
-        };
-        mx.Refresh.Add(() =>
-        {
-            var e = E();
-            graph.Set(e, 0);
-            int p = EqEditor.PresetIndex(e);
-            eqPreset.SetItems((p < 0 ? new[] { Loc.T("mix.custom.m") } : []).Concat(TrackEq.Presets.Select(EqPresetName)).ToArray(),
-                (p < 0 ? new string?[] { null } : []).Concat(TrackEq.Presets.Select(x => (string?)EqPresetHint(x))).ToArray());
-            eqPreset.SelectedIndex = p < 0 ? 0 : p;
-            ToolTip.SetTip(eqPreset, p < 0 ? Loc.T("mix.eq.manual") : EqPresetHint(TrackEq.Presets[p]));
-        });
-        eq.Body.Children.Add(graph); eq.Body.Children.Add(eqPreset);
-    }
-
-    /// <summary>The bands of one EQ slot, in a flyout over the strip: the same editor as the Canal tab.</summary>
-    void ShowSlotEq(SlotOwner o, string id, Control anchor)
-    {
-        if (o.Slot(id)?.Eq is not { } start) return;
-        var editor = new EqEditor { Width = 300 };
-        editor.Set(start);
-        editor.Changed += value =>
-        {
-            SlotEdit(o, id, s => s.Eq = value, "eq");
-            if (o.Slot(id)?.Eq is { } now) editor.Set(now);
-        };
-        var flyout = new Flyout { Content = editor, Placement = PlacementMode.LeftEdgeAlignedTop, ShowMode = FlyoutShowMode.Standard };
-        flyout.ShowAt(anchor);
-    }
-
     /// <summary>The ⋯ in a slot's title bar: its menu (<see cref="ShowSlotMenu"/>).</summary>
-    Button SlotMenuButton(LiveTrack t, string id) => SlotMenuButton(SlotsOf(t), id);
-
     Button SlotMenuButton(SlotOwner o, string id)
     {
         var b = new Button { Classes = { "ghost" }, Width = 24, Height = 24, MinHeight = 24, Padding = new Thickness(0), Focusable = false,
@@ -1582,9 +1477,10 @@ public partial class MainWindow
         OpenAnchoredMenu(Popup(items, 220), anchor);
     }
 
-    /// <summary>"+ Efecto" under the slots: adds one at the end of the chain, already on.</summary>
-    Button AddSlotButton(LiveTrack t) => AddSlotButton(SlotsOf(t));
+    /// <summary>A new reverb or delay on a track: this much of it, over its dry signal whole.</summary>
+    const double TrackFxWet = 0.25;
 
+    /// <summary>"+ Efecto" under the slots: adds one at the end of the chain, already on.</summary>
     Button AddSlotButton(SlotOwner o)
     {
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center,
@@ -1597,10 +1493,30 @@ public partial class MainWindow
         return b;
     }
 
+    /// <summary>The built-in effects by what they do, in the order "+ Efecto" lists them: a new one goes in its group.</summary>
+    static readonly (string Name, string Icon, string[] Kinds)[] FxGroups =
+    [
+        ("fx.group.dynamics", FxIcon.Comp, [InsertSlot.CompKind, InsertSlot.GateKind, TrackInserts.Bands, TrackInserts.Clip, TrackInserts.Limit]),
+        ("fx.group.eq", FxIcon.Eq, [InsertSlot.EqKind, TrackInserts.Clean, TrackInserts.Color]),
+        ("fx.group.sat", FxIcon.Sat, [InsertSlot.SatKind, TrackInserts.Tape]),
+        ("fx.group.mod", FxIcon.Chorus, [TrackInserts.Chorus, TrackInserts.Flanger, TrackInserts.Phaser, TrackInserts.Tremolo]),
+        ("fx.group.space", FxIcon.Reverb, [InsertSlot.ReverbKind, InsertSlot.DelayKind, TrackInserts.Width]),
+    ];
+
+    /// <summary>What "+ Efecto" says of an effect.</summary>
+    static string SlotHint(string kind) => Loc.T(kind switch
+    {
+        InsertSlot.ReverbKind => "mix.slot.add.reverb", InsertSlot.DelayKind => "mix.slot.add.delay", InsertSlot.SatKind => "mix.slot.add.sat",
+        InsertSlot.CompKind => "mix.slot.add.comp", InsertSlot.EqKind => "mix.slot.add.eq", InsertSlot.GateKind => "mix.slot.add.gate",
+        TrackInserts.Clean => "master.stage.clean.tip", TrackInserts.Bands => "master.bands.on.tip", TrackInserts.Color => "master.stage.color.tip",
+        TrackInserts.Tape => "master.stage.tape.tip", TrackInserts.Width => "master.stage.width.tip", TrackInserts.Clip => "master.stage.clip.tip",
+        TrackInserts.Limit => "master.stage.lim.tip", _ => "fx.add." + kind,
+    });
+
     /// <summary>
-    /// The kinds of effect a chain can take: one more at its end, already on. Two entries that open as the pointer goes
-    /// over them (asked by the user: all at once the list was too long), NATIVOS (the built-in ones) and VST3 (the ones
-    /// found, by maker when there are many), then look for plugins again and manage them.
+    /// The kinds of effect a chain can take: one more at its end, already on. The built-in ones by what they do (asked by
+    /// the user: <see cref="FxGroups"/>), each group opening as the pointer goes over it, then VST3 (the ones found, by
+    /// maker when there are many), looking for plugins again and managing them.
     /// </summary>
     void ShowAddSlotMenu(SlotOwner o, Control b)
     {
@@ -1620,21 +1536,25 @@ public partial class MainWindow
                 var slot = ChannelInserts.Add(x, kind);
                 // a compressor's preset is measured against the take, like a new track's
                 if (slot?.Comp is { } c) o.Recalculate(c);
+                // on a track a reverb or a delay goes over its dry signal; a bus's send already keeps it
+                if (slot != null && !o.ReturnKinds && !o.Master && kind is InsertSlot.ReverbKind or InsertSlot.DelayKind)
+                {
+                    slot.Wet = TrackFxWet;
+                    slot.Dry = 1;
+                }
             }, "add");
             return item;
         }
-        var kinds = new List<object>();
-        if (o.ReturnKinds)
+        var items = new List<object>();
+        foreach (var (group, icon, list) in FxGroups)
+            items.Add(AddSlotGroup(Loc.T(group), icon, [.. list.Select(k => (object)Kind(k, k == InsertSlot.CompKind ? Loc.T("insp.section.comp") : SlotName(k), SlotHint(k)))]));
+        if (o.Master)
         {
-            kinds.Add(Kind(InsertSlot.ReverbKind, "Reverb", Loc.T("mix.slot.add.reverb")));
-            kinds.Add(Kind(InsertSlot.DelayKind, "Delay", Loc.T("mix.slot.add.delay")));
+            bool free = TrackInserts.MasterOrder.Any(k => !o.Slots().Exists(s => s.Type == k));
+            items.Add(new Separator());
+            items.Add(MenuAction(Loc.T("mix.slot.chain"), () => { AddMasterChain(); return Task.CompletedTask; }, enabled: free && store is { ReadOnly: false }, tip: Loc.T("mix.slot.chain.tip")));
         }
-        kinds.Add(Kind(InsertSlot.SatKind, Loc.T("fx.life"), Loc.T("mix.slot.add.sat")));
-        kinds.Add(Kind(InsertSlot.CompKind, Loc.T("insp.section.comp"), Loc.T("mix.slot.add.comp")));
-        kinds.Add(Kind(InsertSlot.EqKind, "EQ", Loc.T("mix.slot.add.eq")));
-        kinds.Add(Kind(InsertSlot.GateKind, Loc.T("fx.gate"), Loc.T("mix.slot.add.gate")));
-        var items = new List<object> { AddSlotGroup(Loc.T("vst.fx.group.native"), FxIcon.Sat, kinds) };
-        items.AddRange(VstEffectItems(o));
+        else items.AddRange(VstEffectItems(o));
         OpenAnchoredMenu(Popup(items, 220), b);
     }
 
@@ -1721,7 +1641,7 @@ public partial class MainWindow
     /// One slot's whole panel in a small window over the mixer (a click on its row): built into a layout of its own,
     /// it edits the same slot and refreshes with the mixer while it is open.
     /// </summary>
-    void ShowSlotWindow(SlotOwner o, string id, Control anchor)
+    void ShowSlotWindow(SlotOwner o, string id, Control anchor, bool atPointer = false)
     {
         var slots = o.Slots();
         int i = slots.FindIndex(s => s.Id == id);
@@ -1730,7 +1650,7 @@ public partial class MainWindow
         for (int k = 0; k < i; k++) if (slots[k].Type == slots[i].Type) nth++;
         var saved = mx;
         var own = new MixerLayout();
-        var host = new StackPanel { Width = 300 };
+        var host = new StackPanel { Width = SlotWindowW };
         mx = own;
         try { SlotPanel(host, o, slots[i], nth); }
         finally { mx = saved; }
@@ -1749,42 +1669,11 @@ public partial class MainWindow
             slotWindow = null;
             slotWindowRefresh = null;
         };
-        flyout.ShowAt(anchor);
+        flyout.ShowAt(anchor, atPointer);
     }
 
-    Control FxKnob((Border Box, StackPanel Body) panel, string label, double reset, Func<double> get, Action<double> set, Func<string> tip)
-    {
-        var knob = new Knob(34) { Min = 0, Max = 1, ResetTo = reset };
-        knob.Changed += set;
-        mx.Refresh.Add(() => { knob.Value = get(); knob.Tip = tip(); });
-        var col = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-        col.Children.Add(knob);
-        col.Children.Add(new TextBlock { Text = label, FontSize = 9, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
-        return col;
-    }
-
-    /// <summary>A knob beside its other controls; in a panel narrower than <see cref="FxNarrowW"/> the knob goes on top,
-    /// centred, so the controls keep the whole width instead of being cut.</summary>
-    static Grid Row(Control left, Control right)
-    {
-        var g = new Grid();
-        g.Children.Add(left); g.Children.Add(right);
-        bool? stacked = null;
-        void Arrange(bool s)
-        {
-            if (s == stacked) return;
-            stacked = s;
-            g.ColumnDefinitions = new ColumnDefinitions(s ? "*" : "Auto,*");
-            g.RowDefinitions = new RowDefinitions(s ? "Auto,Auto" : "Auto");
-            Grid.SetColumn(right, s ? 0 : 1); Grid.SetRow(right, s ? 1 : 0);
-            left.HorizontalAlignment = s ? HorizontalAlignment.Center : HorizontalAlignment.Left;
-            right.Margin = s ? new Thickness(0, 6, 0, 0) : new Thickness(8, 0, 0, 0);
-        }
-        Arrange(false);
-        // the panel's body has 8 px of margin on each side and a 1 px border
-        g.SizeChanged += (_, e) => Arrange(e.NewSize.Width + 18 < FxNarrowW);
-        return g;
-    }
+    /// <summary>An effect's window: as wide as four knobs at their full size.</summary>
+    const double SlotWindowW = 340;
 
     static SelectButton StripSelect(string[] items)
     {
@@ -1856,35 +1745,11 @@ public partial class MainWindow
         return chip;
     }
 
-    /// <summary>MiniKnob: a 22 px knob, its value and a label under it.</summary>
-    Control MiniKnob(string label, double min, double max, double reset, Func<double> get, Func<string> readout, Action<double> set, Func<string> tip)
-    {
-        var knob = new Knob(22) { Min = min, Max = max, ResetTo = reset, HorizontalAlignment = HorizontalAlignment.Center };
-        knob.Changed += set;
-        var value = new TextBlock { Classes = { "mono" }, FontSize = 9, Foreground = Palette.Dim, HorizontalAlignment = HorizontalAlignment.Center };
-        mx.Refresh.Add(() => { knob.Value = get(); knob.Tip = tip(); value.Text = readout(); });
-        var col = new StackPanel { Margin = new Thickness(0, 0, 0, 4) };
-        col.Children.Add(knob); col.Children.Add(value);
-        col.Children.Add(new TextBlock { Text = label, FontSize = 9, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
-        return col;
-    }
-
-    /// <summary>BigKnob: label on top, a 34 px knob, the value under it.</summary>
-    Control BigKnob(string label, double reset, Func<double> get, Func<string> readout, Action<double> set, string tip)
-    {
-        var knob = new Knob(34, tip) { Min = 0, Max = 1, ResetTo = reset, HorizontalAlignment = HorizontalAlignment.Center };
-        knob.Changed += set;
-        var value = new TextBlock { Classes = { "mono" }, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center };
-        mx.Refresh.Add(() => { knob.Value = get(); value.Text = readout(); });
-        var col = new StackPanel { Spacing = 4, Margin = new Thickness(0, 0, 0, 8) };
-        col.Children.Add(new TextBlock { Text = label.ToUpperInvariant(), FontSize = 10, LetterSpacing = 0.8, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
-        col.Children.Add(knob); col.Children.Add(value);
-        return col;
-    }
-
     Control Master()
     {
         var box = StripCard(MasterW);
+        // it follows the mixer's width like every strip, never narrower than its readouts (asked by the user)
+        mx.Resize.Add(w => box.Width = Math.Max(MasterW, w));
         // the head's fixed row (StripHeadH): the button, then LIM and MONO side by side
         var head = new StackPanel { Spacing = 2 };
         head.Children.Add(MasterButton());
@@ -1915,7 +1780,14 @@ public partial class MainWindow
             Children = { mx.Cor, new TextBlock { Text = "COR", FontSize = 8, LetterSpacing = 0.8, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center } } };
         ToolTip.SetTip(cor, Loc.T("mix.master.cor.tip"));
         var output = new StackPanel { Children = { lufs, cor } };
-        box.Child = StripLayout(head, null, mx.Master, output);
+        var controls = new Grid();
+        var o = MasterSlots();
+        var (list, _) = SlotList(o);
+        var fxBox = ListBox(list, false);
+        mx.Refresh.Add(() => fxBox.Opacity = Audio.PlaybackEngine.FxBypass ? 0.4 : 1);
+        ListSection(controls, mx.FxRows, ListHead(Loc.T("mix.list.fx"), o.AddTip, b => ShowAddSlotMenu(o, b)), fxBox);
+        ListSection(controls, mx.SendRows, new Border(), new Border());
+        box.Child = StripLayout(head, controls, mx.Master, output);
         return box;
     }
 }

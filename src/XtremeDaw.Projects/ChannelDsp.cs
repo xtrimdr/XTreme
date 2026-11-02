@@ -27,6 +27,9 @@ public static class ChannelDsp
     /// <summary>A bus's slots; its delays follow <paramref name="bpm"/>.</summary>
     public static InsertSpec[] BusSpecs(Bus b, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) => Specs(b.Inserts, BusRmsDb, bpm, live, bypass);
 
+    /// <summary>The master's chain, all off with its ON; like a bus's, its Vida reads <see cref="BusRmsDb"/>.</summary>
+    public static InsertSpec[] MasterSpecs(MasterSettings m, double bpm, bool bypass = false) => Specs(m.Slots, BusRmsDb, bpm, null, bypass || !m.On);
+
     /// <summary>
     /// The ids of the mix's nodes in the order they run: every folder (nothing feeds a folder but its tracks), then the
     /// buses, each after everything that feeds it. What <see cref="MixBusSpec.Nodes"/> and the live engine follow.
@@ -36,16 +39,26 @@ public static class ChannelDsp
     /// <summary>Where a track's output goes, by node id: its folder, or else its channel's bus; null = the master.</summary>
     public static string? TrackOutput(Track t) => t.FolderId ?? t.Channel.Output;
 
-    /// <summary>What <paramref name="r"/> sends, as indexes into <paramref name="nodes"/> (sends to a missing bus are left out).</summary>
-    public static MixSendSpec[] Sends(IReadOnlyList<string> nodes, IRouted r)
+    /// <summary>What <paramref name="r"/> sends, as indexes into <paramref name="nodes"/> (sends to a missing bus are left out); <paramref name="track"/> brings its lanes.</summary>
+    public static MixSendSpec[] Sends(IReadOnlyList<string> nodes, IRouted r, Track? track = null)
     {
         var list = new List<MixSendSpec>(r.Sends.Count);
         foreach (var s in r.Sends)
         {
             int i = IndexOf(nodes, s.BusId);
-            if (i >= 0) list.Add(new MixSendSpec { To = i, Level = s.Level, On = s.On, Pre = s.Pre });
+            if (i >= 0) list.Add(new MixSendSpec { To = i, Level = s.Level, On = s.On, Pre = s.Pre, Curve = track == null ? null : Automations.SendCurve(track, s.BusId) });
         }
         return [.. list];
+    }
+
+    /// <summary>A track's slots with their lanes: what <see cref="Specs(Channel, double, double, Func{InsertSlot, VstBridge?}?, bool)"/> gives, its VST3 effects carrying their automated parameters.</summary>
+    public static InsertSpec[] Specs(Track t, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false)
+    {
+        var specs = Specs(t.Channel, rmsDb, bpm, live, bypass);
+        if (t.Automation == null) return specs;
+        for (int i = 0; i < specs.Length; i++)
+            if (specs[i].Vst is { } v && Automations.VstCurves(t, specs[i].Id) is { } c) specs[i] = specs[i] with { Vst = v with { Curves = c } };
+        return specs;
     }
 
     static int IndexOf(IReadOnlyList<string> nodes, string? id)
@@ -56,9 +69,11 @@ public static class ChannelDsp
     }
 
     /// <summary>A track as the export renders it, with its clips and the level its Vida is measured against.</summary>
-    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb)
+    /// <param name="env">The take's envelope, which an automated compressor's amount is measured against; null = as a track without audio.</param>
+    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb, CompPresets.TakeEnvelope? env = null)
     {
         var ch = t.Channel;
+        var automator = InsertAutomator.Create(t, rmsDb, p.Settings.Bpm, env ?? CompPresets.Analyze([], MidiSampleRate));
         return new MixTrackSpec
         {
             Name = t.Name,
@@ -70,9 +85,12 @@ public static class ChannelDsp
             Pan = ch.Pan,
             Muted = ch.Muted,
             Solo = ch.Solo,
-            Inserts = Specs(ch, rmsDb, p.Settings.Bpm),
+            Inserts = automator?.At(0, force: true) ?? Specs(t, rmsDb, p.Settings.Bpm),
             Output = IndexOf(nodes, TrackOutput(t)),
-            Sends = Sends(nodes, ch),
+            Sends = Sends(nodes, ch, t),
+            Automation = Automations.Compile(t),
+            InsertsAt = automator == null ? null : sec => automator.At(sec),
+            InstrumentCurves = Automations.InstrumentCurves(t),
         };
     }
 
@@ -82,7 +100,8 @@ public static class ChannelDsp
     /// <summary>
     /// A MIDI track's notes as the engine plays them (<see cref="NoteSynth"/>), in frames at <paramref name="sampleRate"/>
     /// with the tempo turning beats into time; null for an audio track or one without notes. A note that runs past its
-    /// clip's end is cut there and one that starts past it is left out.
+    /// clip's end (or its pattern's pass) is cut there and one that starts past it is left out; a pattern's clip plays
+    /// its pass again until it ends.
     /// </summary>
     public static NoteSequence? Notes(Track t, double bpm, int sampleRate)
     {
@@ -90,17 +109,18 @@ public static class ChannelDsp
         double beatSec = 60 / Math.Max(1, bpm);
         var list = new List<NoteEvent>();
         foreach (var c in clips)
-            foreach (var n in c.Notes)
-            {
-                if (n.Beat >= c.LengthBeats) continue;
-                double start = c.AtSec + n.Beat * beatSec;
-                double end = c.AtSec + Math.Min(n.EndBeat, c.LengthBeats) * beatSec;
-                long from = (long)Math.Round(start * sampleRate);
-                long len = Math.Max(1, (long)Math.Round(end * sampleRate) - from);
-                // a plugin takes whole semitones: the Transponer's cents only reach the test tone
-                int pitch = Math.Clamp(n.Pitch + (int)Math.Round(t.Transpose), MidiNote.MinPitch, MidiNote.MaxPitch);
-                list.Add(new NoteEvent(from, len, NoteSynth.Hz(n.Pitch + t.Transpose), NoteSynth.Gain(n.Velocity), pitch, n.Velocity));
-            }
+            for (int pass = 0; pass < c.Passes; pass++)
+                foreach (var n in c.Notes)
+                {
+                    if (!c.Heard(n, pass, out double beat, out double endBeat)) continue;
+                    double start = c.AtSec + beat * beatSec;
+                    double end = c.AtSec + endBeat * beatSec;
+                    long from = (long)Math.Round(start * sampleRate);
+                    long len = Math.Max(1, (long)Math.Round(end * sampleRate) - from);
+                    // a plugin takes whole semitones: the Transponer's cents only reach the test tone
+                    int pitch = Math.Clamp(n.Pitch + (int)Math.Round(t.Transpose), MidiNote.MinPitch, MidiNote.MaxPitch);
+                    list.Add(new NoteEvent(from, len, NoteSynth.Hz(n.Pitch + t.Transpose), NoteSynth.Gain(n.Velocity), pitch, n.Velocity));
+                }
         return list.Count == 0 ? null : new NoteSequence([.. list], sampleRate);
     }
 
@@ -125,7 +145,7 @@ public static class ChannelDsp
                     Sends = Sends(nodes, b),
                 });
         }
-        return new MixBusSpec { Bpm = p.Settings.Bpm, Master = p.Settings.Master.ToParams(), Nodes = list };
+        return new MixBusSpec { Bpm = p.Settings.Bpm, Master = p.Settings.Master.ToParams(), MasterInserts = MasterSpecs(p.Settings.Master, p.Settings.Bpm), Nodes = list };
     }
 
     public static ReverbParams Reverb(ReverbSettings r, bool bypass = false) => new(r.Decay, r.PreDelayMs, r.Tone, r.LowCut, r.Width, r.ReturnGain, r.Muted || bypass);
@@ -144,15 +164,18 @@ public static class ChannelDsp
         {
             if (!s.Known) continue;
             s.Normalize();
+            var spec = new InsertSpec(s.Id, s.Type) { Wet = s.Wet, Dry = s.Dry, OutputDb = s.OutputDb };
             list.Add(s.Type switch
             {
-                InsertSlot.SatKind => new InsertSpec(s.Id, s.Type) { Sat = Sat(s.Sat!, rmsDb, bypass) },
-                InsertSlot.CompKind => new InsertSpec(s.Id, s.Type) { Comp = Comp(s.Comp!, bypass) },
-                InsertSlot.ReverbKind => new InsertSpec(s.Id, s.Type) { Reverb = Reverb(s.Reverb!, bypass) },
-                InsertSlot.DelayKind => new InsertSpec(s.Id, s.Type) { Delay = Delay(s.Delay!, bypass), Bpm = bpm },
-                InsertSlot.GateKind => new InsertSpec(s.Id, s.Type) { Gate = Gate(s.Gate!, bypass) },
-                InsertSlot.VstKind => new InsertSpec(s.Id, s.Type) { Vst = Vst(s.Vst!, live == null ? null : live(s), live == null, bypass), Bpm = bpm },
-                _ => new InsertSpec(s.Id, s.Type) { EqOn = s.Eq!.On && !bypass, EqBands = EqBands(s.Eq) },
+                InsertSlot.SatKind => spec with { Sat = Sat(s.Sat!, rmsDb, bypass) },
+                InsertSlot.CompKind => spec with { Comp = Comp(s.Comp!, bypass) },
+                InsertSlot.ReverbKind => spec with { Reverb = Reverb(s.Reverb!, bypass) },
+                InsertSlot.DelayKind => spec with { Delay = Delay(s.Delay!, bypass), Bpm = bpm },
+                InsertSlot.GateKind => spec with { Gate = Gate(s.Gate!, bypass) },
+                InsertSlot.VstKind => spec with { Vst = Vst(s.Vst!, live == null ? null : live(s), live == null, bypass), Bpm = bpm },
+                InsertSlot.EqKind => spec with { EqOn = s.Eq!.On && !bypass, EqBands = EqBands(s.Eq) },
+                _ when TrackInserts.IsMod(s.Type) => spec with { Mod = FxDefs.ToMod(s), StageOn = s.On && !bypass },
+                _ => spec with { Stage = FxDefs.ToMaster(s), StageOn = s.On && !bypass },
             });
         }
         return [.. list];
@@ -190,7 +213,10 @@ public static class ChannelDsp
             if (i < eq.Bands.Count)
             {
                 var b = eq.Bands[i];
-                bands[i] = EqBandSpec.FromStrings(b.On, b.Type, b.Freq, b.Gain, b.Q, b.Slope, TrackEq.DefaultBands[i].Type);
+                bands[i] = EqBandSpec.FromStrings(b.On, b.Type, b.Freq, b.Gain, b.Q, b.Slope, TrackEq.DefaultBands[i].Type) with
+                {
+                    Dyn = b.Dyn, DynThreshold = b.DynThreshold, DynRange = b.DynRange, DynAttackMs = b.DynAttackMs, DynReleaseMs = b.DynReleaseMs,
+                };
             }
             else bands[i] = TrackEq.DefaultBands[i];
         }

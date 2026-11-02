@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:XtremeDaw.App"
+             x:Class="XtremeDaw.App.Dialogs.ScaleDialog"
+             AutomationProperties.Name="{loc:T scale.title}"
+             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+
+  <!-- same frame as StemsDialog: what was heard, and whether its chords become markers -->
+  <Border Width="400" HorizontalAlignment="Center" VerticalAlignment="Center"
+          Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <StackPanel Margin="24,22,24,20" Spacing="14">
+      <StackPanel Spacing="2">
+        <TextBlock Text="{loc:T scale.title}" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock x:Name="ClipName" Classes="dim" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+      <StackPanel Spacing="4">
+        <TextBlock x:Name="ScaleName" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+        <TextBlock x:Name="Summary" Classes="dim" TextWrapping="Wrap" />
+      </StackPanel>
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="{loc:T scale.notes}" />
+        <TextBlock x:Name="Notes" Classes="dim mono" TextWrapping="Wrap" />
+      </StackPanel>
+      <StackPanel Spacing="6">
+        <TextBlock Classes="label" Text="{loc:T scale.chords}" />
+        <TextBlock x:Name="Chords" Classes="dim mono" TextWrapping="Wrap" />
+      </StackPanel>
+      <CheckBox x:Name="MarkersCheck" FontSize="12" ToolTip.Tip="{loc:T scale.markers.tip}" />
+      <Grid ColumnDefinitions="*,Auto">
+        <Button Grid.Column="1" x:Name="OkButton" Classes="btn primary" Padding="16,0" Content="{loc:T scale.ok}" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

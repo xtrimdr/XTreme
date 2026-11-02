@@ -57,6 +57,7 @@ Spanish by default; the language is chosen in Settings.
 | Ctrl+S | save now |
 | B / P | fold or open the channel panel / the project panel (hidden with its title bar button, it shows it again) |
 | F11 | full screen (F11 again goes back to how it was) |
+| F1 | help (F1 again closes it) |
 | Wheel, Shift+wheel, Ctrl+wheel, Alt+wheel | scroll up and down, zoom, scroll sideways, track height (the modifiers can be changed in Settings → Keyboard shortcuts). In the mixer, the plain wheel and Ctrl+wheel scroll sideways and Shift+wheel (or the bar in its header) widens or narrows the channels |
 
 On the selected clip, a click on its volume line adds a point; points drag, and a double-click removes one.
@@ -71,6 +72,7 @@ several tracks; right-click: delete it, delete it and close the gap, loop it), *
 there, on the grid), **Erase** (removes the clips it touches), **Listen** (hold the button on a clip to hear that
 track alone from there), **Zoom** (click zooms in, Alt+click out, a drag shows that stretch) and **Hand** (drag to
 move the view). Where two clips of a track overlap, right-click → **Bring to front** picks which one shows.
+**Reverse** (right-click on an audio clip) plays it backward without touching the file; it doesn't apply to clips with video.
 **Lock clip** or **Lock track** (right-click) pins a take that came out right: it can't be moved, trimmed or deleted
 and recording won't replace it; volume, fades and framing still change.
 
@@ -102,3 +104,9 @@ exports/              exported videos and audio
 console without opening the window. Its commands and options are in Spanish (for example `grabar`, `mezclar`,
 `exportar`, `proyecto`, `proyectos`); run it without arguments to see the help, or see the command table in
 the [Spanish version](DETALLES.md#wtlab).
+
+`wtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: optional component state, install, and a download test against a local server.
+
+## Stem separation models
+
+The models belong to Meta (Demucs, https://github.com/facebookresearch/demucs). XTreme neither includes nor hosts them: they download from their original source to your PC when you install them. They have their own terms and are not covered by XTreme's license. The app works without them.

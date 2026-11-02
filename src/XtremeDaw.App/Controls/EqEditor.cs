@@ -4,13 +4,15 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using XtremeDaw.Audio.Dsp;
 using XtremeDaw.Projects;
 
 namespace XtremeDaw.App.Controls;
 
-/// <summary>Port of EqEditor.tsx: presets, interactive log graph with the track's live spectrum behind it, six band
-/// chips and selected band controls. The graph uses the shared DSP response formulas.</summary>
+/// <summary>Port of EqEditor.tsx: presets, interactive log graph with the track's live spectrum behind it, a chip per
+/// band and selected band controls, with its dynamics. The graph uses the shared DSP response formulas. With
+/// <c>big</c> it is the editor of the big window: the same, on a graph that takes the window's height.</summary>
 public sealed class EqEditor : StackPanel
 {
     EqSettings eq = new();
@@ -20,20 +22,50 @@ public sealed class EqEditor : StackPanel
     readonly ComboBox preset = new() { FontSize = 11, MinHeight = 26 };
     readonly ComboBox type = new() { FontSize = 12, MinHeight = 28 };
     readonly Button power = new() { Classes = { "chip" }, FontSize = 11 };
-    readonly Button[] chips = new Button[6];
-    readonly EqGraph graph = new();
-    readonly InspectorSlider freq, gain, q;
+    readonly Button[] chips = new Button[TrackEq.BandCount];
+    readonly EqGraph graph;
+    readonly InspectorSlider freq, gain, q, dynThreshold, dynRange, dynAttack, dynRelease;
+    readonly Button dynButton = new() { Classes = { "chip" }, FontSize = 11, Padding = new Thickness(8, 2), Focusable = false, HorizontalAlignment = HorizontalAlignment.Left };
+    readonly StackPanel dynBox = new() { Spacing = 10 };
+    readonly DispatcherTimer liveTimer = new() { Interval = TimeSpan.FromMilliseconds(LiveMs) };
+    readonly double[] liveDb = new double[TrackEq.BandCount];
+    /// <summary>How often the graph reads what the dynamics are doing.</summary>
+    const int LiveMs = 33;
+    /// <summary>The big window's graph: how tall it starts and the least it gets.</summary>
+    const double BigGraphH = 340;
+    public const double BigGraphMinH = 190;
     readonly StackPanel slope = new() { Orientation = Orientation.Horizontal, Spacing = 4 };
     static readonly string[] Types = ["highpass", "lowshelf", "peaking", "highshelf", "lowpass"];
     public event Action<EqSettings>? Changed;
+    /// <summary>The expand button: the window opens the big view.</summary>
+    public event Action? BigRequested;
+    /// <summary>The big view's slot went away (<see cref="Follow"/> gave null).</summary>
+    public event Action? Gone;
+    /// <summary>The running effect, for the dynamics on the graph; null while it isn't in the engine.</summary>
+    public Func<EqInsert?>? Live { get; init; }
+    /// <summary>The big view: the settings as they are now, so it follows what changes elsewhere.</summary>
+    public Func<EqSettings?>? Follow { get; init; }
+    /// <summary>The graph's height in the big view.</summary>
+    public double GraphHeight { set => graph.Height = value; }
 
-    public EqEditor()
+    public EqEditor(bool big = false)
     {
         Spacing = 10;
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        graph = new EqGraph(height: big ? BigGraphH : 150);
+        liveTimer.Tick += (_, _) => TickLive();
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         row.Children.Add(new TextBlock { Text = "Plantilla", Classes = { "dim" }, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
         preset.ItemsSource = TrackEq.Presets.Select(p => p.Label).ToArray();
         Grid.SetColumn(preset, 1); row.Children.Add(preset); Children.Add(row);
+        if (!big)
+        {
+            var open = new Button { Classes = { "ghost" }, Width = 28, Height = 28, Padding = new Thickness(0), Margin = new Thickness(4, 0, 0, 0), Focusable = false,
+                HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
+                Content = new TextBlock { Classes = { "icon" }, Text = "\uE740", FontSize = 12 } };
+            ToolTip.SetTip(open, Loc.T("eq.big.tip"));
+            open.Click += (_, _) => BigRequested?.Invoke();
+            Grid.SetColumn(open, 2); row.Children.Add(open);
+        }
         preset.SelectionChanged += (_, _) =>
         {
             int index = preset.SelectedIndex - (customPreset ? 1 : 0);
@@ -43,8 +75,8 @@ public sealed class EqEditor : StackPanel
         Children.Add(graph);
         graph.Selected += i => { selected = i; Set(eq); };
         graph.Edited += (i, edit) => Patch(i, edit);
-        var bands = new UniformGrid { Columns = 6 };
-        for (int i = 0; i < 6; i++)
+        var bands = new UniformGrid { Columns = TrackEq.BandCount };
+        for (int i = 0; i < TrackEq.BandCount; i++)
         {
             int index = i;
             var b = new Button { Content = (i + 1).ToString(), Classes = { "chip", "mono" }, FontSize = 11,
@@ -81,15 +113,59 @@ public sealed class EqEditor : StackPanel
             b.Click += (_, _) => Patch(selected, x => { x.Slope = s; x.On = true; }); slope.Children.Add(b);
         }
         Children.Add(slope);
-        Children.Add(new TextBlock { Text = Loc.T("eq.help"),
+        ToolTip.SetTip(dynButton, Loc.T("eq.dyn.tip"));
+        dynButton.Content = Loc.T("eq.dyn");
+        dynButton.Click += (_, _) => Patch(selected, b => { b.Dyn = !b.Dyn; b.On = true; });
+        Children.Add(dynButton);
+        dynThreshold = new InspectorSlider(Loc.T("eq.dyn.threshold"), EqDynamics.ThresholdMinDb, 0, 0.5, EqDynamics.DefaultThresholdDb, v => $"{v:0.0} dB", v => Patch(selected, b => b.DynThreshold = v));
+        dynRange = new InspectorSlider(Loc.T("eq.dyn.range"), -EqDynamics.RangeMaxDb, EqDynamics.RangeMaxDb, 0.5, EqDynamics.DefaultRangeDb, v => $"{v:+0.0;-0.0;0.0} dB", v => Patch(selected, b => b.DynRange = v),
+            Loc.T("eq.dyn.range.tip"));
+        dynAttack = new InspectorSlider(Loc.T("eq.dyn.attack"), EqDynamics.AttackMinMs, EqDynamics.AttackMaxMs, 0.5, EqDynamics.DefaultAttackMs, v => $"{v:0.0} ms", v => Patch(selected, b => b.DynAttackMs = v));
+        dynRelease = new InspectorSlider(Loc.T("eq.dyn.release"), EqDynamics.ReleaseMinMs, EqDynamics.ReleaseMaxMs, 5, EqDynamics.DefaultReleaseMs, v => $"{v:0} ms", v => Patch(selected, b => b.DynReleaseMs = v));
+        dynBox.Children.Add(dynThreshold); dynBox.Children.Add(dynRange); dynBox.Children.Add(dynAttack); dynBox.Children.Add(dynRelease);
+        Children.Add(dynBox);
+        if (!big) Children.Add(new TextBlock { Text = Loc.T("eq.help"),
             FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap });
     }
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        if (Live != null || Follow != null) liveTimer.Start();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        liveTimer.Stop();
+    }
+
+    /// <summary>What the dynamics are doing now, on the graph; only redrawn if something moved.</summary>
+    void TickLive()
+    {
+        if (Follow != null)
+        {
+            var now = Follow();
+            if (now == null) { liveTimer.Stop(); Gone?.Invoke(); return; }
+            if (!ReferenceEquals(now, eq)) Set(now);
+        }
+        var insert = eq.Bands.Exists(b => b.Dyn) ? Live?.Invoke() : null;
+        bool moved = false;
+        for (int i = 0; i < liveDb.Length; i++)
+        {
+            double db = insert?.Eq.DynamicDb(i) ?? 0;
+            if (Math.Abs(db - liveDb[i]) < 0.05) continue;
+            liveDb[i] = db;
+            moved = true;
+        }
+        if (moved) graph.SetDynamics(liveDb);
+    }
+
     /// <summary>One frame of the live spectrum (dB per bin, as <see cref="SpectrumTap.Read"/> gives it), or null while
     /// the track isn't playing, so the last one falls away.</summary>
     public void PushSpectrum(float[]? bins, int sampleRate) => graph.PushSpectrum(bins, sampleRate);
     /// <summary>eqPresetOf: the factory preset these bands are exactly, or -1 ("Personalizado").</summary>
     public static int PresetIndex(EqSettings eq) => Array.FindIndex(TrackEq.Presets, p => p.Bands.Select((x, i) =>
-        x.On == eq.Bands[i].On && BiquadSpec.TypeToString(x.Type) == eq.Bands[i].Type && x.Freq == eq.Bands[i].Freq
+        x.On == eq.Bands[i].On && !eq.Bands[i].Dyn && BiquadSpec.TypeToString(x.Type) == eq.Bands[i].Type && x.Freq == eq.Bands[i].Freq
         && x.Gain == eq.Bands[i].Gain && x.Q == eq.Bands[i].Q && x.Slope == eq.Bands[i].Slope).All(x => x));
 
     /// <summary>applyEqPreset: the preset's bands, switched on; unknown fields of the current EQ survive.</summary>
@@ -121,7 +197,7 @@ public sealed class EqEditor : StackPanel
         type.SelectedIndex = Array.IndexOf(Types, b.Type);
         power.Content = b.On ? "ON" : "OFF";
         ToolTip.SetTip(power, Loc.T(b.On ? "eq.band.off" : "eq.band.on"));
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < chips.Length; i++)
         {
             var band = eq.Bands[i];
             chips[i].Foreground = band.On ? Palette.Accent : Palette.Faint;
@@ -132,6 +208,10 @@ public sealed class EqEditor : StackPanel
         freq.Set(ToPos(b.Freq)); gain.Set(b.Gain); q.Set(b.Q);
         bool cut = b.Type is "highpass" or "lowpass";
         gain.IsVisible = !cut; q.IsVisible = b.Type == "peaking"; slope.IsVisible = cut;
+        dynButton.IsVisible = !cut;
+        dynButton.Classes.Set("on", b.Dyn && !cut);
+        dynBox.IsVisible = b.Dyn && !cut;
+        dynThreshold.Set(b.DynThreshold); dynRange.Set(b.DynRange); dynAttack.Set(b.DynAttackMs); dynRelease.Set(b.DynReleaseMs);
         foreach (var child in slope.Children.OfType<Button>()) child.Foreground = Equals(child.Content, $"{b.Slope} dB/oct") ? Palette.Accent : Palette.Dim;
         graph.Set(eq, selected);
         filling = false;
@@ -151,6 +231,8 @@ sealed class EqGraph : Control
     StreamGeometry totalFill = new();
     StreamGeometry selectedFill = new();
     EqBandSpec[] currentBands = [];
+    /// <summary>What each band's dynamics are doing now (dB).</summary>
+    double[] dynamics = new double[TrackEq.BandCount];
     public event Action<int>? Selected;
     public event Action<int, Action<EqBand>>? Edited;
     readonly bool interactive;
@@ -170,6 +252,12 @@ sealed class EqGraph : Control
     double Handle(EqBand b) => b.Type is "highpass" or "lowpass" ? 0 : b.Gain;
     int Hit(Point p) => eq.Bands.Select((b, i) => (b, i, d: Math.Pow(X(b.Freq) - p.X, 2) + Math.Pow(Y(Handle(b)) - p.Y, 2)))
         .Where(x => x.d <= 196).OrderByDescending(x => x.b.On).ThenBy(x => x.d).Select(x => x.i).FirstOrDefault(-1);
+    public void SetDynamics(double[] db)
+    {
+        dynamics = db;
+        InvalidateVisual();
+    }
+
     public void Set(EqSettings value, int index)
     {
         bool selectionChanged = selected != index;
@@ -284,9 +372,15 @@ sealed class EqGraph : Control
                 ctx.DrawEllipse(Palette.Alpha(Palette.AccentColor, 0.75), null, new Point(X(b.Freq), Y(Handle(b))), 2.5, 2.5);
             return;
         }
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < eq.Bands.Count; i++)
         {
             var b = eq.Bands[i]; var p = new Point(X(b.Freq), Y(Handle(b))); double r = i == selected ? 8 : 7;
+            // a dynamic band: how far it can go, and where it is now
+            if (b.On && b.Dyn && b.Type is not ("highpass" or "lowpass"))
+            {
+                ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.5), 3), p, new Point(p.X, Y(b.Gain + b.DynRange)));
+                if (i < dynamics.Length && Math.Abs(dynamics[i]) >= 0.05) ctx.DrawEllipse(Palette.Fg, null, new Point(p.X, Y(b.Gain + dynamics[i])), 3, 3);
+            }
             if (i == selected) ctx.DrawEllipse(null, Palette.Pen(Palette.Fg, 1.5), p, r + 3, r + 3);
             ctx.DrawEllipse(b.On ? Palette.Accent : Palette.App, b.On ? null : Palette.Pen(Palette.Dim), p, r, r);
             ctx.DrawText((i + 1).ToString(), 9, b.On ? Palette.App : Palette.Dim, new Point(p.X - 3, p.Y - 6), Palette.UiBold);

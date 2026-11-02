@@ -38,6 +38,8 @@ public partial class MainWindow
     async Task DetectTempo(LiveClip clip, Point point)
     {
         if (clip.Audio is not { } audio) return;
+        // what it sounds like now: the tempo it has in the song, stretched or not
+        if (clip.Sound is not { L.Length: > 0 } sound) { Toast(Loc.T("stretch.wait")); return; }
         var w = clip.Window;
         int sr = audio.SampleRate;
         int start = (int)Math.Max(0, (w.Start - w.Origin) * sr);
@@ -56,7 +58,7 @@ public partial class MainWindow
         TempoDetector.Result? r;
         try
         {
-            r = await Task.Run(() => TempoDetector.Detect(audio.L, audio.R, sr, start, count, p => job.Progress = (float)p));
+            r = await Task.Run(() => TempoDetector.Detect(sound.L, sound.R, sr, start, count, p => job.Progress = (float)p));
         }
         finally
         {
@@ -100,9 +102,10 @@ public partial class MainWindow
     void ApplyDetectedTempo(double value, double before)
     {
         var st = store;
-        SetTempo(value);
+        // the audio already is at this tempo: it is the grid that moves
+        SetTempo(value, follow: false);
         // the button only goes back in the project it changed
-        Toast(Loc.T("tempo.detect.done", Bpm(value)), action: (Loc.T("tempo.detect.back", Bpm(before)), () => { if (store == st) SetTempo(before); }));
+        Toast(Loc.T("tempo.detect.done", Bpm(value)), action: (Loc.T("tempo.detect.back", Bpm(before)), () => { if (store == st) SetTempo(before, follow: false); }));
     }
 
     /// <summary>The tempo as the transport takes it: in tenths, or whole when it is that close.</summary>

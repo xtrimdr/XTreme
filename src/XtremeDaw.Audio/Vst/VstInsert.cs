@@ -11,6 +11,8 @@ public sealed record VstSlotSpec(VstInstance Plugin, bool On)
 {
     public VstBridge? Live { get; init; }
     public bool Offline { get; init; }
+    /// <summary>Its automated parameters; null = none.</summary>
+    public VstParamCurves? Curves { get; init; }
 }
 
 /// <summary>
@@ -48,8 +50,12 @@ public sealed class VstInsert : ITrackInsert, IDisposable
     volatile bool on = true;
     double tempo = 120;
     volatile int reset;
+    volatile VstParamCurves? curves;
 
     public VstInsert(int sampleRate) => this.sampleRate = sampleRate;
+
+    /// <summary>The timeline frame of the next block: where its parameter lanes are read.</summary>
+    public long Frame { get; set; }
 
     public string Kind => TrackInserts.Vst;
 
@@ -69,6 +75,7 @@ public sealed class VstInsert : ITrackInsert, IDisposable
     {
         on = spec.On;
         tempo = bpm;
+        curves = spec.Curves;
         if (spec.Offline)
         {
             if (own != null) return;
@@ -141,6 +148,7 @@ public sealed class VstInsert : ITrackInsert, IDisposable
                 }
                 pending = 0;
             }
+            curves?.Push(b, Frame);
             long sent = b.TrySend(left[..m], right[..m], m, time, tempo, VstBridge.FlagPlaying | flags);
             if (sent > 0)
             {
@@ -242,6 +250,7 @@ public sealed class VstInsert : ITrackInsert, IDisposable
             int len = Math.Min(MaxBlock, left.Length - off);
             var l = left.Slice(off, len);
             var r = right.Slice(off, len);
+            curves?.Push(b, Frame + off);
             b.Render([], len, time, tempo, VstBridge.FlagPlaying, l, r, l, r);
             time += len;
         }
@@ -252,6 +261,7 @@ public sealed class VstInsert : ITrackInsert, IDisposable
     {
         reset = 1;
         dry.Reset();
+        curves?.Resend();
     }
 
     public double TakeGrDb() => 0;

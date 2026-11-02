@@ -50,6 +50,7 @@ public partial class MainWindow
         if (FolderById(id) is { Collapsed: true } folded) folded.HeightScale = h / Timeline.TrackHeight;
         else if (FolderById(id) is { } f) f.Height = h is { } px ? Timeline.FolderUnzoomed(px) : null;
         else if (tracks.Find(t => t.Track.Id == id) is { } t) t.Track.HeightScale = Scale(h);
+        else if (tracks.Select(x => Automations.ById(x.Track, id)).FirstOrDefault(l => l != null) is { } lane) lane.HeightScale = h / AutomationLane.DefaultHeight;
         else return;
         RowHeightsChanged();
     }
@@ -60,7 +61,11 @@ public partial class MainWindow
     void ResetRowHeights()
     {
         if (store == null || store.ReadOnly || restoring) return;
-        foreach (var t in store.Project.Tracks) t.HeightScale = null;
+        foreach (var t in store.Project.Tracks)
+        {
+            t.HeightScale = null;
+            foreach (var l in t.Automation ?? []) l.HeightScale = null;
+        }
         foreach (var f in store.Project.Folders) { f.Height = null; f.HeightScale = null; }
         RowHeightsChanged();
     }
@@ -74,7 +79,7 @@ public partial class MainWindow
 
     /// <summary>The reset button is on only while some row has a height of its own.</summary>
     void UpdateResetHeights() => ResetHeightsButton.IsEnabled = store is { ReadOnly: false } st
-        && (st.Project.Tracks.Any(t => t.HeightScale != null) || st.Project.Folders.Any(f => f.Height != null || f.HeightScale != null));
+        && (st.Project.Tracks.Any(t => t.HeightScale != null || t.Automation?.Exists(l => l.HeightScale != null) == true) || st.Project.Folders.Any(f => f.Height != null || f.HeightScale != null));
 
     /// <summary>The folder selected in the timeline (or the mixer), or null; then no track is selected.</summary>
     Folder? SelectedFolder => Timeline.SelectedFolderId is { } id ? FolderById(id) : null;

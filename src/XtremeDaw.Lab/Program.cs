@@ -25,14 +25,20 @@ static class Program
                 "exportar" => DspCommands.Export(a),
                 "click" => DspCommands.Click(a),
                 "comprobar-dsp" => DspCommands.Check(a),
+                "tiempos-carga" => ImportChecks.Times(a),
+                "samples" => SampleChecks.Run(a),
                 "colas" => TailCommands.Run(a),
                 "espectro" => DspCommands.Spectrum(a),
                 "lufs" => DspCommands.Lufs(a),
                 "masterizar" => DspCommands.Master(a),
                 "afinar" => DspCommands.Tune(a),
                 "tempo" => TempoChecks.Run(a),
+                "escala" => ScaleChecks.Run(a),
                 "extraer-midi" => ToMidiChecks.Run(a),
+                "separar" => StemChecks.Run(a),
+                "componentes" => ComponentCommands.Run(a),
                 "transponer" => TransposeCommands.Run(a),
+                "estirar" => StretchChecks.Run(a),
                 "looks" => VideoCommands.Looks(a),
                 "leer-video" => VideoCommands.ReadVideo(a),
                 "nitidez" => DetailCommands.Run(a),
@@ -102,13 +108,14 @@ static class Program
               colas     [--proyecto carpeta] [--bloque 192] [--segundos 3] [--silencio 120] [--paso 5] [--nivel 0.1] [--caida dB/s]
                                            lo que cuestan por bloque los buses y el master mientras se apagan sus colas;
                                            --caida apaga la entrada de a poco, como la cola de un instrumento
+              tiempos-carga archivo        cuánto tarda cada paso de cargar un audio: decodificar, remuestrear y analizar
               lufs      archivo.wav|mp3        volumen integrado (EBU R128) del archivo, como el medidor LUFS del master
               masterizar archivo.wav [--salida x_master.wav] [--cuanto 0.35] [--banda-graves|--banda-medios|--banda-agudos 0..1]
                         [--corte 0|20..150] [--barro dB] [--graves dB] [--presencia dB] [--aire dB] [--inclinacion dB]
                         [--cruce-graves 150] [--cruce-agudos 5000] [--cinta 0..1] [--ancho 0..2] [--graves-mono Hz]
                         [--recorte 0..3] [--empuje 0] [--techo -1] [--release 80] [--sin-limitador]
                         [--volumen youtube|instagram|tiktok|spotify|apple] [--pua 0..1]
-                        [--look natural|glue|bright|warm|front|pick [--cuanto-look 1]] [--sugerime]
+                        [--look natural|glue|bright|warm|front [--cuanto-look 1]] [--sugerime]
                                            el mastering de la ventana sobre un WAV: cuánto comprime cada banda
                                            ("Cuánto", 0 = nada), cuánto baja el limitador y los LUFS de entrada y salida;
                                            --volumen es el Destino: mide el archivo entero y usa la ganancia que lo lleva
@@ -123,16 +130,33 @@ static class Program
               tempo     archivo [--desde s] [--hasta s]
                                            los BPM del archivo (o de ese tramo), su primer golpe y qué tan seguro
                                            está, como "Detectar tempo" en un clip (el doble y la mitad también valen)
+              escala    archivo [--desde s] [--hasta s] [--callado] [--espectro] [--bajo stem.wav]
+                                           la escala del archivo (o de ese tramo), sus notas, la afinación y los
+                                           acordes con su tiempo, como "Detectar escala y acordes" en un clip;
+                                           --espectro no prueba otros métodos; --bajo compara los acordes con ese
+                                           stem de bajo; --comprobar corre solo sus comprobaciones
               extraer-midi archivo [--melodia] [--desde s] [--hasta s] [--inicio 0.5] [--nota 0.3]
                         [--min-ms 128] [--midi notas.mid] [--bpm 120]
                                            las notas del archivo (o de ese tramo), como "Extraer MIDI" en un clip
                                            (Basic Pitch); --melodia deja una nota a la vez; --inicio y --nota son
                                            qué tan seguro tiene que estar de que una nota empieza y sigue sonando
+              componentes [estado | instalar id [--paquete p] [--url u] | convertir carpeta-th salida | comprobar]
+              separar   archivo [--stems 2|4|6] [--calidad rapida|alta|maxima] [--sin-desplazar]
+                        [--desde s] [--hasta s] [--salida carpeta] [--cancelar s] [--cpu]
+                                           separa el archivo en stems y deja un WAV por stem, como "Separar en stems"
+                                           en un clip (Demucs); --sin-desplazar hace una sola pasada sin correr el
+                                           audio (para comparar con otra versión); --cancelar corta a los s segundos y
+                                           dice cuánto tardó en parar; --cpu no usa la placa de video; --comprobar corre
+                                           sus comprobaciones
                                            (más bajo = más notas); --midi las guarda en un .mid
               extraer-midi --comprobar     solo las comprobaciones del extractor (las de comprobar-dsp)
+              samples listar carpeta [--buscar "kick 808"]   los samples de una carpeta, como los busca la Biblioteca
+              samples leer archivo         decodifica un archivo y dice cómo (nativo o por FFmpeg)
               transponer archivo.wav [--semitonos 2] [--salida x_+2st.wav]
                                            cambia el tono sin cambiar el largo (de -12 a +12, admite fracciones = cents),
                                            como el Transponer de la pista: vocoder de fase PVDR + remuestreo sinc
+              estirar archivo.wav [--razon 1.25 | --de 120 --a 100] [--semitonos 0] [--salida x_x1.25.wav] [--comprobar]
+                                           cambia el largo sin cambiar el tono, como un clip que sigue el tempo
               espectro  [entrada.wav] [--hz 1000] [--nivel -6]
                                            el espectro en vivo del EQ (FFT de 8192 después del EQ, como la web);
                                            sin WAV, comprueba un seno contra el AnalyserNode de Web Audio
@@ -200,6 +224,7 @@ static class Program
                                            separador se oculta o se muestra en el timeline)
               proyecto editar carpeta nuevo-separador [nombre] [--en n] [--visible]   un separador con nombre en ese lugar de la secuencia (oculto en el timeline salvo --visible)
               proyecto editar carpeta lado id izquierda|derecha   de qué lado del mixer va la tira (pista, carpeta, separador o bus)
+              proyecto editar carpeta tempo bpm    cambia el tempo con todo en su compás y deja los clips estirados en cache/
               proyecto editar carpeta transponer pista semitonos   cambia el tono de la pista sin cambiar el largo (-12..+12, 0 = original)
                                            y deja sus tomas transpuestas en cache/ (como el Transponer del inspector)
               proyecto editar carpeta guardar-plantilla pista [nombre] | usar-plantilla id|nombre | aplicar-plantilla pista nombre   plantillas de pista (pistas.json)
@@ -217,11 +242,11 @@ static class Program
               proyecto verificar-tomas     verifica a qué pista va una toma nueva, su nombre y su canal
               proyecto importar-audio carpeta archivo [--en segundos] [--pista id]   copia un audio de afuera a media/ y lo pone en una pista
               proyecto verificar-importar  verifica la importación de audio (formato, nombres, archivos rotos)
-              proyecto insertos carpeta pista [agregar vida|comp|eq|puerta [--en n] | agregar vst --plugin "nombre" | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n]
+              proyecto insertos carpeta pista [agregar vida|comp|eq|puerta|reverb|delay|limpieza|multibanda|color|cinta|ancho|softclip|limitador|chorus|flanger|phaser|tremolo [--en n] | agregar vst --plugin "nombre" | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n]
                                            los slots de efectos de la pista (número o id), en el orden en que suenan; sin
                                            operación, los lista. Como el menú de cada efecto en la tira ancha del mixer;
                                            plegar n lo pliega o despliega en el mixer (no cambia el sonido)
-              proyecto insertos carpeta --bus id|n [agregar reverb|delay|vida|comp|eq|puerta … | quitar n | …]
+              proyecto insertos carpeta --bus id|n [agregar … | quitar n | …], o carpeta [agregar … | cadena | quitar n | …] --master
                                            lo mismo para un bus (la reverb y el delay solo van en buses)
               proyecto buses carpeta [agregar [nombre] [--tipo reverb|delay|vacio] | quitar n | renombrar n nombre |
                         volumen n 0.8 | paneo n -0.3 | mute n | color n #rrggbb|ninguno | icono n id|ninguno]
@@ -234,7 +259,7 @@ static class Program
                                            bus:n lo rechaza. --quitar saca el bus de su lista (apagado, con su nivel) y
                                            --sumar lo vuelve a poner. Las opciones van después del nivel
               proyecto historial carpeta   tomas (en uso / no usadas), exportaciones y actividad, como la pestaña Historial
-              proyecto historial carpeta quitar|usar medio | borrar-no-usadas | borrar-exportacion n
+              proyecto historial carpeta quitar|usar medio [--en s] [--pista id] | borrar-no-usadas | borrar-exportacion n
               proyecto verificar-historial verifica el registro de tomas, la Papelera y las frases de la actividad
               proyecto toma     carpeta [--segundos 3] [--pista id] [--camara]
                                            graba un tono como la ventana (--pista: la pista seleccionada;
@@ -248,6 +273,11 @@ static class Program
                                            una nota en el clip (pulso y largo en tiempos desde su comienzo)
               midi acordes carpeta --clip id   reemplaza sus notas por Do, Sol, Lam, Fa (un compás cada uno)
               midi quitar carpeta --clip id    saca el clip MIDI
+              midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]   hace del clip un patrón; --repetir, cuántas vueltas dura
+              midi patron-insertar carpeta --clip id --pista n [--en segundos]   un clip más del patrón de ese clip
+              midi patron-unico carpeta --clip id   saca el clip del patrón (suena igual)
+              midi patron-disolver carpeta --clip id   termina el patrón de ese clip: todos sus clips quedan únicos
+              midi patron-borrar carpeta --clip id   borra el patrón de ese clip con todos sus clips
               midi cuantizar carpeta --clip id [--grilla 1/4|1/8|1/16|1/32|1/8T]
                                            mueve el comienzo de sus notas a la grilla de la canción (el largo queda)
               midi velocidad carpeta --clip id [--rango 100]
@@ -277,6 +307,7 @@ static class Program
                                            toca un acorde con ese plugin a un WAV, como la exportación (--ventana abre
                                            antes su ventana y usa lo que dejes)
               vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado]
+              vst parametros "nombre" [--mover "parámetro"] [--segundos 2]
                                            pasa audio (o acordes de prueba) por un efecto como la exportación y en vivo
                                            en bloques del driver; comprueba que en vivo llega justo un bloque después
               proyectos lista|plantillas [--raiz X]

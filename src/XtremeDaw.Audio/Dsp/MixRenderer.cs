@@ -55,6 +55,12 @@ public sealed class MixTrackSpec
     public int Output { get; init; } = -1;
     /// <summary>Its sends to buses (<see cref="MixBusSpec.Nodes"/>).</summary>
     public IReadOnlyList<MixSendSpec> Sends { get; init; } = [];
+    /// <summary>What its fader follows (<see cref="TrackAutomation"/>); null = <see cref="Volume"/>, <see cref="Pan"/> and <see cref="Muted"/>.</summary>
+    public TrackAutomation? Automation { get; init; }
+    /// <summary>The slots at a time when their automated knobs moved, null when they didn't; null = no slot is automated.</summary>
+    public Func<double, IReadOnlyList<InsertSpec>?>? InsertsAt { get; init; }
+    /// <summary>The instrument plugin's automated parameters.</summary>
+    public VstParamCurves? InstrumentCurves { get; init; }
 }
 
 /// <summary>A send to a bus: <see cref="To"/> is an index into <see cref="MixBusSpec.Nodes"/>.</summary>
@@ -65,6 +71,10 @@ public sealed class MixSendSpec
     public bool On { get; init; } = true;
     /// <summary>Taken before the fader (after the slots and the pan, still silenced by mute and solo).</summary>
     public bool Pre { get; init; }
+    /// <summary>The level follows this lane instead of <see cref="Level"/>.</summary>
+    public AutoCurve? Curve { get; init; }
+    /// <summary>It sends something: on, and with a level or a lane that gives it one.</summary>
+    public bool Sounds => On && (Level > 0 || Curve != null);
 }
 
 /// <summary>
@@ -89,6 +99,8 @@ public sealed class MixBusSpec
 {
     public double Bpm { get; init; } = 120;
     public MasterParams Master { get; init; } = MasterParams.Off;
+    /// <summary>The master's own slots, ahead of <see cref="MasterChain"/>.</summary>
+    public IReadOnlyList<InsertSpec> MasterInserts { get; init; } = [];
     /// <summary>The folders and the buses, in the order they run: each after every node that feeds it.</summary>
     public IReadOnlyList<MixNodeSpec> Nodes { get; init; } = [];
 }
@@ -122,8 +134,21 @@ public sealed class TrackDspChain
     readonly float[] preR = new float[MaxBlockSize];
     readonly float[] postL = new float[MaxBlockSize];
     readonly float[] postR = new float[MaxBlockSize];
+    // a send with a lane: the block at its level
+    readonly float[] sendL = new float[MaxBlockSize];
+    readonly float[] sendR = new float[MaxBlockSize];
     readonly InsertRack rack;
+    readonly int sampleRate;
     volatile TrackSend[] sends = [];
+    volatile TrackAutomation? automation;
+    // audio thread: where the automated fader and pan left off, so the next block ramps from there
+    bool ramped;
+    float rampVol, rampPre, rampLL, rampRL, rampLR, rampRR;
+
+    /// <summary>What the fader follows, swapped whole by the UI; null = <see cref="Volume"/>, <see cref="Pan"/> and <see cref="Muted"/>.</summary>
+    public TrackAutomation? Automation { get => automation; set => automation = value; }
+    /// <summary>The timeline frame of the block that <see cref="ProcessFilledBuffer"/> runs: where the lanes are read.</summary>
+    public long Frame { get; set; }
 
     /// <summary>Its sends to buses, swapped whole by the UI (never changed in place).</summary>
     public TrackSend[] Sends { get => sends; set => sends = value; }
@@ -143,6 +168,7 @@ public sealed class TrackDspChain
 
     public TrackDspChain(int sampleRate)
     {
+        this.sampleRate = sampleRate;
         rack = new InsertRack(sampleRate);
         SetInserts(TrackInserts.Legacy(SatParams.From(false, SatMode.Tube, 0.3), CompState.Defaults, false, TrackEq.DefaultBands), fade: false);
     }
@@ -153,6 +179,9 @@ public sealed class TrackDspChain
     /// <summary>How late the slots' output comes out, all added up (a VST3 effect's; the built-in ones add nothing).</summary>
     public int LatencySamples => rack.LatencySamples;
 
+    /// <summary>A slot's effect by its id, for what the window shows live; null if it isn't in the chain.</summary>
+    public ITrackInsert? Find(string id) => rack.Find(id);
+
     /// <summary>How long its output waits before it adds into its folder, bus or the master (the PDC, <see cref="MixLatency"/>).</summary>
     public LatencyDelay OutDelay { get; } = new();
 
@@ -162,6 +191,7 @@ public sealed class TrackDspChain
         Pan = spec.Pan;
         Muted = spec.Muted;
         Solo = spec.Solo;
+        Automation = spec.Automation;
         SetInserts(spec.Inserts ?? TrackInserts.Legacy(spec.Sat, spec.Comp, spec.EqOn, spec.EqBands), fade: false);
     }
 
@@ -280,10 +310,17 @@ public sealed class TrackDspChain
         var bl = bufL.AsSpan(0, n);
         var br = bufR.AsSpan(0, n);
 
+        rack.Frame = Frame;
         grDb = rack.Process(bl, br);
         spectrum?.Write(bl, br);
 
         bool mute = Muted || (anySolo && !Solo);
+        if (automation is { } auto)
+        {
+            ProcessAutomated(auto, n, mute, bl, br, outL, outR, out peakL, out peakR);
+            return;
+        }
+        ramped = false;
         float vol = mute ? 0f : (float)Volume;
         double pan = Math.Clamp(Pan, -1, 1);
         double x = pan <= 0 ? pan + 1 : pan;
@@ -321,11 +358,84 @@ public sealed class TrackDspChain
     }
 
     /// <summary>
+    /// The pan and fader of <see cref="ProcessFilledBuffer"/> when lanes drive them: the same law, gliding sample by
+    /// sample from where the last block ended to the value at this block's end, so a lane never steps. The time is the
+    /// one of the sound here, as late as the slots leave it (<see cref="LatencySamples"/>).
+    /// </summary>
+    void ProcessAutomated(TrackAutomation a, int n, bool mute, Span<float> bl, Span<float> br, Span<float> outL, Span<float> outR, out float peakL, out float peakR)
+    {
+        double t = (Frame + n - LatencySamples) / (double)sampleRate;
+        bool off = mute || a.Mute?.PositionAt(t) >= 0.5;
+        float toVol = off ? 0f : (float)(a.Volume?.At(t) ?? Volume);
+        float toPre = off ? 0f : 1f;
+        double pan = Math.Clamp(a.Pan?.At(t) ?? Pan, -1, 1);
+        double x = pan <= 0 ? pan + 1 : pan;
+        float gl = (float)Math.Cos(x * Math.PI / 2.0);
+        float gr = (float)Math.Sin(x * Math.PI / 2.0);
+        // the pan's law as four gains: left and right into left and right
+        float toLL = pan <= 0 ? 1f : gl, toRL = pan <= 0 ? gl : 0f, toLR = pan <= 0 ? 0f : gr, toRR = pan <= 0 ? gr : 1f;
+        if (!ramped)
+        {
+            ramped = true;
+            (rampVol, rampPre, rampLL, rampRL, rampLR, rampRR) = (toVol, toPre, toLL, toRL, toLR, toRR);
+        }
+        float step = 1f / n;
+        float dVol = (toVol - rampVol) * step, dPre = (toPre - rampPre) * step;
+        float dLL = (toLL - rampLL) * step, dRL = (toRL - rampRL) * step, dLR = (toLR - rampLR) * step, dRR = (toRR - rampRR) * step;
+        var blockSends = sends;
+        BlockSends = blockSends;
+        bool keep = blockSends.Length > 0;
+        float pkL = 0, pkR = 0, sqL = 0, sqR = 0;
+        for (int i = 0; i < n; i++)
+        {
+            float l = bl[i], r = br[i];
+            float xl = l * (rampLL + dLL * i) + r * (rampRL + dRL * i);
+            float xr = l * (rampLR + dLR * i) + r * (rampRR + dRR * i);
+            float vol = rampVol + dVol * i;
+            float ol = xl * vol;
+            float or = xr * vol;
+            postL[i] = ol; postR[i] = or;
+            if (keep)
+            {
+                float pre = rampPre + dPre * i;
+                preL[i] = xl * pre; preR[i] = xr * pre;
+            }
+            if (Math.Abs(ol) > pkL) pkL = Math.Abs(ol);
+            if (Math.Abs(or) > pkR) pkR = Math.Abs(or);
+            sqL += ol * ol;
+            sqR += or * or;
+        }
+        (rampVol, rampPre, rampLL, rampRL, rampLR, rampRR) = (toVol, toPre, toLL, toRL, toLR, toRR);
+        Rms.Add(sqL, sqR, n);
+        OutDelay.Add(postL.AsSpan(0, n), postR.AsSpan(0, n), 1f, outL, outR);
+        peakL = pkL;
+        peakR = pkR;
+    }
+
+    /// <summary>
     /// Adds the last block (<see cref="ProcessFilledBuffer"/>) into a bus's input, pre- or post-fader, at its level and
     /// through its delay. Only for the sends in <see cref="BlockSends"/> (the block is kept only while there are any).
+    /// A send with a lane glides to the lane's level at the block's end.
     /// </summary>
-    public void AddSend(int n, TrackSend s, Span<float> dstL, Span<float> dstR) =>
-        s.Delay.Add(s.Pre ? preL.AsSpan(0, n) : postL.AsSpan(0, n), s.Pre ? preR.AsSpan(0, n) : postR.AsSpan(0, n), s.Level, dstL, dstR);
+    public void AddSend(int n, TrackSend s, Span<float> dstL, Span<float> dstR)
+    {
+        ReadOnlySpan<float> l = s.Pre ? preL.AsSpan(0, n) : postL.AsSpan(0, n), r = s.Pre ? preR.AsSpan(0, n) : postR.AsSpan(0, n);
+        if (s.Curve is not { } curve)
+        {
+            s.Delay.Add(l, r, s.Level, dstL, dstR);
+            return;
+        }
+        float to = (float)Math.Clamp(curve.At((Frame + n - LatencySamples) / (double)sampleRate), 0, 1);
+        float from = s.Ramp < 0 ? to : s.Ramp, d = (to - from) / n;
+        for (int i = 0; i < n; i++)
+        {
+            float g = from + d * i;
+            sendL[i] = l[i] * g;
+            sendR[i] = r[i] * g;
+        }
+        s.Ramp = to;
+        s.Delay.Add(sendL.AsSpan(0, n), sendR.AsSpan(0, n), 1f, dstL, dstR);
+    }
 
     /// <summary>The last block's pre-fader (or post-fader) signal, for the export, which adds the sends itself.</summary>
     public ReadOnlySpan<float> KeptL(int n, bool pre) => (pre ? preL : postL).AsSpan(0, n);
@@ -338,7 +448,7 @@ public sealed class TrackDspChain
 /// every edit (<see cref="TrackDspChain.Sends"/>, <see cref="BusDspChain.Sends"/>), handing on the <see cref="Delay"/> of the
 /// send to the same bus it replaces, so an edit doesn't lose what the delay holds.
 /// </summary>
-public sealed class TrackSend(BusDspChain? to, int index, float level, bool pre, LatencyDelay? delay = null)
+public sealed class TrackSend(BusDspChain? to, int index, float level, bool pre, LatencyDelay? delay = null, AutoCurve? curve = null)
 {
     public readonly BusDspChain? To = to;
     public readonly int Index = index;
@@ -346,6 +456,10 @@ public sealed class TrackSend(BusDspChain? to, int index, float level, bool pre,
     public readonly bool Pre = pre;
     /// <summary>How long it waits before it adds into its bus (the PDC).</summary>
     public readonly LatencyDelay Delay = delay ?? new();
+    /// <summary>The level follows this lane instead of <see cref="Level"/>.</summary>
+    public readonly AutoCurve? Curve = curve;
+    /// <summary>Audio thread: the lane's level where the last block ended; negative = none yet.</summary>
+    public float Ramp = -1;
 }
 
 /// <summary>
@@ -386,6 +500,9 @@ public sealed class BusDspChain
 
     /// <summary>How late its slots put out the sound (a VST3 effect's).</summary>
     public int LatencySamples => rack.LatencySamples;
+
+    /// <summary>A slot's effect by its id, for what the window shows live; null if it isn't in the chain.</summary>
+    public ITrackInsert? Find(string id) => rack.Find(id);
 
     /// <summary>How long its output waits before it adds into the next node or the master (the PDC).</summary>
     public LatencyDelay OutDelay { get; } = new();
@@ -535,6 +652,9 @@ public sealed class InsertRack(int sampleRate)
     /// <summary>The inserts the UI last set, in order (the audio thread may still be fading over to them).</summary>
     public IReadOnlyList<ITrackInsert> Inserts => wanted;
 
+    /// <summary>The timeline frame of the next block, for a VST3 slot's lanes.</summary>
+    public long Frame { get; set; }
+
     /// <summary>How late the slots' output comes out, all added up (UI thread: the slots it last set).</summary>
     public int LatencySamples
     {
@@ -560,6 +680,8 @@ public sealed class InsertRack(int sampleRate)
     {
         var next = TrackInserts.Build(specs, wanted, wantedIds, sampleRate, out var ids);
         wantedIds = ids;
+        // a chain that isn't sounding yet starts where its slots are, with nothing to fade
+        if (!fade) foreach (var i in next) (i as FxShell)?.Snap();
         if (next == wanted) return;
         wanted = next;
         if (!fade) inserts = next;
@@ -572,15 +694,25 @@ public sealed class InsertRack(int sampleRate)
         foreach (var i in inserts) i.Reset();
     }
 
-    /// <summary>Runs the slots over the block in place (and the swap fade, if the list changed). Returns their gain reduction (dB).</summary>
-    public double Process(Span<float> bl, Span<float> br)
+    /// <summary>The insert of a slot, by its id (UI thread).</summary>
+    public ITrackInsert? Find(string id)
+    {
+        int i = Array.IndexOf(wantedIds, id);
+        var list = wanted;
+        return i >= 0 && i < list.Length ? list[i] : null;
+    }
+
+    /// <summary>Runs the slots over the block in place (and the swap fade, if the list changed). Returns their gain reduction (dB),
+    /// unless <paramref name="meters"/> is false: then each slot keeps it for whoever reads it.</summary>
+    public double Process(Span<float> bl, Span<float> br, bool meters = true)
     {
         var cur = inserts;
         double reduction = 0;
         for (int k = 0; k < cur.Length; k++)
         {
+            if (cur[k] is Vst.VstInsert vst) vst.Frame = Frame;
             cur[k].Process(bl, br);
-            reduction += cur[k].TakeGrDb();
+            if (meters) reduction += cur[k].TakeGrDb();
         }
         if (fadeOut == 0 && fadeIn == 0 && wanted != cur) fadeOut = TrackDspChain.SwapFade;
         if (fadeOut > 0) FadeOutAndSwap(bl, br);
@@ -615,8 +747,9 @@ public sealed class InsertRack(int sampleRate)
 }
 
 /// <summary>
-/// The master, shared by live playback and offline export render: <see cref="MasterChain"/> + Empuje (or the Destino's
-/// gain, <see cref="MasterLoudness"/>) + <see cref="SoftClipper"/> + <see cref="MasterLimiter"/>. The buses are
+/// The master, shared by live playback and offline export render: its slots (<see cref="Slots"/>) +
+/// <see cref="MasterChain"/> + Empuje (or the Destino's gain, <see cref="MasterLoudness"/>) + <see cref="SoftClipper"/> +
+/// <see cref="MasterLimiter"/>. The buses are
 /// <see cref="BusDspChain"/> nodes that add into the master before it gets here. Nothing here allocates.
 /// </summary>
 public sealed class MixGraphBus
@@ -626,6 +759,8 @@ public sealed class MixGraphBus
     public MasterChain Master { get; }
     /// <summary>The master's soft clip, between Empuje and the limiter.</summary>
     public SoftClipper Clip { get; }
+    /// <summary>The master's own slots, ahead of <see cref="Master"/>.</summary>
+    public InsertRack Slots { get; }
     /// <summary>The gain into the limiter (Empuje or the Destino's), linear: the target and where the glide toward it is.</summary>
     volatile float driveTarget = 1;
     float drive = 1;
@@ -637,6 +772,7 @@ public sealed class MixGraphBus
     {
         Master = new MasterChain(sampleRate);
         Clip = new SoftClipper(sampleRate);
+        Slots = new InsertRack(sampleRate);
         driveGlide = (float)(1 - Math.Exp(-1 / (DriveGlideSec * sampleRate)));
         int lookahead = (int)Math.Round(MasterLimiter.LookaheadSec * sampleRate);
         Limiter = new MasterLimiter(sampleRate, lookahead, MasterLimiter.CeilingDb);
@@ -645,6 +781,7 @@ public sealed class MixGraphBus
     public void Configure(MixBusSpec spec)
     {
         SetMaster(spec.Master);
+        Slots.Set(spec.MasterInserts, fade: false);
         Master.Reset();
         drive = driveTarget;
     }
@@ -652,7 +789,7 @@ public sealed class MixGraphBus
     /// <summary>The master chain and the limiter's settings, live (both glide or swap without clicks).</summary>
     public void SetMaster(MasterParams p)
     {
-        Master.Set(p);
+        Master.Set(p.ChainInSlots ? p with { On = false } : p);
         Limiter.Set(p.LimCeilingDb, p.LimReleaseMs);
         Limiter.Bypass = !p.LimOn;
         // the Empuje or the Destino's gain pushes into the clip and the limiter (with the limiter off, the Empuje would only
@@ -663,18 +800,24 @@ public sealed class MixGraphBus
 
     public void Reset()
     {
+        Slots.Reset();
         Master.Reset();
         Clip.Reset();
         Limiter.Reset();
     }
 
     /// <summary>
-    /// The master's chain over the mix in place: <see cref="MasterChain"/> (unless <paramref name="master"/> is false),
+    /// The master's chain over the mix in place: its slots and <see cref="MasterChain"/> (unless <paramref name="master"/> is false),
     /// then, with <paramref name="limit"/>, Empuje, clip and limiter.
     /// </summary>
     public void Process(Span<float> masterL, Span<float> masterR, bool limit = true, bool master = true)
     {
-        if (master) Master.Process(masterL, masterR);
+        if (master)
+        {
+            // their meters are read by the Mastering view, each module its own
+            if (Slots.Busy) Slots.Process(masterL, masterR, meters: false);
+            Master.Process(masterL, masterR);
+        }
         if (!limit) return;
         float d = drive, t = driveTarget;
         if (d != 1 || t != 1)
@@ -737,6 +880,29 @@ public static class MixRenderer
         public readonly float[][] PreL = Enumerable.Range(0, nodes).Select(_ => new float[ChunkFrames]).ToArray();
         public readonly float[][] PreR = Enumerable.Range(0, nodes).Select(_ => new float[ChunkFrames]).ToArray();
         public readonly float[] L = new float[ChunkFrames], R = new float[ChunkFrames];
+        /// <summary>A send with a lane: the stretch at its level.</summary>
+        public readonly float[] SendL = new float[ChunkFrames], SendR = new float[ChunkFrames];
+    }
+
+    /// <summary>How often the slots' automated knobs are read in the export (frames at 48 kHz: 10.7 ms, about the live rate).</summary>
+    const int AutoStep = Quantum * 4;
+
+    /// <summary>A stretch of a send at its lane's level: straight lines between one value every <see cref="Quantum"/> frames.</summary>
+    static void AtLevel(AutoCurve curve, long frame, int sampleRate, ReadOnlySpan<float> l, ReadOnlySpan<float> r, Span<float> outL, Span<float> outR)
+    {
+        double sr = sampleRate;
+        float from = (float)Math.Clamp(curve.At(frame / sr), 0, 1);
+        for (int off = 0; off < l.Length; off += Quantum)
+        {
+            int n = Math.Min(Quantum, l.Length - off);
+            float to = (float)Math.Clamp(curve.At((frame + off + n) / sr), 0, 1), d = (to - from) / n;
+            for (int i = 0; i < n; i++)
+            {
+                outL[off + i] = l[off + i] * (from + d * i);
+                outR[off + i] = r[off + i] * (from + d * i);
+            }
+            from = to;
+        }
     }
 
     /// <summary>Port of <c>mixDurationSec</c> in <c>mixGraph.ts</c>: end of the last clip or note's release (at least 1 s).</summary>
@@ -847,7 +1013,7 @@ public static class MixRenderer
             Open(() => node.Configure(nodeSpecs[j]));
             made.Add(node.Inserts);
             nodeOut[j] = Valid(nodeSpecs[j].Output, j, nodeCount);
-            nodeSends[j] = [.. nodeSpecs[j].Sends.Where(s => s.On && s.Level > 0 && Valid(s.To, j, nodeCount) >= 0)];
+            nodeSends[j] = [.. nodeSpecs[j].Sends.Where(s => s.Sounds && Valid(s.To, j, nodeCount) >= 0)];
             nodePre[j] = nodeSends[j].Any(s => s.Pre);
         }
         for (int j = 0; j < nodeCount; j++)
@@ -866,6 +1032,7 @@ public static class MixRenderer
             if (t.Solo) { anySolo = true; break; }
 
         var active = new List<(MixClipSpec[] Clips, ClipAudioJoins?[] Joins, NoteSequence? Notes, TrackDspChain Chain, int Out, MixSendSpec[] Sends, LatencyDelay[] Delays)>();
+        var slotLanes = new List<Func<double, IReadOnlyList<InsertSpec>?>?>();
         // each instrument track's plugin, in its own process, and the stretch it rendered (null = the test tone)
         for (int k = 0; k < tracks.Count; k++)
         {
@@ -876,16 +1043,17 @@ public static class MixRenderer
             Open(() => chain.Configure(t));
             made.Add(chain.Inserts);
             if (only >= 0) chain.Muted = chain.Solo = false;
-            MixSendSpec[] sends = [.. t.Sends.Where(s => s.On && s.Level > 0 && s.To >= 0 && s.To < nodeCount)];
+            MixSendSpec[] sends = [.. t.Sends.Where(s => s.Sounds && s.To >= 0 && s.To < nodeCount)];
             chain.Sends = [.. sends.Select(s => new TrackSend(null, s.To, (float)Math.Clamp(s.Level, 0, 1), s.Pre))];
             var clips = t.Clips.ToArray();
             int to = t.Output >= 0 && t.Output < nodeCount ? t.Output : -1;
             active.Add((clips, TrackDspChain.AudioJoins(clips, sampleRate), t.Notes, chain, to, sends, [.. chain.Sends.Select(s => s.Delay)]));
+            slotLanes.Add(t.InsertsAt);
             instruments.Add(null);
             if (t.Instrument != null && t.Notes != null)
             {
                 var inst = t.Instrument;
-                try { instruments[^1] = (new Vst.InstrumentRender(inst, t.Notes, t.Tempo, sampleRate), new float[ChunkFrames], new float[ChunkFrames]); }
+                try { instruments[^1] = (new Vst.InstrumentRender(inst, t.Notes, t.Tempo, sampleRate) { Curves = t.InstrumentCurves }, new float[ChunkFrames], new float[ChunkFrames]); }
                 catch (Exception e) when (e is InvalidOperationException or IOException)
                 {
                     Close();
@@ -917,7 +1085,7 @@ public static class MixRenderer
             nodes[j].OutDelay.Set(plan.NodeOut[j]);
             nodeSendDelays[j] = [.. plan.NodeSends[j].Select(d => { var x = new LatencyDelay(); x.Set(d); return x; })];
         }
-        int latency = (limit ? bus.Limiter.Latency : 0) + plan.Master;
+        int latency = (limit ? bus.Limiter.Latency : 0) + plan.Master + (master ? bus.Slots.LatencySamples : 0);
         int totalFrames = frames + latency;
 
         long stopFrame = double.IsFinite(stopSec) ? (long)Math.Round(Math.Max(0, stopSec) * sampleRate) : long.MaxValue;
@@ -970,9 +1138,12 @@ public static class MixRenderer
                 Array.Clear(b.R, 0, len);
                 var inst = instruments[k];
                 if (inst is { } plugin) plugin.Render.Render(at, len, plugin.L.AsSpan(0, len), plugin.R.AsSpan(0, len));
+                var lanes = slotLanes[k];
                 for (int off = 0; off < len; off += Quantum)
                 {
                     int n = Math.Min(Quantum, len - off);
+                    chain.Frame = at + off;
+                    if (lanes != null && (at + off) % AutoStep == 0 && lanes((at + off) / (double)sampleRate) is { } specs) chain.SetInserts(specs);
                     TrackDspChain.SampleClips(clips, at + off, n, sampleRate, chain.BufferL(n), chain.BufferR(n), joins);
                     if (inst is { } p)
                     {
@@ -1003,14 +1174,22 @@ public static class MixRenderer
             for (int k = 0; k < active.Count; k++)
             {
                 var b = set.Tracks[k];
-                var (_, _, _, _, to, sends, delays) = active[k];
+                var (_, _, _, chain, to, sends, delays) = active[k];
                 ReadOnlySpan<float> l = b.L.AsSpan(0, len), r = b.R.AsSpan(0, len);
                 BusDspChain.Add(l, r, 1f, to >= 0 ? set.NodeL[to].AsSpan(0, len) : set.L.AsSpan(0, len), to >= 0 ? set.NodeR[to].AsSpan(0, len) : set.R.AsSpan(0, len));
                 for (int i = 0; i < sends.Length; i++)
                 {
                     var s = sends[i];
-                    delays[i].Add(s.Pre ? b.PreL.AsSpan(0, len) : b.PostL.AsSpan(0, len), s.Pre ? b.PreR.AsSpan(0, len) : b.PostR.AsSpan(0, len),
-                        (float)Math.Clamp(s.Level, 0, 1), set.NodeL[s.To].AsSpan(0, len), set.NodeR[s.To].AsSpan(0, len));
+                    ReadOnlySpan<float> sl = s.Pre ? b.PreL.AsSpan(0, len) : b.PostL.AsSpan(0, len), sr = s.Pre ? b.PreR.AsSpan(0, len) : b.PostR.AsSpan(0, len);
+                    float gain = (float)Math.Clamp(s.Level, 0, 1);
+                    if (s.Curve is { } curve)
+                    {
+                        AtLevel(curve, c * (long)ChunkFrames - chain.LatencySamples, sampleRate, sl, sr, set.SendL.AsSpan(0, len), set.SendR.AsSpan(0, len));
+                        sl = set.SendL.AsSpan(0, len);
+                        sr = set.SendR.AsSpan(0, len);
+                        gain = 1f;
+                    }
+                    delays[i].Add(sl, sr, gain, set.NodeL[s.To].AsSpan(0, len), set.NodeR[s.To].AsSpan(0, len));
                 }
             }
         }

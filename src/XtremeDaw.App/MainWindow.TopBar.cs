@@ -51,21 +51,7 @@ public partial class MainWindow
         };
         SizeChanged += (_, e) => SysMeter.IsVisible = SysMeterSep.IsVisible = e.NewSize.Width >= SystemMeterMinWidth;
         MonitorToggle.IsCheckedChanged += (_, _) => engine.SoftwareMonitor = MonitorToggle.IsChecked == true;
-        FfmpegState.PointerPressed += (_, _) => FfmpegHelp.Show();
-        FfmpegHelp.Found += version =>
-        {
-            ShowFfmpeg(version);
-            Toast(Loc.T("ffmpeg.ready"));
-        };
-        FfmpegHelp.Failed += msg => Status(msg);
-        Opened += async (_, _) =>
-        {
-            string? version = await Task.Run(FfmpegInfo.Probe);
-            ShowFfmpeg(version);
-            if (version != null) return;
-            Status(Loc.T("title.ffmpeg.missing.status"));
-            FfmpegHelp.Show();
-        };
+        InitComponents();
     }
 
     /// <summary>The top bar's FFmpeg chip (only while it is missing) and the about box; null = not on the PATH.</summary>

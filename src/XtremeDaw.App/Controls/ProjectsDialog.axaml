@@ -91,7 +91,7 @@
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
 
       <!-- header -->
-      <Grid ColumnDefinitions="*,Auto" Margin="24,24,24,16">
+      <Grid ColumnDefinitions="*,Auto,Auto" Margin="24,24,24,16">
         <StackPanel Orientation="Horizontal" Spacing="12">
           <Image Source="/Assets/XTreme-64.png" Width="40" Height="40" RenderOptions.BitmapInterpolationMode="HighQuality" />
 
@@ -100,7 +100,11 @@
             <TextBlock Text="{loc:T proj.subtitle}" FontSize="12" Foreground="{StaticResource Dim}" Margin="0,2,0,0" />
           </StackPanel>
         </StackPanel>
-        <Button Grid.Column="1" x:Name="CloseButton" Classes="act" Width="32" Height="32" Margin="0,-4,-8,0" VerticalAlignment="Top"
+        <Button Grid.Column="1" x:Name="HelpButton" Classes="act" Width="32" Height="32" Margin="0,-4,0,0" VerticalAlignment="Top"
+                Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T help.title}" AutomationProperties.Name="{loc:T help.title}">
+          <TextBlock Classes="icon" Text="&#xE897;" FontSize="14" />
+        </Button>
+        <Button Grid.Column="2" x:Name="CloseButton" Classes="act" Width="32" Height="32" Margin="0,-4,-8,0" VerticalAlignment="Top"
                 Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T settings.close}">
           <TextBlock Classes="icon" Text="&#xE711;" FontSize="14" />
         </Button>

@@ -44,7 +44,7 @@ public sealed partial class TimelineView
     string loopMode = "";
     double loopAnchor, loopA, loopB, loopDownSec;
 
-    bool InStrip(Point p) => p.Y < MarkerH && p.X > HeaderW;
+    bool InStrip(Point p) => markerStripShown && p.Y < MarkerH && p.X > HeaderW;
 
     double SnapAt(double x) => Math.Max(0, ClipEditing.Snap(Sec(x), Grid, (modifiers & KeyModifiers.Alt) != 0));
 

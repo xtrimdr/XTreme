@@ -109,6 +109,15 @@ public partial class MainWindow
         title.Children.Add(new TextBlock { Text = Loc.T("piano.title"), FontSize = 13.5, FontWeight = FontWeight.SemiBold, Foreground = Palette.Fg, VerticalAlignment = VerticalAlignment.Center });
         title.Children.Add(new Border { Width = 1, Height = 20, Background = Palette.Line, Margin = new Thickness(4, 0) });
         title.Children.Add(pianoTitle);
+        pianoLengthButton.Click += (_, _) =>
+        {
+            if (pianoClipId is not { } clipId || store == null) return;
+            var menu = Popup(PatternLengthItems(clipId, withOther: true), 200);
+            menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
+            OpenAnchoredMenu(menu, pianoLengthButton);
+        };
+        ToolTip.SetTip(pianoLengthButton, Loc.T("piano.length.tip"));
+        title.Children.Add(pianoLengthButton);
         // the track's instrument: which one (a menu to change it) and its window
         title.Children.Add(new Border { Width = 1, Height = 20, Background = Palette.Line, Margin = new Thickness(4, 0) });
         pianoInstrumentButton.Click += (_, _) =>
@@ -461,12 +470,20 @@ public partial class MainWindow
         var clip = p == null ? null : MidiEditing.TryFind(p, pianoClipId);
         if (clip == null) pianoClipId = null;
         var track = clip == null ? null : MidiEditing.Find(p!, clip.Id).Track;
-        pianoRoll.SetClip(clip, track?.MidiClips, track?.Name, track == null ? null : TrackIcons.ColorOf(track), p?.Settings.Bpm ?? 120, frame);
+        pianoRoll.SetClip(clip, clip?.PatternId is { } id ? MidiPatterns.Clips(p!, id) : track?.MidiClips, track?.Name, track == null ? null : TrackIcons.ColorOf(track), p?.Settings.Bpm ?? 120, frame);
         pianoTitle.Text = clip == null || track == null ? ""
+            : clip.PatternId is { } pattern ? Loc.T("piano.pattern", clip.PatternName!, clip.Notes.Count, PatternClipsLabel(MidiPatterns.Clips(p!, pattern).Count()))
             : Loc.T("piano.clip", track.Name, $"{clip.LengthBeats / 4:0.##}", clip.Notes.Count);
+        pianoLengthButton.IsVisible = clip?.PatternId != null;
+        if (clip?.PatternId != null)
+        {
+            pianoLengthButton.Content = Loc.T("midi.pattern.length", BarsLabel(clip.CellBeats / 4)) + "  ▾";
+            pianoLengthButton.IsEnabled = store?.ReadOnly == false;
+        }
         RefreshPianoInstrument();
     }
 
+    readonly Button pianoLengthButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
     readonly Button pianoInstrumentButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     readonly Button pianoOpenButton = new()
     {
@@ -514,6 +531,78 @@ public partial class MainWindow
         return EditTimeline(p => { MidiEditing.RemoveClip(p, clipId); return trackId; }, "midi-clip-removed");
     }
 
+    /// <summary>A pattern's edit on a clip: one undo step, the clip still selected.</summary>
+    async Task EditPattern(string clipId, Action<Project> edit, string activity)
+    {
+        if (store == null || MidiEditing.TryFind(store.Project, clipId) == null) return;
+        string trackId = MidiEditing.Find(store.Project, clipId).Track.Id;
+        await EditTimeline(p => { edit(p); return trackId; }, activity);
+        Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
+    }
+
+    static string BarsLabel(double bars) => bars == 1 ? Loc.T("midi.pattern.bar") : Loc.T("midi.pattern.bars", $"{bars:0.##}");
+
+    /// <summary>A new pass, seen whole when the piano roll is on it.</summary>
+    async Task SetPatternBeats(string clipId, double beats)
+    {
+        await EditPattern(clipId, p => MidiPatterns.SetBeats(p, clipId, beats), "midi-pattern-length");
+        if (pianoClipId == clipId) RefreshPiano(PianoRollView.Frame.Clip);
+    }
+
+    /// <summary>The lengths offered for a pattern; <paramref name="withOther"/> adds a box for any number of bars.</summary>
+    List<object> PatternLengthItems(string clipId, bool withOther)
+    {
+        var refresh = new List<Action>();
+        var items = new List<object>();
+        foreach (int bars in MidiPatterns.Bars)
+            items.Add(MenuCheck(BarsLabel(bars), () => store != null && MidiEditing.TryFind(store.Project, clipId)?.CellBeats == bars * 4,
+                () => _ = SetPatternBeats(clipId, bars * 4), refresh));
+        if (withOther) items.Add(MenuAction(Loc.T("piano.length.other") + "…", () =>
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => AskPatternBars(clipId));
+            return Task.CompletedTask;
+        }));
+        return items;
+    }
+
+    void AskPatternBars(string clipId)
+    {
+        if (store == null || MidiEditing.TryFind(store.Project, clipId) is not { } clip) return;
+        AskName(pianoLengthButton, null, Loc.T("piano.length.ask"), $"{clip.CellBeats / 4:0.##}", Loc.T("piano.length.ok"), text =>
+        {
+            if (double.TryParse(text, out double bars) && bars > 0) _ = SetPatternBeats(clipId, bars * 4);
+            else Status(Loc.T("piano.length.bad"));
+        });
+    }
+
+    /// <summary>What the clip's menu offers about patterns: making it one or, on a pattern's clip, its name, its pass and leaving it.</summary>
+    List<object> PatternItems(string clipId, bool enabled, Point point)
+    {
+        var clip = MidiEditing.TryFind(store!.Project, clipId);
+        if (clip?.PatternId == null)
+            return [MenuAction(Loc.T("midi.pattern.create"), () => EditPattern(clipId, p => MidiPatterns.Create(p, clipId), "midi-pattern-created"), enabled: enabled, tip: Loc.T("midi.pattern.create.tip"))];
+        var lengths = PatternLengthItems(clipId, withOther: false);
+        return
+        [
+            MenuAction(Loc.T("midi.pattern.rename") + "…", () =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => AskName(Timeline, point, Loc.T("midi.pattern.rename"), clip.PatternName!, Loc.T("folder.rename.ok"),
+                    name => _ = EditPattern(clipId, p => MidiPatterns.Rename(p, clipId, name), "midi-pattern-renamed")));
+                return Task.CompletedTask;
+            }, enabled: enabled),
+            new MenuItem { Header = new TextBlock { Text = Loc.T("midi.pattern.length", BarsLabel(clip.CellBeats / 4)), FontSize = 12 }, ItemsSource = lengths, IsEnabled = enabled },
+            MenuAction(Loc.T("midi.pattern.unique"), () => EditPattern(clipId, p => MidiPatterns.MakeUnique(p, clipId), "midi-pattern-left"), enabled: enabled, tip: Loc.T("midi.pattern.unique.tip")),
+        ];
+    }
+
+    /// <summary>The MIDI track's menu: a new clip of any of the project's patterns, at the playhead.</summary>
+    MenuItem InsertPatternItem(LiveTrack track, bool enabled)
+    {
+        var patterns = store == null ? [] : MidiPatterns.All(store.Project);
+        var items = patterns.Select(x => (object)MenuAction(x.Name, () => InsertPattern(track.Track.Id, x.Id, engine.PositionSec), BarsLabel(x.Beats / 4))).ToList();
+        return new MenuItem { Header = new TextBlock { Text = Loc.T("midi.pattern.insert"), FontSize = 12 }, ItemsSource = items, IsEnabled = enabled && items.Count > 0 };
+    }
+
     void ShowMidiClipMenu(LiveTrack track, string clipId, Point point)
     {
         if (store == null || restoring) return;
@@ -530,9 +619,11 @@ public partial class MainWindow
             MenuAction(Loc.T("midi.quantize.menu", PianoSnapLabel()), () => Quantize(boxed.Count > 1 ? boxed : [clipId]), Shortcuts.Label("quantize"),
                 enabled && pianoRoll.SnapBeats > 0, tip: pianoRoll.SnapBeats > 0 ? null : Loc.T("midi.quantize.free")),
             new Separator(),
-            MenuAction(boxed.Count > 1 ? Loc.T("menu.removeClips", boxed.Count) : Loc.T("menu.removeClip"),
-                () => boxed.Count > 1 ? DeleteTimelineSelection() : RemoveMidiClip(clipId), "Supr", enabled, danger: true),
         };
+        list.AddRange(PatternItems(clipId, enabled, point));
+        list.Add(new Separator());
+        list.Add(MenuAction(boxed.Count > 1 ? Loc.T("menu.removeClips", boxed.Count) : Loc.T("menu.removeClip"),
+            () => boxed.Count > 1 ? DeleteTimelineSelection() : RemoveMidiClip(clipId), "Supr", enabled, danger: true));
         OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
     }
 }

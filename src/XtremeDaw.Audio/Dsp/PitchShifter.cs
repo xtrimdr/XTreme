@@ -13,6 +13,11 @@ namespace XtremeDaw.Audio.Dsp;
 /// read, so nothing aliases. The analysis and the synthesis of a block of frames run in parallel; only the phase
 /// integration goes frame by frame, and the other blocks' analysis and synthesis run beside it (a pipeline), so the
 /// whole takes about what the integration alone takes. Runs on worker threads, never on the audio thread.
+/// The same pass also changes the length (<see cref="Render"/>, what lets a clip follow the tempo, asked by the user):
+/// the frames are read and written at different spacings and the phases grow by what the output spacing asks, so a
+/// transposed clip that also follows the tempo goes through one pass, not two. The spacing that keeps
+/// <see cref="Hop"/> is the output's when stretching and the input's when squeezing, so the instantaneous frequencies
+/// are never measured across more than a hop.
 /// </summary>
 public static class PitchShifter
 {
@@ -65,14 +70,28 @@ public static class PitchShifter
     /// <paramref name="progress"/> goes from 0 to 1.
     /// </summary>
     public static (float[] Left, float[] Right) Shift(float[] left, float[] right, double semitones,
+        Action<double>? progress = null, CancellationToken ct = default) => Render(left, right, semitones, 1, progress, ct);
+
+    /// <summary>How many samples <paramref name="length"/> become at <paramref name="stretch"/> (the one rule for the render, the cache and the clip).</summary>
+    public static int StretchedLength(int length, double stretch) => (int)Math.Round(length * stretch);
+
+    /// <summary>
+    /// The audio moved by <paramref name="semitones"/> and made <paramref name="stretch"/> times as long
+    /// (<see cref="StretchedLength"/>) without changing its pitch. Neither gives a copy.
+    /// </summary>
+    public static (float[] Left, float[] Right) Render(float[] left, float[] right, double semitones, double stretch,
         Action<double>? progress = null, CancellationToken ct = default)
     {
-        int len = left.Length;
-        if (Math.Abs(semitones) < 1e-6 || len == 0) return ((float[])left.Clone(), (float[])right.Clone());
+        int len = left.Length, outLen = StretchedLength(len, stretch);
+        if (Math.Abs(semitones) < 1e-6 && stretch == 1 || len == 0) return ((float[])left.Clone(), (float[])right.Clone());
         double ratio = Math.Pow(2, Math.Clamp(semitones, -MaxSemitones, MaxSemitones) / 12);
         const int m = FrameSize, n = FftSize;
 
-        int frames = (len + m / 2) / Hop + 1;
+        // frame k sits at Read(k) in the input and at Written(k) in the output
+        double hopIn = stretch > 1 ? Hop / stretch : Hop, hopOut = stretch > 1 ? Hop : Hop * stretch;
+        int Read(int k) => (int)Math.Round(k * hopIn);
+        int Written(int k) => (int)Math.Round(k * hopOut);
+        int frames = (int)Math.Max((len + m / 2) / hopIn, (outLen + m / 2) / hopOut) + 1;
         var win = new double[m];
         for (int k = 0; k < m; k++) win[k] = 0.5 - 0.5 * Math.Cos(2 * Math.PI * k / m);
         // read at f/ratio, a frame is the input frame squeezed by the ratio in time: its window is m/ratio long
@@ -94,9 +113,9 @@ public static class PitchShifter
             sets[s] = new Frame[Block];
             for (int i = 0; i < Block; i++) sets[s][i] = new Frame();
         }
-        var outL = new double[len];
-        var outR = new double[len];
-        var norm = new double[len];
+        var outL = new double[outLen];
+        var outR = new double[outLen];
+        var norm = new double[outLen];
 
         // the input bin each output bin takes its phase from (the nearest to b/ratio; -1 past Nyquist)
         var src = new int[Bins];
@@ -142,9 +161,9 @@ public static class PitchShifter
         }
         progress?.Invoke(1);
 
-        var l = new float[len];
-        var r = new float[len];
-        for (int i = 0; i < len; i++)
+        var l = new float[outLen];
+        var r = new float[outLen];
+        for (int i = 0; i < outLen; i++)
         {
             double g = 1 / Math.Max(norm[i], 0.1);
             l[i] = (float)(outL[i] * g);
@@ -160,9 +179,9 @@ public static class PitchShifter
         {
             var set = Set(j);
             int f0 = j * Block, count = Count(j);
-            Parallel.For(0, count, options, k => Analyze(set[k], (f0 + k) * Hop));
+            Parallel.For(0, count, options, k => Analyze(set[k], Read(f0 + k)));
             double[]? before = j > 0 ? Set(j - 1)[Block - 1].Phase : null;
-            Parallel.For(0, count, options, k => Read(set[k], f0 + k == 0, k > 0 ? set[k - 1].Phase : before!));
+            Parallel.For(0, count, options, k => Measure(set[k], f0 + k, k > 0 ? set[k - 1].Phase : before!));
         }
 
         // the phases of block j, frame by frame
@@ -179,7 +198,7 @@ public static class PitchShifter
                     continue;
                 }
                 var prev = k > 0 ? set[k - 1] : Set(j - 1)[Block - 1];
-                Integrate(fr, prev.Psi, prev.YMag, prev.Rank, prev.YMax);
+                Integrate(fr, prev.Psi, prev.YMag, prev.Rank, prev.YMax, Written(f0 + k) - Written(f0 + k - 1));
             }
         }
 
@@ -192,11 +211,11 @@ public static class PitchShifter
             for (int k = 0; k < count; k++)
             {
                 var fr = set[k];
-                int center = (f0 + k) * Hop;
+                int center = Written(f0 + k);
                 for (int o = -reach; o <= reach; o++)
                 {
                     int t = center + o;
-                    if ((uint)t >= (uint)len) continue;
+                    if ((uint)t >= (uint)outLen) continue;
                     double w = synthWin[o + reach];
                     int p = (o + n) & (n - 1);
                     outL[t] += fr.Re[p] * w;
@@ -251,14 +270,16 @@ public static class PitchShifter
 
         // the frame's instantaneous frequencies, and what each output bin takes from the input at b/ratio: magnitude,
         // frequency × ratio and the phase step to the next bin
-        void Read(Frame fr, bool first, double[] before)
+        void Measure(Frame fr, int index, double[] before)
         {
             var mag = fr.Mag;
             var omega = fr.Omega;
+            bool first = index == 0;
+            int hop = first ? Hop : Math.Max(1, Read(index) - Read(index - 1));
             for (int b = 0; b < Bins; b++)
             {
                 double expected = 2 * Math.PI * b / n;
-                omega[b] = first ? expected : expected + PrincArg(fr.Phase[b] - before[b] - expected * Hop) / Hop;
+                omega[b] = first ? expected : expected + PrincArg(fr.Phase[b] - before[b] - expected * hop) / hop;
             }
             double yMax = 0;
             for (int b = 0; b < Bins; b++)
@@ -295,7 +316,7 @@ public static class PitchShifter
 
         // the frame's phases grown from the previous frame, loudest bins first (PVDR, algorithm 1), on every
         // Grid-th bin (the bins in between are filled in by Synthesize, on the other cores)
-        void Integrate(Frame fr, double[] psiPrev, double[] yMagPrev, int[] rankPrev, double yMaxPrev)
+        void Integrate(Frame fr, double[] psiPrev, double[] yMagPrev, int[] rankPrev, double yMaxPrev, int hop)
         {
             var rank = fr.Rank;
             var psi = fr.Psi;
@@ -309,7 +330,7 @@ public static class PitchShifter
             {
                 int b = c * Grid;
                 done[c] = yMag[c] < tol;
-                if (done[c]) psi[b] = psiPrev[b] + Hop * yOmega[c];
+                if (done[c]) psi[b] = psiPrev[b] + hop * yOmega[c];
                 else remaining++;
             }
             heap.Clear();
@@ -341,7 +362,7 @@ public static class PitchShifter
                 {
                     if (done[v]) continue;
                     int b = v * Grid;
-                    psi[b] = psiPrev[b] + Hop * yOmega[v];
+                    psi[b] = psiPrev[b] + hop * yOmega[v];
                     done[v] = true;
                     remaining--;
                     heap.Push(rank[v], v + Coarse);

@@ -24,6 +24,7 @@ public partial class MainWindow
         Timeline.MarkerAddRequested += sec => AddMarker(sec, rename: true);
         Timeline.MarkerRenameRequested += BeginNameEdit;
         Timeline.StripContextRequested += ShowStripMenu;
+        Timeline.ChordContextRequested += ShowChordMenu;
     }
 
     bool CanEditMarkers => store != null && !store.ReadOnly && !restoring && !RecordingBusy;
@@ -33,6 +34,8 @@ public partial class MainWindow
     {
         var p = store?.Project;
         Timeline.Markers = p?.Markers ?? [];
+        Timeline.Chords = p?.ChordMarkers ?? [];
+        chordStripButton.IsEnabled = Timeline.Chords.Count > 0;
         var loop = p == null ? null : ProjectMarkers.Loop(p.Settings);
         Timeline.LoopRange = loop;
         engine.SetLoopRange(loop);
@@ -134,6 +137,39 @@ public partial class MainWindow
     }
 
     /// <summary>The strip's right click: on a marker, the marker's things; elsewhere, adding one and the range.</summary>
+    /// <summary>The chords' strip: what is marked goes, or all of them, one undo step either way.</summary>
+    void ShowChordMenu(ChordMarker? chord, Point point)
+    {
+        if (store == null || restoring) return;
+        bool enabled = CanEditMarkers;
+        var marks = Timeline.ChordMarks.ToList();
+        var list = new List<object>();
+        if (chord != null)
+        {
+            list.Add(new MenuItem { Header = chord.Name, IsEnabled = false, FontSize = 11 });
+            list.Add(MenuAction(Loc.T("marker.go"), () => { engine.Seek(chord.Sec); return Task.CompletedTask; }));
+            list.Add(new Separator());
+        }
+        if (marks.Count > 0)
+            list.Add(MenuAction(marks.Count > 1 ? Loc.T("chords.removeMany", marks.Count) : Loc.T("chords.remove"), () =>
+            {
+                RemoveChords(marks);
+                return Task.CompletedTask;
+            }, Shortcuts.Label("delete"), enabled, danger: true));
+        list.Add(MenuAction(Loc.T("chords.removeAll", Timeline.Chords.Count), () =>
+        {
+            MarkerEdit(ProjectMarkers.ClearChords);
+            return Task.CompletedTask;
+        }, enabled: enabled, danger: true));
+        OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
+    }
+
+    void RemoveChords(IReadOnlyCollection<string> ids)
+    {
+        MarkerEdit(p => ProjectMarkers.RemoveChords(p, ids));
+        Timeline.ClearChordMarks();
+    }
+
     void ShowStripMenu(Marker? marker, double sec, Point point)
     {
         if (store == null || restoring) return;

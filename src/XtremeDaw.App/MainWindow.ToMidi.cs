@@ -75,6 +75,7 @@ public partial class MainWindow
     async Task ExtractMidi(LiveTrack from, LiveClip clip, LiveTrack? into, AudioToMidi.Mode mode)
     {
         if (clip.Audio is not { } audio || store == null || toMidiJob != null) return;
+        if (clip.Sound is { L.Length: 0 }) { Toast(Loc.T("stretch.wait")); return; }
         LastToMidiMode = mode;
         // what it sounds like: the take, or its transposed sound
         var sound = clip.Sound ?? audio.Sound;

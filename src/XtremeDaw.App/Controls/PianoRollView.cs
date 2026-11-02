@@ -43,6 +43,12 @@ namespace XtremeDaw.App.Controls;
 /// the one being edited (<see cref="ClipPicked"/>) and goes on as a click there. The grid and the magnet count from the
 /// timeline's start, so they line up with the timeline's.
 /// </para>
+/// <para>
+/// A pattern's clip opens the pattern itself (asked by the user: editing a pattern is that pattern and nothing else): one
+/// pass from bar 1, with no other clip or repeat around it and the grid counted from its start. The timeline is out of
+/// the picture, so the playhead shows where any clip of the pattern is sounding (<see cref="PlayBeat"/>), wrapping with
+/// its repeats, and the ruler seeks inside the clip that was opened.
+/// </para>
 /// It edits a working copy of the clip's notes and hands the whole list to the window when a gesture ends
 /// (<see cref="NotesCommitted"/>), which makes it one undo step; the control never touches the project or the engine.
 /// </summary>
@@ -85,8 +91,15 @@ public sealed class PianoRollView : Control
 
     string? clipId;
     string? title;
+    /// <summary>What can be edited: the clip, or one pass of its pattern.</summary>
     double clipBeats = MidiClip.DefaultBeats;
+    /// <summary>Where the view puts the clip's start: its place on the timeline, or 0 in a pattern.</summary>
     double clipAtSec;
+    /// <summary>The pattern on screen (null on a clip of its own), and the timeline beat the opened clip starts on.</summary>
+    string? patternId;
+    double patternStart;
+    /// <summary>Where the pattern's clips are on the timeline, in beats.</summary>
+    readonly List<(double Start, double Beats)> patternUses = [];
     Color color;
     readonly List<MidiNote> notes = [];
     readonly HashSet<MidiNote> selected = [];
@@ -181,12 +194,16 @@ public sealed class PianoRollView : Control
     }
 
     /// <summary>
-    /// Shows a clip (null = none) with the track's clips around it (<paramref name="trackClips"/>, the clip among them).
-    /// The same clip again (after an edit or an undo) keeps the selection where it can; <paramref name="frame"/> says how
-    /// the view moves (a view never framed yet fits the clip).
+    /// Shows a clip (null = none) with what goes with it (<paramref name="family"/>, the clip among them): the track's
+    /// clips around it or, on a pattern's clip, the pattern's clips, which aren't drawn. The same clip again (after an
+    /// edit or an undo) keeps the selection where it can; <paramref name="frame"/> says how the view moves (a view never
+    /// framed yet fits the clip). A pattern fits when it comes on screen, and its clips all show the same, so moving
+    /// between them keeps the view.
     /// </summary>
-    public void SetClip(MidiClip? clip, IEnumerable<MidiClip>? trackClips, string? trackName, Color? trackColor, double tempo, Frame frame = Frame.Keep)
+    public void SetClip(MidiClip? clip, IEnumerable<MidiClip>? family, string? trackName, Color? trackColor, double tempo, Frame frame = Frame.Keep)
     {
+        if (clip?.PatternId is { } id) frame = id != patternId || frame == Frame.Clip ? Frame.Clip : Frame.Keep;
+        else if (clip != null && patternId != null && frame == Frame.Keep) frame = Frame.Clip;
         bool same = clip != null && clip.Id == clipId;
         var keep = same ? selected.Select(n => (n.Pitch, n.Beat, n.Beats)).ToHashSet() : [];
         CancelGesture();
@@ -196,10 +213,13 @@ public sealed class PianoRollView : Control
         notes.Clear();
         selected.Clear();
         others.Clear();
+        patternUses.Clear();
+        patternId = clip?.PatternId;
         if (clip != null)
         {
-            clipBeats = clip.LengthBeats;
-            clipAtSec = clip.AtSec;
+            clipBeats = clip.CellBeats;
+            clipAtSec = patternId != null ? 0 : clip.AtSec;
+            patternStart = patternId != null ? clip.AtSec * tempo / 60 : 0;
             title = trackName;
             foreach (var n in clip.Notes)
             {
@@ -207,7 +227,8 @@ public sealed class PianoRollView : Control
                 notes.Add(copy);
                 if (keep.Contains((n.Pitch, n.Beat, n.Beats))) selected.Add(copy);
             }
-            if (trackClips != null) others.AddRange(trackClips.Where(c => c.Id != clip.Id));
+            if (patternId != null) patternUses.AddRange((family ?? [clip]).Select(c => (c.AtSec * tempo / 60, c.LengthBeats)));
+            else if (family != null) others.AddRange(family.Where(c => c.Id != clip.Id));
         }
         if (frame != Frame.Keep) pending = frame;
         InvalidateVisual();
@@ -219,11 +240,24 @@ public sealed class PianoRollView : Control
         // kept while hidden too: framing the whole track looks for it
         if (clipId == null || !IsVisible) { playheadSec = sec; return; }
         double W = Bounds.Width;
-        double x0 = XA(playheadSec * bpm / 60), x1 = XA(sec * bpm / 60);
+        double x0 = XA(PlayBeat(playheadSec)), x1 = XA(PlayBeat(sec));
         bool was = playheadSec >= 0 && x0 >= KeyW - 2 && x0 <= W + 2, now = x1 >= KeyW - 2 && x1 <= W + 2;
         if (sec == playheadSec || !was && !now) { playheadSec = sec; return; }
         playheadSec = sec;
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// The view's beat of a timeline time. In a pattern, its place in the pass of the clip sounding there, or -1 when none
+    /// is (left of the view, so it isn't drawn). Allocates nothing: it runs on every tick.
+    /// </summary>
+    double PlayBeat(double sec)
+    {
+        double beat = sec * bpm / 60;
+        if (patternId == null) return beat;
+        foreach (var (start, length) in patternUses)
+            if (beat >= start && beat < start + length) return (beat - start) % clipBeats;
+        return -1;
     }
 
     // --- geometry ---------------------------------------------------------------------------------
@@ -371,7 +405,7 @@ public sealed class PianoRollView : Control
             }
             DrawColumns(ctx, RulerH, gb, W);
             DrawRegions(ctx, gb, W);
-            foreach (var c in others) DrawOtherNotes(ctx, c, W, gb);
+            foreach (var c in others) DrawFaintNotes(ctx, c.Notes, StartBeat(c, bpm), c.CellBeats, c.LengthBeats, W, gb);
             foreach (var n in notes) DrawNote(ctx, n, W, gb);
             if (gesture == "box" && moved)
                 ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.08), Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.7)), BoxRect());
@@ -472,26 +506,32 @@ public sealed class PianoRollView : Control
             ctx.DrawText(PitchNames[n.Pitch], 9.5, Palette.AccentFg, new Point(r.X + 3, r.Y + (r.Height - 15) / 2), Palette.UiBold);
     }
 
-    /// <summary>A note of another clip of the track: only there to see, faint and without its name.</summary>
-    void DrawOtherNotes(DrawingContext ctx, MidiClip c, double W, double gb)
+    /// <summary>
+    /// Notes only there to see, faint and without their names: another clip of the track, with its repeats.
+    /// <paramref name="start"/> is where the clip starts, in timeline beats.
+    /// </summary>
+    void DrawFaintNotes(DrawingContext ctx, List<MidiNote> list, double start, double cell, double length, double W, double gb)
     {
-        double start = StartBeat(c, bpm);
-        if (XA(start + c.LengthBeats) < KeyW || XA(start) > W) return;
+        if (XA(start + length) < KeyW || XA(start) > W) return;
         var fill = Palette.Alpha(color, 0.28);
-        foreach (var n in c.Notes)
+        for (int pass = 0; pass * cell < length - 1e-9 && XA(start + pass * cell) <= W; pass++)
         {
-            if (n.Beat >= c.LengthBeats) continue;
-            var r = new Rect(XA(start + n.Beat), Y(n.Pitch) + 1, Math.Max(3, Math.Min(n.Beats, c.LengthBeats - n.Beat) * beatW - 1), rowH - 2);
-            if (r.Right < KeyW || r.X > W || r.Bottom < RulerH || r.Y > gb) continue;
-            double rad = NoteRadius(r);
-            ctx.DrawRectangle(fill, null, r, rad, rad);
+            if (XA(start + (pass + 1) * cell) < KeyW) continue;
+            foreach (var n in list)
+            {
+                if (!MidiClip.Slice(n, pass, cell, length, out double from, out double to)) continue;
+                var r = new Rect(XA(start + from), Y(n.Pitch) + 1, Math.Max(3, (to - from) * beatW - 1), rowH - 2);
+                if (r.Right < KeyW || r.X > W || r.Bottom < RulerH || r.Y > gb) continue;
+                double rad = NoteRadius(r);
+                ctx.DrawRectangle(fill, null, r, rad, rad);
+            }
         }
     }
 
     void DrawPlayhead(DrawingContext ctx, double top, double bottom)
     {
         if (playheadSec < 0) return;
-        double x = Math.Round(XA(playheadSec * bpm / 60)) + 0.5;
+        double x = Math.Round(XA(PlayBeat(playheadSec))) + 0.5;
         if (x < KeyW || x > Bounds.Width) return;
         ctx.DrawLine(Palette.Pen(Palette.Accent), new Point(x, top), new Point(x, bottom));
     }
@@ -540,7 +580,7 @@ public sealed class PianoRollView : Control
         ctx.DrawLine(Palette.Pen(Palette.Line), new Point(KeyW, RulerH - 0.5), new Point(W, RulerH - 0.5));
         if (playheadSec >= 0)
         {
-            double x = XA(playheadSec * bpm / 60);
+            double x = XA(PlayBeat(playheadSec));
             if (x >= KeyW && x <= W) ctx.DrawLine(Palette.Pen(Palette.Accent, 2), new Point(x, 0), new Point(x, RulerH));
         }
     }
@@ -600,13 +640,15 @@ public sealed class PianoRollView : Control
         {
             double start = StartBeat(c, bpm);
             if (XA(start + c.LengthBeats) < KeyW || XA(start) > W) continue;
-            foreach (var n in c.Notes)
-            {
-                double x = XA(start + n.Beat);
-                if (n.Beat >= c.LengthBeats || x < KeyW - 4 || x > W) continue;
-                double bh = Math.Max(2, h * n.Velocity / 127.0);
-                ctx.FillRectangle(faint, new Rect(Math.Round(x), H - 3 - bh, 3, bh));
-            }
+            for (int pass = 0; pass < c.Passes; pass++)
+                foreach (var n in c.Notes)
+                {
+                    if (!c.Heard(n, pass, out double from, out _)) continue;
+                    double x = XA(start + from);
+                    if (x < KeyW - 4 || x > W) continue;
+                    double bh = Math.Max(2, h * n.Velocity / 127.0);
+                    ctx.FillRectangle(faint, new Rect(Math.Round(x), H - 3 - bh, 3, bh));
+                }
         }
         foreach (var n in notes)
         {
@@ -671,8 +713,10 @@ public sealed class PianoRollView : Control
         if (p.Y >= RulerH && p.Y < GridBottom && p.X >= KeyW && NoteAt(p) == null)
         {
             double at = Beat(p.X);
+            string? was = clipId;
             if ((at < 0 || at >= clipBeats) && OtherAt(BeatA(p.X)) is { } other) ClipPicked?.Invoke(other.Id);
-            if (clipId == null) return;
+            // a pattern opens on its own view: the point clicked means nothing there
+            if (clipId == null || patternId != null && clipId != was) return;
         }
         if (props.IsRightButtonPressed)
         {
@@ -800,7 +844,7 @@ public sealed class PianoRollView : Control
         InvalidateVisual();
     }
 
-    void Scrub() => SeekRequested?.Invoke(SnapA(BeatA(lastPointer.X)) * 60 / bpm);
+    void Scrub() => SeekRequested?.Invoke((patternStart + SnapA(BeatA(lastPointer.X))) * 60 / bpm);
 
     /// <summary>
     /// The Shift drag's first move: copies of the selected notes take their place in the drag (and the selection), the
@@ -1237,7 +1281,7 @@ public sealed class PianoRollView : Control
             case "paste":
             {
                 if (clipboard.Count == 0) return true;
-                double first = clipboard.Min(n => n.Beat), play = playheadSec * bpm / 60 - Origin;
+                double first = clipboard.Min(n => n.Beat), play = PlayBeat(playheadSec) - Origin;
                 double at = playheadSec >= 0 && play >= 0 && play < clipBeats ? Snap(play, floor: true) : first;
                 AddCopies(clipboard, at - first);
                 return true;

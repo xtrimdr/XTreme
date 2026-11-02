@@ -126,7 +126,7 @@ public sealed partial class TimelineView
         rangeTracks.Clear();
         foreach (var r in rows)
         {
-            if (r.Folder != null || r.Track >= tracks.Count || r.Top + r.H <= lo || r.Top > hi) continue;
+            if (r.Folder != null || r.Lane != null || r.Track >= tracks.Count || r.Top + r.H <= lo || r.Top > hi) continue;
             string id = tracks[r.Track].Track.Id;
             if (!hidden.Contains(id)) rangeTracks.Add(id);
         }

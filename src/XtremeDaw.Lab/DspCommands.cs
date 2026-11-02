@@ -293,12 +293,12 @@ static class DspCommands
                     if (!mediaCache.TryGetValue(c.MediaId, out var ma)) continue;
                     var m = p.FindMedia(c.MediaId);
                     if (!hasRms) { trackRms = ma.RmsDb; hasRms = true; }
-                    var (tl, tr) = store.TrackAudio(t, mediaPaths[c.MediaId], ma.L, ma.R);
+                    var (tl, tr) = store.TrackAudio(t, c, mediaPaths[c.MediaId], ma.L, ma.R);
                     clips.Add(new MixClipSpec
                     {
                         Left = tl,
                         Right = tr,
-                        DurationSec = m?.DurationSec > 0 ? m.DurationSec : ma.L.Length / (double)sr,
+                        DurationSec = (m?.DurationSec > 0 ? m.DurationSec : ma.L.Length / (double)sr) * c.Stretch,
                         AtSec = c.AtSec,
                         TrimStartSec = c.TrimStartSec,
                         TrimEndSec = c.TrimEndSec,
@@ -309,7 +309,7 @@ static class DspCommands
                         SyncMs = c.EffectiveSyncMs(m),
                         Transition = c.Transition,
                         TransitionSec = c.TransitionSec,
-                        TakeId = c.MediaId,
+                        TakeId = c.TakeKey(),
                     });
                 }
 
@@ -633,15 +633,22 @@ static class DspCommands
 
         allOk &= MasterChecks(sr48);
         allOk &= TransposeCommands.Check();
+        allOk &= StretchChecks.Check();
         allOk &= InsertCommands.Check();
         allOk &= GateChecks.Check();
+        allOk &= FxChecks.Check();
+        allOk &= ModChecks.Check();
         allOk &= PdcChecks.Check();
+        allOk &= AutomationChecks.Check();
         allOk &= RangeChecks.Check();
         allOk &= BusCommands.Check();
         allOk &= MeterChecks.Check();
         allOk &= MidiCommands.Check();
         allOk &= TempoChecks.Check();
+        allOk &= ScaleChecks.Check();
         allOk &= ToMidiChecks.Check();
+        allOk &= StemChecks.Check();
+        allOk &= SampleChecks.Check();
 
         Console.WriteLine();
         Console.WriteLine(allOk
@@ -907,14 +914,14 @@ static class DspCommands
                 foreach (var c in trk.Clips)
                 {
                     var m = p.FindMedia(c.MediaId);
-                    double dur = m?.DurationSec ?? 0;
+                    double dur = (m?.DurationSec ?? 0) * c.Stretch;
                     if (store.Resolve(m?.Audio) is { } ap && File.Exists(ap))
                     {
                         var loaded = AudioLoader.Load(ap, sr);
-                        if (dur <= 0) dur = loaded.DurationSec;
+                        if (dur <= 0) dur = loaded.DurationSec * c.Stretch;
                         var (rms, _) = LevelAnalysis.Analyze([loaded.Left, loaded.Right], sr);
                         if (!hasRms) { trackRms = rms; hasRms = true; }
-                        var (shiftedL, shiftedR) = store.TrackAudio(trk, ap, loaded.Left, loaded.Right);
+                        var (shiftedL, shiftedR) = store.TrackAudio(trk, c, ap, loaded.Left, loaded.Right);
                         clips.Add(new MixClipSpec
                         {
                             Left = shiftedL,
@@ -930,7 +937,7 @@ static class DspCommands
                             SyncMs = c.EffectiveSyncMs(m),
                             Transition = c.Transition,
                             TransitionSec = c.TransitionSec,
-                            TakeId = c.MediaId,
+                            TakeId = c.TakeKey(),
                         });
                     }
                     if (trk.Video && (panel != null || c == trk.Clips[0]) && store.Resolve(m?.Video) is { } vp && File.Exists(vp))
@@ -943,6 +950,7 @@ static class DspCommands
                             VideoPath = vp,
                             DurationSec = dur,
                             AtSec = c.AtSec,
+                            Stretch = c.Stretch,
                             SyncMs = c.EffectiveSyncMs(m),
                             VideoOffsetMs = c.EffectiveVideoOffsetMs(m),
                             TrimStartSec = c.TrimStartSec,

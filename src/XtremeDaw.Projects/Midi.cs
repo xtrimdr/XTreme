@@ -49,6 +49,11 @@ public sealed class PluginRef
 /// A stretch of notes on a MIDI track (native only, asked by the user: clips per track, like Logic or Studio One).
 /// It starts at a timeline time in seconds like every clip, but its length and its notes are in beats, so they follow
 /// the tempo: at 90 bpm a four-bar clip still holds four bars. Notes past its end are kept but not heard.
+/// <para>
+/// A clip with a <see cref="PatternId"/> is one use of a pattern (asked by the user, see <see cref="MidiPatterns"/>): its
+/// notes are a pass of <see cref="PatternBeats"/> that repeats until the clip ends, and every clip of the pattern holds
+/// the same notes.
+/// </para>
 /// </summary>
 public sealed class MidiClip
 {
@@ -58,6 +63,10 @@ public sealed class MidiClip
     /// <summary>How long it is, in beats (four per bar: the project's grid is always 4/4).</summary>
     public double LengthBeats { get; set; } = DefaultBeats;
     public List<MidiNote> Notes { get; set; } = [];
+    /// <summary>The pattern this clip belongs to, its name and how long one pass is; null on a clip of its own.</summary>
+    public string? PatternId { get; set; }
+    public string? PatternName { get; set; }
+    public double? PatternBeats { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     /// <summary>Four bars, what a new clip gets.</summary>
@@ -67,8 +76,32 @@ public sealed class MidiClip
 
     public double LengthSec(double bpm) => LengthBeats * 60 / Math.Max(1, bpm);
 
-    /// <summary>A copy with a new id and its own notes (duplicate, copy and paste).</summary>
-    public MidiClip Copy() => new() { AtSec = AtSec, LengthBeats = LengthBeats, Notes = [.. Notes.Select(n => n.Copy())], Extra = Extra };
+    /// <summary>One pass of its notes: the pattern's, or the whole clip.</summary>
+    public double CellBeats => PatternId != null && PatternBeats is > 0 ? PatternBeats.Value : LengthBeats;
+    /// <summary>How many passes start inside the clip (the last one may be cut short).</summary>
+    public int Passes => Math.Max(1, (int)Math.Ceiling(LengthBeats / CellBeats - 1e-9));
+
+    /// <summary>
+    /// Where a note sounds in pass <paramref name="pass"/>, in beats from the clip's start, for a pass of
+    /// <paramref name="cell"/> beats in a clip of <paramref name="length"/>: cut at the end of the pass and of the clip.
+    /// False when it isn't heard. Allocates nothing: the piano roll and the timeline call it while they draw.
+    /// </summary>
+    public static bool Slice(MidiNote n, int pass, double cell, double length, out double from, out double to)
+    {
+        double at = pass * cell;
+        from = at + n.Beat;
+        to = Math.Min(at + Math.Min(n.EndBeat, cell), length);
+        return n.Beat < cell && from < length;
+    }
+
+    public bool Heard(MidiNote n, int pass, out double from, out double to) => Slice(n, pass, CellBeats, LengthBeats, out from, out to);
+
+    /// <summary>A copy with a new id and its own notes (duplicate, copy and paste); a pattern's copy stays in the pattern.</summary>
+    public MidiClip Copy() => new()
+    {
+        AtSec = AtSec, LengthBeats = LengthBeats, Notes = [.. Notes.Select(n => n.Copy())],
+        PatternId = PatternId, PatternName = PatternName, PatternBeats = PatternBeats, Extra = Extra,
+    };
     public double EndSec(double bpm) => AtSec + LengthSec(bpm);
 
     internal void Normalize()
@@ -79,6 +112,14 @@ public sealed class MidiClip
         Notes.RemoveAll(n => n == null);
         foreach (var n in Notes) n.Normalize();
         Notes.Sort(MidiNote.Order);
+        if (string.IsNullOrWhiteSpace(PatternId))
+        {
+            PatternId = PatternName = null;
+            PatternBeats = null;
+            return;
+        }
+        PatternName = string.IsNullOrWhiteSpace(PatternName) ? "Patrón" : PatternName.Trim();
+        PatternBeats = PatternBeats is { } beats && double.IsFinite(beats) ? Math.Clamp(beats, MinBeats, MaxBeats) : LengthBeats;
     }
 }
 
@@ -262,6 +303,7 @@ public static class MidiEditing
         var (_, c) = Find(p, clipId);
         c.Notes = [.. notes.Select(n => n.Copy())];
         c.Normalize();
+        MidiPatterns.Sync(p, c);
     }
 
     public static MidiNote AddNote(Project p, string clipId, int pitch, double beat, double beats = 1, int velocity = MidiNote.DefaultVelocity)
@@ -270,6 +312,7 @@ public static class MidiEditing
         var n = new MidiNote { Pitch = pitch, Beat = beat, Beats = beats, Velocity = velocity };
         c.Notes.Add(n);
         c.Normalize();
+        MidiPatterns.Sync(p, c);
         return n;
     }
 
@@ -346,6 +389,7 @@ public static class MidiEditing
         var (_, c) = Find(p, clipId);
         int moved = Quantize(c.Notes, c.AtSec, p.Settings.Bpm, gridBeats);
         c.Normalize();
+        MidiPatterns.Sync(p, c);
         return moved;
     }
 
@@ -428,4 +472,133 @@ public static class MidiEditing
     /// <summary>The end of the last MIDI clip of the project, in seconds (0 without any).</summary>
     public static double EndSec(Project p) =>
         p.Tracks.SelectMany(t => t.MidiClips ?? []).Select(c => c.EndSec(p.Settings.Bpm)).DefaultIfEmpty(0).Max();
+}
+
+/// <summary>
+/// Patterns (asked by the user, like FL Studio's but per track): clips linked to each other. Editing the notes of one
+/// changes them all, and a clip longer than a pass repeats it. A pattern has no list of its own in the project: it is
+/// the clips that share a <see cref="MidiClip.PatternId"/>, each with a full copy of the notes, so every reader of
+/// <see cref="MidiClip.Notes"/> just works, an older version still opens the project, and removing the last clip
+/// leaves nothing behind. Whatever changes the shared part goes through <see cref="Sync"/>.
+/// </summary>
+public static class MidiPatterns
+{
+    public sealed record Info(string Id, string Name, double Beats, int Clips);
+
+    /// <summary>The lengths offered for a pass, in bars.</summary>
+    public static readonly int[] Bars = [1, 2, 4, 8, 16];
+
+    static IEnumerable<MidiClip> AllClips(Project p) => p.Tracks.SelectMany(t => t.MidiClips ?? []);
+
+    public static IEnumerable<MidiClip> Clips(Project p, string patternId) => AllClips(p).Where(c => c.PatternId == patternId);
+
+    /// <summary>The project's patterns, in the order they first appear.</summary>
+    public static List<Info> All(Project p) =>
+        [.. AllClips(p).Where(c => c.PatternId != null).GroupBy(c => c.PatternId!).Select(g => new Info(g.Key, g.First().PatternName!, g.First().CellBeats, g.Count()))];
+
+    static MidiClip Clip(Project p, string clipId) => MidiEditing.Find(p, clipId).Clip;
+
+    static MidiClip InPattern(Project p, string clipId) =>
+        Clip(p, clipId) is { PatternId: not null } c ? c : throw new ArgumentException(Texts.T("err.midi.notPattern", "Ese clip no es un patrón."));
+
+    /// <summary>Makes a clip the first use of a new pattern ("Patrón 1", "Patrón 2"…), a pass as long as the clip.</summary>
+    public static MidiClip Create(Project p, string clipId)
+    {
+        var c = Clip(p, clipId);
+        if (c.PatternId != null) return c;
+        var used = All(p).Select(x => x.Name).ToHashSet();
+        int n = 1;
+        while (used.Contains($"Patrón {n}")) n++;
+        c.PatternId = Ids.New("pat");
+        c.PatternName = $"Patrón {n}";
+        c.PatternBeats = c.LengthBeats;
+        return c;
+    }
+
+    /// <summary>Hands <paramref name="source"/>'s notes, name and pass to the rest of its pattern.</summary>
+    public static void Sync(Project p, MidiClip source)
+    {
+        if (source.PatternId == null) return;
+        foreach (var c in Clips(p, source.PatternId))
+            if (c != source) CopyShared(source, c);
+    }
+
+    static void CopyShared(MidiClip from, MidiClip to)
+    {
+        to.Notes = [.. from.Notes.Select(n => n.Copy())];
+        to.PatternName = from.PatternName;
+        to.PatternBeats = from.PatternBeats;
+    }
+
+    /// <summary>A clip that just came into the project (a paste) takes what its pattern holds now: the block may be older.</summary>
+    public static void Adopt(Project p, MidiClip clip)
+    {
+        if (clip.PatternId == null) return;
+        if (Clips(p, clip.PatternId).FirstOrDefault(c => c != clip) is { } current) CopyShared(current, clip);
+    }
+
+    public static void Rename(Project p, string clipId, string name)
+    {
+        var c = InPattern(p, clipId);
+        c.PatternName = string.IsNullOrWhiteSpace(name) ? c.PatternName : name.Trim();
+        Sync(p, c);
+    }
+
+    /// <summary>
+    /// Changes how long a pass is. A clip that held exactly one pass keeps holding one; a longer one repeats it more
+    /// or less often. Notes past the new pass stay, not heard, in case it grows back.
+    /// </summary>
+    public static void SetBeats(Project p, string clipId, double beats)
+    {
+        var source = InPattern(p, clipId);
+        double old = source.CellBeats;
+        beats = Math.Clamp(beats, MidiClip.MinBeats, MidiClip.MaxBeats);
+        foreach (var c in Clips(p, source.PatternId!))
+        {
+            if (Math.Abs(c.LengthBeats - old) < 1e-9) c.LengthBeats = beats;
+            c.PatternBeats = beats;
+        }
+    }
+
+    /// <summary>One more clip of a pattern, a pass long, on a MIDI track.</summary>
+    public static MidiClip Insert(Project p, string trackId, string patternId, double atSec)
+    {
+        var t = p.Tracks.Find(x => x.Id == trackId) ?? throw new ArgumentException(Texts.T("err.midi.trackNotFound", "Pista no encontrada."));
+        if (!t.IsMidi) throw new ArgumentException(Texts.T("err.midi.notMidi", "Los clips MIDI van en pistas MIDI."));
+        var source = Clips(p, patternId).FirstOrDefault() ?? throw new ArgumentException(Texts.T("err.midi.clipNotFound", "Clip MIDI no encontrado."));
+        var c = source.Copy();
+        c.AtSec = ClipEditing.ToSample(Math.Max(0, atSec));
+        c.LengthBeats = c.CellBeats;
+        c.Normalize();
+        (t.MidiClips ??= []).Add(c);
+        return c;
+    }
+
+    /// <summary>Takes a clip out of its pattern: it keeps sounding the same, its repeats written out as notes of its own.</summary>
+    public static void MakeUnique(Project p, string clipId)
+    {
+        var c = InPattern(p, clipId);
+        var notes = new List<MidiNote>();
+        for (int pass = 0; pass < c.Passes; pass++)
+            foreach (var n in c.Notes)
+            {
+                if (!c.Heard(n, pass, out double from, out double to)) continue;
+                var copy = n.Copy();
+                copy.Beat = from;
+                copy.Beats = to - from;
+                notes.Add(copy);
+            }
+        c.Notes = notes;
+        c.PatternId = null;
+        c.Normalize();
+    }
+
+    /// <summary>Ends a pattern keeping its clips: each one stays where it is, sounding the same, with notes of its own.</summary>
+    public static void Dissolve(Project p, string patternId)
+    {
+        foreach (var c in Clips(p, patternId).ToList()) MakeUnique(p, c.Id);
+    }
+
+    /// <summary>Removes a pattern with all its clips, on every track; says how many there were.</summary>
+    public static int Remove(Project p, string patternId) => p.Tracks.Sum(t => t.MidiClips?.RemoveAll(c => c.PatternId == patternId) ?? 0);
 }

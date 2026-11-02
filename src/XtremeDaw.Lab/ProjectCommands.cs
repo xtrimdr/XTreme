@@ -148,6 +148,7 @@ static class ProjectCommands
             case "alinear": ClipEditing.AlignToGrid(p, id, ClipEditing.GridSeconds(a.Get("iman", "1/4"), p.Settings.Bpm)); break;
             case "fijar-corte": ClipEditing.FixCut(p, id); break;
             case "restaurar": ClipEditing.Reset(p, id); break;
+            case "invertir": ClipEditing.Reverse(p, id); break;
             case "dividir": Console.WriteLine(ClipEditing.Split(p, id, double.Parse(value, System.Globalization.CultureInfo.InvariantCulture))); break;
             // several ids (comma-separated) go as one block, like D on a selection box
             case "duplicar": Console.WriteLine(string.Join(",", ClipEditing.DuplicateMany(p, id.Split(',', StringSplitOptions.RemoveEmptyEntries)))); break;
@@ -188,9 +189,22 @@ static class ProjectCommands
                     if (store.Resolve(p.FindMedia(c.MediaId)?.Audio) is not { } ap || !File.Exists(ap)) continue;
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     var loaded = AudioLoader.Load(ap, 48000);
-                    store.TrackAudio(tt, ap, loaded.Left, loaded.Right);
+                    store.TrackAudio(tt, c, ap, loaded.Left, loaded.Right);
                     Console.WriteLine($"  {c.Id}: {loaded.DurationSec:0.0} s listos en {sw.Elapsed.TotalSeconds:0.0} s");
                 }
+                break;
+            case "tempo":
+                // like the transport's tempo: the song at its new speed, and its clips rendered into the cache now
+                TempoFollow.SetBpm(p, double.Parse(id, System.Globalization.CultureInfo.InvariantCulture));
+                foreach (var track in p.Tracks)
+                    foreach (var c in track.Clips)
+                    {
+                        if (store.Resolve(p.FindMedia(c.MediaId)?.Audio) is not { } ap || !File.Exists(ap)) continue;
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        var loaded = AudioLoader.Load(ap, 48000);
+                        store.TrackAudio(track, c, ap, loaded.Left, loaded.Right);
+                        Console.WriteLine($"  {c.Id}: x{c.Stretch:0.###}, listo en {sw.Elapsed.TotalSeconds:0.0} s");
+                    }
                 break;
             case "carpeta":
                 var fd = p.Folders.Find(f => f.Id == id) ?? throw new ArgumentException("No encontré esa carpeta.");

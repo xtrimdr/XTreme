@@ -145,7 +145,7 @@ public partial class MainWindow
     /// is on screen, and the spectrum counts as live (the web's readSpectrum ok) while the transport plays.</summary>
     void TickInspectorSpectrum()
     {
-        var want = eqEditor is { IsEffectivelyVisible: true } && SelectedInspectorClip != null ? sel : null;
+        var want = (eqEditor is { IsEffectivelyVisible: true } || eqBig != null) && SelectedInspectorClip != null ? sel : null;
         if (spectrumTrack != want)
         {
             if (spectrumTrack != null) spectrumTrack.Chain.Spectrum = null;
@@ -158,6 +158,7 @@ public partial class MainWindow
         bool live = want != null && engine.Playing && spectrumTap.Written > spectrumFrom;
         if (live) spectrumTap.Read(spectrumBins);
         eqEditor.PushSpectrum(live ? spectrumBins : null, Audio.PlaybackEngine.SampleRate);
+        eqBig?.PushSpectrum(live ? spectrumBins : null, Audio.PlaybackEngine.SampleRate);
     }
     LiveClip? SelectedInspectorClip => sel?.Clips.FirstOrDefault(c => c.Clip.Id == Timeline.SelectedClipId)
         ?? sel?.ShownClip ?? sel?.Clips.FirstOrDefault();
@@ -228,8 +229,7 @@ public partial class MainWindow
                 toggle.Classes.Set("lit", on());
                 toggle.Background = on() ? Palette.Accent : Brushes.Transparent;
                 toggle.Foreground = on() ? Palette.App : Palette.Faint;
-                ToolTip.SetTip(toggle, SendTitles.TryGetValue(title, out var send) ? Loc.T(on() ? "send.power.off" : "send.power.on", send)
-                    : Loc.T("insp.power." + (BaseTitle(title) switch { "EQ" => "eq", "Saturación" => "sat", "Compresor" => "comp", "Reverb" => "reverb", _ => "delay" }) + (on() ? ".off" : ".on")));
+                ToolTip.SetTip(toggle, SendTitles.TryGetValue(title, out var send) ? Loc.T(on() ? "send.power.off" : "send.power.on", send) : Loc.T(on() ? "mix.list.off" : "mix.list.on"));
             });
         }
         header.SetTrailing(action, powerButton);
@@ -239,37 +239,6 @@ public partial class MainWindow
         SetSectionCollapsed(title, IsCollapsed(title));
         return content;
     }
-    /// <summary>CompControl.tsx's amount row: the big knob, then the uppercase label, the value in words and a mono detail.</summary>
-    static (InspectorKnob Knob, TextBlock Value, TextBlock Detail) KnobRow(StackPanel host, string label)
-    {
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("64,*"), Margin = new Thickness(0, 2) };
-        var knob = new InspectorKnob(); row.Children.Add(knob);
-        var info = new StackPanel { Spacing = 3, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        info.Children.Add(new TextBlock { Text = label.ToUpperInvariant(), Classes = { "label" } });
-        var value = new TextBlock { FontSize = 14, FontWeight = FontWeight.SemiBold };
-        var detail = new TextBlock { Classes = { "dim", "mono" }, FontSize = 10.5, TextTrimming = TextTrimming.CharacterEllipsis };
-        info.Children.Add(value); info.Children.Add(detail); Grid.SetColumn(info, 1); row.Children.Add(info);
-        host.Children.Add(row);
-        return (knob, value, detail);
-    }
-
-    /// <summary>A 0–1 effect amount on the big knob instead of a slider (asked by the user, like the compressor's).</summary>
-    void EffectKnob(StackPanel host, string label, double reset, Func<double> get, Action<double> set,
-        Func<double, string> value, Func<double, string> detail, string hint, List<Action>? refresh = null, bool hintInTip = false)
-    {
-        var (knob, valueText, detailText) = KnobRow(host, label);
-        knob.ResetValue = reset;
-        knob.Changed += v => { if (!syncing) set(v); };
-        if (!hintInTip) host.Children.Add(Help(hint));
-        (refresh ?? inspectorRefresh).Add(() =>
-        {
-            double v = get();
-            knob.Set(v); valueText.Text = value(v); detailText.Text = detail(v);
-            string tip = Loc.T("insp.knob.tip", label, value(v), value(reset));
-            ToolTip.SetTip(knob, hintInTip ? tip + "\n" + hint : tip);
-        });
-    }
-
     /// <summary>A send level as the gain it applies, so 100% reads 0,0 dB.</summary>
     static string SendDb(double v) => v <= 0 ? "-∞ dB" : Db(20 * Math.Log10(v));
 
@@ -360,8 +329,10 @@ public partial class MainWindow
         // an empty track shows its channel too, with how to fill it and its remove button below
         Inspector.Children.Add(takeSections); Inspector.Children.Add(clipSections); Inspector.Children.Add(emptySections);
         var mix = Section("Mezcla", "\uE9E9", action: InspectorIcon("\uE74F", Loc.T("insp.mute.tip"), () => Edit(t => t.Channel.Muted = !t.Channel.Muted, "mute")));
-        Slider(mix, Loc.T("insp.volume"), 0, 1.5, 0.01, 1, () => sel!.Channel.Volume, v => Edit(t => t.Channel.Volume = v, "volume"), v => $"{v * 100:0}%");
-        Slider(mix, Loc.T("insp.pan"), -1, 1, 0.05, 0, () => sel!.Channel.Pan, v => Edit(t => t.Channel.Pan = Math.Abs(v) < 0.04 ? 0 : v, "pan"), v => v == 0 ? "C" : $"{(v < 0 ? "L" : "R")} {Math.Abs(v) * 100:0}");
+        var volumeSlider = Slider(mix, Loc.T("insp.volume"), 0, 1.5, 0.01, 1, () => sel!.Channel.Volume, v => Edit(t => t.Channel.Volume = v, "volume"), v => $"{v * 100:0}%");
+        AutomateOn(volumeSlider, () => sel, AutoTarget.Volume, k => { syncing = true; volumeSlider.Set(Fader.ToVol(k), null); syncing = false; });
+        var panSlider = Slider(mix, Loc.T("insp.pan"), -1, 1, 0.05, 0, () => sel!.Channel.Pan, v => Edit(t => t.Channel.Pan = Math.Abs(v) < 0.04 ? 0 : v, "pan"), v => v == 0 ? "C" : $"{(v < 0 ? "L" : "R")} {Math.Abs(v) * 100:0}");
+        AutomateOn(panSlider, () => sel, AutoTarget.Pan, k => { syncing = true; panSlider.Set(k * 2 - 1, null); syncing = false; });
         // native only: a track that sounds without a panel (a backing track, a click…)
         var inVideo = new CheckBox { Content = Loc.T("insp.inVideo"), FontSize = 12 };
         ToolTip.SetTip(inVideo, Loc.T("insp.inVideo.tip"));
@@ -380,6 +351,7 @@ public partial class MainWindow
             tray.Toggled += () => SetTrayCollapsed(tray, id, !tray.Collapsed);
             takeSections.Children.Add(tray);
         }
+        chainTrayAt = takeSections.Children.IndexOf(chainTray);
         // native only: the track's pitch, same length (MainWindow.Transpose.cs). A card of its own beside the other
         // effects (asked by the user); it reads as off (dimmed) while the track plays at its original pitch.
         var transpose = Section("Transponer", FxIcon.Transpose, () => sel!.Track.Transpose != 0);
@@ -392,14 +364,15 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// The Canal tab's effects: one section per insert slot, in the order the sound goes through them, then "+ Efecto".
-    /// Rebuilt only when the track or its list of slots changes (<see cref="inspectorChainKey"/>); every other edit just
+    /// The Canal tab's effects, of a track or a bus: one section per insert slot, in the order the sound goes through them,
+    /// each with the same panel as anywhere else (<see cref="FxBody"/>), then "+ Efecto".
+    /// Rebuilt only when the channel or its list of slots changes (<see cref="inspectorChainKey"/>); every other edit just
     /// refreshes it. A repeated kind is numbered ("EQ 2") and remembers its own folded state.
     /// </summary>
-    void RebuildInspectorChain(LiveTrack t)
+    void RebuildInspectorChain(SlotOwner o, object owner)
     {
-        // the LiveTrack itself too: a reopened project builds new ones with the same ids
-        string key = $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(t)}|{t.Track.Id}|" + string.Join("/", t.Channel.Slots.Select(s => s.Id));
+        // the object itself too: a reopened project builds new ones with the same ids
+        string key = $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(owner)}|{o.OwnerId}|" + string.Join("/", o.Slots().Select(s => s.Id));
         if (key == inspectorChainKey) return;
         inspectorChainKey = key;
         foreach (string title in chainSections) inspectorSections.Remove(title);
@@ -408,8 +381,8 @@ public partial class MainWindow
         inspectorChain.Children.Clear();
         eqEditor = null;
         var drag = new SlotDrag(InspectorTray.Gap);
-        drag.Moved += (id, anchor, after) => SlotsEdit(t, x => ChannelInserts.MoveNextTo(x.Channel, id, anchor, after), "move");
-        var slots = t.Channel.Slots;
+        drag.Moved += (id, anchor, after) => SlotsEdit(o, x => ChannelInserts.MoveNextTo(x, id, anchor, after), "move");
+        var slots = o.Slots();
         for (int i = 0; i < slots.Count; i++)
         {
             var slot = slots[i];
@@ -417,18 +390,32 @@ public partial class MainWindow
             int nth = 1;
             for (int k = 0; k < i; k++) if (slots[k].Type == slot.Type) nth++;
             string id = slot.Id;
-            switch (slot.Type)
+            if (slot.Type == InsertSlot.VstKind)
             {
-                case InsertSlot.SatKind: SatSection(t, id, nth, drag); break;
-                case InsertSlot.CompKind: CompSection(t, id, nth, drag); break;
-                case InsertSlot.GateKind: GateSection(t, id, nth, drag); break;
-                case InsertSlot.VstKind: VstSection(t, id, drag); break;
-                default: EqSection(t, id, nth, drag); break;
+                VstSection(o, id, drag);
+                continue;
             }
+            // the title stays the id it always was, so what was folded stays folded
+            string title = slot.Type switch { InsertSlot.SatKind => "Saturación", InsertSlot.CompKind => "Compresor", InsertSlot.EqKind => "EQ", InsertSlot.ReverbKind => "Reverb", InsertSlot.DelayKind => "Delay", _ => SlotName(slot.Type) };
+            var body = SlotSection(o, id, title, nth, slot.Type, () => o.Slot(id)?.On == true, on => SlotEdit(o, id, s => s.On = on, "on"), drag,
+                slot.Type == InsertSlot.EqKind ? null : () => o.Slot(id) is { } s ? SlotBrief(s) : "");
+            FxBody(body, o, slot, chainRefresh, eq => eqEditor ??= eq);
         }
-        chainTray.Set(chainSections.Count, AddSlotButton(t));
+        chainTray.Set(chainSections.Count, AddSlotButton(o));
         UpdateCollapseButton();
     }
+
+    /// <summary>Puts the effects tray where the selected channel shows it: a track's Canal tab or a bus's panel. One set of sections, moved, not two.</summary>
+    void PlaceInspectorChain(Panel host)
+    {
+        if (chainTray.Parent == host) return;
+        (chainTray.Parent as Panel)?.Children.Remove(chainTray);
+        if (host == takeSections) takeSections.Children.Insert(chainTrayAt, chainTray);
+        else host.Children.Add(chainTray);
+    }
+
+    /// <summary>The tray's place among the Canal tab's sections.</summary>
+    int chainTrayAt;
 
     readonly StackPanel inspectorChain = new();
     /// <summary>The Canal tab's areas for the effect slots and for the output and sends.</summary>
@@ -451,13 +438,12 @@ public partial class MainWindow
     /// A slot's section: numbered when its kind repeats, dragged by its grip, with the slot's ⋯ menu and, folded, its
     /// <paramref name="summary"/> beside the title (how much, which style).
     /// </summary>
-    StackPanel SlotSection(LiveTrack t, string id, string baseTitle, int nth, string icon, Func<bool> on, Action<bool> power, SlotDrag drag,
-        Control? action = null, Func<string>? summary = null)
+    StackPanel SlotSection(SlotOwner o, string id, string baseTitle, int nth, string icon, Func<bool> on, Action<bool> power, SlotDrag drag,
+        Func<string>? summary = null)
     {
         string title = nth > 1 ? $"{baseTitle} {nth}" : baseTitle;
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        if (action != null) actions.Children.Add(action);
-        actions.Children.Add(SlotMenuButton(t, id));
+        actions.Children.Add(SlotMenuButton(o, id));
         var content = Section(title, icon, on, power, actions, inspectorChain, chainRefresh, card: true);
         chainSections.Add(title);
         var card = (Border)content.Parent!.Parent!;
@@ -467,7 +453,7 @@ public partial class MainWindow
         {
             if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Right || store == null) return;
             e.Handled = true;
-            ShowSlotMenu(SlotsOf(t), id, header, null);
+            ShowSlotMenu(o, id, header, null);
         };
         if (summary != null) chainRefresh.Add(() => header.SetSummary(summary()));
         // its ⋯ stays at hand when the section is folded (moving or removing a folded slot is the common case)
@@ -479,134 +465,6 @@ public partial class MainWindow
         inspectorChain.Children.Remove(card);
         inspectorChain.Children.Add(drag.Add(card, id, grip));
         return content;
-    }
-
-    void SatSection(LiveTrack t, string id, int nth, SlotDrag drag)
-    {
-        SatSettings S() => t.Channel.Slot(id)?.Sat ?? GoneSat;
-        void SatEdit(Action<SatSettings> edit, string key) => SlotEdit(t, id, s => edit(s.Sat!), key);
-        var sat = SlotSection(t, id, "Saturación", nth, FxIcon.Sat, () => S().On, on => SatEdit(s => s.On = on, "sat.on"), drag,
-            summary: () => $"{S().Amount * 100:0}% · {LifeLabel(S().Amount)}");
-        var modes = new StackPanel { Orientation = Orientation.Horizontal };
-        sat.Children.Add(new Border { Classes = { "seg" }, HorizontalAlignment = HorizontalAlignment.Left, Child = modes });
-        foreach (var (mode, text) in new[] { ("tube", Loc.T("insp.sat.tube")), ("tape", Loc.T("insp.sat.tape")) })
-        {
-            var b = new ToggleButton { Content = text, Classes = { "seg" } };
-            b.Click += (_, _) => SatEdit(s => { s.Mode = mode; s.On = true; }, "sat.mode");
-            chainRefresh.Add(() => b.IsChecked = S().Mode == mode); modes.Children.Add(b);
-        }
-        EffectKnob(sat, Loc.T("insp.sat.life"), 0.3, () => S().Amount, v => SatEdit(s => { s.Amount = v; s.On = true; }, "sat.amount"),
-            LifeLabel, v => $"{v * 100:0}%",
-            Loc.T("insp.sat.hint"), chainRefresh);
-        var satHint = Help(""); sat.Children.Add(satHint);
-        chainRefresh.Add(() => satHint.Text = S().Mode == "tape" ? Loc.T("insp.sat.tape.hint") : Loc.T("insp.sat.tube.hint"));
-    }
-
-    void GateSection(LiveTrack t, string id, int nth, SlotDrag drag)
-    {
-        GateSettings G() => t.Channel.Slot(id)?.Gate ?? GoneGate;
-        void GateEdit(Action<GateSettings> edit, string key) => SlotEdit(t, id, s => edit(s.Gate!), key);
-        var gate = SlotSection(t, id, Loc.T("fx.gate"), nth, FxIcon.Gate, () => G().On, on => GateEdit(g => g.On = on, "gate.on"), drag,
-            summary: () => $"{G().Threshold:0.#} dB");
-        var modes = new StackPanel { Orientation = Orientation.Horizontal };
-        gate.Children.Add(new Border { Classes = { "seg" }, HorizontalAlignment = HorizontalAlignment.Left, Child = modes });
-        foreach (string mode in GateModes)
-        {
-            var b = new ToggleButton { Content = Loc.T("gate.mode." + mode), Classes = { "seg" } };
-            ToolTip.SetTip(b, Loc.T($"gate.mode.{mode}.hint"));
-            b.Click += (_, _) => GateEdit(g => { g.Mode = mode; g.On = true; }, "gate.mode");
-            chainRefresh.Add(() => b.IsChecked = G().Mode == mode); modes.Children.Add(b);
-        }
-        EffectKnob(gate, Loc.T("insp.gate.threshold"), GateKnob(GateParams.DefaultThresholdDb), () => GateKnob(G().Threshold),
-            v => GateEdit(g => { g.Threshold = GateDb(v); g.On = true; }, "gate.threshold"),
-            v => $"{GateDb(v):0.#} dB", _ => "", Loc.T("insp.gate.hint"), chainRefresh);
-        var modeHint = Help(""); gate.Children.Add(modeHint);
-        chainRefresh.Add(() => modeHint.Text = Loc.T($"gate.mode.{G().Mode}.hint"));
-    }
-
-    void CompSection(LiveTrack t, string id, int nth, SlotDrag drag)
-    {
-        CompSettings C() => t.Channel.Slot(id)?.Comp ?? GoneComp;
-        void CompEdit(Action<CompSettings> edit, string key, bool manual = false, bool recalculate = false) => SlotEdit(t, id, s =>
-        {
-            var c = s.Comp!;
-            if (SelectedInspectorClip is { } clip)
-            {
-                clip.Clip.Extra ??= [];
-                clip.Clip.Extra.TryAdd("role", System.Text.Json.JsonSerializer.SerializeToElement(c.Preset == "lead" ? "solo" : "base"));
-            }
-            edit(c);
-            if (manual) c.Preset = "custom";
-            if (recalculate) RecalculateInspectorComp(t, c);
-        }, "comp." + key);
-        var reset = InspectorIcon("", Loc.T("insp.comp.reset"), () => SlotEdit(t, id, s =>
-        {
-            bool on = s.Comp!.On;
-            string preset = InspectorEditing.DefaultCompPreset(SelectedInspectorClip?.Clip, tracks.IndexOf(t) == 1 ? "lead" : "rhythm");
-            s.Comp = new CompSettings { On = on, Preset = preset };
-            RecalculateInspectorComp(t, s.Comp);
-        }, "comp.reset"));
-        var comp = SlotSection(t, id, "Compresor", nth, FxIcon.Comp, () => C().On, on => CompEdit(c => c.On = on, "on", recalculate: true), drag, reset,
-            () => C().Preset switch
-            {
-                "rhythm" => Loc.T("insp.comp.rhythm"), "arpeggio" => Loc.T("insp.comp.arpeggio"), "lead" => Loc.T("insp.comp.lead"), _ => Loc.T("insp.comp.manual"),
-            } + (C().Preset == "custom" ? "" : " · " + AmountLabel(C().Amount)));
-        var presets = new UniformGrid { Columns = 3 };
-        foreach (var (preset, label) in new[] { ("rhythm", Loc.T("insp.comp.rhythm")), ("arpeggio", Loc.T("insp.comp.arpeggio")), ("lead", Loc.T("insp.comp.lead")) })
-        {
-            var b = new ToggleButton { Content = label, Classes = { "seg", "pick" }, Padding = new Thickness(3, 0), Margin = new Thickness(2, 0) };
-            b.Click += (_, _) => CompEdit(c => { c.Preset = preset; c.On = true; }, "preset", recalculate: true);
-            chainRefresh.Add(() => b.IsChecked = C().Preset == preset); presets.Children.Add(b);
-        }
-        comp.Children.Add(new Border { Classes = { "seg" }, Child = presets });
-        var (knob, amountText, summary) = KnobRow(comp, Loc.T("insp.comp.amount"));
-        knob.Changed += v => { if (!syncing) CompEdit(c => { c.Amount = v; c.On = true; }, "amount", recalculate: true); };
-        var compHint = Help(""); comp.Children.Add(compHint);
-        chainRefresh.Add(() =>
-        {
-            var c = C(); knob.Set(c.Amount); knob.IsEnabled = c.Preset != "custom";
-            amountText.Text = c.Preset == "custom" ? Loc.T("insp.comp.manual") : AmountLabel(c.Amount);
-            summary.Text = c.Preset == "custom" ? Loc.T("insp.comp.summary.manual") : Loc.T("insp.comp.summary", $"{EstimatedCompression(c):0}")
-                + (c.Eq.PresenceDb >= 1 ? Loc.T("insp.comp.presence.up", $"{c.Eq.PresenceDb:0.0}") : c.Eq.PresenceDb <= -1 ? Loc.T("insp.comp.presence.down", $"{c.Eq.PresenceDb:0.0}") : "");
-            ToolTip.SetTip(knob, c.Preset == "custom" ? Loc.T("insp.comp.manual.tip") : Loc.T("insp.comp.amount.tip", AmountLabel(c.Amount)));
-            compHint.Text = c.Preset switch { "rhythm" => Loc.T("insp.comp.rhythm.hint"), "arpeggio" => Loc.T("insp.comp.arpeggio.hint"), "lead" => Loc.T("insp.comp.lead.hint"), _ => "" };
-        });
-        // the fine controls start open when the compressor is set by hand
-        var fine = new StackPanel { Spacing = 14, IsVisible = C().Preset == "custom" };
-        var fineButton = new Button { Content = (fine.IsVisible ? "▾ " : "▸ ") + Loc.T("insp.fine"), Classes = { "ghost" }, FontSize = 11, Padding = new Thickness(8, 6),
-            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, Margin = new Thickness(-8, 0) };
-        fineButton.Click += (_, _) => { fine.IsVisible = !fine.IsVisible; fineButton.Content = (fine.IsVisible ? "▾ " : "▸ ") + Loc.T("insp.fine"); };
-        comp.Children.Add(fineButton); comp.Children.Add(fine);
-        InspectorSlider Fine(string label, double min, double max, double step, double reset, Func<CompSettings, double> get, Action<CompSettings, double> set, Func<double, string> format, string? hint = null) =>
-            Slider(fine, label, min, max, step, reset, () => get(C()), v => CompEdit(c => set(c, v), label, manual: true), format, hint, refresh: chainRefresh);
-        Fine(Loc.T("insp.comp.threshold"), -60, 0, .5, -18, c => c.Threshold, (c, v) => c.Threshold = v, v => $"{v:0.0} dB");
-        Fine(Loc.T("insp.comp.ratio"), 1, 20, .1, 4, c => c.Ratio, (c, v) => c.Ratio = v, v => $"{v:0.0}:1");
-        Fine(Loc.T("insp.comp.attack"), .1, 100, .1, 10, c => c.Attack * 1000, (c, v) => c.Attack = v / 1000, v => $"{v:0.0} ms");
-        Fine(Loc.T("insp.comp.release"), 10, 1000, 5, 150, c => c.Release * 1000, (c, v) => c.Release = v / 1000, v => $"{v:0} ms");
-        Fine(Loc.T("insp.comp.knee"), 0, 24, .5, 6, c => c.Knee, (c, v) => c.Knee = v, v => $"{v:0.0} dB");
-        Fine(Loc.T("insp.comp.makeup"), -12, 30, .5, 0, c => c.Makeup, (c, v) => c.Makeup = v, Db, Loc.T("insp.comp.makeup.hint"));
-        Fine(Loc.T("insp.comp.hpf"), 10, 300, 5, 10, c => c.Eq.HpfHz, (c, v) => c.Eq.HpfHz = v, v => v <= 10 ? "Off" : $"{v:0} Hz");
-        Fine(Loc.T("insp.comp.mud"), -6, 6, .5, 0, c => c.Eq.MudDb, (c, v) => c.Eq.MudDb = v, Db);
-        var presence = Fine(Loc.T("insp.comp.presence", "2,5"), -6, 6, .5, 0, c => c.Eq.PresenceDb, (c, v) => c.Eq.PresenceDb = v, Db, Loc.T("insp.comp.presence.hint"));
-        chainRefresh.Add(() => presence.Label.Text = Loc.T("insp.comp.presence", $"{C().Eq.PresenceHz / 1000:0.0}"));
-        Fine(Loc.T("insp.comp.air"), -6, 6, .5, 0, c => c.Eq.AirDb, (c, v) => c.Eq.AirDb = v, Db);
-        var limit = new CheckBox { Content = Loc.T("insp.comp.limit"), FontSize = 12 };
-        ToolTip.SetTip(limit, Loc.T("insp.comp.limit.tip"));
-        limit.IsCheckedChanged += (_, _) => { if (!syncing) CompEdit(c => c.Limit = limit.IsChecked == true, "limit"); };
-        chainRefresh.Add(() => limit.IsChecked = C().Limit); fine.Children.Add(limit);
-        fine.Children.Add(Help(Loc.T("insp.comp.fine.hint")));
-    }
-
-    void EqSection(LiveTrack t, string id, int nth, SlotDrag drag)
-    {
-        EqSettings E() => t.Channel.Slot(id)?.Eq ?? GoneEq;
-        var host = SlotSection(t, id, "EQ", nth, FxIcon.Eq, () => E().On, on => SlotEdit(t, id, s => s.Eq!.On = on, "eq.on"), drag);
-        var eq = new EqEditor();
-        // the live spectrum (after the whole chain) goes on the first EQ
-        eqEditor ??= eq;
-        eq.Changed += value => SlotEdit(t, id, s => s.Eq = value, "eq");
-        host.Children.Add(eq);
-        chainRefresh.Add(() => eq.Set(E()));
     }
 
     void InitClipInspector()
@@ -702,7 +560,13 @@ public partial class MainWindow
             folderPanel.IsVisible = folder != null;
             if (folder != null) foreach (var refresh in folderRefresh) refresh();
             busPanel.IsVisible = bus != null;
-            if (bus != null) foreach (var refresh in busRefresh) refresh();
+            if (bus != null)
+            {
+                foreach (var refresh in busRefresh) refresh();
+                PlaceInspectorChain(busChain);
+                RebuildInspectorChain(SlotsOf(bus), bus);
+                foreach (var refresh in chainRefresh) refresh();
+            }
             noSelectionHint.Text = tracks.Any(t => t.Track.HasContent) ? Loc.T("insp.none.hint") : Loc.T("insp.none.empty");
             takeHead.IsVisible = sel != null;
             takeBadge.Set(sel?.Track, sel == null ? 0 : tracks.IndexOf(sel) + 1, c != null, !AudioOnly);
@@ -733,7 +597,8 @@ public partial class MainWindow
             if (collapseAll != null) collapseAll.IsVisible = channel;
             if (channel)
             {
-                RebuildInspectorChain(sel!);
+                PlaceInspectorChain(takeSections);
+                RebuildInspectorChain(SlotsOf(sel!), sel!);
                 PlaceInspectorSends(takeSections);
                 RebuildInspectorSends(sel!);
                 foreach (var refresh in inspectorRefresh) refresh();

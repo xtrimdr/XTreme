@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:XtremeDaw.App"
+             x:Class="XtremeDaw.App.Dialogs.HelpDialog"
+             AutomationProperties.Name="{loc:T help.title}"
+             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+
+  <!-- same frame as SettingsDialog, as large as the window allows: these are pages to read next to the app -->
+  <UserControl.Styles>
+    <Style Selector="Button.nav">
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource Dim}" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.nav.topic">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinHeight" Value="28" />
+      <Setter Property="Padding" Value="35,4,10,4" />
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.nav.active">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+    </Style>
+    <Style Selector="Button.nav.active:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+    </Style>
+    <Style Selector="Button.act">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource Faint}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.act:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.card">
+      <Setter Property="Padding" Value="14,12" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+      <Setter Property="Background" Value="{StaticResource Raised}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Button.card:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Margin="32" MaxWidth="1080" MaxHeight="780" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+          Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <Grid RowDefinitions="Auto,*">
+      <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="20,10,12,10">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Classes="icon" Text="&#xE897;" FontSize="15" Foreground="{StaticResource Accent}" />
+            <TextBlock Text="{loc:T help.title}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
+          <Button Grid.Column="1" x:Name="CloseButton" Classes="act" ToolTip.Tip="{loc:T settings.close}" AutomationProperties.Name="{loc:T settings.close}">
+            <TextBlock Classes="icon" Text="&#xE711;" FontSize="13" />
+          </Button>
+        </Grid>
+      </Border>
+      <Grid Grid.Row="1" ColumnDefinitions="280,*">
+        <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
+          <Grid RowDefinitions="Auto,*">
+            <Panel Margin="8,8,8,6">
+              <TextBox x:Name="SearchBox" Classes="field" Watermark="{loc:T help.search}" AutomationProperties.Name="{loc:T help.search}" Padding="32,0,12,0" />
+              <TextBlock Classes="icon" Text="&#xE721;" FontSize="13" Foreground="{StaticResource Faint}" Margin="11,0,0,0"
+                         HorizontalAlignment="Left" IsHitTestVisible="False" />
+            </Panel>
+            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel x:Name="Nav" Spacing="2" Margin="8,0,8,8" />
+            </ScrollViewer>
+          </Grid>
+        </Border>
+        <ScrollViewer Grid.Column="1" x:Name="Scroller" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel x:Name="Page" Spacing="14" Margin="32,24,32,28" MaxWidth="680" HorizontalAlignment="Left" />
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+  </Border>
+</UserControl>

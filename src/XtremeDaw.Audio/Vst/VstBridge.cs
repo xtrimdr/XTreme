@@ -19,6 +19,19 @@ public static class VstHost
     }
 }
 
+/// <summary>A parameter a plugin lets a host automate: its id, its name, where it is now (0..1) and how many steps it has (0 = continuous).</summary>
+public sealed record VstParamInfo(uint Id, string Title, double Value, int Steps)
+{
+    /// <summary>From the host's line: "id value steps title".</summary>
+    public static VstParamInfo? Parse(string line)
+    {
+        var p = line.Split(' ', 4);
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        return p.Length == 4 && uint.TryParse(p[0], out uint id) && double.TryParse(p[1], System.Globalization.NumberStyles.Float, inv, out double d) && int.TryParse(p[2], out int steps)
+            ? new(id, p[3], d, steps) : null;
+    }
+}
+
 /// <summary>A MIDI note for a plugin: where in the block, on or off, which key, how hard (0..1).</summary>
 public struct VstNote
 {
@@ -45,12 +58,12 @@ public struct VstNote
 public sealed unsafe class VstBridge : IDisposable
 {
     // shared.h
-    const int Magic = 0x53564347, ProtocolVersion = 1;
-    public const int MaxBlock = 8192, MaxEvents = 512;
+    const int Magic = 0x53564347, ProtocolVersion = 2;
+    public const int MaxBlock = 8192, MaxEvents = 512, MaxParams = 128;
     const int OffMagic = 0, OffVersion = 4, OffSampleRate = 8, OffMaxBlock = 12, OffStatus = 16, OffLatency = 20, OffOutputs = 24,
-        OffInstrument = 28, OffRequested = 32, OffDone = 40, OffError = 48, OffSlots = 560, SlotSize = 139304, TotalSize = 279168;
+        OffInstrument = 28, OffRequested = 32, OffDone = 40, OffError = 48, OffSlots = 560, SlotSize = 140336, TotalSize = 281232;
     const int SlotSeq = 0, SlotFrames = 8, SlotNumEvents = 12, SlotTime = 16, SlotTempo = 24, SlotFlags = 32, SlotEvents = 40,
-        SlotIn = 8232, SlotOut = 73768, EventSize = 16;
+        SlotIn = 8232, SlotOut = 73768, SlotNumParams = 139304, SlotParams = 139312, EventSize = 16;
     /// <summary>FlagReset: the plugin forgets its tails and delay lines before this block (the transport starts).</summary>
     public const int FlagAllNotesOff = 1, FlagPlaying = 2, FlagReset = 4;
     const int StatusReady = 1, StatusFailed = 2, StatusCrashed = 3;
@@ -70,6 +83,15 @@ public sealed unsafe class VstBridge : IDisposable
     long taken;
 
     public string Name { get; }
+    public int SampleRate { get; }
+    // automated parameters waiting for the next block (the audio thread's, or the export's)
+    readonly uint[] paramIds = new uint[MaxParams];
+    readonly float[] paramValues = new float[MaxParams];
+    int paramCount;
+    List<VstParamInfo>? paramList;
+    TaskCompletionSource<IReadOnlyList<VstParamInfo>?>? paramsReply;
+    /// <summary>The parameter last moved in the plugin's window, or null: what "Último tocado" automates.</summary>
+    public uint? Touched { get; private set; }
     /// <summary>The plugin's process.</summary>
     public int ProcessId => process.Id;
     /// <summary>Its own latency in frames, as it reported when it loaded.</summary>
@@ -93,6 +115,7 @@ public sealed unsafe class VstBridge : IDisposable
     VstBridge(string pluginPath, string cid, string name, int sampleRate, bool offline, int maxBlock)
     {
         Name = name;
+        SampleRate = sampleRate;
         string exe = VstHost.Find() ?? throw new FileNotFoundException(Texts.T("err.vst.noHost", "Falta wtvsthost.exe."));
         string id = $"WtVst-{Environment.ProcessId}-{Guid.NewGuid():N}";
         map = MemoryMappedFile.CreateNew(id, TotalSize);
@@ -128,6 +151,7 @@ public sealed unsafe class VstBridge : IDisposable
             readyEvent.Set();
             stateReply?.TrySetResult(null);
             loadReply?.TrySetResult(null);
+            paramsReply?.TrySetResult(null);
             if (!disposed) Exited?.Invoke();
         };
         process.Start();
@@ -179,6 +203,15 @@ public sealed unsafe class VstBridge : IDisposable
                     case "loaded":
                         loadReply?.TrySetResult("ok");
                         break;
+                    case "param":
+                        if (VstParamInfo.Parse(arg) is { } info) paramList?.Add(info);
+                        break;
+                    case "params-end":
+                        paramsReply?.TrySetResult(paramList);
+                        break;
+                    case "touched":
+                        if (uint.TryParse(arg, out uint touched)) Touched = touched;
+                        break;
                     case "latency":
                         if (int.TryParse(arg, out int now)) Latency = Math.Max(0, now);
                         Message?.Invoke(line);
@@ -225,6 +258,28 @@ public sealed unsafe class VstBridge : IDisposable
         return tcs.Task.Wait(timeoutMs) && tcs.Task.Result == "ok";
     }
 
+    /// <summary>The parameters it lets a host automate; null if it did not answer in time.</summary>
+    public Task<IReadOnlyList<VstParamInfo>?> GetParamsAsync(int timeoutMs = 3000)
+    {
+        var tcs = new TaskCompletionSource<IReadOnlyList<VstParamInfo>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        paramList = [];
+        paramsReply = tcs;
+        Send("params");
+        return Task.WhenAny(tcs.Task, Task.Delay(timeoutMs)).ContinueWith(t => t.Result == tcs.Task ? tcs.Task.Result : null, TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Audio thread (or the export's): a parameter's new value, sent with the next block. False when the block already
+    /// carries <see cref="MaxParams"/>: the caller tries again on the next one.
+    /// </summary>
+    public bool QueueParam(uint id, float value)
+    {
+        if (paramCount >= MaxParams) return false;
+        paramIds[paramCount] = id;
+        paramValues[paramCount++] = value;
+        return true;
+    }
+
     /// <summary>Opens the plugin's own window (or brings it up), owned by <paramref name="owner"/> so it stays above it.</summary>
     public void OpenEditor(nint owner) => Send(owner != 0 ? "editor " + owner : "editor");
 
@@ -255,6 +310,13 @@ public sealed unsafe class VstBridge : IDisposable
             *(int*)(e + 8) = notes[i].Pitch;
             *(float*)(e + 12) = notes[i].Velocity;
         }
+        *(int*)(slot + SlotNumParams) = paramCount;
+        for (int i = 0; i < paramCount; i++)
+        {
+            *(uint*)(slot + SlotParams + i * 8) = paramIds[i];
+            *(float*)(slot + SlotParams + i * 8 + 4) = paramValues[i];
+        }
+        paramCount = 0;
         if (!inL.IsEmpty)
         {
             inL[..frames].CopyTo(SlotSpan((int)(s & 1), SlotIn, 0, frames));

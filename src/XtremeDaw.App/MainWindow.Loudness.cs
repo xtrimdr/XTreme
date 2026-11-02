@@ -65,7 +65,7 @@ public partial class MainWindow
             {
                 var lc = lt.Clips.FirstOrDefault(x => x.Clip.Id == c.Id);
                 if (lc == null) return false;
-                if (!lc.Offline && (lc.Sound == null || lc.SoundSemis != trk.Transpose)) return false;
+                if (!lc.Offline && (lc.Sound == null || !lc.Plays(trk.Transpose))) return false;
             }
         }
         return true;

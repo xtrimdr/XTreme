@@ -37,8 +37,6 @@ public static class MasterLooks
         Natural with { Id = "warm", Label = "Cálido", LowsDb = 2, AirDb = -1, TiltDb = -1.5, High = 0.5, Tape = 0.5 },
         // the mids forward: presence, less mud, the mid band holding them, narrower with the lows in the middle
         Natural with { Id = "front", Label = "Al frente", MudDb = -2, PresenceDb = 2.5, Mid = 0.6, Width = 0.9, MonoBassHz = 120 },
-        // the pick's attack (2–5 kHz) held down only when it hits; nothing else changes
-        Natural with { Id = "pick", Label = "Domar la púa", Pick = 0.7 },
     ];
 
     public static MasterLook? Get(string? id) => All.FirstOrDefault(l => l.Id == id);
@@ -90,7 +88,7 @@ public static class MasterLooks
 }
 
 /// <summary>
-/// The master's fourth band, Púa (asked by the user for "Domar la púa"): a dynamic cut at 2–5 kHz that only acts when
+/// The master's fourth band, Púa: a dynamic cut at 2–5 kHz that only acts when
 /// the pick hits. A band pass (<see cref="CenterHz"/>, <see cref="Q"/>, 0 dB at its centre) is both the detector and
 /// what gets taken away: out = in − k·band, so k = 0 is the input bit for bit and k = 1 a notch; k follows the
 /// reduction. Like the multiband's bands it sets its own threshold, <c>Headroom</c> dB over that band's own level as

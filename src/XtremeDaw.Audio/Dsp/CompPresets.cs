@@ -192,7 +192,8 @@ public static class CompPresets
     public static TakeEnvelope Analyze(float[][] chans, int sampleRate)
     {
         int bs = Math.Max(1, (int)JsRound(sampleRate * BlockSec));
-        int nb = chans[0].Length / bs;
+        // no channels: a track without audio
+        int nb = chans.Length == 0 ? 0 : chans[0].Length / bs;
         var peakDb = new float[nb];
         var pow = new float[nb];
         for (int b = 0; b < nb; b++)
