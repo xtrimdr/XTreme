@@ -20,6 +20,8 @@ public sealed class Fader : Control
     public const double VolMax = 1.5;
     /// <summary>The cap's size (px): wide and tall enough to grab without aiming.</summary>
     const double CapW = 30, SlimCapW = 18, CapH = 40;
+    /// <summary>The horizontal volume's cap (px), for <see cref="DrawSideCap"/>.</summary>
+    const double SideCapW = 13, SideCapH = 20;
     /// <summary>Space above and below the travel, so the cap never leaves the control.</summary>
     const double Pad = CapH / 2;
     /// <summary>Between the cap's grooves (px).</summary>
@@ -31,10 +33,14 @@ public sealed class Fader : Control
         new ImmutableGradientStop(0.55, Color.Parse("#8d8d95")), new ImmutableGradientStop(1, Color.Parse("#606067")),
     ], startPoint: new RelativePoint(0, 0, RelativeUnit.Relative), endPoint: new RelativePoint(0, 1, RelativeUnit.Relative));
     static readonly IBrush CapShadow = new ImmutableSolidColorBrush(Color.FromArgb(110, 0, 0, 0));
-    static readonly IPen CapEdge = new ImmutablePen(Color.Parse("#2a2a2f").ToUInt32(), 1);
-    static readonly IPen GrooveDark = new ImmutablePen(Color.FromArgb(80, 20, 20, 24).ToUInt32(), 1);
-    static readonly IPen GrooveLight = new ImmutablePen(Color.FromArgb(70, 255, 255, 255).ToUInt32(), 1);
+    static readonly IPen CapEdge = new ImmutablePen(Color.Parse("#08080a").ToUInt32(), 1);
+    static readonly IPen GrooveDark = new ImmutablePen(Color.FromArgb(120, 20, 20, 24).ToUInt32(), 1);
+    static readonly IPen GrooveLight = new ImmutablePen(Color.FromArgb(90, 255, 255, 255).ToUInt32(), 1);
     static readonly IPen LevelLine = new ImmutablePen(Colors.White.ToUInt32(), 2);
+    /// <summary>Under the level line: white alone doesn't read on the grey body.</summary>
+    static readonly IBrush LevelBand = new ImmutableSolidColorBrush(Color.Parse("#141417"));
+    /// <summary>The empty slot's outline: strong enough to read on a selected strip or header too.</summary>
+    const double SlotEdge = 0.6;
 
     double value = 1, dragPos, dragY, capW = CapW;
     IPointer? pointer;
@@ -78,10 +84,11 @@ public sealed class Fader : Control
         double w = Bounds.Width, h = Bounds.Height, cx = Math.Round(w / 2), travel = Math.Max(1, h - 2 * Pad);
         double pos = ToPos(value), unity = ToPos(1);
         // the slot: a dark groove, lit in the accent up to the level
-        ctx.DrawRectangle(Palette.App, Palette.Pen(Palette.Line), new Rect(cx - 2.5, Pad - 4, 5, travel + 8), 2.5, 2.5);
-        ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.7), null, new Rect(cx - 1.5, h - Pad - travel * pos, 3, travel * pos), 1.5, 1.5);
+        ctx.DrawRectangle(Palette.App, Palette.Pen(Palette.Alpha(Palette.FaintColor, SlotEdge)), new Rect(cx - 2.5, Pad - 4, 5, travel + 8), 2.5, 2.5);
+        ctx.DrawRectangle(Palette.Accent, null, new Rect(cx - 1.5, h - Pad - travel * pos, 3, travel * pos), 1.5, 1.5);
         double uy = Math.Round(h - Pad - travel * unity) - 0.5;
-        ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.FaintColor, 0.6)), new Point(0, uy), new Point(w, uy));
+        ctx.DrawLine(Palette.Pen(Palette.Dim), new Point(0, uy), new Point(cx - 5, uy));
+        ctx.DrawLine(Palette.Pen(Palette.Dim), new Point(cx + 5, uy), new Point(w, uy));
         // the cap: a shadow under it, the shaded body, grooves across and the white line at the level
         double capY = Math.Round(h - Pad - travel * pos);
         var cap = new Rect(cx - capW / 2, capY - CapH / 2, capW, CapH);
@@ -89,11 +96,22 @@ public sealed class Fader : Control
         ctx.DrawRectangle(CapFill, CapEdge, cap.Deflate(0.5), 4, 4);
         for (double gy = cap.Top + 5; gy < cap.Bottom - 5; gy += Groove)
         {
-            if (Math.Abs(gy - capY) < 3) continue;
+            if (Math.Abs(gy - capY) < 5) continue;
             ctx.DrawLine(GrooveDark, new Point(cap.Left + 4, gy + 0.5), new Point(cap.Right - 4, gy + 0.5));
             ctx.DrawLine(GrooveLight, new Point(cap.Left + 4, gy + 1.5), new Point(cap.Right - 4, gy + 1.5));
         }
-        ctx.DrawLine(LevelLine, new Point(cap.Left + 3, capY), new Point(cap.Right - 3, capY));
+        ctx.FillRectangle(LevelBand, new Rect(cap.Left + 1, capY - 3, cap.Width - 2, 6));
+        ctx.DrawLine(LevelLine, new Point(cap.Left + 1, capY), new Point(cap.Right - 1, capY));
+    }
+
+    /// <summary>The same cap, lying down, for the timeline's horizontal volume: its level line at <paramref name="x"/>.</summary>
+    public static void DrawSideCap(DrawingContext ctx, double x, double cy)
+    {
+        var cap = new Rect(x - SideCapW / 2, cy - SideCapH / 2, SideCapW, SideCapH);
+        ctx.DrawRectangle(CapShadow, null, cap.Translate(new Vector(0, 1.5)), 3, 3);
+        ctx.DrawRectangle(CapFill, CapEdge, cap.Deflate(0.5), 3, 3);
+        ctx.FillRectangle(LevelBand, new Rect(x - 2.5, cap.Top + 1, 5, SideCapH - 2));
+        ctx.DrawLine(LevelLine, new Point(x, cap.Top + 1), new Point(x, cap.Bottom - 1));
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)

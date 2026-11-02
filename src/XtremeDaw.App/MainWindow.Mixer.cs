@@ -61,6 +61,8 @@ public partial class MainWindow
     bool SendsRow => mixerSends && Buses.Count > 0;
     /// <summary>Space between strip cards.</summary>
     const double StripGap = 6;
+    /// <summary>The line that sets the pinned master apart (px).</summary>
+    const double PinLineW = 2;
     /// <summary>The extra room (px) a folder keeps from a channel or separator beside it.</summary>
     const double FolderGap = 6;
     /// <summary>Below this width an effect panel drops its ON/OFF text and icon, and puts its knob over its other controls.</summary>
@@ -71,7 +73,8 @@ public partial class MainWindow
     /// <summary>The strips with what the window updates on them (and an effect's window, <see cref="ShowSlotWindow"/>, its own).</summary>
     sealed class MixerLayout
     {
-        public readonly Grid Strips = new() { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        /// <summary>Its margin adds to the cards' own, so the first and last strips sit a whole <see cref="StripGap"/> from the edges.</summary>
+        public readonly Grid Strips = new() { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(StripGap / 2, 0) };
         /// <summary>The order and sides of its strips, for dragging them (MainWindow.MixerOrder.cs).</summary>
         public readonly MixerOrder Order = new();
         public readonly List<Action> Refresh = [];
@@ -127,7 +130,7 @@ public partial class MainWindow
     /// <summary>The mixer's head row (title, width…): hidden while the Mastering view uses the mixer's place.</summary>
     Control? mixerHeader;
     /// <summary>The master strip, pinned to the right of the scrolled strips (asked by the user: always in sight).</summary>
-    readonly Border masterPin = PinnedColumn();
+    readonly Border masterPin = PinnedColumn(StripGap / 2);
 
     /// <summary>Preset names and hints come from the engine in Spanish: they are looked up by id (or by name for the buses) and fall back to that text.</summary>
     static string CompPresetName(CompPresetDef p) => Loc.Or("insp.comp." + p.Id, p.Label);
@@ -733,10 +736,11 @@ public partial class MainWindow
         masterPin.Child = Column(Master());
     }
 
-    /// <summary>The column a view pins at its right: a line apart from what scrolls beside it.</summary>
-    static Border PinnedColumn() => new()
+    /// <summary>The column a view pins at its right, apart from what scrolls beside it by a line heavier than any other
+    /// border (asked by the user): it divides the view, it doesn't outline a card. <paramref name="right"/>: its room at the edge.</summary>
+    static Border PinnedColumn(double right = 0) => new()
     {
-        BorderBrush = Palette.Line, BorderThickness = new Thickness(1, 0, 0, 0), Padding = new Thickness(StripGap / 2, 0, 0, 0), IsVisible = false,
+        BorderBrush = Palette.Faint, BorderThickness = new Thickness(PinLineW, 0, 0, 0), Padding = new Thickness(StripGap / 2, 0, right, 0), IsVisible = false,
     };
 
     /// <summary>
@@ -1040,8 +1044,10 @@ public partial class MainWindow
             if (slot.Type == InsertSlot.CompKind && grBar == null)
             {
                 grBar = new Border { Height = 2, Width = 0, Background = Palette.Accent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom, IsHitTestVisible = false };
-                ((Grid)row.Child!).Children.Add(grBar);
-                Grid.SetColumnSpan(grBar, 2);
+                // over the row, not in its grid: there its width would widen the Auto columns and push the text
+                var line = row.Child!;
+                row.Child = null;
+                row.Child = new Panel { Children = { line, grBar } };
             }
             ToolTip.SetTip(row, Loc.T(slot.Type == InsertSlot.VstKind ? "mix.list.vst.tip" : "mix.list.fx.tip", name));
             row.Tag = id;

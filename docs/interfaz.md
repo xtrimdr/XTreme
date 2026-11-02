@@ -354,14 +354,20 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
 
 ## Timeline
 
-- **Clips**: fondo `Hover` al 40 %, borde `Line` (acento al 60 % si está seleccionado), onda `Dim` (acento si está
-  seleccionado, `Faint` si la pista no suena), sin el nombre adentro; sin archivo, gris con "Sin conexión…". Con
+- **Clips**: fondo `Hover` al 40 % (acento al 16 % si está seleccionado), borde `Line` (acento al 60 % si está seleccionado), onda
+  acento al 80 % (entero si está seleccionado, `Faint` si la pista no suena), sin el nombre adentro; sin archivo, gris con "Sin conexión…". Con
   video y carriles de 52 px o más, la tira de miniaturas (`Video/VideoThumbnails.cs`) con la onda abajo sobre
   un degradé (del color de la pista si tiene uno; si no, blanca). Arriba a la derecha, un badge dice si el medio es solo
-  audio (nota) o audio + video (cámara), con tooltip (`MediaBadge`). Pista seleccionada (y carpeta) con una píldora de acento de 3 px a la izquierda del encabezado, por dentro del borde de la tarjeta y del recuadro de carpeta (`DrawSelectedPill`), y un tinte de acento del 6 % en encabezado y carril (`SelectedTint`), pedido del usuario: la barra de 2 px quedaba tapada y solo se veía un gris; playhead de acento con triángulo.
+  audio (nota) o audio + video (cámara), con tooltip (`MediaBadge`). Pista seleccionada (y carpeta) con un borde de acento alrededor del encabezado, como una tira seleccionada del mixer y por dentro del borde de la tarjeta y del recuadro de carpeta (`DrawSelectedFrame`), y un tinte de acento del 6 % en encabezado y carril (`SelectedTint`), pedido del usuario: sin barra al costado; playhead de acento con triángulo.
 - **Bordes de clip**: en cada lado dos manijas chicas como la de la columna (pestañita oscura con dos rayitas), una por
   mitad del clip (`DrawEdgeHandles`): la de arriba, donde termina el fade, mueve el fade; la de abajo, en el borde,
   recorta. El cursor lo dice (diagonal como la línea del fade, ↔ para recortar) y se ilumina la manija que vas a agarrar.
+  **Ctrl+arrastrar la de abajo estira** (pedido del usuario; Shift ya marca rangos): el otro borde queda fijo, con imán a
+  la grilla (Alt lo saca), sin tope (pedido del usuario: solo frenan el largo mínimo del clip y el cero; `StretchEdge`), y una
+  etiqueta al lado del puntero dice la velocidad (la mitad de largo es ×2, pedido del usuario). Con Ctrl apretado, aun
+  sin mover el mouse (`SetModifiers`), las manijas de abajo se ven en acento con dos flechas (`StretchTick`) y el cursor
+  es la flecha doble con un cronómetro (`ToolCursors.Stretch`), pedido del usuario. "Ajustando al tempo… N%" sale solo
+  en el clip que espera su sonido (`ClipRenderProgress`). Al soltar se hace el sonido, como con el tempo; un clip bloqueado no se estira.
 - **Varios clips por pista**: Alt+X divide en el cabezal y D duplica (`ClipEditing.Split` / `DuplicateMany`; con
   varios clips marcados, aunque estén en varias pistas, los copia en bloque después del final del bloque).
 - **Copiar y pegar** (`ClipClipboard`, `MainWindow.Timeline.cs`): Ctrl+C / Ctrl+X toman el clip elegido o los
@@ -712,7 +718,8 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
 
 - Ocupa el lugar del timeline (X o "Timeline / Mixer") con su propia altura (mínimo 250). Una tira por pista, también
   las vacías. **El master queda fijo a la derecha** (pedido del usuario, `masterPin`): fuera de lo que se desplaza,
-  separado por una línea, y con el mismo pie que las demás tiras aunque aparezca la barra de desplazamiento (`AlignPin`).
+  separado por una línea de 2 px en `Faint` (`PinLineW`, `PinnedColumn`), y con el mismo pie que las demás tiras aunque aparezca la barra de desplazamiento (`AlignPin`).
+  Todo va a `StripGap` (6 px, pedido del usuario): entre tiras, de la última a la línea, de la línea al master y contra los bordes.
 - **Zoom del mixer** (pedido del usuario: un solo flujo, sin botones Compacto / Amplio / Auto, y una sola tira, la de
   lista, en todos los anchos): todas las tiras de pista y bus tienen un ancho, `mixerStripW` (`config.json`
   "mixerStripW", 120 de entrada), que va de `MinStripW` (42) a `WideMax` (150: más ancho no suma nada, pedido del
@@ -789,8 +796,9 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   van al motor apagados por el mismo camino que su ⏻ (`ChannelDsp.Specs(..., bypass)`), sin tocar el proyecto ni la
   exportación. Prendido se pinta ámbar, como un mute, y las listas de efectos de las tiras se atenúan.
 - El **fader** (`Controls/Fader.cs`) tiene la tapa de una consola (pedido del usuario: grande y fácil de agarrar, 30 × 40; 18 × 40 en las tiras más angostas):
-  cuerpo gris sombreado, ranuras, una línea blanca en el nivel y una sombra abajo; la ranura oscura se ilumina en
-  acento hasta el nivel. La escala en dB va en el medidor.
+  cuerpo gris sombreado, ranuras, una línea blanca sobre una banda oscura en el nivel (blanco solo no se lee sobre el gris) y una sombra abajo; la ranura oscura, con su contorno, se ilumina en
+  acento pleno hasta el nivel. La escala en dB va en el medidor. El volumen del encabezado de pista es el mismo fader acostado (`DrawVolume`, `Fader.DrawSideCap`).
+- Las **perillas** son todas iguales (`Knob.Draw`, en el control y en el timeline, pedido del usuario): tapa de consola, como el fader, con faldón estriado que gira con el valor (desde 28 px), tope sombreado, sombra y puntero blanco, y alrededor una escala fina en acento.
 - **Slots de efectos** (`SlotOwner`: el canal de una pista o un bus): en la tira, su lista; un clic en un renglón de un
   VST3 cargado abre la ventana del plugin (pedido del usuario: sin un paso en el medio, `OpenEffectWindow`); en los
   demás, o en un VST3 que todavía carga o falló, abre el panel del slot en una ventanita sobre el mixer (`ShowSlotWindow` → `SlotPanel`: `FxBody`,

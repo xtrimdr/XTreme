@@ -1378,6 +1378,27 @@ public sealed partial class TimelineView : Control
         }
     }
 
+    /// <summary>Who stays behind in a Shift+drag: a dashed outline where each clip was, that turns into the copy on release.</summary>
+    void DrawLeftBehind(DrawingContext ctx, double W, double H)
+    {
+        var dashed = new Pen(Palette.Accent, 1.5, new DashStyle([4, 3], 0));
+        using (ctx.PushClip(new Rect(HeaderW, RulerH, Math.Max(0, W - HeaderW), Math.Max(0, H - RulerH))))
+        {
+            void Outline(int lane, double start, double end) =>
+                ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.18), dashed, new Rect(X(start), LaneY(lane) + 5, Math.Max(2, X(end) - X(start)), LaneH(lane) - 10), 5, 5);
+            if (dragged != null && original != null && Window(dragged, original) is var w) Outline(fromIndex, w.Start, w.End);
+            for (int i = 0; i < tracks.Count; i++)
+            {
+                foreach (var (c, o) in carriedAlong)
+                    if (tracks[i].Clips.Contains(c) && Window(c, o) is var along) Outline(i, along.Start, along.End);
+                if (tracks[i].Track.MidiClips is not { } midi) continue;
+                foreach (var (c, from) in midiCarried)
+                    if (midi.Contains(c)) Outline(i, from, from + c.LengthBeats * BeatSec);
+            }
+            if (midiHeld != null && !midiCarrying) Outline(fromIndex, midiFromSec, midiFromSec + midiFromBeats * BeatSec);
+        }
+    }
+
     /// <summary>The selected range over its lane: a band of the accent with the length on top.</summary>
     void DrawRange(DrawingContext ctx, double y, double lh, double W, double start, double end)
     {
@@ -1452,16 +1473,15 @@ public sealed partial class TimelineView : Control
 
     /// <summary>Accent over a selected track's header and lane, so it reads as chosen and not as a hover (asked by the user).</summary>
     const double SelectedTint = 0.06;
+    /// <summary>Opacity of a selected header's outline.</summary>
+    const double SelectedEdge = 0.8;
 
     /// <summary>
-    /// The selected row's mark: a rounded accent pill at the left of its header, like Windows' selection indicator
-    /// (asked by the user). Inside the card's edge and the folder frame, which covered the old 2 px bar at x = 0.
+    /// The selected row's mark: an accent outline around its header, the way a selected mixer strip shows it (asked by
+    /// the user: no bar on the side). Inside the card's edge and the folder frame, which would cover it.
     /// </summary>
-    static void DrawSelectedPill(DrawingContext ctx, double y, double h)
-    {
-        double inset = Math.Min(6, h / 4);
-        ctx.DrawRectangle(Palette.Accent, null, new Rect(3, y + inset, 3, Math.Max(4, h - 2 * inset)), 1.5, 1.5);
-    }
+    void DrawSelectedFrame(DrawingContext ctx, double y, double h) =>
+        ctx.DrawRectangle(null, Palette.Pen(Palette.Alpha(Palette.AccentColor, SelectedEdge)), new Rect(3.5, y + 1.5, Math.Max(0, HeaderW - 7), Math.Max(0, h - 3)), 6, 6);
 
     /// <summary>Lane columns covered by a child's clip, reused by <see cref="DrawFolderSummary"/> so it allocates nothing per frame.</summary>
     bool[] covered = [];
@@ -1577,7 +1597,7 @@ public sealed partial class TimelineView : Control
         bool sel = f.Id == SelectedFolderId;
         ctx.FillRectangle(sel ? Palette.Raised : Palette.Panel, row);
         ctx.FillRectangle(Palette.Alpha(c, sel ? 0.18 : 0.12), row);
-        if (sel) DrawSelectedPill(ctx, y, fh);
+        if (sel) DrawSelectedFrame(ctx, y, fh);
         for (int k = 0; k < 3; k++)
         {
             ctx.FillRectangle(Palette.Faint, new Rect(8, y + 12 + k * 5, 2, 2));
@@ -1949,7 +1969,7 @@ public sealed partial class TimelineView : Control
         // the web shows the filmstrip from SHOW_THUMBS_AT; audio-only media (native only) keeps the plain clip
         bool thumbs = showVideo && t.Track.Video && !c.Offline && lh >= ShowThumbsAt && c.VideoPath != null;
         var fill = c.Offline ? Palette.Alpha(color, silent ? 0.05 : sel ? 0.16 : 0.10) : thumbs ? null
-            : tint != null ? Palette.Alpha(color, sel ? 0.24 : 0.14) : Palette.Alpha(Palette.HoverColor, 0.4);
+            : tint != null ? Palette.Alpha(color, sel ? 0.24 : 0.14) : sel ? Palette.Alpha(color, 0.16) : Palette.Alpha(Palette.HoverColor, 0.4);
         var border = Palette.Pen(c.Offline ? Palette.Alpha(color, sel ? 0.9 : 0.45)
             : sel ? Palette.Alpha(color, tint != null ? 0.95 : 0.6) : tint != null ? Palette.Alpha(color, 0.45) : Palette.Line,
             (c.Offline || tint != null) && sel ? 1.5 : 1);
@@ -1982,11 +2002,11 @@ public sealed partial class TimelineView : Control
                     ctx.DrawRectangle(null, border, clip.Deflate(0.5), 4.5, 4.5); // over the frames, inside the clip
                 }
                 var geo = Waveform(c, model, w, thumbs ? clip.Bottom - clip.Height * 0.55 : y + 6, y + lh - 6, W);
-                // a tinted track keeps its color over the frames too (full strength there, the shade dims it); untinted goes white
-                var wave = silent ? Palette.Faint : tint != null ? Palette.Alpha(color, sel || thumbs ? 1 : 0.8)
-                    : thumbs && !sel ? Palette.Alpha(Colors.White, 0.85) : sel ? Palette.Accent : Palette.Alpha(Palette.DimColor, 0.8);
+                // the wave is the track's color or the accent, at full strength over the frames (the shade dims it); untinted goes white there
+                var wave = silent ? Palette.Faint : thumbs && tint == null && !sel ? Palette.Alpha(Colors.White, 0.85)
+                    : Palette.Alpha(color, sel || thumbs ? 1 : 0.8);
                 ctx.DrawGeometry(null, Palette.Pen(wave, 1), geo);
-                if (TransposeProgress?.Invoke(t) is { } progress) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), progress, FittingTempo?.Invoke(t) == true ? FittingTexts : TransposingTexts, null);
+                if (ClipRenderProgress?.Invoke(t, c) is { } progress) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), progress, model.Stretch != 1 ? FittingTexts : TransposingTexts, null);
                 else if (TempoProgress?.Invoke(c) is { } listened) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), listened, TempoTexts, TempoGlyph);
                 else if (ScaleProgress?.Invoke(c) is { } scaled) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), scaled, ScaleTexts, ToMidiGlyph);
                 else if (ToMidiProgress?.Invoke(c) is { } heard) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), heard, ToMidiTexts, ToMidiGlyph);
@@ -2515,17 +2535,16 @@ public sealed partial class TimelineView : Control
     Rect VolumeRect(int i) => new(52 + Indent(i) + VolumeShift(i), LaneY(i) + 40, 92 + Extra - Indent(i) - VolumeShift(i), 20);
     Rect PanRect(int i) => new(186 + Extra, LaneY(i) + 40, 24, 24);
 
-    /// <summary>A header's volume fader: a thick track with a mark at 100 and a fader cap (tracks and folders).</summary>
+    /// <summary>A header's volume fader, the mixer's <see cref="Fader"/> lying down: a dark slot lit up to the level, a
+    /// mark at 100 and the same cap (tracks and folders).</summary>
     static void DrawVolume(DrawingContext ctx, Rect v, double volume, IBrush fill)
     {
         double cy = v.Center.Y, px = v.X + Math.Clamp(volume / 1.5, 0, 1) * v.Width, unity = Math.Round(v.X + v.Width / 1.5) + 0.5;
-        ctx.DrawRectangle(Palette.Hover, null, new Rect(v.X, cy - 2.5, v.Width, 5), 2.5, 2.5);
-        ctx.DrawRectangle(fill, null, new Rect(v.X, cy - 2.5, Math.Max(0, px - v.X), 5), 2.5, 2.5);
-        ctx.DrawLine(Palette.Pen(Palette.Faint), new Point(unity, cy - 7), new Point(unity, cy - 4));
-        ctx.DrawLine(Palette.Pen(Palette.Faint), new Point(unity, cy + 4), new Point(unity, cy + 7));
-        var cap = new Rect(px - 5, cy - 8, 10, 16);
-        ctx.DrawRectangle(Palette.Fg, Palette.Pen(Palette.Panel), cap, 3, 3);
-        ctx.DrawLine(Palette.Pen(Palette.Panel, 1.5), new Point(cap.X + 2.5, cy), new Point(cap.Right - 2.5, cy));
+        ctx.DrawRectangle(Palette.App, Palette.Pen(Palette.Alpha(Palette.FaintColor, 0.6)), new Rect(v.X, cy - 2.5, v.Width, 5), 2.5, 2.5);
+        ctx.DrawRectangle(fill, null, new Rect(v.X + 1, cy - 1.5, Math.Max(0, px - v.X - 1), 3), 1.5, 1.5);
+        ctx.DrawLine(Palette.Pen(Palette.Dim), new Point(unity, cy - 8), new Point(unity, cy - 4));
+        ctx.DrawLine(Palette.Pen(Palette.Dim), new Point(unity, cy + 4), new Point(unity, cy + 8));
+        Fader.DrawSideCap(ctx, px, cy);
     }
 
     void DrawHeader(DrawingContext ctx, int i)
@@ -2540,7 +2559,7 @@ public sealed partial class TimelineView : Control
         if (isArmed || RecordingInto(i)) ctx.FillRectangle(Palette.Alpha(Palette.RecColor, 0.10), new Rect(0, y, HeaderW, lh));
         // a track in a folder is indented; the folder's color goes on the frame around the group (DrawFolderFrames)
         double ind = Indent(i);
-        if (sel) DrawSelectedPill(ctx, y, lh);
+        if (sel) DrawSelectedFrame(ctx, y, lh);
         if (Compact)
         {
             DrawCompactHeader(ctx, i);
@@ -2605,10 +2624,7 @@ public sealed partial class TimelineView : Control
             DrawVolume(ctx, VolumeRect(i), shownVolume, Palette.Accent);
             ctx.DrawText($"{shownVolume * 100:0}", 11, Palette.Fg, new Point(148 + Extra, y + 42), Palette.Mono);
             var pr = PanRect(i);
-            ctx.DrawEllipse(Palette.Raised, Palette.Pen(Palette.Line), pr.Center, 10, 10);
-            double angle = shownPan * Math.PI * 0.75 - Math.PI / 2;
-            ctx.DrawLine(Palette.Pen(Palette.Accent, 2), pr.Center,
-                new Point(pr.Center.X + Math.Cos(angle) * 8, pr.Center.Y + Math.Sin(angle) * 8));
+            Knob.Draw(ctx, pr.Center, pr.Width, shownPan * 135, 0, true, Hot(pr));
             ctx.DrawText(pan, 10.5, Palette.Faint, new Point(216 + Extra, y + 43), Palette.Mono);
         }
 
@@ -2660,12 +2676,12 @@ public sealed partial class TimelineView : Control
     void DrawSendKnob(DrawingContext ctx, Rect kr, Rect lr, SendKnob s, double amount, bool on, bool hot)
     {
         double kd = kr.Width;
-        DrawFxKnob(ctx, kr, amount, on, hot);
-        string value = Hundreds[Math.Clamp((int)Math.Round(amount * 100), 0, 100)];
         bool inside = kd >= 36;
+        Knob.Draw(ctx, kr.Center, kd, -135 + Math.Clamp(amount, 0, 1) * 270, -135, on, hot, inside);
+        string value = Hundreds[Math.Clamp((int)Math.Round(amount * 100), 0, 100)];
         if (inside)
         {
-            var vt = Palette.Text(value, kd >= 50 ? 12 : 10.5, on ? Palette.Fg : Palette.Faint, Palette.Mono);
+            var vt = Palette.Text(value, kd >= 50 ? 12 : 10.5, on ? Palette.Fg : Palette.Dim, Palette.Mono);
             ctx.DrawText(vt, new Point(kr.Center.X - vt.Width / 2, kr.Center.Y - vt.Height / 2));
         }
         if (!inside && hot)
@@ -2696,34 +2712,6 @@ public sealed partial class TimelineView : Control
             bool dragging = gesture == "fx" && fxFolder == f && fxRow == k;
             DrawSendKnob(ctx, kr, FolderLabelRect(f, k, d), sends[k], amount, on, dragging || (gesture == null && kr.Inflate(4).Contains(lastPointer)));
         }
-    }
-
-    /// <summary>An effect knob, drawn like the mixer's big <see cref="Knob"/>: a cap, a 270° track lit from zero to the
-    /// amount (accent when on, grey when off) and a pointer. The arcs are short round-capped lines instead of a
-    /// geometry, so a redraw (every pointer move) allocates nothing.</summary>
-    static void DrawFxKnob(DrawingContext ctx, Rect r, double amount, bool on, bool hot, bool bipolar = false)
-    {
-        double d = r.Width, stroke = Math.Max(2.5, d / 12), rad = d / 2 - stroke;
-        var c = r.Center;
-        Point Polar(double deg, double len)
-        {
-            double a = (deg - 90) * Math.PI / 180;
-            return new Point(c.X + len * Math.Cos(a), c.Y + len * Math.Sin(a));
-        }
-        void Arc(IPen pen, double from, double to)
-        {
-            int n = Math.Max(1, (int)Math.Ceiling((to - from) / 6));
-            for (int s = 0; s < n; s++) ctx.DrawLine(pen, Polar(from + (to - from) * s / n, rad), Polar(from + (to - from) * (s + 1) / n, rad));
-        }
-        double angle = -135 + Math.Clamp(amount, 0, 1) * 270;
-        ctx.DrawEllipse(Palette.Raised, Palette.Pen(hot ? Palette.Faint : Palette.Line), c, rad - stroke * 1.1, rad - stroke * 1.1);
-        Arc(Palette.Pen(hot ? Palette.Faint : Palette.Line, stroke, PenLineCap.Round), -135, 135);
-        // a bipolar knob (Transponer) lights from the top, where its middle value is, to either side
-        if (bipolar) { if (Math.Abs(angle) > 0.5) Arc(Palette.Pen(on ? Palette.Accent : Palette.Faint, stroke, PenLineCap.Round), Math.Min(0, angle), Math.Max(0, angle)); }
-        else if (angle > -134.5) Arc(Palette.Pen(on ? Palette.Accent : Palette.Faint, stroke, PenLineCap.Round), -135, angle);
-        // a big knob keeps its centre for the amount, so its pointer is a short tick at the rim
-        ctx.DrawLine(Palette.Pen(on ? Palette.Fg : Palette.Dim, d >= 36 ? 2.5 : 2, PenLineCap.Round),
-            Polar(angle, d >= 36 ? rad * 0.62 : rad * 0.3), Polar(angle, rad - stroke * 1.6));
     }
 
     /// <summary>The header's meter: two thin bars at the right edge, wider and taller in the compact column.</summary>

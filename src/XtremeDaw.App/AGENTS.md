@@ -104,7 +104,7 @@ Respetan la cultura del sistema (en es-AR, con coma):
   `failed` en rojo si no se pudo guardar). En las filas el hover lo marca la fila
   (fondo `Raised` y borde `Line`); en el `CheckBox` brilla solo la cajita. Va como `Effect`
   del botón: un `BoxShadow` en el presentador queda cortado. Otra excepción pedida por el usuario: la tapa del fader
-  (`Fader`) imita la de una consola, con sombreado, ranuras y una sombra abajo, para que se vea y se agarre fácil. Y la
+  (`Fader`) y las perillas (`Knob.Draw`, con el mismo criterio) imitan las de una consola, con sombreado, ranuras y una sombra abajo, para que se vean y se agarren fácil. Y la
   línea de los separadores (timeline y mixer) lleva un brillo suave de su color (el acento si no tiene uno). Los botones de color (acento, primario, peligro, grabar,
   `lit`) no cambian de color en hover: el glow es la respuesta. Su fondo y su texto van en el presentador
   (`/template/ ContentPresenter#PART_ContentPresenter`, sin estado en el selector), como los chips ON: puesto solo en
@@ -124,7 +124,7 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 | Clase | Qué es |
 |---|---|
 | `Button.chip` / `ToggleButton.chip` | botón normal de contorno: fondo transparente, borde `Line`, texto `Dim` (`Faint` si es un toggle apagado). Activado (o `.on`): fondo `AccentSoft`, borde acento al 40 %, texto `Accent`. Deshabilitado: opacidad 0,35 |
-| `Border.seg` + `ToggleButton.seg` | control segmentado: caja `Raised` y la opción activa como pastilla blanca al 11 %. `.seg.pick` = variante de acento |
+| `Border.seg` + `ToggleButton.seg` | control segmentado: caja `Raised` y la opción activa como pastilla blanca al 11 %. `.seg.pick` = variante de acento; con `.flat`, filas de texto sin glow (selector de escalas) |
 | `Border.metro` + `ToggleButton.cell` + `Border.vsep` | recuadro oscuro del transporte, con celdas valor arriba (`TextBlock.metro-value`) y etiqueta abajo (`TextBlock.metro-label`) |
 | `StackPanel.bar-cell` | celda de la barra de transporte (valor arriba, `metro-label` abajo) |
 | `Button.tbtn` / `ToggleButton.tbtn` | botones del transporte: planos, 36×36, ícono `Fg`, hover `Hover`; activo (o `.on`), ícono `Accent`. `Button.clock` = el reloj |

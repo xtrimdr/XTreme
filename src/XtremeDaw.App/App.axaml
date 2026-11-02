@@ -627,7 +627,7 @@
     </Style>
     <!-- text never glows: on transparent buttons (whole rows, links, check boxes) the glow would trace the letters.
          Rows answer with their own hover; a check box glows only its box -->
-    <Style Selector="Button.swatch:pointerover, Button.rowmain:pointerover, Button.tplmain:pointerover, Button.link:pointerover, CheckBox:pointerover, RadioButton:pointerover">
+    <Style Selector="Button.swatch:pointerover, Button.rowmain:pointerover, Button.tplmain:pointerover, Button.link:pointerover, ToggleButton.flat:pointerover, CheckBox:pointerover, RadioButton:pointerover">
       <Setter Property="Effect" Value="{x:Null}" />
     </Style>
     <Style Selector="CheckBox:pointerover /template/ Border#NormalRectangle">
