@@ -480,7 +480,7 @@ public partial class MainWindow
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            Status(Loc.T("color.tpl.saveError", e.Message));
+            Toast(Loc.T("color.tpl.saveError", e.Message));
             return false;
         }
     }

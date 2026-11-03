@@ -122,6 +122,8 @@ the [Spanish version](DETALLES.md#xtlab).
 
 `xtlab proyecto verificar-bucles`: checks looped takes, MIDI clips and automation blocks: repeats, following the original, splitting and saving.
 
+`xtlab proyecto verificar-sin-guardar`: checks the project without a place: where it lives, the recent list, finding it again at startup and Save as.
+
 `xtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: optional component state, install, and a download test against a local server.
 
 `xtlab proyecto vinculados folder`: each take and where its files are. `xtlab proyecto copiar-vinculado folder media`: copies what is linked into media/. `xtlab proyecto reencontrar folder media --archivo X` or `folder [media] --buscar-en Y`: finds what is missing, by hand or by name and size. `xtlab proyecto verificar-vinculados`: the checks, with a process that really dies mid-copy (`proyecto cortar-copia`).

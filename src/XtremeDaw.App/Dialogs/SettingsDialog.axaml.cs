@@ -329,8 +329,13 @@ public sealed partial class SettingsDialog : UserControl
             e.Handled = true;
             return true;
         }
-        if (e.Key == Key.Escape) HideDialog();
-        e.Handled = true;
+        // the other keys reach the focused control (the search, IP and alias boxes need Backspace, arrows and
+        // Enter), but never the window's shortcuts
+        if (e.Key == Key.Escape)
+        {
+            HideDialog();
+            e.Handled = true;
+        }
         return true;
     }
 
@@ -648,9 +653,42 @@ public sealed partial class SettingsDialog : UserControl
         s.Children.Add(saveHelp);
         s.Children.Add(Help(Loc.T("set.save.always")));
         savePage.Children.Add(Card(s));
+        BuildStartup();
         BuildImport();
         BuildEncoder();
         return minutes;
+    }
+
+    readonly List<ToggleButton> startupButtons = [];
+
+    /// <summary>"Al arrancar": the projects manager or straight into an empty project (<see cref="StartupMode"/>);
+    /// the same choice as "Mostrar al arrancar" in the manager.</summary>
+    void BuildStartup()
+    {
+        var modes = new UniformGrid { Columns = 2 };
+        foreach (var (mode, text, tip) in new[]
+        {
+            (StartupMode.Projects, Loc.T("set.startup.projects"), Loc.T("set.startup.projects.tip")),
+            (StartupMode.Empty, Loc.T("set.startup.empty"), Loc.T("set.startup.empty.tip")),
+        })
+        {
+            var b = new ToggleButton { Content = text, Tag = mode, Classes = { "seg" }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            ToolTip.SetTip(b, tip);
+            // a click on the chosen one would uncheck it: always show the setting again
+            b.Click += (_, _) => { StartupMode.Set(mode); Refresh(); };
+            startupButtons.Add(b);
+            modes.Children.Add(b);
+        }
+        void Refresh()
+        {
+            foreach (var b in startupButtons) b.IsChecked = (string)b.Tag! == StartupMode.Mode;
+        }
+        StartupMode.Changed += Refresh;
+        Refresh();
+        var s = Section(Loc.T("set.startup.section"));
+        s.Children.Add(Field(Loc.T("set.startup.when"), new Border { Classes = { "seg" }, Child = modes }));
+        s.Children.Add(Help(Loc.T("set.startup.help")));
+        savePage.Children.Add(Card(s));
     }
 
     /// <summary>"Importación" (native only): what an import does with the file, see <see cref="ImportMode"/>; applied at once.</summary>

@@ -4,6 +4,7 @@ using Avalonia.VisualTree;
 using XtremeDaw.App.Controls;
 using XtremeDaw.App.Audio;
 using XtremeDaw.Audio;
+using XtremeDaw.Projects;
 
 namespace XtremeDaw.App;
 
@@ -88,7 +89,9 @@ public partial class MainWindow
     {
         // dirty waits for a save only after each edit; in the other modes it is "Sin guardar" until it goes
         string state = store == null ? "none" : store.ReadOnly ? "readonly" : saveFailure != null ? "error"
-            : !saving.IsCompleted || dirty && SaveMode.Mode == SaveMode.OnEdit ? "saving" : dirty ? "unsaved" : "saved";
+            : !saving.IsCompleted || dirty && SaveMode.Mode == SaveMode.OnEdit ? "saving"
+            // without a place it isn't saved where the user can find it until "Guardar" asks where
+            : dirty || Untitled && UntitledProjects.HasContent(store.Project) ? "unsaved" : "saved";
         if (state != saveStateShown)
         {
             saveStateShown = state;

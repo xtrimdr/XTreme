@@ -43,6 +43,9 @@ static class Palette
     public static readonly IBrush Rec = new ImmutableSolidColorBrush(RecColor);
     public static readonly IBrush RecSoft = Brush("#24ef4444");
     public static readonly IBrush Composition = Brush("#09090b");
+    /// <summary>Mute on (M lit, a muted track) and the meters' -6..0 dB zone (App.axaml Mute).</summary>
+    public static readonly Color MuteColor = Color.Parse("#f59e0b");
+    public static readonly IBrush Mute = new ImmutableSolidColorBrush(MuteColor);
     public static Color AppColor => app.Color;
     public static Color RaisedColor => raised.Color;
     public static Color HoverColor => hover.Color;

@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "0.9.14",
+      "items": [
+        {
+          "icon": "E8F4",
+          "title": "Start in an empty project",
+          "text": "Turn off **Show at startup** in Projects and XTreme opens straight in a new project. **Save** asks where it goes. Also in Settings → Saving and export.",
+          "topic": "new-project"
+        },
+        {
+          "icon": "E700",
+          "title": "Menu bar",
+          "text": "File, Edit, Track, View, Transport, Tools and Help, at the top left, with each action's key beside it. Settings, Help, What's new and Send feedback are there."
+        },
+        {
+          "icon": "E7E7",
+          "title": "Messages right away",
+          "text": "The bell is gone: errors and what couldn't be done show as a notice at the bottom right."
+        },
+        {
+          "icon": "E74D",
+          "title": "Discard asks first",
+          "text": "While recording, Discard sits apart from Stop and asks for a second click before throwing the recording away.",
+          "topic": "record"
+        }
+      ]
+    },
+    {
       "version": "0.9.13",
       "items": [
         {

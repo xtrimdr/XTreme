@@ -38,6 +38,8 @@
     <SolidColorBrush x:Key="RecSoft" Color="#24ef4444" />
     <!-- the tuner's "in tune": the mixer meters' green (Palette.MeterGreen / Palette.InTune) -->
     <SolidColorBrush x:Key="InTune" Color="#22c55e" />
+    <!-- mute on, and the meters' -6..0 dB zone (Palette.Mute) -->
+    <SolidColorBrush x:Key="Mute" Color="#f59e0b" />
 
     <!-- Fluent controls (sliders, switches) take the accent from these -->
     <Color x:Key="SystemAccentColor">#22d3ee</Color>
@@ -174,7 +176,8 @@
     <Style Selector="Button.chip.discard">
       <Setter Property="Foreground" Value="{StaticResource Dim}" />
     </Style>
-    <Style Selector="Button.chip.discard:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.discard:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <!-- armed = the first click asked for confirmation: it stays red until the second click or the timeout -->
+    <Style Selector="Button.chip.discard:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.discard:pressed /template/ ContentPresenter#PART_ContentPresenter, Button.chip.discard.armed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource RecSoft}" />
       <Setter Property="BorderBrush" Value="#66ef4444" />
       <Setter Property="Foreground" Value="{StaticResource Rec}" />
@@ -418,6 +421,10 @@
     <Style Selector="Button.ghost.on /template/ ContentPresenter#PART_ContentPresenter, Button.ghost.on:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.ghost.on:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource AccentSoft}" />
       <Setter Property="Foreground" Value="{StaticResource Accent}" />
+    </Style>
+    <!-- a mute that is on: amber, like M everywhere -->
+    <Style Selector="Button.ghost.muted /template/ ContentPresenter#PART_ContentPresenter, Button.ghost.muted:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.ghost.muted:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{StaticResource Mute}" />
     </Style>
     <!-- theme swatches: the swatch itself is the button, no hover fill -->
     <Style Selector="Button.swatch">

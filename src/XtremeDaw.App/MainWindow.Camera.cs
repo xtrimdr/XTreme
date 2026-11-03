@@ -28,6 +28,6 @@ public partial class MainWindow
         string? err = cap?.Error;
         if (err == cameraErrorShown) return;
         cameraErrorShown = err;
-        if (err != null) Status(err);
+        if (err != null) Toast(err);
     }
 }

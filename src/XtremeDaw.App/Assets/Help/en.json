@@ -11,12 +11,12 @@
           "icon": "E768",
           "title": "Record, mix and export",
           "keywords": "start begin tutorial first time how to use",
-          "intro": "The whole path, from the first take to the final file.",
+          "intro": "The whole path, from the first recording to the final file.",
           "steps": [
             "Connect your audio interface and choose it in **Settings → Inputs and outputs**.",
             "In **Projects**, click **New project** and choose **Video + audio** or **Audio only**.",
             "Create a track with the **+** at the foot of the track headers and arm it with its **●**.",
-            "Record with {key:record}. Press it again to stop and save the take.",
+            "Record with {key:record}. Press it again to stop and save the channel.",
             "Go to the **Mixer** with {key:mixer} and set volume, pan and effects.",
             "Click {icon:E896} **Export MP4** or **Export audio**, at the top right."
           ],
@@ -46,7 +46,7 @@
           "icon": "E838",
           "title": "Create or open a project",
           "keywords": "new manager projects template open folder file xtp start song",
-          "intro": "Each song is a project with its own folder. The app starts in **Projects**.",
+          "intro": "Each song is a project with its own folder. The app starts in **Projects** or in an empty project.",
           "steps": [
             "Click **New project** and give it a name.",
             "Choose **Video + audio** or **Audio only**.",
@@ -55,7 +55,8 @@
             "To save it somewhere other than the projects folder, click **Save in…** before creating it."
           ],
           "notes": [
-            "To return to the list from an open project, click the project name in the top bar and choose **Projects…**."
+            "To return to the list from an open project, click the project name in the top bar or open **File → Projects…**.",
+            "To start straight in an empty project, turn off **Show at startup** at the bottom of **Projects**, or choose **Empty project** in Settings → Saving and export. **Save** asks where it goes."
           ],
           "see": ["video-or-audio", "autosave", "share-project"]
         },
@@ -98,7 +99,7 @@
           "keywords": "changes version new update release notes changelog",
           "intro": "What changed in each version. It shows by itself the first time you open a new version.",
           "steps": [
-            "Click {icon:E789} in the title bar or in **Projects**, or **What's new** in this help.",
+            "Open **Help → What's new**, click {icon:E789} in **Projects** or **What's new** in this help.",
             "At the top, choose the version.",
             "**See in help** opens that item's topic."
           ]
@@ -109,12 +110,12 @@
       "id": "record",
       "icon": "E7C8",
       "title": "Record",
-      "hint": "Takes, click, inputs, tuner, camera and latency.",
+      "hint": "Recording, click, inputs, tuner, camera and latency.",
       "topics": [
         {
           "id": "first-take",
           "icon": "E7C8",
-          "title": "Record a take",
+          "title": "Record a channel",
           "keywords": "recording rec guitar vocal microphone arm track",
           "intro": "Recording goes to the armed tracks, from the playhead.",
           "steps": [
@@ -122,11 +123,11 @@
             "Arm it with its **●** or with {key:arm}. It turns red.",
             "Put the playhead where you want to start. {key:toStart} goes back to the beginning.",
             "Record with {key:record}.",
-            "Stop with {key:record} or {key:play}. The take stays on the track. With **Discard**, it doesn't."
+            "Stop with {key:record} or {key:play}. The channel stays on the track. With **Discard** and a second click to confirm, it doesn't."
           ],
           "notes": [
             "If **Record** is off, no track is armed.",
-            "Takes are written to disk as you record. If the power fails, the take is recovered when you open the project."
+            "Recordings are written to disk as you record. If the power fails, the recording is recovered when you open the project."
           ],
           "see": ["click", "pick-input", "punch-in", "take-many"]
         },
@@ -139,7 +140,7 @@
           "steps": [
             "Arm all the tracks with their **●**.",
             "Click each track's input chip and choose its input.",
-            "Record with {key:record}. You get one take per track."
+            "Record with {key:record}. You get one channel per track."
           ],
           "see": ["pick-input", "first-take"]
         },
@@ -173,7 +174,7 @@
             "The **▾** next to it chooses the click sound."
           ],
           "notes": [
-            "The click never goes into takes or exports."
+            "The click never goes into recordings or exports."
           ],
           "see": ["tempo", "first-take"]
         },
@@ -181,8 +182,8 @@
           "id": "punch-in",
           "icon": "E72C",
           "title": "Re-record a section",
-          "keywords": "overdub redo fix mistake punch replace take",
-          "intro": "A new take replaces only the section it covers.",
+          "keywords": "overdub redo fix mistake punch replace channel take",
+          "intro": "What you record again replaces only the section it covers.",
           "steps": [
             "Put the playhead a little before the mistake.",
             "Arm the track and record with {key:record}.",
@@ -190,7 +191,7 @@
           ],
           "notes": [
             "What was replaced isn't lost: it stays in **History** and **Library**.",
-            "**Lock clip** protects a good take: recording won't overwrite it."
+            "**Lock clip** protects a good channel: recording won't overwrite it."
           ],
           "see": ["undo-versions", "lock", "library"]
         },
@@ -213,7 +214,7 @@
           "id": "latency",
           "icon": "E895",
           "title": "Calibrate latency",
-          "keywords": "out of sync late early delay take shifted calibration loopback",
+          "keywords": "out of sync late early delay channel shifted calibration loopback",
           "intro": "Makes what you record land exactly in time with what you were hearing.",
           "steps": [
             "**With a cable**: connect an interface output to an input. Lower your headphones and measure. It's the most accurate.",
@@ -222,7 +223,7 @@
           ],
           "notes": [
             "Calibrate again if you change interface or buffer. Each input and output pair keeps its own measurement.",
-            "To adjust a single take, use **Audio offset** in the channel's **Sync** section."
+            "To adjust a single channel, use **Audio offset** in the channel's **Sync** section."
           ],
           "settings": "sync",
           "see": ["audio-setup", "video-sync"]
@@ -232,7 +233,7 @@
           "icon": "E722",
           "title": "Record with a camera",
           "keywords": "webcam phone droidcam video film ip",
-          "intro": "In a **Video + audio** project, the camera records along with the take.",
+          "intro": "In a **Video + audio** project, the camera records along with the audio.",
           "steps": [
             "Choose the camera and resolution in Settings. For a phone, **IP DroidCam**.",
             "Check the picture in the live monitor, next to the preview.",
@@ -254,7 +255,7 @@
           "icon": "E8B2",
           "title": "Move and trim clips",
           "keywords": "clip drag shorten fade in out edges stretch",
-          "intro": "A clip is a piece of a take. Trimming doesn't touch the file.",
+          "intro": "A clip is a piece of a recorded channel. Trimming doesn't touch the file.",
           "steps": [
             "To **move** it, drag the clip, onto another track too.",
             "To **trim** it, drag the lower handle on an edge.",
@@ -294,7 +295,7 @@
           "icon": "E8EE",
           "title": "Loop a clip",
           "keywords": "loop repeat extend passes garageband",
-          "intro": "Extends a clip by repeating it. Works on takes, MIDI clips and automation blocks.",
+          "intro": "Extends a clip by repeating it. Works on audio clips, MIDI clips and automation blocks.",
           "steps": [
             "Hover the clip's top right corner: the two-arrow pointer appears.",
             "Drag to the right: the clip repeats up to where you let go, and the last pass is cut there.",
@@ -302,7 +303,7 @@
             "To remove it, drag the corner back to the end of the first pass."
           ],
           "notes": [
-            "On a take, the repeats follow the original: move or trim it and they are made again. A repeat you edit by itself becomes a clip of its own.",
+            "On an audio clip, the repeats follow the original: move or trim it and they are made again. A repeat you edit by itself becomes a clip of its own.",
             "On a MIDI clip or an automation block, whatever you edit in any pass changes them all."
           ],
           "see": ["split-copy", "move-trim", "automation"]
@@ -334,7 +335,7 @@
             "With {key:deleteClose}, what follows also shifts and closes the gap."
           ],
           "notes": [
-            "Works on takes and MIDI clips."
+            "Works on audio and MIDI clips."
           ],
           "see": ["tools", "undo-versions"]
         },
@@ -356,7 +357,7 @@
           ],
           "notes": [
             "A click on a pattern in Patterns or on a sample in the Library also picks it for the pencil and the brush.",
-            "Split, Delete and Listen work on takes and MIDI clips."
+            "Split, Delete and Listen work on audio and MIDI clips."
           ],
           "see": ["navigate"]
         },
@@ -394,7 +395,7 @@
             "If you move or delete a linked file, its clips go offline. In the Library they show the **Linked** mark.",
             "To bring a linked file inside, click **Copy to project** on its row in the Library. Your file stays where it is.",
             "If a file moved, click **Choose the file…** or **Search a folder…** in the Library or in the grey clip's menu.",
-            "Deleting a linked take removes it from the project: your file isn't touched. A package carries a copy of linked files.",
+            "Deleting a linked channel removes it from the project: your file isn't touched. A package carries a copy of linked files.",
             "Formats only FFmpeg reads can't be linked: they come in as WAV.",
             "Formats: WAV, MP3, FLAC, OGG, M4A and AIFF. Some need FFmpeg."
           ],
@@ -508,7 +509,7 @@
             "**History → Exports**: go back to the exact mix of an exported file."
           ],
           "notes": [
-            "Going back to a version saves the current state first, and takes recorded later aren't lost."
+            "Going back to a version saves the current state first, and what you recorded later isn't lost."
           ],
           "see": ["autosave"]
         }
@@ -599,7 +600,7 @@
             "Add a **Compressor** to the track.",
             "Open the preset list and go through a category: **Vocals**, **Guitars**, **Bass**, **Drums**, **Percussion** and the rest.",
             "Pick a preset and set **Amount**.",
-            "If it does not compress as expected, click **Analyze take**, next to the preset: it fits threshold and level to the take.",
+            "If it does not compress as expected, click **Analyze channel**, next to the preset: it fits threshold and level to it.",
             "On a bus or the master use **Buses and mix**: they bind the sound without changing the level."
           ],
           "notes": [
@@ -611,10 +612,10 @@
           "id": "guitar-tone",
           "icon": "F4A5",
           "title": "Shape a guitar sound",
-          "keywords": "tone saturation life compressor strumming arpeggio lead eq tube tape",
+          "keywords": "tone saturation drive compressor strumming arpeggio lead eq tube tape",
           "intro": "A starting point with the built-in effects.",
           "steps": [
-            "**Life**: adds saturation. Choose **Tube** (warm) or **Tape** (compact) and the amount.",
+            "**Saturation**: choose **Tube** (warm) or **Tape** (compact) and set the **Drive**.",
             "**Compressor**: under **Guitars**, choose **Strumming**, **Arpeggio**, **Lead** or another preset, and set **Amount**.",
             "**EQ**: choose a preset and fix what's left.",
             "Use the **Gate** if there's noise or hum between notes."
@@ -858,7 +859,7 @@
         {
           "id": "framing",
           "icon": "E92C",
-          "title": "Frame a take",
+          "title": "Frame a channel",
           "keywords": "zoom move picture crop mirror panel",
           "intro": "Framing belongs to each clip.",
           "steps": [
@@ -903,8 +904,8 @@
           "keywords": "out of sync lips late video early camera latency",
           "intro": "If the picture arrives late compared to the audio.",
           "steps": [
-            "For new takes, set **Camera latency** in Settings.",
-            "For a take already recorded, use the channel's **Sync** section."
+            "For what you record from now on, set **Camera latency** in Settings.",
+            "For a channel already recorded, use the channel's **Sync** section."
           ],
           "settings": "sync",
           "see": ["latency"]
@@ -1155,7 +1156,7 @@
       "id": "projects",
       "icon": "E8B7",
       "title": "Projects and files",
-      "hint": "Saving, takes, disk space and sharing.",
+      "hint": "Saving, recordings, disk space and sharing.",
       "topics": [
         {
           "id": "autosave",
@@ -1169,7 +1170,7 @@
             "In **Settings → Saving and export** you can choose when it saves: on each edit, every few minutes or by hand."
           ],
           "notes": [
-            "Takes and exports always save, whatever the mode."
+            "Recordings and exports always save, whatever the mode."
           ],
           "settings": "save",
           "see": ["undo-versions"]
@@ -1195,17 +1196,17 @@
         {
           "id": "library",
           "icon": "E8F1",
-          "title": "Find takes and free up space",
-          "keywords": "library deleted take recover disk full space unused recycle bin offline moved file missing linked copy",
-          "intro": "**Library**, in the right panel, lists every take: used or not.",
+          "title": "Find recordings and free up space",
+          "keywords": "library deleted channel take recover disk full space unused recycle bin offline moved file missing linked copy",
+          "intro": "**Library**, in the right panel, lists everything recorded and imported: used or not.",
           "steps": [
-            "Listen to a take with its play button.",
+            "Listen to each one with its play button.",
             "Drag it onto the timeline to use it again.",
             "**Delete unused** sends what isn't on the timeline to the Recycle Bin."
           ],
           "notes": [
             "Removing a clip from the timeline never deletes its file.",
-            "A take whose file is missing shows the **Offline** mark and the buttons to find it again."
+            "A channel whose file is missing shows the **Offline** mark and the buttons to find it again."
           ],
           "see": ["punch-in", "import"]
         },
@@ -1217,7 +1218,7 @@
           "intro": "A package is a ZIP with everything needed.",
           "steps": [
             "In **Projects**, click the row's package button.",
-            "Choose **To share** (what plays) or **Full backup** (also unused takes, versions and exports).",
+            "Choose **To share** (what plays) or **Full backup** (also unused audio, versions and exports).",
             "On the other side, **Open package…** brings it in as a new project."
           ],
           "see": ["new-project"]
@@ -1280,7 +1281,7 @@
       "id": "trouble",
       "icon": "E7BA",
       "title": "If something doesn't work",
-      "hint": "No sound, dropouts, shifted takes, camera, plugins and FFmpeg.",
+      "hint": "No sound, dropouts, shifted channels, camera, plugins and FFmpeg.",
       "topics": [
         {
           "id": "no-sound",
@@ -1331,13 +1332,13 @@
         {
           "id": "offset-take",
           "icon": "E895",
-          "title": "My take lands out of time",
+          "title": "My channel lands out of time",
           "keywords": "out of sync shifted late click doesnt match",
           "intro": "Your interface's real latency hasn't been measured yet.",
           "steps": [
             "Calibrate in **Settings → Sync**.",
-            "Record a new take: it's compensated automatically.",
-            "On an old take, use **Audio offset**, or move it with **Alt** to free it from the grid."
+            "Record again: it's compensated automatically.",
+            "On an old channel, use **Audio offset**, or move it with **Alt** to free it from the grid."
           ],
           "settings": "sync",
           "see": ["latency"]
@@ -1438,7 +1439,7 @@
           "keywords": "comments feedback problem bug idea issue github support",
           "intro": "Reports go to GitHub, where anyone can see them. You need a free account.",
           "steps": [
-            "Click **Send feedback** in the title bar or in About.",
+            "Open **Help → Send feedback**, or click it in About.",
             "Choose **Bug** or **Suggestion** and write a title and the description.",
             "Check the information included and untick it if you don't want to send it.",
             "Click **Continue on GitHub**, review the report and send it from that page.",

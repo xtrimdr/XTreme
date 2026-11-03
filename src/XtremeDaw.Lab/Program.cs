@@ -252,6 +252,7 @@ static class Program
               proyecto verificar-guardar-como   el archivo .xtp y Guardar como: el formato anterior, renombrar, rescatar del .bak, copiar a otra carpeta
               proyecto verificar-bucles    clips, clips MIDI y bloques de automatización en bucle: repeticiones, seguir al original, dividir, guardar
               proyecto verificar-bloqueo   la regla del bloqueo: un clip o una pista bloqueados no se mueven, recortan ni borran, y grabar no los pisa
+              proyecto verificar-sin-guardar   el proyecto sin guardar: dónde vive, recientes, recuperarlo al arrancar y Guardar como
               proyecto verificar-ab        el A/B de la mezcla: ida y vuelta, mute y solo quietos, pistas y buses nuevos, deshacer
               proyecto editar carpeta ganancia clip dB | curva clip "seg:dB,..."   volumen del clip y su curva (seg desde el inicio de la toma)
               proyecto verificar-tomas     verifica a qué pista va una toma nueva, su nombre y su canal

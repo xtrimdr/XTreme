@@ -214,7 +214,7 @@
 
       <!-- footer: projects folder -->
       <Border Grid.Row="5" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="24,12">
-        <Grid ColumnDefinitions="*,Auto,Auto">
+        <Grid ColumnDefinitions="*,Auto,Auto,Auto">
           <StackPanel VerticalAlignment="Center">
             <TextBlock Text="{loc:T proj.root}" FontSize="11" Foreground="{StaticResource Faint}" />
             <TextBlock x:Name="RootText" Classes="mono" FontSize="11" Foreground="{StaticResource Dim}" TextTrimming="CharacterEllipsis" Text="…" />
@@ -226,6 +226,9 @@
               <TextBlock Text="{loc:T proj.change}" />
             </StackPanel>
           </Button>
+          <!-- off: the window opens straight in an empty project (StartupMode) -->
+          <CheckBox Grid.Column="3" x:Name="ShowAtStart" Margin="20,0,0,0" VerticalAlignment="Center" FontSize="12"
+                    Content="{loc:T proj.showAtStart}" ToolTip.Tip="{loc:T proj.showAtStart.tip}" />
         </Grid>
       </Border>
     </Grid>

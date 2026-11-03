@@ -436,7 +436,7 @@ public static partial class Mp4Exporter
             throw new ExportException("No hay canales activos para exportar.");
         var takes = job.Range is { } range ? ExportRange.Takes(job.Takes, range) : job.Takes;
         if (takes.Count == 0)
-            throw new ExportException(Texts.T("err.export.rangeEmpty", "No hay tomas entre A y B."));
+            throw new ExportException(Texts.T("err.export.rangeEmpty", "No hay clips entre A y B."));
 
         var (outW, outH) = ExportSize(job.AspectRatio, job.Resolution);
         int numTakes = takes.Count;

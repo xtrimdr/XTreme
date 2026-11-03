@@ -56,11 +56,16 @@ public sealed partial class PianoRollView
         ctx.DrawText(text, new Point(Math.Max(2, KeyW - 6 - text.Width), y + (rowH - text.Height) / 2));
     }
 
-    /// <summary>A slide's wedge and a portamento's dot, so what a note does shows on it.</summary>
+    /// <summary>A slide's bar (along the top, at the end it slides from) and a portamento's dot, so what a note does
+    /// shows on it. Drawn after the velocity gauge, which runs along the bottom.</summary>
     void DrawNoteMarks(DrawingContext ctx, MidiNote n, Rect r)
     {
         if (r.Width < 8) return;
-        if (n.Slide) ctx.FillRectangle(Palette.Fg, new Rect(r.X + 1, r.Bottom - 3, Math.Min(10, r.Width - 2), 2));
+        if (n.Slide)
+        {
+            double w = Math.Min(10, r.Width - 2);
+            ctx.FillRectangle(Palette.Fg, new Rect(r.Right - 1 - w, r.Y + 1, w, 2));
+        }
         if (n.Porta) ctx.FillRectangle(Palette.Fg, new Rect(r.X + 2, r.Y + 2, 3, 3), 1.5f);
     }
 

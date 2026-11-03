@@ -45,11 +45,8 @@ public partial class MainWindow
             About.SetUpdate(AboutDialog.UpdateState.New, latest);
             if (!announce) return;
             string v = latest.Version.ToString(3);
-            if (AppConfig.Get("updateNotified") == latest.Tag)
-            {
-                Status(Loc.T("update.bell", v));
-                return;
-            }
+            // told once per version: after that only "Acerca de" says so
+            if (AppConfig.Get("updateNotified") == latest.Tag) return;
             Toast(Loc.T("update.toast", v, UpdateCheck.Current.ToString(3)), Loc.T("update.toast.title"), sticky: true,
                 action: (Loc.T("about.update.download"), () => Explorer.Browse(latest.Url)));
             try { AppConfig.Set("updateNotified", latest.Tag); }

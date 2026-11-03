@@ -166,7 +166,7 @@ public partial class MainWindow
         fourth.Children.Add(ToolRow(Loc.T("tool.mute"), Shortcuts.Tip(Loc.T("tool.mute.tip"), Shortcuts.PianoPrefix + "mute"), pianoRoll.ToggleMute));
         fourth.Children.Add(ToolRow(Loc.T("tool.group"), Shortcuts.Tip(Loc.T("tool.group.tip"), Shortcuts.PianoPrefix + "group"), pianoRoll.GroupNotes));
         fourth.Children.Add(ToolRow(Loc.T("tool.ungroup"), null, pianoRoll.UngroupNotes));
-        fourth.Children.Add(ToolRow(Loc.T("tool.note"), Loc.T("tool.note.tip"), () => { if (pianoRoll.SelectedNotes.FirstOrDefault() is { } n) OpenNoteCard(n); else Status(Loc.T("tool.note.none")); }));
+        fourth.Children.Add(ToolRow(Loc.T("tool.note"), Loc.T("tool.note.tip"), () => { if (pianoRoll.SelectedNotes.FirstOrDefault() is { } n) OpenNoteCard(n); else Toast(Loc.T("tool.note.none")); }));
 
         var fifth = new StackPanel();
         fifth.Children.Add(CardTitle(Loc.T("tool.group.files")));
@@ -199,7 +199,7 @@ public partial class MainWindow
     {
         if (MidiTools.Find(id) is not { } tool || store == null || store.ReadOnly) return;
         CloseTool(accept: true);
-        if (pianoClipId == null) { Status(Loc.T("scale.fit.noClip")); return; }
+        if (pianoClipId == null) { Toast(Loc.T("scale.fit.noClip")); return; }
         if (tool.Instant)
         {
             pianoRoll.RunTool(tool);
@@ -466,7 +466,7 @@ public partial class MainWindow
     void OpenLiveArp()
     {
         var t = PianoTrack() ?? sel;
-        if (t == null || !t.Track.IsMidi) { Status(Loc.T("tool.liveArp.none")); return; }
+        if (t == null || !t.Track.IsMidi) { Toast(Loc.T("tool.liveArp.none")); return; }
         CloseTool(accept: true);
         var arp = t.Track.Arp ?? new ArpSettings { On = false };
         var values = new Dictionary<string, int>
@@ -611,7 +611,7 @@ public partial class MainWindow
         }
         catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
         {
-            Status(e.Message);
+            Toast(e.Message);
         }
     }
 
@@ -625,9 +625,9 @@ public partial class MainWindow
         try
         {
             await Task.Run(() => MidiFiles.Write(path, [(name, notes)], bpm));
-            Status(Loc.T("tool.export.done", Path.GetFileName(path)));
+            Toast(Loc.T("tool.export.done", Path.GetFileName(path)));
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Status(e.Message); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast(e.Message); }
     }
 
     async Task ExportSheet()
@@ -641,8 +641,8 @@ public partial class MainWindow
         try
         {
             await Task.Run(() => ScoreSheet.Write(path, name, notes, beats, scale));
-            Status(Loc.T("tool.export.done", Path.GetFileName(path)));
+            Toast(Loc.T("tool.export.done", Path.GetFileName(path)));
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Status(e.Message); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast(e.Message); }
     }
 }

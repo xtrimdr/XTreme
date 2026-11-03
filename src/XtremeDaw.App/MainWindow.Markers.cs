@@ -50,7 +50,7 @@ public partial class MainWindow
         if (!CanEditMarkers) return;
         undo.Checkpoint(store!.Project, key);
         try { change(store.Project); }
-        catch (ArgumentException e) { Status(e.Message); return; }
+        catch (ArgumentException e) { Toast(e.Message); return; }
         MarkDirty();
         UpdateUndoButtons();
         RefreshMarkers();
@@ -75,7 +75,7 @@ public partial class MainWindow
     {
         if (store == null || restoring) return;
         try { ProjectMarkers.SetLoop(store.Project.Settings, a, b); }
-        catch (ArgumentException e) { Status(e.Message); return; }
+        catch (ArgumentException e) { Toast(e.Message); return; }
         MarkDirty();
         RefreshMarkers();
         LoopToggle.IsChecked = true;
@@ -136,7 +136,7 @@ public partial class MainWindow
         }
         catch (Exception e) when (e is InvalidOperationException or System.Runtime.InteropServices.COMException)
         {
-            Status(Loc.T("marker.chapters.fail"));
+            Toast(Loc.T("marker.chapters.fail"));
         }
     }
 

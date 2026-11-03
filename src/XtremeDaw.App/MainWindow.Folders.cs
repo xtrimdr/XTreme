@@ -101,9 +101,9 @@ public partial class MainWindow
     /// <summary>
     /// Removes a folder. With tracks inside it asks first (asked by the user): just the folder, its tracks staying at
     /// the root, or the folder and its tracks. The question opens at <paramref name="at"/> on the timeline, or under
-    /// the folder's name.
+    /// the folder's name; with an <paramref name="anchor"/> other than the timeline (its mixer strip), under it.
     /// </summary>
-    Task RemoveFolder(Folder f, Point? at = null)
+    Task RemoveFolder(Folder f, Point? at = null, Control? anchor = null)
     {
         int n = store?.Project.Tracks.Count(t => t.FolderId == f.Id) ?? 0;
         if (n == 0) return RemoveFolderNow(f, false);
@@ -114,6 +114,11 @@ public partial class MainWindow
             MenuAction(Loc.T("folder.remove.only"), () => RemoveFolderNow(f, false), tip: Loc.T("folder.remove.only.tip")),
             MenuAction(n == 1 ? Loc.T("folder.remove.all.one") : Loc.T("folder.remove.all", n), () => RemoveFolderNow(f, true), danger: true, tip: Loc.T("folder.remove.all.tip")),
         };
+        if (anchor != null && anchor != Timeline)
+        {
+            OpenAnchoredMenu(Popup(list, 240), anchor);
+            return Task.CompletedTask;
+        }
         var name = Timeline.FolderNameRect(f);
         OpenTimelineMenu(Popup(list, 240), at ?? (name.Y >= 0 && name.Y < Timeline.Bounds.Height ? name.BottomLeft + new Point(0, 4) : new Point(20, 40)), 110);
         return Task.CompletedTask;
@@ -179,18 +184,24 @@ public partial class MainWindow
     void ShowFolderMenu(Folder f, Point point)
     {
         if (store == null || restoring) return;
-        if (f.Separator)
-        {
-            OpenTimelineMenu(Popup(SeparatorMenu(f, Timeline, point), 240), point, 200);
-            return;
-        }
-        bool enabled = !store.ReadOnly;
+        OpenTimelineMenu(Popup(f.Separator ? SeparatorMenu(f, Timeline, point) : FolderMenu(f, Timeline, point), 240), point, 200);
+    }
+
+    /// <summary>A folder's menu, from the timeline (at <paramref name="point"/>) or its mixer strip (<paramref name="anchor"/>, no point).</summary>
+    List<object> FolderMenu(Folder f, Control anchor, Point? point)
+    {
+        bool enabled = store is { ReadOnly: false } && !restoring;
         string id = f.Id;
         var refresh = new List<Action>();
         var list = new List<object> { new MenuItem { Header = f.Name, IsEnabled = false, FontSize = 11 } };
-        list.Add(MenuAction(Loc.T("folder.rename") + "…", () => { RenameInPlace(f.Id, () => RenameFolder(f, Timeline, point)); return Task.CompletedTask; }, enabled: enabled, icon: ""));
+        list.Add(MenuAction(Loc.T("folder.rename") + "…", () =>
+        {
+            if (point is { } at) RenameInPlace(f.Id, () => RenameFolder(f, anchor, at));
+            else RenameFolder(f, anchor, null);
+            return Task.CompletedTask;
+        }, enabled: enabled, icon: ""));
         var color = new MenuItem { Header = MenuHeader(Loc.T("look.color") + "…", Swatch(f.Color)), IsEnabled = enabled };
-        color.Click += (_, _) => ShowFolderLook(f, Timeline, point);
+        color.Click += (_, _) => ShowFolderLook(f, anchor, point);
         list.Add(color);
         // looked up by id at each click: a right click keeps the menu open while the folder changes under it
         list.Add(MenuChoice(() => FolderById(id)?.Collapsed == true ? (Loc.T("folder.unfold"), "") : (Loc.T("folder.fold"), ""),
@@ -203,8 +214,8 @@ public partial class MainWindow
             return id;
         }, "track-added"), enabled: enabled, icon: ""));
         list.Add(new Separator());
-        list.Add(MenuAction(Loc.T("folder.remove"), () => RemoveFolder(f, point), enabled: enabled, danger: true, tip: Loc.T("folder.remove.tip")));
-        OpenTimelineMenu(Popup(list, 240), point, 200);
+        list.Add(MenuAction(Loc.T("folder.remove"), () => RemoveFolder(f, point, anchor), enabled: enabled, danger: true, tip: Loc.T("folder.remove.tip")));
+        return list;
     }
 
     /// <summary>
@@ -369,6 +380,14 @@ public partial class MainWindow
         mx.Boxes.Add(box);
         // a click on the folder's strip selects the folder, like a track's strip selects its track
         var top = StripCardLook(box, () => Timeline.SelectedFolderId == id, () => false, () => TimelineView.FolderColor(F()), () => Timeline.SelectFolder(id));
+        // its own menu, the timeline's (without it, the right click reached the mixer's background menu)
+        box.PointerReleased += (_, e) =>
+        {
+            if (e.Handled || e.InitialPressMouseButton != MouseButton.Right || store == null || restoring) return;
+            e.Handled = true;
+            Timeline.SelectFolder(id);
+            OpenAnchoredMenu(Popup(FolderMenu(F(), box, null), 240), box);
+        };
         var meter = new MixerMeter();
         mx.NodeMeters.Add((id, meter, null));
         var tag = new TextBlock { Text = Loc.T("mixer.folderTag"), FontSize = 9, LetterSpacing = 0.8, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center };
@@ -411,7 +430,7 @@ public partial class MainWindow
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
             {
-                Status(Loc.T("preset.saveFail", e.Message));
+                Toast(Loc.T("preset.saveFail", e.Message));
             }
         }, Loc.T("preset.save.note"));
     }
@@ -446,7 +465,7 @@ public partial class MainWindow
                     TrackPresets.Delete(preset.Id);
                     Status(Loc.T("preset.deleted", preset.Name));
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Status(Loc.T("preset.saveFail", ex.Message)); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Toast(Loc.T("preset.saveFail", ex.Message)); }
             };
             items.Add(item);
         }

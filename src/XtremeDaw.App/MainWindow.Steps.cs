@@ -274,7 +274,7 @@ public partial class MainWindow
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
-                Status(Loc.T("ver.renameFail", e.Message));
+                Toast(Loc.T("ver.renameFail", e.Message));
             }
             ReloadVersions();
         }

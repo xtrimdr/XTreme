@@ -12,13 +12,14 @@ lo que falta en [PENDIENTES.md](PENDIENTES.md); [HECHO.md](HECHO.md) es historia
 
 ## 1. Qué es
 
-- **XTreme** (internamente "Xtreme DAW") es un **DAW** para grabar, mezclar y exportar que
-  también hace **videos de guitarra**: tomas con cámara y audio, y un video con un panel por toma. El exe es
+- **XTreme** (internamente "Xtreme DAW") es un **DAW completo** (decisión del usuario, 2026-11-03: "un DAW puro y
+  duro"): audio y MIDI, instrumentos y efectos, buses y mastering, para cualquier instrumento y estilo. El video es un
+  extra: si se graba con cámara, cada canal guarda su imagen y sale un video con un panel por canal. El exe es
   `XTreme.exe` y los ajustes van en `%APPDATA%\XTreme` (`AppFolder`). El archivo del proyecto es `<Nombre>.xtp` (JSON por dentro, decisión del usuario, 2026-11-03), dentro de su carpeta; un `xtreme_project.json` se renombra solo al abrir (`ProjectStore.MatchFileToName`).
   Los ajustes de los nombres anteriores de la app no se leen ni se migran (decisión del usuario, 2026-11-02); los
   proyectos de WildTrack sí abren (`guitarcam.json`, formato `guitarcam-project`: pasan a `.xtp` al abrirlos; pedido del usuario, 2026-11-03).
-- **El foco manda.** Las funciones de DAW tienen que servir para el video y no complicar el camino de **"grabo,
-  mezclo y exporto"**. Si algo nuevo agrega pasos o pantallas a ese camino, replantealo o preguntá.
+- **Nivel de DAW profesional.** Una función nueva se mide contra lo que ofrece un DAW serio, no contra el video. El
+  video no condiciona al resto: sin cámara la app tiene que ser un DAW completo.
 - **Las decisiones son del usuario.** Lo que describen estas guías lo eligió el usuario: no lo cambies sin preguntar,
   aunque otro DAW lo haga distinto. La app nació como port de una web que **ya no es referencia**:
   las menciones a la web en el código son historia, no reglas.
@@ -39,8 +40,10 @@ lo que falta en [PENDIENTES.md](PENDIENTES.md); [HECHO.md](HECHO.md) es historia
 - `Audio` y `Projects` no conocen `Loc`: sus mensajes pasan por `Texts.T(clave, español, args...)` (en `XtremeDaw.Audio`,
   prefijos `err.`, `store.`, `camera.`…), que `Loc.Load` conecta; sin esa conexión (xtlab) sale el español.
 - Siguen en español a propósito las plantillas que el usuario ya guardó y los nombres que se crean ("Canal 1").
-- Vocabulario de músico, no de programador: **canal**, **pista**, **click**, **Vida** (saturación; niveles Apenas /
-  Sutil / Con vida / Caliente / Al palo), **Válvula / Cinta**, **Rasgueo / Arpegio / Punteo**, **Ver todo**.
+- Vocabulario de músico, no de programador: **canal** (lo grabado también: "toma" no se usa más), **pista**, **click**,
+  **Saturación** (no "Vida", decisión del usuario, 2026-11-03; su perilla es **Drive**, niveles Apenas / Sutil / Media /
+  Caliente / Al palo), **Válvula / Cinta**, **Rasgueo / Arpegio / Punteo**, **Ver todo**. Las opciones de `xtlab`
+  conservan `vida` como nombre.
 - **Tono profesional** (pedido del usuario, 2026-10-29: es una app profesional): corto y al grano en todo, botones,
   tooltips, estados, avisos y ayudas. Sin humor, sin charla ni frases de relleno, sin explicar lo obvio ni cómo
   funciona por dentro; si un texto no le suma nada al usuario, no va. Un estado entra en una línea ("Activo · latencia

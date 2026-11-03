@@ -84,7 +84,7 @@ public partial class MainWindow
         {
             var place = await Task.Run(() => LinkedMedia.CopyIn(st.Dir, m, toast.Report));
             await ApplyPlaces(st, [place], EditSteps.CopiedIn(m.Name), "linked-copied", sameSound: true);
-            Status(Loc.T("hist.copied", m.Name));
+            Toast(Loc.T("hist.copied", m.Name));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -116,7 +116,7 @@ public partial class MainWindow
         {
             var place = await Task.Run(() => LinkedMedia.Pick(st.Dir, m, path));
             await ApplyPlaces(st, [place], EditSteps.FileFound(m.Name), "linked-found");
-            Status(Loc.T(LinkedMedia.IsMissing(st.Dir, m) ? "hist.foundPart" : "hist.found", m.Name));
+            Toast(Loc.T(LinkedMedia.IsMissing(st.Dir, m) ? "hist.foundPart" : "hist.found", m.Name));
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
         {
@@ -152,7 +152,7 @@ public partial class MainWindow
             string left = string.Join(", ", found.NotFound);
             if (found.Ambiguous.Count > 0) Toast(Loc.T("hist.scan.many", string.Join(", ", found.Ambiguous)));
             else if (found.NotFound.Count > 0) Toast(Loc.T(n > 0 ? "hist.scan.some" : "hist.scan.none", n, left));
-            else Status(Loc.T("hist.scan.found", n));
+            else Toast(Loc.T("hist.scan.found", n));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

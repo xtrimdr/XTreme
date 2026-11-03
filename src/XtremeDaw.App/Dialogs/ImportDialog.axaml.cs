@@ -50,6 +50,8 @@ public sealed partial class ImportDialog : UserControl
     public bool HandleKey(KeyEventArgs e)
     {
         if (!IsVisible) return false;
+        // Tab moves the focus: kept from the window's shortcuts but not handled
+        if (e.Key == Key.Tab) return true;
         if (e.Key == Key.Escape) Answer(Choice.Cancel);
         else if (e.Key is Key.Enter or Key.Space)
         {

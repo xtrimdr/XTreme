@@ -38,7 +38,8 @@ public sealed partial class ProjectsDialog : UserControl
     List<ProjectTemplate> myTemplates = ProjectTemplates.User();
     string templateId = ProjectTemplates.LastId;
     /// <summary>"Video" / "Solo audio" of a new project (native only), remembered like the template.</summary>
-    string newMode = AppConfig.Get("newProjectMode") == "audio" ? "audio" : "video";
+    // a new project comes without video (asked by the user, 2026-11-03): video is picked for each one
+    string newMode = "audio";
     TextBox? rowInput;
     int previewVersion;
 
@@ -77,6 +78,7 @@ public sealed partial class ProjectsDialog : UserControl
     /// <summary>The megaphone of the header; the window shows the news over the manager.</summary>
     public event Action? NewsRequested;
 
+    /// <summary>A project is open behind it; without one, closing it starts an empty project (the window does that).</summary>
     bool CanCancel => CurrentDir != null;
 
     public ProjectsDialog()
@@ -92,6 +94,7 @@ public sealed partial class ProjectsDialog : UserControl
         SearchBox.TextChanged += (_, _) => RenderList();
         NewCancel.Click += (_, _) => SetDraft(null);
         NewCreate.Click += async (_, _) => await SubmitDraft();
+        ShowAtStart.IsCheckedChanged += (_, _) => StartupMode.Set(ShowAtStart.IsChecked == false ? StartupMode.Empty : StartupMode.Projects);
         NewVideoButton.Click += (_, _) => { newMode = "video"; RenderAll(); };
         NewAudioButton.Click += (_, _) => { newMode = "audio"; RenderAll(); };
         NewName.TextChanged += (_, _) =>
@@ -127,12 +130,13 @@ public sealed partial class ProjectsDialog : UserControl
     {
         CurrentDir = currentDir;
         IsVisible = true;
-        CloseButton.IsVisible = CanCancel;
+        ToolTip.SetTip(CloseButton, Loc.T(CanCancel ? "settings.close" : "proj.closeEmpty.tip"));
         draft = null;
         confirmDelete = null;
         error = notice = null;
         highlight = null;
         SearchBox.Text = "";
+        ShowAtStart.IsChecked = StartupMode.Mode == StartupMode.Projects;
         myTemplates = ProjectTemplates.User();
         Layout();
         RenderAll();
@@ -154,7 +158,7 @@ public sealed partial class ProjectsDialog : UserControl
 
     void Cancel()
     {
-        if (!CanCancel || busy != null) return;
+        if (busy != null) return;
         Hide();
         Dismissed?.Invoke();
     }
@@ -325,7 +329,6 @@ public sealed partial class ProjectsDialog : UserControl
                     ? ProjectLibrary.Create(freeName, tpl, NewDirIn(d.Dir, freeName), mode)
                     : ProjectLibrary.Create(name, tpl, mode: mode));
                 ProjectTemplates.LastId = tpl?.Id ?? ProjectTemplates.None;
-                AppConfig.Set("newProjectMode", mode);
                 draft = null;
                 if (OpenProject != null) await OpenProject(dir);
             }, Loc.T("proj.err.create"));

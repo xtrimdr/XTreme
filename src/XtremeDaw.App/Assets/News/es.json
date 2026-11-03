@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "version": "0.9.14",
+      "items": [
+        {
+          "icon": "E8F4",
+          "title": "Arrancar en un proyecto vacío",
+          "text": "Apagá **Mostrar al arrancar** en Proyectos y XTreme abre directo en un proyecto nuevo. **Guardar** pregunta dónde va. También en Configuración → Guardado y exportación.",
+          "topic": "new-project"
+        },
+        {
+          "icon": "E700",
+          "title": "Barra de menús",
+          "text": "Archivo, Edición, Pista, Ver, Transporte, Herramientas y Ayuda, arriba a la izquierda, con la tecla de cada acción al lado. Configuración, Ayuda, Novedades y Enviar comentarios están ahí."
+        },
+        {
+          "icon": "E7E7",
+          "title": "Avisos en el momento",
+          "text": "La campanita se fue: los errores y lo que no se pudo hacer salen como aviso abajo a la derecha."
+        },
+        {
+          "icon": "E74D",
+          "title": "Descartar pide confirmación",
+          "text": "Mientras grabás, Descartar está separado de Detener y pide un segundo clic antes de tirar lo grabado.",
+          "topic": "record"
+        }
+      ]
+    },
+    {
       "version": "0.9.13",
       "items": [
         {

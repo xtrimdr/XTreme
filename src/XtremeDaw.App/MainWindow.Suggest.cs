@@ -24,12 +24,12 @@ public partial class MainWindow
         if (st == null || st.ReadOnly) return;
         if (RecordingBusy || !MixInMemory())
         {
-            Status(Loc.T("master.suggest.wait"));
+            Toast(Loc.T("master.suggest.wait"));
             return;
         }
         if (!st.Project.Tracks.Any(t => t.HasContent))
         {
-            Status(Loc.T("master.suggest.empty"));
+            Toast(Loc.T("master.suggest.empty"));
             return;
         }
         var (mixTracks, bus) = ExportDialog.BuildMix(st, tracks);
@@ -49,7 +49,7 @@ public partial class MainWindow
         catch (OperationCanceledException) { }
         catch (Exception e)
         {
-            Status(Loc.T("master.suggest.failed", e.Message));
+            Toast(Loc.T("master.suggest.failed", e.Message));
         }
         finally
         {

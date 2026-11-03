@@ -174,7 +174,7 @@ public partial class MainWindow
                     AppConfig.Set("headerWidth", hw);
                 });
             }
-            catch (Exception e) { Status(Loc.T("timeline.viewSaveError", e.Message)); }
+            catch (Exception e) { Toast(Loc.T("timeline.viewSaveError", e.Message)); }
         };
         Closed += (_, _) => timelinePrefs.Stop();
         void Prefs() { timelinePrefs.Stop(); timelinePrefs.Start(); }
@@ -350,7 +350,7 @@ public partial class MainWindow
         }
         catch (Exception e)
         {
-            Status(Loc.T("timeline.editError", e.Message));
+            Toast(Loc.T("timeline.editError", e.Message));
         }
         finally
         {
@@ -462,7 +462,8 @@ public partial class MainWindow
             return keep;
         }, close ? "range-closed" : "range-deleted");
         if (close) RefreshMarkers();
-        Status(changed == 0 ? Loc.T("range.nothing") : Loc.T(close ? "range.closed" : "range.deleted", range.End - range.Start));
+        if (changed == 0) Toast(Loc.T("range.nothing"));
+        else Status(Loc.T(close ? "range.closed" : "range.deleted", range.End - range.Start));
     }
 
     Task DeleteTimelineSelection()
@@ -507,9 +508,9 @@ public partial class MainWindow
     /// <summary>Alt+X, like Studio One: splits the clip under the playhead and selects the right piece.</summary>
     async Task SplitAtPlayhead()
     {
-        if (sel == null) { Status(Loc.T("timeline.split.pick")); return; }
+        if (sel == null) { Toast(Loc.T("timeline.split.pick")); return; }
         if (sel.Track.IsMidi) { await SplitMidiAtPlayhead(); return; }
-        if (ClipUnderPlayhead() is not { } clip) { Status(Loc.T("timeline.split.nowhere")); return; }
+        if (ClipUnderPlayhead() is not { } clip) { Toast(Loc.T("timeline.split.nowhere")); return; }
         if (RefuseLocked(sel, clip)) return;
         string trackId = sel.Track.Id;
         double at = engine.PositionSec, length = clip.LengthSec;
@@ -535,7 +536,7 @@ public partial class MainWindow
     {
         if (Timeline.BoxedClipIds.Count <= 1 && Timeline.SelectedMidiId is { } midi) return DuplicateMidiClip(midi);
         var ids = PickedClipIds();
-        if (ids.Count == 0) { Status(Loc.T("timeline.dup.pick")); return Task.CompletedTask; }
+        if (ids.Count == 0) { Toast(Loc.T("timeline.dup.pick")); return Task.CompletedTask; }
         return DuplicateClips(ids);
     }
 
@@ -560,7 +561,7 @@ public partial class MainWindow
     async Task AlignClips(List<string> ids)
     {
         var grid = Timeline.SnapLines;
-        if (grid.Step <= 0) { Status(Loc.T("menu.alignGrid.off")); return; }
+        if (grid.Step <= 0) { Toast(Loc.T("menu.alignGrid.off")); return; }
         if (sel == null || ids.Count == 0) return;
         string trackId = sel.Track.Id;
         var lengths = LiveLengths();
@@ -585,7 +586,7 @@ public partial class MainWindow
         if (ids.Count == 0 && Timeline.SelectedMidiId is { } midi) ids = [midi];
         if (ids.Count == 0 || ClipClipboard.Take(store.Project, ids, LiveLengths()) is not { } taken)
         {
-            Status(Loc.T("clipboard.pick"));
+            Toast(Loc.T("clipboard.pick"));
             return;
         }
         if (cut)
@@ -610,7 +611,7 @@ public partial class MainWindow
     async Task PasteClips()
     {
         if (store == null) return;
-        if (clipboard is not { } board) { Status(Loc.T("clipboard.empty", Shortcuts.Label("copy"))); return; }
+        if (clipboard is not { } board) { Toast(Loc.T("clipboard.empty", Shortcuts.Label("copy"))); return; }
         double at = engine.PositionSec;
         string? target = sel?.Track.Id;
         List<string> pasted = [];
@@ -825,7 +826,7 @@ public partial class MainWindow
     Task RemoveTracks(List<string> ids)
     {
         var gone = ids.Where(id => tracks.FirstOrDefault(t => t.Track.Id == id) is { } t && !ClipEditing.HasLock(t.Track)).ToList();
-        if (gone.Count < ids.Count) Status(Loc.T("lock.removeMany.tip"));
+        if (gone.Count < ids.Count) Toast(Loc.T("lock.removeMany.tip"));
         if (gone.Count == 0) return Task.CompletedTask;
         return EditTimeline(p =>
         {

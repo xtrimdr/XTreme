@@ -71,7 +71,7 @@ Más detalles en [Requisitos](DETALLES.md#requisitos).
   calidad Rápida, Alta o Máxima, desde el clic derecho (Demucs, en la placa de video o en la CPU).
 - **Carpetas** que se pliegan y agrupan pistas; varias pistas se marcan con Ctrl+clic / Shift+clic y se mueven juntas.
   Cada pista tiene su **color** (24, en orden de arco iris), un **ícono de instrumento** (guitarras, bajo, batería,
-  synths, cuerdas, vientos, percusión…), su propio alto y sus knobs de Vida, Comp, Reverb, Delay y Tono en el
+  synths, cuerdas, vientos, percusión…), su propio alto y sus knobs de Saturación, Comp, Reverb, Delay y Tono en el
   encabezado (cuáles se ven, en Configuración → Vista).
 - Un sonido que te gusta se guarda como **plantilla de pista** y vuelve desde Nueva pista → Plantilla.
 - Arriba de la regla, un **rango A–B** para repetir un tramo y **marcadores** con nombre (Intro, Estribillo, Solo…)

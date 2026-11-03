@@ -24,12 +24,15 @@ public sealed partial class UnsavedDialog : UserControl
         PointerPressed += (_, e) => { if (e.Source == this) Answer(Choice.Cancel); };
     }
 
-    /// <summary>Shows the question for <paramref name="project"/> and waits for the answer.</summary>
-    public Task<Choice> Ask(string project)
+    /// <summary>Shows the question for <paramref name="project"/> and waits for the answer. <paramref name="untitled"/>:
+    /// a project without a place, where "Guardar" asks where it goes and "Cerrar sin guardar" drops what it has.</summary>
+    public Task<Choice> Ask(string project, bool untitled = false)
     {
         pending?.TrySetResult(Choice.Cancel);
         pending = new TaskCompletionSource<Choice>();
-        Body.Text = Loc.T("unsaved.body", project);
+        Body.Text = Loc.T(untitled ? "unsaved.untitled.body" : "unsaved.body", project);
+        SaveButton.Content = Loc.T(untitled ? "unsaved.untitled.save" : "unsaved.save");
+        ToolTip.SetTip(DiscardButton, Loc.T(untitled ? "unsaved.untitled.discard.tip" : "unsaved.discard.tip"));
         IsVisible = true;
         SaveButton.Focus();
         return pending.Task;
@@ -47,6 +50,8 @@ public sealed partial class UnsavedDialog : UserControl
     public bool HandleKey(KeyEventArgs e)
     {
         if (!IsVisible) return false;
+        // Tab moves the focus: kept from the window's shortcuts but not handled
+        if (e.Key == Key.Tab) return true;
         if (e.Key == Key.Escape) Answer(Choice.Cancel);
         else if (e.Key is Key.Enter or Key.Space)
             Answer(e.Source == DiscardButton ? Choice.Discard : e.Source == CancelButton ? Choice.Cancel : Choice.Save);

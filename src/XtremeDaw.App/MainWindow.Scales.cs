@@ -136,7 +136,8 @@ public partial class MainWindow
         fit.Click += (_, _) =>
         {
             int moved = pianoRoll.FitToScale();
-            Status(Loc.T(moved < 0 ? "scale.fit.noClip" : "scale.fit.done", moved));
+            if (moved < 0) Toast(Loc.T("scale.fit.noClip"));
+            else Status(Loc.T("scale.fit.done", moved));
         };
         var snapKeys = new ToggleButton { Classes = { "chip" }, Content = Loc.T("scale.snapKeys"), Height = ScaleRowH + 2, MinHeight = 0, Padding = new Thickness(8, 0), FontSize = 11.5, Focusable = false, IsChecked = AppConfig.Get("midiScaleSnap") == "true", Margin = new Thickness(0, 0, 6, 0) };
         ToolTip.SetTip(snapKeys, Loc.T("scale.snapKeys.tip"));

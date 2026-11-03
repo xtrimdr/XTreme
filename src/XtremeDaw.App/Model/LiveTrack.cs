@@ -58,7 +58,7 @@ public sealed class MediaAudio
     public float[] PeakMax { get; }
     public double RmsDb { get; }
     readonly Lazy<CompPresets.TakeEnvelope> envelope;
-    /// <summary>For "Analizar toma": read on first use only, from any thread.</summary>
+    /// <summary>For the compressor's analyze button: read on first use only, from any thread.</summary>
     public CompPresets.TakeEnvelope Envelope => envelope.Value;
     /// <summary>Both sides are the same samples: a one-channel file or a take from a mono input (the mixer shows one bar).</summary>
     public bool Mono { get; }
@@ -416,10 +416,10 @@ public sealed class LiveTrack
         started = true;
     }
 
-    /// <summary>Level the "Vida" knob is measured against: the first clip with audio (one take per track for now).</summary>
+    /// <summary>Level the saturation's Drive knob is measured against: the first clip with audio (one take per track for now).</summary>
     public double RmsDb => Clips.FirstOrDefault(c => c.Audio != null)?.Audio!.RmsDb ?? -24;
 
-    /// <summary>The first clip's audio, which "Analizar toma" measures.</summary>
+    /// <summary>The first clip's audio, which the compressor's analyze button measures.</summary>
     public MediaAudio? FirstAudio => Clips.FirstOrDefault(c => c.Audio != null)?.Audio;
 
     public bool HasPanel => Track.Video && Clips.Count > 0;

@@ -15,13 +15,13 @@ public partial class MainWindow
     {
         if (store == null || MidiEditing.TryFind(store.Project, clipId) is not { } clip) return;
         if (track.Track.Locked) { ToastLocked(track.Track); return; }
-        if (!MidiEditing.CanSplit(clip, at, store.Project.Settings.Bpm)) { Status(Loc.T("midi.split.edge")); return; }
+        if (!MidiEditing.CanSplit(clip, at, store.Project.Settings.Bpm)) { Toast(Loc.T("midi.split.edge")); return; }
         bool pattern = clip.PatternId != null;
         string? right = null;
         await EditTimeline(p => { right = MidiEditing.Split(p, clipId, at); return track.Track.Id; }, "midi-clip-split");
         if (right == null || store == null) return;
         Timeline.SelectMidiClip(TrackIndex(track.Track.Id), right);
-        if (pattern && MidiEditing.TryFind(store.Project, right) is { PatternId: null }) Status(Loc.T("midi.split.unique"));
+        if (pattern && MidiEditing.TryFind(store.Project, right) is { PatternId: null }) Toast(Loc.T("midi.split.unique"));
     }
 
     /// <summary>Alt+X on a MIDI track: the selected clip if the playhead is on it, else the one on top there.</summary>
@@ -32,7 +32,7 @@ public partial class MainWindow
         bool Inside(MidiClip c) => at > c.AtSec && at < c.EndSec(bpm);
         var clips = sel.Track.MidiClips ?? [];
         if ((clips.Find(c => c.Id == Timeline.SelectedMidiId && Inside(c)) ?? clips.FindLast(Inside)) is { } clip) return SplitMidi(sel, clip.Id, at);
-        Status(Loc.T("timeline.split.nowhere"));
+        Toast(Loc.T("timeline.split.nowhere"));
         return Task.CompletedTask;
     }
 }

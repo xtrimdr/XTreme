@@ -10,8 +10,8 @@ sus reglas en [Controls/AGENTS.md](Controls/AGENTS.md).
 - **Oscura, sobria, de estudio.** Fondo casi negro, superficies apenas más claras, un solo color de acento. Lo que
   resalta es el contenido (el video y las ondas), no los controles. El tema es siempre oscuro (`RequestedThemeVariant="Dark"`).
 - **Coherente consigo misma.** Ante la duda, mirá cómo lo hace el resto de la ventana.
-- **Se usa con la guitarra colgada**: atajos de una tecla, objetivos de clic cómodos, nada que exija precisión ni
-  varios pasos para grabar o reproducir.
+- **Un DAW de trabajo** (decisión del usuario, 2026-11-03: ya no se piensa para usarse con la guitarra colgada):
+  atajos para todo, edición precisa con el mouse; grabar y reproducir, a una tecla.
 - **Siempre se ve el estado**: qué está sonando, si hay audio, si un archivo falta, si se guardó.
 - Lo que no está hecho se muestra deshabilitado o con un aviso. Nunca un botón que no hace nada y no dice nada.
 - **Un efecto, un panel** (pedido del usuario): sus controles salen de `FxBody` en todo lugar; lo que es de un solo
@@ -66,7 +66,7 @@ seleccionado, borde 0,45 / 0,9). Los colores de pista son datos del usuario, no 
 - UI: **Segoe UI Variable Text** (fallback Segoe UI). Números y tiempos: **Cascadia Mono** (fallback Consolas).
   **Todo valor numérico va en mono** (`Classes="dim mono"`), alineado a la derecha de su etiqueta.
 - Íconos: **Segoe Fluent Icons** (fallback Segoe MDL2 Assets), `TextBlock` con clase `icon` y el glifo en `Text`. Sin
-  paquetes de íconos ni imágenes (las miniaturas de plugins son contenido, como las de video). Excepciones: los efectos (Vida, compresor, EQ, reverb, delay, transponer) siempre con `FxIcon`
+  paquetes de íconos ni imágenes (las miniaturas de plugins son contenido, como las de video). Excepciones: los efectos (saturación, compresor, EQ, reverb, delay, transponer) siempre con `FxIcon`
   (trazos de lucide), en todo lugar que muestre un efecto; los instrumentos de las pistas con `TrackIcons` (rellenos:
   Fluent Emoji High Contrast y lo que le falta de otros sets libres; licencias en `Assets/Icons/LICENSES.txt`,
   generados con `tools/make-track-icons.py`).
@@ -89,7 +89,7 @@ Respetan la cultura del sistema (en es-AR, con coma):
 - Ganancia: `$"{db:+0.0;-0.0;0.0} dB"` (`+3,5 dB`); volumen cero: `-∞ dB`.
 - Paneo: `Centro`, `30 L`, `30 R` en el inspector; `C`, `L30`, `R30` compacto en el encabezado de pista.
 - Tiempo: `mm:ss.fff` en el reloj; compás.tiempo (`2.2`) al lado.
-- Porcentajes con palabra: `50% · Con vida`. Separador de datos en una línea: ` · `.
+- Porcentajes con palabra: `50% · Media`. Separador de datos en una línea: ` · `.
 - Fechas relativas: "recién", "hace 5 min", "hoy 14:30", "ayer 09:10", `dd/MM HH:mm`.
 
 ## Formas y espaciado
@@ -166,7 +166,9 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 
 ## Mensajes al usuario
 
-- Van a la campanita (`Status`) o, si conviene verlos en el momento, a un toast (`Toast`). Profesionales y cortos (ver
+- Lo que el usuario tiene que ver va a un toast (`Toast`): un error, algo que no se pudo hacer, un resultado que no se
+  ve en otro lado. Lo demás (lo que una acción hizo y ya se ve, notas de progreso) va con `Status`, que solo lo anota
+  en el registro de la sesión: la campanita se sacó (pedido del usuario, 2026-11-03: nadie la abría). Profesionales y cortos (ver
   "Tono" en la guía de la raíz): **qué pasó y, si hace falta, qué hacer** ("No se pudo guardar: {motivo}. Reintentando…").
 - Nada de diálogos modales para errores, ni stack traces, ni jerga ("excepción", "null").
 - Un archivo que falta no rompe nada: el clip queda **offline** (gris, "Sin conexión: falta el archivo de audio").

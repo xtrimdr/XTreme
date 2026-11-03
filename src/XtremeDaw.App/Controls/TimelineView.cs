@@ -2696,7 +2696,7 @@ public sealed partial class TimelineView : Control
             DrawSendKnob(ctx, kr, FxLabelRect(i, k, kd), sendKnobs[k], amount, on, dragging || (gesture == null && kr.Inflate(4).Contains(lastPointer)));
         }
 
-        DrawToggle(ctx, MuteRect(i), "M", ch.Muted, Palette.Brush("#f59e0b"), Hot(MuteRect(i)));
+        DrawToggle(ctx, MuteRect(i), "M", ch.Muted, Palette.Mute, Hot(MuteRect(i)));
         DrawToggle(ctx, SoloRect(i), "S", ch.Solo, Palette.Accent, Hot(SoloRect(i)));
 
         if (!MetersOnLayer) DrawMeters(ctx, i);
@@ -2720,7 +2720,7 @@ public sealed partial class TimelineView : Control
             ctx.DrawText(t.Track.Name, 12.5, Palette.Fg, new Point(badge.Right + 6, y + 11), Palette.UiBold, nameW);
         if (!OverSeparator(t.Track.Id)) ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, y + lh - 0.5), new Point(HeaderW, y + lh - 0.5));
         var ch = t.Channel;
-        DrawToggle(ctx, MuteRect(i), "M", ch.Muted, Palette.Brush("#f59e0b"), Hot(MuteRect(i)));
+        DrawToggle(ctx, MuteRect(i), "M", ch.Muted, Palette.Mute, Hot(MuteRect(i)));
         DrawToggle(ctx, SoloRect(i), "S", ch.Solo, Palette.Accent, Hot(SoloRect(i)));
         var arm = ArmRect(i);
         if (arm.Width > 0) DrawArm(ctx, arm, armed.Contains(i) || RecordingInto(i), Hot(arm));

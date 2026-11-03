@@ -155,7 +155,7 @@ public partial class MainWindow
         if (RefuseLocked(track, clip)) return;
         if (at <= clip.ClipStartSec + ClipEnvelope.MinClipSec || at >= clip.ClipEndSec - ClipEnvelope.MinClipSec)
         {
-            Status(Loc.T("split.edge"));
+            Toast(Loc.T("split.edge"));
             return;
         }
         string? right = null;
@@ -166,7 +166,7 @@ public partial class MainWindow
     /// <summary>Escuchar: plays the track alone from the clicked time while the button is held.</summary>
     void StartListening(LiveTrack track, double at)
     {
-        if (!engine.IsOpen) { Status(Loc.T("listen.noAudio")); return; }
+        if (!engine.IsOpen) { Toast(Loc.T("listen.noAudio")); return; }
         if (RecordingBusy) return;
         listenTurn++;
         // a track still alone from the last listen (its fade not over yet) joins the others again

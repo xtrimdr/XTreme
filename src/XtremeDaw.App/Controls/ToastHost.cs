@@ -8,8 +8,8 @@ using Avalonia.Threading;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// Toasts (native only, asked by the user): small cards in the bottom right corner, over everything, for a message
-/// worth seeing right away instead of waiting in the <see cref="NotificationBell"/> (the window also adds it there).
+/// Toasts (native only, asked by the user): small cards in the bottom right corner, over everything: every message to
+/// the user goes here. The same text again while its card is up restarts that card instead of stacking a copy.
 /// A plain toast goes away by itself after <see cref="Life"/> (the pointer over it holds it); a sticky one
 /// stays until closed. At most <see cref="MaxShown"/> at once, newest
 /// at the bottom. No shadow and no animation, like the rest of the window. Bigger text than the rest of the window
@@ -38,6 +38,8 @@ public sealed class ToastHost : StackPanel
     public Action Show(string text, string? title = null, bool sticky = false, (string Label, Action Run)? action = null)
     {
         if (string.IsNullOrWhiteSpace(text)) return () => { };
+        if (!sticky && action == null && Children.OfType<Border>().FirstOrDefault(c => c.Tag is Action && Equals(c.DataContext, text)) is { Tag: Action same })
+            same();
         Border? card = null;
         DispatcherTimer? timer = null;
         void Close()
@@ -78,6 +80,8 @@ public sealed class ToastHost : StackPanel
             Background = Palette.Raised, BorderBrush = sticky ? Palette.Alpha(Palette.AccentColor, 0.45) : Palette.Line,
             BorderThickness = new Thickness(1), Child = row,
             Tag = sticky ? null : (Action)Close,
+            // the text, so the same message again replaces its card
+            DataContext = text,
         };
         if (!sticky)
         {

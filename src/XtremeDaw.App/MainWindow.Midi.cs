@@ -248,7 +248,7 @@ public partial class MainWindow
         void AskStep() => AskName(stepChip, null, Loc.T("piano.vel.step.ask"), pianoRoll.VelocityStep.ToString(), Loc.T("piano.length.ok"), text =>
         {
             if (int.TryParse(text, out int v) && v >= 0 && v <= 127) SetStep(v);
-            else Status(Loc.T("piano.vel.step.bad"));
+            else Toast(Loc.T("piano.vel.step.bad"));
         });
         stepChip.Click += (_, _) =>
         {
@@ -636,7 +636,7 @@ public partial class MainWindow
         AskName(pianoLengthButton, null, Loc.T("piano.length.ask"), $"{clip.CellBeats / 4:0.##}", Loc.T("piano.length.ok"), text =>
         {
             if (double.TryParse(text, out double bars) && bars > 0) _ = SetPatternBeats(clipId, bars * 4);
-            else Status(Loc.T("piano.length.bad"));
+            else Toast(Loc.T("piano.length.bad"));
         });
     }
 

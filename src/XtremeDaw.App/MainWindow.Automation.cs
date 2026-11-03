@@ -206,7 +206,7 @@ public partial class MainWindow
         var all = await ParamsOf(bridge);
         if (all.Count == 0)
         {
-            Status(Loc.T("auto.plugin.none", bridge.Name));
+            Toast(Loc.T("auto.plugin.none", bridge.Name));
             return;
         }
         var search = new TextBox { Classes = { "field" }, Watermark = Loc.T("auto.plugin.search"), Width = 280 };

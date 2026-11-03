@@ -378,7 +378,7 @@ public partial class MainWindow
         var head = StripHead(badge, name, tag);
         // a bus goes to the master: its sends section stays empty
         var (controls, gr) = CompactChain(SlotsOf(bus), null, () => B().Pan, v => BusEdit(id, b => b.Pan = v, "pan"),
-            StripToggle("M", Loc.T("mix.bus.mute"), 26, () => B().Muted, false, () => BusEdit(id, b => b.Muted = !b.Muted, "muted")));
+            StripToggle("M", Loc.T("mix.bus.mute"), 26, () => B().Muted, true, () => BusEdit(id, b => b.Muted = !b.Muted, "muted")));
         mx.NodeMeters.Add((id, meter, gr));
         var content = new Grid();
         var layout = StripLayout(head, controls, faders, db);

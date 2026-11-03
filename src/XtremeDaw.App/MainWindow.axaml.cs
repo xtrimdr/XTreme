@@ -61,7 +61,7 @@ public partial class MainWindow : Window
         InitFullScreen();
         InitWindowPlace();
 
-        SessionChip.Click += async (_, _) => await ShowSessionMenu();
+        SessionChip.Click += async (_, _) => await ShowProjects();
         ExportButton.Click += async (_, _) =>
         {
             if (store == null || restoring || Projects.IsVisible || RecordingBusy) return;
@@ -85,18 +85,12 @@ public partial class MainWindow : Window
         Settings.Attach(engine, camera, () => RecordingBusy);
         Settings.AudioChanged += ShowAudioStatus;
         Settings.Dismissed += () => Timeline.Focus();
-        SettingsButton.Click += (_, _) =>
-        {
-            if (Projects.IsVisible || Export.IsVisible || RecordingBusy) return;
-            Settings.Show();
-        };
         About.Dismissed += () => Timeline.Focus();
         LogoButton.Click += (_, _) =>
         {
             if (Projects.IsVisible || Export.IsVisible || Settings.IsVisible || RecordingBusy) return;
             About.Show();
         };
-        FeedbackButton.Click += (_, _) => OpenFeedback();
         About.FeedbackRequested += OpenFeedback;
         Feedback.Sent += copied => Toasts.Show(Loc.T(copied ? "feedback.copied" : "feedback.sent"));
         Feedback.Dismissed += () =>
@@ -105,12 +99,10 @@ public partial class MainWindow : Window
             else if (Projects.IsVisible) Projects.Focus();
             else Timeline.Focus();
         };
-        HelpButton.Click += (_, _) => OpenHelp();
         Projects.HelpRequested += OpenHelp;
         HelpPanel.Dismissed += () => { if (Projects.IsVisible) Projects.Focus(); else Timeline.Focus(); };
         HelpPanel.SettingsRequested += tab => { if (!RecordingBusy) Settings.Show(tab); };
         HelpPanel.NewsRequested += OpenNews;
-        NewsButton.Click += (_, _) => OpenNews();
         Projects.NewsRequested += OpenNews;
         News.TopicRequested += topic => HelpPanel.Show(topic, canOpenSettings: !Projects.IsVisible);
         News.Dismissed += () =>
@@ -128,6 +120,7 @@ public partial class MainWindow : Window
         // the web's md / lg / xl widths of the monitor
         SizeChanged += (_, e) => Live.Width = e.NewSize.Width >= 1280 ? 256 : 224;
         InitRecording();
+        InitMenuBar();
         InitMidiInput();
         InitVirtualKeys();
         PlayButton.Click += (_, _) => TogglePlay();
@@ -195,6 +188,12 @@ public partial class MainWindow : Window
             await OpenProject(d);
             Projects.Hide();
         };
+        // closed with nothing open (asked by the user: it shouldn't force creating a project): an empty one
+        Projects.Dismissed += async () =>
+        {
+            if (store == null) await StartUntitled();
+            else Timeline.Focus();
+        };
         Projects.FlushCurrent = FlushProjectOperation;
         Projects.SaveCopy = SaveProjectCopy;
         Projects.CloseCurrent = async () =>
@@ -214,7 +213,7 @@ public partial class MainWindow : Window
         saveTimer = new DispatcherTimer { Interval = SaveDelay };
         saveTimer.Tick += (_, _) => SaveSoon();
         SaveMode.Changed += () => ArmSave(restart: false);
-        SaveButton.Click += (_, _) => SaveSoon();
+        SaveButton.Click += (_, _) => SaveNow();
         ShowTrack(null);
 
         Opened += async (_, _) =>
@@ -231,8 +230,10 @@ public partial class MainWindow : Window
             ShowAudioStatus();
             _ = camera.Refresh();
             timer.Start();
-            // like the web app, it starts on the project manager (a folder on the command line opens directly)
+            // the project manager, or straight into a project without a place (StartupMode); a folder on the command
+            // line opens directly
             if (dir != null && ProjectStore.IsProject(dir)) await LoadProject(dir);
+            else if (StartupMode.Mode == StartupMode.Empty) await StartUntitled();
             else await ShowProjects();
             if (NewsGuide.Unseen) OpenNews();
         };
@@ -252,7 +253,7 @@ public partial class MainWindow : Window
             if (Export.IsRunning)
             {
                 e.Cancel = true;
-                Status(Loc.T("main.exportBusy"));
+                Toast(Loc.T("main.exportBusy"));
                 return;
             }
             // what was just changed in a plugin's window goes in the project before it closes
@@ -260,6 +261,26 @@ public partial class MainWindow : Window
             {
                 e.Cancel = true;
                 await SavePluginStates();
+                Close();
+                return;
+            }
+            // a project without a place: empty, it just goes; with something in it, ask where it goes
+            if (!closeConfirmed && store is { ReadOnly: false } un && UntitledProjects.Is(un.Dir))
+            {
+                if (!UntitledProjects.HasContent(un.Project))
+                {
+                    untitledToDrop = (un.Dir, false);
+                    CloseProject();
+                    return;
+                }
+                e.Cancel = true;
+                if (Unsaved.IsVisible) return;
+                FlushSave();
+                var answer = await Unsaved.Ask(un.Project.Name, untitled: true);
+                if (answer == Dialogs.UnsavedDialog.Choice.Cancel || un != store) return;
+                if (answer == Dialogs.UnsavedDialog.Choice.Save && !await SaveUntitled()) return;
+                if (answer == Dialogs.UnsavedDialog.Choice.Discard) untitledToDrop = (un.Dir, true);
+                closeConfirmed = true;
                 Close();
                 return;
             }
@@ -299,6 +320,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             SessionLog.Write("ventana cerrada");
+            if (untitledToDrop is var (dropDir, recycle)) DropUntitled(dropDir, recycle);
             timer.Stop();
             SaveWindowPlace();
             // stacked (solo audio, Vertical layout) the bottom row is closed: the heights remembered before stay
@@ -310,15 +332,16 @@ public partial class MainWindow : Window
         };
     }
 
-    // messages go to the bell in the title bar; Status("") (the old "clear") is ignored there
-    void Status(string s) => Bell.Add(s);
-
-    /// <summary>A message worth seeing now: a toast, and in the bell like every other one.</summary>
-    void Toast(string s, string? title = null, bool sticky = false, (string Label, Action Run)? action = null)
+    /// <summary>A message nobody needs to see now (what an action did that already shows, a progress note): only the
+    /// session log keeps it. The bell went (asked by the user: nobody opened it); what the user should see is a
+    /// <see cref="Toast"/>: a failure, an action that couldn't be done, a result that shows nowhere else.</summary>
+    void Status(string s)
     {
-        Bell.Add(s);
-        Toasts.Show(s, title, sticky, action);
+        if (!string.IsNullOrWhiteSpace(s)) SessionLog.Write(s);
     }
+
+    void Toast(string s, string? title = null, bool sticky = false, (string Label, Action Run)? action = null) =>
+        Toasts.Show(s, title, sticky, action);
 
     // --- saving ----------------------------------------------------------------------------------
 
@@ -385,7 +408,7 @@ public partial class MainWindow : Window
                 {
                     if (st != store) return;
                     if (first) Toast(Loc.T("main.saveRetry", e.Message));
-                    else Status(Loc.T("main.saveRetry", e.Message));
+                    else Toast(Loc.T("main.saveRetry", e.Message));
                     // it retries soon in every mode: what the user asked to save has to get there
                     dirty = true;
                     saveTimer.Stop();
@@ -485,7 +508,7 @@ public partial class MainWindow : Window
         }
         catch (Exception e)
         {
-            Status(Loc.T("main.openFail", e.Message));
+            Toast(Loc.T("main.openFail", e.Message));
             await ShowProjects();
         }
     }
@@ -497,9 +520,12 @@ public partial class MainWindow : Window
         if (PluginStatesDue && store is { ReadOnly: false }) await SavePluginStates();
         Status(Loc.T("main.loading"));
         var next = await Task.Run(() => ProjectStore.Open(dir));
+        var left = store is { } prev && UntitledProjects.Is(prev.Dir) && !ProjectLibrary.SamePath(prev.Dir, dir)
+            ? (prev.Dir, prev.Project.Name, UntitledProjects.HasContent(prev.Project)) : default((string Dir, string Name, bool Content)?);
         CloseProject(clearUndo: !preserveUndo);
+        if (left is var (leftDir, leftName, leftContent)) LeaveUntitled(leftDir, leftName, leftContent);
         store = next;
-        RecentProjects.Touch(dir, store.Project.Name);
+        if (!UntitledProjects.Is(dir)) RecentProjects.Touch(dir, store.Project.Name);
         await ShowProject(store);
         ResetMaster();
         UpdateUndoButtons();
@@ -570,15 +596,15 @@ public partial class MainWindow : Window
         if (st.ReadOnlyReason != null) notes.Add(st.ReadOnlyReason);
         notes.AddRange(st.Notices);
         if (failed.Count > 0) notes.Add(Loc.T("main.cantRead", string.Join(", ", failed)));
-        Status(notes.Count > 0
-            ? string.Join(" · ", notes)
-            : Loc.T("main.summary", list.Count, $"{engine.LengthSec / 60:0}:{engine.LengthSec % 60:00}", p.Settings.Aspect));
+        // what went wrong opening it is worth seeing; the summary only goes to the log
+        if (notes.Count > 0) Toast(string.Join(" · ", notes));
+        else Status(Loc.T("main.summary", list.Count, $"{engine.LengthSec / 60:0}:{engine.LengthSec % 60:00}", p.Settings.Aspect));
 
         if (p.Settings.AudioOnly) return;
         var clips = list.Where(t => t.Track.Video).SelectMany(t => t.Clips).ToList();
         await Task.WhenAll(clips.Select(c => Task.Run(() => c.OpenVideo(st))));
         var noVideo = clips.Where(c => c.Video == null && c.Media?.Video != null).Select(c => c.Name).ToList();
-        if (noVideo.Count > 0) Status(Loc.T("main.noVideo", string.Join(", ", noVideo)));
+        if (noVideo.Count > 0) Toast(Loc.T("main.noVideo", string.Join(", ", noVideo)));
     }
 
     // --- transport and inspector -----------------------------------------------------------------
@@ -587,7 +613,7 @@ public partial class MainWindow : Window
     {
         if (!engine.IsOpen)
         {
-            Status(engine.Status);
+            Toast(engine.Status);
             return;
         }
         if (engine.Playing && !engine.Stopping) engine.FadeOutAndPause();
@@ -604,7 +630,7 @@ public partial class MainWindow : Window
         [
             (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"), (NewTrackButton, Loc.T("timeline.newTrack"), "newTrack"), (VirtualKeysButton, Loc.T("sc.virtualKeys"), "virtualKeys"),
             (ToStartButton, Loc.T("transport.start.tip"), "toStart"), (LoopToggle, Loc.T("transport.loop.tip"), "loop"),(CountInToggle, Loc.T("transport.countin.tip"), "countIn"),
-            (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (MaxPanelButton, Loc.T("sc.maximize"), "maximize"), (FitButton, Loc.T("transport.fit.tip"), "fit"), (HelpButton, Loc.T("help.title"), "help"),
+            (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (MaxPanelButton, Loc.T("sc.maximize"), "maximize"), (FitButton, Loc.T("transport.fit.tip"), "fit"),
         ]);
         ApplyShortcutTips();
         Shortcuts.Changed += ApplyShortcutTips;
@@ -709,7 +735,7 @@ public partial class MainWindow : Window
                 await RestoreEdit(action == "redo");
                 return;
             case "save":
-                SaveSoon();
+                SaveNow();
                 break;
             case "saveAs":
                 e.Handled = true;
@@ -723,19 +749,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 await SplitAtPlayhead();
                 return;
-            case "duplicate" or "delete" or "copy" or "paste" when BlockShortcut(action):
-                break;
-            case "delete":
-                if (Timeline.ChordMarks.Count > 0)
-                {
-                    RemoveChords(Timeline.ChordMarks.ToList());
-                    break;
-                }
-                await (Timeline.Range != null ? DeleteRangeSelection() : sel == null && SelectedFolder is { } gone ? RemoveFolder(gone) : DeleteTimelineSelection());
-                break;
-            case "deleteClose":
-                if (Timeline.Range != null) await DeleteRangeSelection(close: true);
-                break;
+            case "duplicate" or "delete" or "deleteClose" or "copy" or "cut" or "paste" or "selectAll" or "deselect" or "alignGrid":
+                e.Handled = true;
+                await RunEdit(action);
+                return;
             case "toolSelect" or "toolDraw" or "toolPaint" or "toolRange" or "toolSplit" or "toolErase" or "toolListen" or "toolZoom" or "toolHand":
                 ToolKey(action);
                 break;
@@ -780,25 +797,6 @@ public partial class MainWindow : Window
                 break;
             case "zoom1" or "zoom2" or "zoom3" or "zoom4" or "zoom5":
                 Timeline.ZoomPreset(action[^1] - '1');
-                break;
-            case "duplicate":
-                await DuplicateSelection();
-                break;
-            case "alignGrid":
-                await AlignClips(PickedClipIds());
-                break;
-            case "selectAll" when store != null:
-                Timeline.BoxClips([.. store.Project.Tracks.SelectMany(t => t.Clips.Select(c => c.Id).Concat((t.MidiClips ?? []).Select(c => c.Id)))]);
-                break;
-            case "deselect":
-                Timeline.BoxClips([]);
-                Timeline.SelectClip(Timeline.Selected, null);
-                break;
-            case "copy" or "cut":
-                await CopySelection(cut: action == "cut");
-                break;
-            case "paste":
-                await PasteClips();
                 break;
             case "mixer":
                 ToggleMixer();
@@ -850,6 +848,44 @@ public partial class MainWindow : Window
                 return;
         }
         e.Handled = true;
+        Timeline.InvalidateVisual();
+    }
+
+    /// <summary>The editing actions, the same from their keys and from the Edición menu.</summary>
+    async Task RunEdit(string action)
+    {
+        if (action is "duplicate" or "delete" or "copy" or "paste" && BlockShortcut(action)) return;
+        switch (action)
+        {
+            case "delete" when Timeline.ChordMarks.Count > 0:
+                RemoveChords(Timeline.ChordMarks.ToList());
+                break;
+            case "delete":
+                await (Timeline.Range != null ? DeleteRangeSelection() : sel == null && SelectedFolder is { } gone ? RemoveFolder(gone) : DeleteTimelineSelection());
+                break;
+            case "deleteClose":
+                if (Timeline.Range != null) await DeleteRangeSelection(close: true);
+                break;
+            case "duplicate":
+                await DuplicateSelection();
+                break;
+            case "alignGrid":
+                await AlignClips(PickedClipIds());
+                break;
+            case "selectAll" when store != null:
+                Timeline.BoxClips([.. store.Project.Tracks.SelectMany(t => t.Clips.Select(c => c.Id).Concat((t.MidiClips ?? []).Select(c => c.Id)))]);
+                break;
+            case "deselect":
+                Timeline.BoxClips([]);
+                Timeline.SelectClip(Timeline.Selected, null);
+                break;
+            case "copy" or "cut":
+                await CopySelection(cut: action == "cut");
+                break;
+            case "paste":
+                await PasteClips();
+                break;
+        }
         Timeline.InvalidateVisual();
     }
 
@@ -1003,9 +1039,9 @@ public partial class MainWindow : Window
             if (b.Classes.Contains("lit") == lit && b.IsEnabled == editable) continue;
             b.IsEnabled = editable;
             b.Classes.Set("lit", lit);
-            b.Background = lit ? (solo ? Palette.Accent : Palette.Brush("#f59e0b")) : Brushes.Transparent;
+            b.Background = lit ? (solo ? Palette.Accent : Palette.Mute) : Brushes.Transparent;
             b.BorderBrush = lit ? Brushes.Transparent : Palette.Line;
-            ((TextBlock)b.Content!).Foreground = lit ? Palette.App : Palette.Dim;
+            ((TextBlock)b.Content!).Foreground = lit ? (solo ? Palette.AccentFg : Palette.App) : Palette.Dim;
             ToolTip.SetTip(b, lit ? Loc.T(solo ? "mixer.clearSolos" : "mixer.clearMutes") : Loc.T(solo ? "timeline.noSolos" : "timeline.noMutes"));
         }
     }
@@ -1079,7 +1115,7 @@ public partial class MainWindow : Window
         }
         catch (Exception e)
         {
-            Status(Loc.T("main.restoredNoView", e.Message));
+            Toast(Loc.T("main.restoredNoView", e.Message));
         }
         finally
         {

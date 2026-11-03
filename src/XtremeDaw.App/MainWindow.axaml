@@ -104,6 +104,23 @@
     <!-- full screen (F11): Avalonia's own title bar shows up at the top as an accent strip that slides down on hover;
          ours stays, and F11 or a double click on it leaves full screen. TitleBar sets its own IsVisible in code,
          which beats a style: it goes see-through and out of the mouse's way instead -->
+    <!-- the menu bar's titles (MainWindow.MenuBar.cs): plain words in Dim; hovered or open, on Hover. Text: no glow -->
+    <Style Selector="Button.menubar">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Padding" Value="9,5" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    </Style>
+    <Style Selector="Button.menubar:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.menubar:pressed /template/ ContentPresenter#PART_ContentPresenter, Button.menubar.open /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.menubar:pointerover">
+      <Setter Property="Effect" Value="{x:Null}" />
+    </Style>
     <Style Selector="TitleBar:fullscreen">
       <Setter Property="Opacity" Value="0" />
       <Setter Property="IsHitTestVisible" Value="False" />
@@ -124,6 +141,8 @@
               <Image Source="/Assets/XTreme-64.png" Width="24" Height="24" RenderOptions.BitmapInterpolationMode="HighQuality" />
             </Button>
             <TextBlock Text="XTreme" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+            <!-- Archivo, Edición… (MainWindow.MenuBar.cs) -->
+            <StackPanel x:Name="AppMenu" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center" Margin="6,0,0,0" />
             <!-- a copy made by tools\probar.ps1 says which build it is (TestBuild) -->
             <Border x:Name="TestBuildChip" Background="{StaticResource Hover}" CornerRadius="4" Padding="5,1" VerticalAlignment="Center" IsVisible="False">
               <StackPanel Orientation="Horizontal" Spacing="5">
@@ -161,7 +180,6 @@
                 <TextBlock x:Name="FfmpegText" Foreground="{StaticResource Faint}" Text="FFmpeg" />
               </StackPanel>
             </StackPanel>
-            <c:NotificationBell x:Name="Bell" VerticalAlignment="Center" />
             <!-- hide the side panels entirely (MainWindow.Sidebars.cs): a window with its panel filled in while it shows.
                  The empty TextBlock inherits the button's color (hover included) for the paths, like LayoutSideText -->
             <StackPanel Orientation="Horizontal" Spacing="2">
@@ -185,18 +203,6 @@
               <TextBlock Classes="icon" Text="&#xE80A;" />
             </Button>
             <c:ThemePicker x:Name="ThemePick" VerticalAlignment="Center" />
-            <Button x:Name="NewsButton" Classes="ghost" ToolTip.Tip="{loc:T news.title}" AutomationProperties.Name="{loc:T news.title}">
-              <TextBlock Classes="icon" Text="&#xE789;" />
-            </Button>
-            <Button x:Name="FeedbackButton" Classes="ghost" ToolTip.Tip="{loc:T feedback.title}" AutomationProperties.Name="{loc:T feedback.title}">
-              <TextBlock Classes="icon" Text="&#xE939;" />
-            </Button>
-            <Button x:Name="HelpButton" Classes="ghost" AutomationProperties.Name="{loc:T help.title}">
-              <TextBlock Classes="icon" Text="&#xE897;" />
-            </Button>
-            <Button x:Name="SettingsButton" Classes="ghost" ToolTip.Tip="{loc:T settings.title}">
-              <TextBlock Classes="icon" Text="&#xE713;" />
-            </Button>
           </StackPanel>
         </Grid>
 
@@ -230,7 +236,6 @@
                 <TextBlock x:Name="SaveIcon" Classes="icon" Text="&#xE73E;" FontSize="10" Foreground="{StaticResource Faint}" />
                 <TextBlock x:Name="SaveText" Text="{loc:T title.saved}" FontSize="11" FontWeight="Normal" Foreground="{StaticResource Faint}" />
               </StackPanel>
-              <TextBlock Classes="icon" Text="&#xE70D;" FontSize="9" Foreground="{StaticResource Faint}" />
             </StackPanel>
           </Button>
 
@@ -483,10 +488,11 @@
                   <TextBlock Text="{loc:T transport.rec.stop}" FontSize="14" FontWeight="SemiBold" Foreground="White" />
                 </StackPanel>
               </Button>
-              <Button x:Name="RecDiscardButton" Classes="chip discard" Height="30" Padding="12,0" IsVisible="False" Background="Transparent" ToolTip.Tip="{loc:T transport.rec.discard.tip}">
+              <!-- apart from Detener and asking for a second click: losing a take is the worst mistake -->
+              <Button x:Name="RecDiscardButton" Classes="chip discard" Height="30" Padding="12,0" Margin="14,0,0,0" IsVisible="False" Background="Transparent" ToolTip.Tip="{loc:T transport.rec.discard.tip}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <TextBlock Classes="icon" Text="&#xE74D;" FontSize="13" />
-                  <TextBlock Text="{loc:T transport.rec.discard}" FontSize="14" />
+                  <TextBlock x:Name="RecDiscardText" Text="{loc:T transport.rec.discard}" FontSize="14" />
                 </StackPanel>
               </Button>
               <Button x:Name="CountCancelButton" Classes="chip count" Height="30" Padding="12,0,16,0" IsVisible="False" Foreground="{StaticResource Fg}" Background="{StaticResource AccentSoft}" BorderBrush="{StaticResource Accent50}" ToolTip.Tip="{loc:T transport.count.cancel.tip}">

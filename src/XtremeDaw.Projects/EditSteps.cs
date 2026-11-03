@@ -313,7 +313,7 @@ public static class EditSteps
     static string SlotName(JsonObject s) => Str(s, "type") switch
     {
         InsertSlot.VstKind when Str((s["vst"] as JsonObject)?["plugin"] as JsonObject, "name") is { Length: > 0 } plugin => plugin,
-        InsertSlot.SatKind => T("step.fx.sat", "Vida"),
+        InsertSlot.SatKind => T("step.fx.sat", "Saturación"),
         InsertSlot.CompKind => T("step.fx.comp", "el compresor"),
         InsertSlot.EqKind => T("step.fx.eq", "el EQ"),
         InsertSlot.ReverbKind => T("step.fx.reverb", "la reverb"),

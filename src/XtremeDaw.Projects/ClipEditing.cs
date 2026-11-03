@@ -214,7 +214,7 @@ public static class ClipEditing
         var (from, clip) = Find(p, clipId);
         var to = p.Tracks.Find(t => t.Id == targetId) ?? throw new ArgumentException(Texts.T("err.clip.trackNotFound", "Pista no encontrada."));
         if (from == to) return to.Id;
-        if (to.IsMidi) throw new ArgumentException(Texts.T("err.midi.noAudio", "Las tomas de audio no van en pistas MIDI."));
+        if (to.IsMidi) throw new ArgumentException(Texts.T("err.midi.noAudio", "El audio no va en pistas MIDI."));
         Unlocked(from, clip);
         if (to.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", to.Name));
         Clip? other = swapId == null ? null : to.Clips.Find(c => c.Id == swapId)
@@ -337,7 +337,7 @@ public static class ClipEditing
     {
         if (p.Tracks.Find(t => t.Id == id) is not { } track) return;
         if (HasLock(track))
-            throw new ArgumentException(Texts.T("err.track.locked", "«{0}» tiene tomas bloqueadas.", track.Name));
+            throw new ArgumentException(Texts.T("err.track.locked", "«{0}» tiene clips bloqueados.", track.Name));
         foreach (var c in track.Clips) Remember(p, track, c);
         int index = p.Tracks.IndexOf(track);
         p.Tracks.Remove(track);

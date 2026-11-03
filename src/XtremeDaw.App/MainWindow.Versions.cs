@@ -4,7 +4,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App;
 
 /// <summary>
-/// The project chip's menu (asked by the user): the projects manager, and "Volver a una versión guardada" with the
+/// "Volver a una versión guardada" (Archivo, asked by the user): the
 /// snapshots of historial/ (<see cref="ProjectStore.Snapshots"/>), which before could only be restored from xtlab; the
 /// same versions, with their names, are in Historial → Versiones (MainWindow.Steps.cs), which goes back through here.
 /// Going back saves the current state as one more snapshot first, so it is undone from the same list; the undo
@@ -15,24 +15,23 @@ public partial class MainWindow
     /// <summary>Newest snapshots listed: older ones stay in historial/ and in xtlab.</summary>
     const int MaxVersionsShown = 20;
 
-    async Task ShowSessionMenu()
+    /// <summary>Archivo → "Volver a una versión guardada": the newest snapshots, disabled with its reason when there is
+    /// nothing to go back to or it can't be done now.</summary>
+    MenuItem VersionsItem()
     {
-        // with no project open there is nothing to go back to: straight to the manager, as before
-        if (store == null) { await ShowProjects(); return; }
-        if (PressClosedMenuOf(SessionChip)) return;
         var st = store;
-        var snapshots = ProjectStore.Snapshots(st.Dir).Take(MaxVersionsShown).ToList();
-        bool canRestore = !st.ReadOnly && !restoring && !RecordingBusy && !Export.IsRunning;
+        var snapshots = st == null ? [] : ProjectStore.Snapshots(st.Dir).Take(MaxVersionsShown).ToList();
+        bool canRestore = st is { ReadOnly: false } && !restoring && !RecordingBusy && !Export.IsRunning;
         var versions = new MenuItem
         {
             Header = new TextBlock { Text = Loc.T("ver.title"), FontSize = 12 },
             IsEnabled = canRestore && snapshots.Count > 0,
             ItemsSource = snapshots.Select(s => MenuAction(s.Name is { } name ? $"{VersionTime(s.Time)} · {name}" : VersionTime(s.Time),
-                () => RestoreVersion(st, s), hint: s.Time.ToString("dd/MM/yyyy HH:mm:ss"))).ToList(),
+                () => RestoreVersion(st!, s), hint: s.Time.ToString("dd/MM/yyyy HH:mm:ss"))).ToList(),
         };
-        ToolTip.SetTip(versions, snapshots.Count == 0 ? Loc.T("ver.none") : st.ReadOnly ? st.ReadOnlyReason : Loc.T("ver.tip"));
+        ToolTip.SetTip(versions, st == null ? null : snapshots.Count == 0 ? Loc.T("ver.none") : st.ReadOnly ? st.ReadOnlyReason : Loc.T("ver.tip"));
         ToolTip.SetShowDelay(versions, (int)MenuTipDelay.TotalMilliseconds);
-        OpenAnchoredMenu(Popup([MenuAction(Loc.T("ver.projects"), ShowProjects, icon: ""), new Separator(), versions], 260), SessionChip);
+        return versions;
     }
 
     /// <summary>"recién", "hace 5 min", "hoy 14:30", "ayer 09:10", dd/MM HH:mm, like the rest of the window.</summary>

@@ -586,7 +586,6 @@ public sealed partial class PianoRollView : Control
         bool outside = scale != null && !scale.Contains(n.Pitch);
         var tint = n.Color > 0 ? GroupColors[n.Color - 1] : color;
         ctx.DrawRectangle(Palette.Alpha(tint, outside ? a * 0.25 : a), sel ? Palette.Pen(Palette.Fg, 1.5) : outside ? Palette.Pen(Palette.Alpha(tint, 0.9)) : Palette.Pen(Palette.Alpha(Palette.AppColor, 0.6)), r, rad, rad);
-        DrawNoteMarks(ctx, n, r);
         // the velocity at a glance (asked by the user): a gauge along the bottom, full at 127
         if (r.Width >= 10 && r.Height >= 8)
         {
@@ -594,6 +593,7 @@ public sealed partial class PianoRollView : Control
             ctx.FillRectangle(Palette.Alpha(Palette.AppColor, 0.18), new Rect(r.X + rad, gy, gw, 2));
             ctx.FillRectangle(Palette.Alpha(Palette.AppColor, 0.6), new Rect(r.X + rad, gy, gw * n.Velocity / 127.0, 2));
         }
+        DrawNoteMarks(ctx, n, r);
         if (r.Width >= 26 && rowH >= 11)
             ctx.DrawText(PitchNames[n.Pitch], 9.5, Palette.AccentFg, new Point(r.X + 3, r.Y + (r.Height - 15) / 2), Palette.UiBold);
     }

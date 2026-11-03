@@ -229,7 +229,7 @@ public static class ChannelDsp
     /// <summary>Writes a compressor preset's values (<see cref="CompPresets.Apply"/>) back into <paramref name="c"/>.</summary>
     public static void RecalculateComp(CompSettings c) => WriteComp(c, CompPresets.Apply(Comp(c)));
 
-    /// <summary>"Analizar toma": the preset's values measured on the take's <paramref name="env"/>.</summary>
+    /// <summary>The compressor's analyze button: the preset's values measured on the take's <paramref name="env"/>.</summary>
     public static void AnalyzeComp(CompSettings c, CompPresets.TakeEnvelope env)
     {
         WriteComp(c, CompPresets.UpdateComp(Comp(c), env));

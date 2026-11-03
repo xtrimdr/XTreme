@@ -55,12 +55,34 @@ public partial class MainWindow
     /// <summary>Where the recording started (the playhead), for its takes and its MIDI clips.</summary>
     double recStartSec;
     bool RecordingBusy => RecordingTake || recStopping;
+    /// <summary>How long Descartar waits for its second click before going back to normal.</summary>
+    const long DiscardConfirmMs = 3000;
+    /// <summary>When Descartar got its first click (Environment.TickCount64); 0 = not armed.</summary>
+    long discardArmedAt;
+
+    /// <summary>The first click on Descartar only asks (the button turns red and says so); the second, within
+    /// <see cref="DiscardConfirmMs"/>, discards. A take lost by a slip next to Detener is the worst mistake.</summary>
+    void ArmDiscard(bool on)
+    {
+        discardArmedAt = on ? Environment.TickCount64 : 0;
+        RecDiscardButton.Classes.Set("armed", on);
+        RecDiscardText.Text = Loc.T(on ? "transport.rec.discard.confirm" : "transport.rec.discard");
+    }
 
     void InitRecording()
     {
         RecButton.Click += (_, _) => StartRecording();
         RecStopButton.Click += async (_, _) => await StopRecording(false);
-        RecDiscardButton.Click += async (_, _) => await StopRecording(true);
+        RecDiscardButton.Click += async (_, _) =>
+        {
+            if (discardArmedAt == 0)
+            {
+                ArmDiscard(true);
+                return;
+            }
+            ArmDiscard(false);
+            await StopRecording(true);
+        };
         CountCancelButton.Click += async (_, _) => await StopRecording(true);
         Timeline.ArmRequested += ToggleArm;
         Timeline.InputMenuRequested += (t, at) => ShowInputMenu(t, Timeline, at);
@@ -194,12 +216,12 @@ public partial class MainWindow
         if (store == null || restoring || Projects.IsVisible || Export.IsVisible || RecordingBusy || engine.Calibrating) return;
         if (store.ReadOnly)
         {
-            Status(store.ReadOnlyReason ?? Loc.T("rec.readOnly"));
+            Toast(store.ReadOnlyReason ?? Loc.T("rec.readOnly"));
             return;
         }
         if (!engine.IsOpen)
         {
-            Status(engine.Status);
+            Toast(engine.Status);
             return;
         }
         Timeline.CancelGesture();
@@ -209,7 +231,7 @@ public partial class MainWindow
         var midiTargets = MidiRecordTargets();
         if (targets.Count == 0 && midiTargets.Count == 0)
         {
-            Status(Loc.T("rec.noneArmed"));
+            Toast(Loc.T("rec.noneArmed"));
             return;
         }
         bool countIn = CountInToggle.IsChecked == true;
@@ -255,7 +277,7 @@ public partial class MainWindow
                 try { store.EndRecording(t.Journal.MediaId); } catch (IOException) { }
             EndMidiTakes(startSec, startSec, discard: true);
             armedKey = ""; // the engine's inputs may have changed: hand them over again
-            Status(Loc.T("rec.startFail", e.Message));
+            Toast(Loc.T("rec.startFail", e.Message));
             return;
         }
         if (cam != null && videoAt >= 0)
@@ -287,7 +309,7 @@ public partial class MainWindow
         Timeline.RecordingStartSec = startSec;
         NewTrackButton.IsEnabled = false;
         Timeline.RecordingLanes = targets.Select(t => t == null ? tracks.Count : p.Tracks.IndexOf(t)).Concat(midiTargets.Select(t => p.Tracks.IndexOf(t))).ToHashSet();
-        Status(notice ?? "");
+        Toast(notice ?? "");
         RefreshRecording();
     }
 
@@ -364,7 +386,7 @@ public partial class MainWindow
             if (kept.Count == 0 && played.Count == 0)
             {
                 if (problem != null) Toast(problem);
-                else if (discard && !wasCountingIn) Status(takes.Count > 1
+                else if (discard && !wasCountingIn) Toast(takes.Count > 1
                     ? Loc.T("rec.discarded.many")
                     : Loc.T("rec.discarded.one"));
                 else if (takes.Count == 0 && !discard && !wasCountingIn) Toast(Loc.T("midi.rec.nothing"));
@@ -468,6 +490,7 @@ public partial class MainWindow
         RecButton.IsVisible = !recording;
         CountCancelButton.IsVisible = beat != null;
         RecStopButton.IsVisible = RecDiscardButton.IsVisible = recording && beat == null;
+        if (discardArmedAt != 0 && (!RecDiscardButton.IsVisible || Environment.TickCount64 - discardArmedAt > DiscardConfirmMs)) ArmDiscard(false);
         if (beat != null) CountBeatText.Text = $"{beat}/4";
         if (Preview.CountdownBeat != beat)
         {

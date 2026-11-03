@@ -397,7 +397,7 @@ public partial class MainWindow
                     if (f.DurationSecValue == 0) f.DurationSecValue = -1;
                     sampleList.InvalidateVisual();
                     ShowPickedSample();
-                    Status(Loc.T("smp.fail", f.Name, t.Exception?.GetBaseException().Message.TrimEnd('.') ?? ""));
+                    Toast(Loc.T("smp.fail", f.Name, t.Exception?.GetBaseException().Message.TrimEnd('.') ?? ""));
                     return;
                 }
                 if (RecordingBusy) return;

@@ -46,6 +46,8 @@ public sealed partial class TempoDialog : UserControl
     public bool HandleKey(KeyEventArgs e)
     {
         if (!IsVisible) return false;
+        // Tab moves the focus: kept from the window's shortcuts but not handled
+        if (e.Key == Key.Tab) return true;
         if (e.Key == Key.Escape) Answer(Choice.Cancel);
         else if (e.Key is Key.Enter or Key.Space)
             Answer(e.Source == GridButton ? Choice.Grid : e.Source == CancelButton ? Choice.Cancel : Choice.Stretch);

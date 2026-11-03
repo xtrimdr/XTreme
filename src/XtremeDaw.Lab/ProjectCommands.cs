@@ -21,6 +21,7 @@ static class ProjectCommands
         if (sub == "verificar-paquete") return PackageChecks.Run();
         if (sub == "verificar-guardar-como") return SaveAsChecks.Run();
         if (sub == "verificar-bloqueo") return LockChecks.Run();
+        if (sub == "verificar-sin-guardar") return UntitledChecks.Run();
         if (sub == "verificar-bucles") return ClipLoopChecks.Run();
         if (sub == "verificar-ab") return MixCompareChecks.Run();
         if (sub == "verificar-pasos") return StepChecks.Run();

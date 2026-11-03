@@ -360,9 +360,9 @@ public partial class MainWindow
                 bool lit = tracks.Any(t => solo ? t.Channel.Solo : t.Channel.Muted);
                 b.IsEnabled = store != null && !store.ReadOnly && !restoring && tracks.Any(t => t.Track.HasContent);
                 b.Classes.Set("lit", lit);
-                b.Background = lit ? (solo ? Palette.Fg : Palette.Accent) : Brushes.Transparent;
-                b.BorderBrush = lit ? (solo ? Palette.Fg : Palette.Accent) : Palette.Line;
-                ((TextBlock)b.Content!).Foreground = lit ? Palette.App : Palette.Faint;
+                b.Background = lit ? (solo ? Palette.Accent : Palette.Mute) : Brushes.Transparent;
+                b.BorderBrush = lit ? (solo ? Palette.Accent : Palette.Mute) : Palette.Line;
+                ((TextBlock)b.Content!).Foreground = lit ? (solo ? Palette.AccentFg : Palette.App) : Palette.Faint;
                 ToolTip.SetTip(b, lit ? Loc.T(solo ? "mixer.clearSolos" : "mixer.clearMutes") : Loc.T(solo ? "timeline.noSolos" : "timeline.noMutes"));
             });
             clear.Children.Add(b);
@@ -902,8 +902,8 @@ public partial class MainWindow
         var head = StripHead(badge, name, under);
         // like a console's strip (asked by the user): its effects and its sends as lists, the pan as a bar, then M S ●
         var (controls, gr) = CompactChain(SlotsOf(t), RouterOf(t), () => t.Channel.Pan, v => EditTrack(t, x => x.Channel.Pan = v, "pan"),
-            StripToggle("M", Shortcuts.Tip("Mute", "mute"), 26, () => t.Channel.Muted, false, () => EditTrack(t, x => x.Channel.Muted = !x.Channel.Muted, "mute")),
-            StripToggle("S", Shortcuts.Tip("Solo", "solo"), 26, () => t.Channel.Solo, true, () => EditTrack(t, x => x.Channel.Solo = !x.Channel.Solo, "solo")),
+            StripToggle("M", Shortcuts.Tip("Mute", "mute"), 26, () => t.Channel.Muted, true, () => EditTrack(t, x => x.Channel.Muted = !x.Channel.Muted, "mute")),
+            StripToggle("S", Shortcuts.Tip("Solo", "solo"), 26, () => t.Channel.Solo, false, () => EditTrack(t, x => x.Channel.Solo = !x.Channel.Solo, "solo")),
             ArmToggle(t, 26));
         mx.Meters[t.Track.Id] = (meter, gr);
         var content = new Grid();
@@ -1274,7 +1274,7 @@ public partial class MainWindow
         ApplyMixerMinHeight();
     }
 
-    /// <summary>What a slot is called in the compact list: the musician's word (Vida, Comp…).</summary>
+    /// <summary>What a slot is called in the compact list: the musician's word (Saturación, Comp…).</summary>
     static string SlotName(string type) => type switch
     {
         InsertSlot.SatKind => Loc.T("fx.life"),
@@ -1410,7 +1410,7 @@ public partial class MainWindow
         public required Action<Action<List<InsertSlot>>, string> Edit { get; init; }
         /// <summary>Sets a compressor's values from its preset (after its preset or amount changed, or a new one).</summary>
         public required Action<CompSettings> Recalculate { get; init; }
-        /// <summary>What "Analizar toma" measures; null = nothing to measure.</summary>
+        /// <summary>What the compressor's analyze button measures; null = nothing to measure.</summary>
         public Func<MediaAudio?> Take { get; init; } = () => null;
         /// <summary>The "+ Efecto" tooltip: what a new effect works on.</summary>
         public string AddTip { get; init; } = Loc.T("mix.slot.add.tip");
@@ -1751,9 +1751,10 @@ public partial class MainWindow
         return s;
     }
 
-    /// <summary>Port of ToggleBtn: M lights in the accent, S in white. Like every strip button it takes no keyboard
-    /// focus, so Space and Enter stay shortcuts after a click in the mixer.</summary>
-    Button StripToggle(string text, string tip, double size, Func<bool> on, bool solo, Action click, List<Action>? refresh = null)
+    /// <summary>A lit toggle of a strip: a mute in amber, anything else (S, MONO) in the accent, the same colors as the
+    /// timeline's M and S. Like every strip button it takes no keyboard focus, so Space and Enter stay shortcuts after
+    /// a click in the mixer.</summary>
+    Button StripToggle(string text, string tip, double size, Func<bool> on, bool mute, Action click, List<Action>? refresh = null)
     {
         var b = new Button { Classes = { "chip" }, Focusable = false, Width = size, Height = size, MinHeight = size, Padding = new Thickness(0), CornerRadius = new CornerRadius(4),
             HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
@@ -1764,9 +1765,9 @@ public partial class MainWindow
         {
             bool lit = on();
             b.Classes.Set("lit", lit);
-            b.Background = lit ? (solo ? Palette.Fg : Palette.Accent) : Brushes.Transparent;
-            b.BorderBrush = lit ? (solo ? Palette.Fg : Palette.Accent) : Palette.Line;
-            ((TextBlock)b.Content!).Foreground = lit ? Palette.App : Palette.Faint;
+            b.Background = lit ? (mute ? Palette.Mute : Palette.Accent) : Brushes.Transparent;
+            b.BorderBrush = lit ? (mute ? Palette.Mute : Palette.Accent) : Palette.Line;
+            ((TextBlock)b.Content!).Foreground = lit ? (mute ? Palette.App : Palette.AccentFg) : Palette.Faint;
         });
         return b;
     }

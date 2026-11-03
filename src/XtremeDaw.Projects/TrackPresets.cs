@@ -30,7 +30,7 @@ public sealed class TrackPreset
         {
             var c = Channel;
             var parts = new List<string>();
-            if (c.Sat.On) parts.Add(Texts.T("tps.life", "Vida") + $" {c.Sat.Amount * 100:0}%");
+            if (c.Sat.On) parts.Add(Texts.T("tps.life", "Saturación") + $" {c.Sat.Amount * 100:0}%");
             if (c.Comp.On) parts.Add(Texts.T("tps.comp", "Comp"));
             if (c.Eq.On) parts.Add("EQ");
             int sends = c.Sends.Count(s => s.On && s.Level > 0);

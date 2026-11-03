@@ -234,7 +234,7 @@ public partial class MainWindow
                 else if (!t.IsCanceled)
                 {
                     transposeFailed.Add(key);
-                    Status(Loc.T(key.Stretch != 1 ? "stretch.error" : "transpose.error", name, t.Exception?.GetBaseException().Message ?? ""));
+                    Toast(Loc.T(key.Stretch != 1 ? "stretch.error" : "transpose.error", name, t.Exception?.GetBaseException().Message ?? ""));
                 }
                 RefreshTranspose();
             }), TaskScheduler.Default);

@@ -134,7 +134,7 @@ public sealed class Saturator
 
 public enum SatMode { Tube, Tape }
 
-/// <summary>What the "Vida" knob does (port of satParams in saturation.ts).</summary>
+/// <summary>What the saturation's Drive knob does (port of satParams in saturation.ts).</summary>
 public readonly record struct SatParams(bool Bypass, double Drive, double Bias, double Tone, double ToneMix, double Bump)
 {
     /// <param name="rmsDb">The take's typical level (<see cref="LevelAnalysis"/>); -24 if unknown.</param>

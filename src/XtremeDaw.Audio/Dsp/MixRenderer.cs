@@ -113,7 +113,7 @@ public delegate void MixSink(int frame, ReadOnlySpan<float> left, ReadOnlySpan<f
 /// <summary>
 /// Per-track DSP chain shared by live ASIO playback (<c>PlaybackEngine</c>) and offline export render
 /// (<see cref="MixRenderer"/>): clips with fade envelopes → the track's insert slots (<see cref="ITrackInsert"/>, by
-/// default Vida → compressor with its preset EQ → 6-band EQ) → Web Audio <c>StereoPannerNode</c> → fader, into its
+/// default saturation → compressor with its preset EQ → 6-band EQ) → Web Audio <c>StereoPannerNode</c> → fader, into its
 /// output (a folder, a bus or the master: the caller's buffer), and its sends to buses, each post-fader (by default) or
 /// pre-fader (after the slots and the pan, before the fader; mute and solo still silence it). Preallocates its buffers
 /// (8192 frames) so <see cref="ProcessFilledBuffer"/> never allocates. The slots are an array the UI replaces whole

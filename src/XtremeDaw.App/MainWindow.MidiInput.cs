@@ -263,7 +263,7 @@ public partial class MainWindow
         var ids = picked.Where(id => MidiEditing.TryFind(p, id) != null).Distinct().ToList();
         if (ids.Count == 0)
         {
-            Status(Loc.T("midi.quantize.none"));
+            Toast(Loc.T("midi.quantize.none"));
             return;
         }
         int moved = 0;

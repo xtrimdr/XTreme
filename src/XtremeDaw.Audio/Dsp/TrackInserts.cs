@@ -21,7 +21,7 @@ public interface ITrackInsert
     double TakeGrDb();
 }
 
-/// <summary>The Vida saturator as a slot.</summary>
+/// <summary>The saturator as a slot.</summary>
 public sealed class SatInsert(int sampleRate) : ITrackInsert
 {
     public Saturator Sat { get; } = new(sampleRate);
@@ -359,7 +359,7 @@ public static class TrackInserts
         return next;
     }
 
-    /// <summary>The fixed chain from before slots (Vida → compressor → EQ), for specs that bring no slots.</summary>
+    /// <summary>The fixed chain from before slots (saturation → compressor → EQ), for specs that bring no slots.</summary>
     public static InsertSpec[] Legacy(SatParams sat, CompState comp, bool eqOn, EqBandSpec[] eqBands) =>
     [
         new("sat", Sat) { Sat = sat },

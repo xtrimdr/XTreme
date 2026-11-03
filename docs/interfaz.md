@@ -61,8 +61,8 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 ## Barra de título
 
 - Son dos filas en un mismo `TitleBar` (para que todo entre con la ventana sin maximizar, pedido del usuario): la
-  primera, de 44, es la barra de título (`ExtendClientAreaTitleBarHeightHint="44"`) con la app, los medidores, avisos,
-  tema y Configuración; la segunda es la del proyecto: modo, chip, guardar/deshacer y Exportar a la derecha (ahí no
+  primera, de 44, es la barra de título (`ExtendClientAreaTitleBarHeightHint="44"`) con la app, la barra de menús,
+  los medidores, los paneles, el diseño y el tema; la segunda es la del proyecto: modo, chip, guardar/deshacer y Exportar a la derecha (ahí no
   hay botones del sistema, así que va sin el margen de 150). Las dos arrastran la ventana.
 - En el medio de la segunda fila, las **herramientas del timeline** (`MainWindow.Tools.cs`, pedido del usuario): una
   caja como la de Video | Solo audio (`Border.mode` con `ToggleButton.mode` de 32 px, solo ícono) con Seleccionar ·
@@ -77,13 +77,21 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   de título queda (sin el margen de 150) y no arrastra; doble clic o F11 otra vez vuelven a como estaba (maximizada o
   no). No se recuerda entre sesiones: abre como estaba antes de la pantalla completa. La `TitleBar` de Avalonia va transparente y sin mouse
   (`TitleBar:fullscreen`; su `IsVisible` lo pone ella por código): si no, asoma arriba como una franja del acento.
+- **Barra de menús** (`MainWindow.MenuBar.cs`, pedido del usuario, 2026-11-03: sin ella parecía una app de juguete):
+  Archivo, Edición, Pista, Ver, Transporte, Herramientas y Ayuda, a la derecha del nombre. Reemplazó el menú del chip
+  del proyecto y los íconos de Configuración, Ayuda, Novedades y Enviar comentarios. Cada menú se arma al abrirse (lo
+  que no se puede hacer en ese momento sale deshabilitado) y muestra la tecla de cada acción, leída de `Shortcuts`. Las
+  entradas llaman al mismo código que su atajo o su botón (`RunEdit` para la edición, los botones de vista y de
+  exportar); Herramientas analiza el clip de audio elegido con las mismas entradas que su menú. Los títulos son botones
+  (`Button.menubar`) que abren el mismo menú que el clic derecho del timeline (`Popup`, uno a la vez); con uno abierto,
+  pasar a otro título abre ese. El `Menu` de Avalonia no tomaba los clics en la barra de título. Sin acceso por Alt.
 - El logo es el ícono de la app y abre "Acerca de" (`Dialogs/AboutDialog`), con el mismo encabezado que el splash
   (`BrandArt`: logo grande, brillo y línea del acento del tema, versión en la esquina).
   Ahí dice si hay una versión nueva: 5 s después de abrir, `MainWindow.Updates.cs` le pregunta a GitHub por la última
   release (`UpdateCheck`, en `XtremeDaw.Projects`; sin cuenta ni datos del usuario, y si falla no avisa nada). Una
   versión nueva sale en un toast con "Descargar" solo la primera vez (`config.json` "updateNotified"); después, solo
-  en la campanita. La casilla "Avisarme cuando salga una versión nueva" lo apaga (`config.json` "checkUpdates": "off").
-- "Enviar comentarios" (`Dialogs/FeedbackDialog`, botón de la barra de título, entre Novedades y Ayuda, y de "Acerca de";
+  en "Acerca de". La casilla "Avisarme cuando salga una versión nueva" lo apaga (`config.json` "checkUpdates": "off").
+- "Enviar comentarios" (`Dialogs/FeedbackDialog`, Ayuda → Enviar comentarios y el botón de "Acerca de";
   pedido del usuario): Error o Sugerencia, título, descripción y los datos que se agregan (versión, Windows, driver ASIO),
   a la vista y con casilla. "Continuar en GitHub" abre el issue nuevo ya lleno (`IssueReport`): la app no tiene token y el
   usuario lo envía con su cuenta. Lo que no entra en el enlace va por el portapapeles, con un toast. No abre grabando ni
@@ -92,10 +100,21 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   al hacer clic en ese chip, sale "Falta FFmpeg" (`Dialogs/FfmpegDialog`, pedido del usuario). Ofrece Instalar ahora
   (winget, `FfmpegSetup`, si está; se puede cerrar mientras instala y avisa con un toast), Abrir la página (gyan.dev),
   Ya lo instalé (relee el PATH y lo busca de nuevo) y el comando de winget para copiar.
-- El chip del proyecto abre un menú (`MainWindow.Versions.cs`): "Proyectos…" (el gestor) y "Volver a una versión
-  guardada", con las últimas 20 de `historial/` (`ProjectStore.Snapshots`, con su nombre si tienen; las mismas que
-  Historial → Versiones). Volver guarda antes lo actual como otra versión, recarga el proyecto y borra los pasos de
-  deshacer. Sin proyecto abierto, va directo al gestor.
+- El chip del proyecto muestra el nombre y el estado del guardado; un clic abre el gestor. "Volver a una versión
+  guardada" está en Archivo (`MainWindow.Versions.cs`), con las últimas 20 de `historial/` (`ProjectStore.Snapshots`,
+  con su nombre si tienen; las mismas que Historial → Versiones). Volver guarda antes lo actual como otra versión,
+  recarga el proyecto y borra los pasos de deshacer.
+- **Al arrancar** (`StartupMode`, pedido del usuario, 2026-11-03): el gestor (por defecto) o un proyecto vacío sin
+  lugar (`UntitledProjects`, `MainWindow.Untitled.cs`). Se elige con "Mostrar al arrancar" al pie del gestor o en
+  Configuración → Guardado y exportación ("startup" en `config.json`). El proyecto sin lugar vive en
+  `%APPDATA%\XTreme\sin-guardar\`, se guarda solo como cualquiera (lo grabado está en disco desde el principio) y no
+  entra en recientes; arranca en Solo audio, como todo proyecto nuevo (pedido del usuario: el video se elige). Guardar (atajo, diskette o Archivo) pregunta dónde va
+  (Guardar como) y sigue en esa copia; el chip dice "Sin guardar" mientras tenga algo. Cerrar la ventana con algo
+  adentro pregunta (`UnsavedDialog`: Guardar…, o a la Papelera); vacío se borra sin preguntar. Si se abre otro
+  proyecto, el sin lugar con algo queda en recientes. Si la app se cae, el próximo arranque en modo vacío lo abre de
+  nuevo (`UntitledProjects.Leftover`, con un toast).
+- El gestor siempre se puede cerrar (×, Esc), aunque no haya un proyecto abierto: entonces la ventana empieza en un
+  proyecto vacío sin lugar (pedido del usuario: no tiene que obligar a crear uno).
 - El gestor (`Controls/ProjectsDialog.axaml.cs`) lleva el logo de la app en el encabezado. "Abrir…" elige un `.xtp` (o un
   `xtreme_project.json` viejo) de cualquier carpeta; el formulario de proyecto nuevo tiene "Guardar en…" (una carpeta vacía
   es la del proyecto, en otra se crea una adentro). El botón de guardar de cada fila abre "Guardar como…" (sigue en la copia)
@@ -120,7 +139,7 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   usuario): la nota igual llega al disco como borrador (`TestItem.Draft`), por si la copia que se prueba se cae. Guardar
   devuelve el foco a la app, y lo que agrega otra sesión llega en 2 s con un toast. Lee y escribe `pruebas\lista.json` (`TestList`).
 - CPU / GPU / RAM / DSP con la misma forma ("CPU 19% ▬"), con líneas `Border.tsep` entre los grupos.
-- Después de la campanita, dos botones **ocultan del todo** el panel del canal y el del proyecto (`LeftPanelButton`,
+- A la derecha de los medidores, dos botones **ocultan del todo** el panel del canal y el del proyecto (`LeftPanelButton`,
   `RightPanelButton`, `MainWindow.Sidebars.cs`, pedido del usuario): una ventanita dibujada con el panel relleno
   mientras se ve. Oculto no deja ni la columna de íconos; al volver, vuelve como estaba (abierto o plegado). Se
   recuerda en `config.json` ("sidebarHidden", "projectBarHidden"). B / P, con el panel oculto, lo muestran.
@@ -135,7 +154,7 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 
 ## Ayuda (`Dialogs/HelpDialog`, `HelpGuide`)
 
-- Se abre con F1 (atajo `help`), con el ? de la barra de título, antes de Configuración, y con el ? del gestor de proyectos,
+- Se abre con F1 (atajo `help`), con Ayuda → Ayuda de la barra de menús y con el ? del gestor de proyectos,
   que es lo primero que ve alguien nuevo (pedido del usuario: didáctica, simple y por categorías). No abre grabando ni
   sobre Configuración, Exportar o Acerca de. Reabre donde quedó.
 - A la izquierda, el buscador y las categorías (una abierta a la vez, con sus temas); a la derecha, la página: Inicio con
@@ -163,15 +182,17 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 
 ## Avisos y toasts
 
-- **Avisos** = la campanita (`Controls/NotificationBell`, a la izquierda del tema). `Status(texto)` agrega el mensaje
-  a su lista (los últimos 50, el más nuevo arriba); un punto de acento marca los sin leer y abrirla los marca como
-  leídos. Nada se escribe en el centro de la barra de título ni en diálogos.
-- **Toasts** (`Controls/ToastHost`): `Toast(texto)` es para lo que conviene ver en el momento; sale abajo a la
-  derecha, encima de todo, se va sola a los 6 s (el puntero encima la frena) y también queda en la campanita. Una
+- Sin campanita (pedido del usuario, 2026-11-03: nadie la abría). `Status(texto)` solo lo anota en el registro de la
+  sesión (`SessionLog`): es para lo que una acción hizo y ya se ve, o una nota de progreso. Nada se escribe en el
+  centro de la barra de título ni en diálogos.
+- **Toasts** (`Controls/ToastHost`): `Toast(texto)` es para lo que el usuario tiene que ver: un error, una acción que
+  no se pudo hacer, un resultado que no se ve en otro lado. Sale abajo a la
+  derecha, encima de todo, se va sola a los 6 s (el puntero encima la frena); el mismo texto otra vez reemplaza su
+  tarjeta en vez de apilar una copia. Una
   fija (`sticky`) se va solo con su ×: la usa `--probar "texto"` ("Para probar"). Puede llevar un botón (`action`).
   Su letra es más grande que la del resto de la ventana (texto 14, título 12, 420 px de ancho; pedido del usuario,
   para leerla de un vistazo).
-  Salen como toast (lo eligió el usuario; el resto queda solo en la campanita): los errores al guardar el proyecto o
+  Entre otros salen como toast: los errores al guardar el proyecto o
   una toma (el reintento del guardado, solo la primera vez seguida), la toma guardada (o su problema), la exportación
   terminada (con "Mostrar" en el Explorador), la cámara que deja de mandar imagen (`TickCamera`, no en solo audio) y
   la interfaz de audio que deja de llamar más de 3 s (`PlaybackEngine.Stalled`, `TickAudioDriver`).
@@ -249,7 +270,7 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 - **Las tarjetas de efectos y envíos arrancan plegadas** (pedido del usuario: unos pocos llenaban el inspector):
   `Section(..., card: true)` las hace tarjetas compactas (encabezado de 36, márgenes chicos) y se recuerdan las que
   abriste (`"open:" + título` entre las plegadas). Plegada, al lado del título dicen lo suyo en mono
-  (`SectionHeader.SetSummary`): "30% · Con vida", "Rasgueo · Media", el umbral de la puerta, el nivel del envío. La
+  (`SectionHeader.SetSummary`): "30% · Media", "Rasgueo · Media", el umbral de la puerta, el nivel del envío. La
   ayuda del envío va en el tooltip del knob. Las secciones planas (Mezcla, Transponer, Clip…) tienen encabezado de 44.
 - **Un solo panel por efecto** (`MainWindow.FxPanel.cs`, pedido del usuario): `FxBody` arma los controles de cualquier
   efecto nativo desde su lista (`FxDefs`) más sus opciones (presets, modos), igual en el inspector, la ventanita del
@@ -658,7 +679,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   Quitar pasa al clic derecho. "Renombrar" abre la caja por encima del carril (`CompactEditorW`). La barra de la
   esquina y la del zoom sacan lo que no entra (`FitTimelineBars`): primero el imán a clips (por debajo de 324), después
   ajustar, quitar mute / solo y el imán; quedan el modo de la regla y el zoom.
-- Con carriles más altos aparece debajo una fila de knobs, todos dinámicos (pedido del usuario: nada fijo, ni Vida,
+- Con carriles más altos aparece debajo una fila de knobs, todos dinámicos (pedido del usuario: nada fijo, ni Saturación,
   Comp o Tono): uno por envío. Los envíos son los buses de la lista de la pista (`TimelineView.SendKnobs`, que la ventana arma de nuevo
   solo después de una edición, `SendKnobsOf` y `editStamp`), con el nombre y el ícono del bus; se eligen con clic
   derecho en la pista → "Envíos a buses" (`SendChoices`). Configuración → Vista los muestra u oculta todos
@@ -977,8 +998,8 @@ Logic o Studio One). Sigue en PENDIENTES.
   Una división nunca cambia lo que suena (decisión de diseño): la nota que cruza el corte queda en los dos pedazos, la de la derecha con
   `MidiNote.Tie`, que `NoteExpression.JoinTies` une a la que termina justo ahí con el mismo tono, en cualquier clip, antes de armar los eventos: un solo ataque, un solo release, el mismo glide. Sin
   nada que termine ahí es una nota común: al separar los pedazos vuelve a atacar, y una copia (`MidiClip.Copy`) no queda atada. En un clip de patrón, un corte en la raya de una vuelta deja dos clips
-  del patrón. En otro lado la izquierda sigue en el patrón y la derecha queda clip propio con sus repeticiones escritas (un clip de patrón no tiene cómo empezar en medio de una vuelta); lo avisa la
-  campanita. Los otros instrumentos del patrón que empiezan con él se cortan juntos.
+  del patrón. En otro lado la izquierda sigue en el patrón y la derecha queda clip propio con sus repeticiones escritas (un clip de patrón no tiene cómo empezar en medio de una vuelta); lo avisa un
+  toast. Los otros instrumentos del patrón que empiezan con él se cortan juntos.
 - **Patrones** (`MidiPatterns`, pedido del usuario, 2026-11-01: como en FL Studio, pero por pista): clic derecho en un
   clip → "Crear patrón". Duplicar, copiar o pegar ese clip da otro clip enlazado: editar las notas de uno cambia todas,
   también en otras pistas MIDI (cada pista lo toca con su instrumento). El clip muestra el nombre del patrón; estirarlo

@@ -95,7 +95,7 @@ public partial class MainWindow
         if (pencil is not { } brush || store == null || starts.Count == 0) return;
         if (brush.SamplePath is { } path)
         {
-            if (!CanImport()) { Status(Loc.T("imp.busy")); return; }
+            if (!CanImport()) { Toast(Loc.T("imp.busy")); return; }
             string trackId = track.Track.Id;
             if (await ImportAudio([path], starts[0], trackId, BringsPicture(path)) is not { } made) return;
             // from here on the sample paints as the take it became
@@ -119,7 +119,7 @@ public partial class MainWindow
                 starts.Count > 1 ? "clips-duplicated" : "clip-duplicated");
         if (ids.Count == 0)
         {
-            Status(Loc.T(brush.Take != null && store.Project.FindMedia(brush.Take.MediaId) == null ? "pencil.gone" : "pencil.full"));
+            Toast(Loc.T(brush.Take != null && store.Project.FindMedia(brush.Take.MediaId) == null ? "pencil.gone" : "pencil.full"));
             return;
         }
         int at = TrackIndex(id);

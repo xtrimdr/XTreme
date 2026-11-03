@@ -123,9 +123,9 @@ public partial class MainWindow
     /// <returns>The id of the last clip it made; null if none.</returns>
     async Task<string?> ImportAudio(IReadOnlyList<string> paths, double? atSec = null, string? trackId = null, bool picture = false)
     {
-        if (!CanImport()) { Status(Loc.T("imp.busy")); return null; }
+        if (!CanImport()) { Toast(Loc.T("imp.busy")); return null; }
         if (await LinkOrCopy(paths) is not { } link) return null;
-        if (!CanImport()) { Status(Loc.T("imp.busy")); return null; } // the question stayed open while something else started
+        if (!CanImport()) { Toast(Loc.T("imp.busy")); return null; } // the question stayed open while something else started
         var st = store!;
         string dir = st.Dir;
         int done = 0;

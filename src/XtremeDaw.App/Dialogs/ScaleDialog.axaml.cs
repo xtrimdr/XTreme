@@ -84,7 +84,8 @@ public sealed partial class ScaleDialog : UserControl
         if (!IsVisible) return false;
         if (e.Key == Key.Escape) Answer(false);
         else if (e.Key == Key.Enter) Accept();
-        else if (e.Key is Key.Tab or Key.Space) return false;
+        // Tab moves the focus and Space presses the focused button: kept from the window's shortcuts (Space would play)
+        else if (e.Key is Key.Tab or Key.Space) return true;
         e.Handled = true;
         return true;
     }

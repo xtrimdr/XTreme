@@ -109,6 +109,8 @@ public sealed partial class AboutDialog : UserControl
     public bool HandleKey(KeyEventArgs e)
     {
         if (!IsVisible) return false;
+        // Tab moves the focus: kept from the window's shortcuts but not handled
+        if (e.Key == Key.Tab) return true;
         if (e.Key == Key.Escape) HideDialog();
         e.Handled = true;
         return true;

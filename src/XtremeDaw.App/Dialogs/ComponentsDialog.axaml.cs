@@ -34,12 +34,13 @@ public sealed partial class ComponentsDialog : UserControl
         IsVisible = false;
     }
 
-    /// <summary>Escape omits; Tab and Enter work the buttons; nothing else leaves it.</summary>
+    /// <summary>Escape closes for now, like every other dialog (only "Omitir" stops the question at startup); Tab,
+    /// Enter and Space reach the buttons but never the window's shortcuts (Space would play).</summary>
     public bool HandleKey(KeyEventArgs e)
     {
         if (!IsVisible) return false;
-        if (e.Key is Key.Tab or Key.Enter or Key.Space) return false;
-        if (e.Key == Key.Escape) Skip();
+        if (e.Key is Key.Tab or Key.Enter or Key.Space) return true;
+        if (e.Key == Key.Escape) IsVisible = false;
         e.Handled = true;
         return true;
     }

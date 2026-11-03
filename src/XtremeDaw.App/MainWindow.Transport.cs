@@ -199,7 +199,7 @@ public partial class MainWindow
     void PreviewClick()
     {
         if (engine.IsOpen) engine.PreviewClick();
-        else Status(engine.Status);
+        else Toast(engine.Status);
     }
 
     static string TransportBars(double sec, double bpm)

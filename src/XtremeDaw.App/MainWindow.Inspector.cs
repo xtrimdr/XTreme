@@ -325,7 +325,15 @@ public partial class MainWindow
         removeEmpty.Click += async (_, _) => await DeleteTimelineSelection(); emptySections.Children.Add(removeEmpty);
         // an empty track shows its channel too, with how to fill it and its remove button below
         Inspector.Children.Add(takeSections); Inspector.Children.Add(clipSections); Inspector.Children.Add(emptySections);
-        var mix = Section("Mezcla", "\uE9E9", action: InspectorIcon("\uE74F", Loc.T("insp.mute.tip"), () => TogglePicked(false)));
+        var mute = InspectorIcon("\uE74F", Loc.T("insp.mute.tip"), () => TogglePicked(false));
+        var mix = Section("Mezcla", "\uE9E9", action: mute);
+        inspectorRefresh.Add(() =>
+        {
+            var picked = PickTargets();
+            bool muted = picked.Count > 0 && picked.All(t => t.Channel.Muted);
+            mute.Classes.Set("muted", muted);
+            ToolTip.SetTip(mute, Loc.T(muted ? "insp.unmute.tip" : "insp.mute.tip"));
+        });
         var volumeSlider = Slider(mix, Loc.T("insp.volume"), 0, 1.5, 0.01, 1, () => PickLead.Channel.Volume, v => EditPicked(t => t.Channel.Volume = v, "volume"), v => $"{v * 100:0}%",
             mixed: () => PicksDiffer(t => t.Channel.Volume));
         AutomateOn(volumeSlider, () => SingleTrack, AutoTarget.Volume, k => { syncing = true; volumeSlider.Set(Fader.ToVol(k), null); syncing = false; });
@@ -598,8 +606,10 @@ public partial class MainWindow
             if (c is { Offline: false })
             {
                 takeLength.Text = $"{c.LengthSec:0.0} s";
-                takeFormat.Text = $"WAV {c.Audio!.SampleRate / 1000.0:0} kHz";
-                takeChannels.Text = Loc.T("insp.stereo");
+                // the file as it is, not as the engine plays it (resampled to 48 kHz, always two sides)
+                string ext = Path.GetExtension(c.Media?.Audio ?? "").TrimStart('.').ToUpperInvariant();
+                takeFormat.Text = $"{(ext == "" ? "" : ext + " ")}{c.Audio!.SourceSampleRate / 1000.0:0.#} kHz";
+                takeChannels.Text = Loc.T(c.Audio.Mono ? "insp.mono" : "insp.stereo");
             }
             emptySections.IsVisible = sel != null && c == null && !sel.Track.IsMidi && group == null;
             midiPanel.IsVisible = sel is { Track.IsMidi: true } && group == null;

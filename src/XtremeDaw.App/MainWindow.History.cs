@@ -579,7 +579,7 @@ public partial class MainWindow
         catch (Exception e) when (e is IOException or InvalidOperationException or NAudio.MmException or FormatException or InvalidDataException)
         {
             takePreview.Stop();
-            Status(e is FileNotFoundException ? Loc.T("hist.err.notFound", m.Name) : Loc.T("hist.err.play", m.Name, e.Message));
+            Toast(e is FileNotFoundException ? Loc.T("hist.err.notFound", m.Name) : Loc.T("hist.err.play", m.Name, e.Message));
         }
         RefreshHistory();
     }
@@ -614,7 +614,7 @@ public partial class MainWindow
             st.LogTimelineChanges(); // like the web, which saves the timeline before deciding what is unused
             var (purged, bytes, failure) = await Task.Run(() => ProjectHistory.TrashMedia(st.Dir, unused));
             ForgetTrashed(st, purged, bytes);
-            if (failure != null) Status(Loc.T("hist.err.purge", failure.Message));
+            if (failure != null) Toast(Loc.T("hist.err.purge", failure.Message));
             else historyConfirmPurge = false;
         }
         finally
@@ -637,7 +637,7 @@ public partial class MainWindow
             if (ProjectHistory.UsedMediaIds(st.Project).Contains(m.Id)) return; // it went back to the timeline meanwhile
             var (purged, bytes, failure) = await Task.Run(() => ProjectHistory.TrashMedia(st.Dir, [m]));
             ForgetTrashed(st, purged, bytes);
-            if (failure != null) Status(Loc.T("hist.err.trashTake", m.Name, failure.Message));
+            if (failure != null) Toast(Loc.T("hist.err.trashTake", m.Name, failure.Message));
         }
         finally
         {
@@ -678,7 +678,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
         {
-            Status(Loc.T("hist.err.export", ex.Message));
+            Toast(Loc.T("hist.err.export", ex.Message));
         }
         finally
         {
@@ -698,11 +698,11 @@ public partial class MainWindow
             if (file != null && File.Exists(path)) Explorer.Select(path);
             else if ((file == null ? path : Path.GetDirectoryName(path)) is { } folder && Directory.Exists(folder))
                 Explorer.Open(folder);
-            else Status(Loc.T("hist.err.moved"));
+            else Toast(Loc.T("hist.err.moved"));
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or IOException)
         {
-            Status(Loc.T("hist.err.explorer", e.Message));
+            Toast(Loc.T("hist.err.explorer", e.Message));
         }
     }
 }
