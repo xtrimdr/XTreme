@@ -259,7 +259,12 @@ public partial class MainWindow
             return;
         }
         undo.Checkpoint(store.Project, $"clip:{live.Clip.Id}:{key}");
+        var lengths = LiveLengths();
+        var loops = ClipLoops.Take(store.Project, lengths);
         edit(live.Clip, live.Media);
+        // a loop's repeats follow their source; a repeat edited by itself leaves the loop
+        ClipLoops.Keep(store.Project, loops, lengths);
+        if (loops.Any(l => l.SourceId == live.Clip.Id)) _ = ApplyTracks(store);
         live.RefreshCurve();
         engine.RefreshClipTiming();
         MarkDirty(); UpdateUndoButtons(); RefreshInspectorText();

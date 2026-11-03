@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace XtremeDaw.Projects;
 
 /// <summary>
-/// A project, as saved in xtreme_project.json. Three layers:
+/// A project, as saved in its .xtp. Three layers:
 /// <see cref="Media"/> (recordings and imported files, never modified), <see cref="Track"/> (the channel
 /// strip and whether it gets a video panel) and <see cref="Clip"/> (a piece of a media placed on a track).
 /// Timeline times are in seconds; latency-type corrections stay in ms, like in the web app.
@@ -15,6 +15,11 @@ namespace XtremeDaw.Projects;
 public sealed class Project
 {
     public const string FormatId = "xtreme-project";
+    /// <summary>
+    /// The format of WildTrack (and GuitarCam Studio Native) projects, guitarcam.json: the same fields under another id.
+    /// They open as they are and save as XTreme (asked by the user, 2026-11-03).
+    /// </summary>
+    public const string OldFormatId = "guitarcam-project";
     /// <summary>
     /// 2: the channel's effects are insert slots (<see cref="Channel.Inserts"/>) instead of fixed sat/comp/eq.
     /// 3: the fixed reverb and delay and the extra returns became buses (<see cref="ProjectSettings.Buses"/>), every
@@ -52,6 +57,7 @@ public sealed class Project
     /// <summary>Fills what a hand-edited or older file left out, so the rest of the app never sees nulls.</summary>
     public void Normalize()
     {
+        if (Format == OldFormatId) Format = FormatId;
         Settings ??= new();
         Settings.Normalize();
         Media ??= [];
@@ -607,6 +613,7 @@ public sealed class Track
         Clips ??= [];
         Clips.RemoveAll(c => c == null);
         foreach (var c in Clips) c.Normalize();
+        ClipLoops.Normalize(this);
     }
 
     /// <summary>A row height (or height scale) inside its limits, or null when it is missing or broken.</summary>
@@ -1228,6 +1235,13 @@ public sealed class Clip
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public double Pitch { get; set; }
+    /// <summary>
+    /// Native only: this clip is a repeat of the clip with this id on its track, made by looping it (<see cref="ClipLoops"/>,
+    /// asked by the user, like GarageBand). It is a whole clip, so playback, the video and the export need nothing else;
+    /// the loop remakes its repeats from the source whenever the source changes. Null on every other clip.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LoopOf { get; set; }
     /// <summary>How far it sounds moved on <paramref name="track"/>: the track's and its own, up to what the shifter does.</summary>
     public double SemitonesOn(Track track) => Math.Clamp(track.Transpose + Pitch, -Dsp.PitchShifter.MaxSemitones, Dsp.PitchShifter.MaxSemitones);
     /// <summary>What it plays, for the transitions: two pieces of one take only join as one going the same way, at the same stretch and pitch.</summary>

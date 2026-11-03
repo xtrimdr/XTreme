@@ -214,11 +214,20 @@ public static class EditSteps
             split.Add(twin.Key);
             changes.Add(new("cut", [P(T("step.split", "Cortaste ")), Q(ClipName(c)), P(T("step.on", " en ")), Q(TrackName(tid))], "clip-split", null));
         }
+        // a loop's repeats come and go with it: one step per loop that changed, not one per repeat
+        var looped = new HashSet<string>();
         foreach (var (id, (tid, c)) in after)
-            if (!before.ContainsKey(id) && !split.Contains(id) && beforeTracks.ContainsKey(tid))
+            if (!before.ContainsKey(id) && Str(c, "loopOf") is { } src && looped.Add(src))
+                changes.Add(new("loop", [P(T("step.loop", "Bucle de ")), Q(ClipName(c)), P(T("step.on", " en ")), Q(TrackName(tid))], "clip-loop", null));
+        foreach (var (id, (tid, c)) in before)
+            if (!after.ContainsKey(id) && Str(c, "loopOf") is { } src && after.ContainsKey(src) && looped.Add(src))
+                changes.Add(new("loop", [P(T("step.loop", "Bucle de ")), Q(ClipName(c)), P(T("step.on", " en ")), Q(TrackName(tid))], "clip-loop", null));
+        bool Repeat(JsonObject c) => Str(c, "loopOf") is { } src && looped.Contains(src);
+        foreach (var (id, (tid, c)) in after)
+            if (!before.ContainsKey(id) && !split.Contains(id) && !Repeat(c) && beforeTracks.ContainsKey(tid))
                 changes.Add(new("plus", [P(T("step.clipAdd", "Agregaste ")), Q(ClipName(c)), P(T("step.to", " a ")), Q(TrackName(tid))], "clip-add", null));
         foreach (var (id, (tid, c)) in before)
-            if (!after.ContainsKey(id) && afterTracks.ContainsKey(tid))
+            if (!after.ContainsKey(id) && !Repeat(c) && afterTracks.ContainsKey(tid))
                 changes.Add(new("trash", [P(T("step.clipRemove", "Borraste ")), Q(ClipName(c)), P(T("step.from", " de ")), Q(TrackName(tid))], "clip-remove", null));
 
         foreach (var (id, (tid, c)) in after)
@@ -257,7 +266,9 @@ public static class EditSteps
         {
             if (!midiBefore.TryGetValue(id, out var was) || JsonNode.DeepEquals(was.Clip, c)) continue;
             string track = TrackName(tid);
-            changes.Add(!Same(was.Clip, c, "notes")
+            changes.Add(!Same(was.Clip, c, "loopBeats")
+                ? new("loop", [P(T("step.midiLoop", "Bucle de un clip MIDI de ")), Q(track)], "midi-length", track)
+                : !Same(was.Clip, c, "notes")
                 ? new("edit", [P(T("step.notes", "Editaste las notas de ")), Q(track)], "midi-notes", track)
                 : was.Track != tid || !Same(was.Clip, c, "atSec")
                     ? new("move", [P(T("step.midiMove", "Moviste un clip MIDI de ")), Q(track)], "midi-move", null)

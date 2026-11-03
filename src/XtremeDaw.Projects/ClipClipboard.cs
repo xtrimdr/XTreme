@@ -84,6 +84,7 @@ public sealed class ClipClipboard
         {
             var copy = ClipEditing.Copy(item.Clip);
             copy.Id = Ids.New("clp");
+            copy.LoopOf = null;
             copy.AtSec = ClipEditing.ToSample(copy.AtSec + shift);
             p.Tracks[at + item.Lane].Clips.Add(copy);
             pasted.Add(copy.Id);

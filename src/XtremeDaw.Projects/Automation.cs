@@ -28,9 +28,18 @@ public sealed class AutomationBlock
     public double AtSec { get; set; }
     public double LengthSec { get; set; } = 8;
     public List<AutomationPoint> Points { get; set; } = [];
+    /// <summary>
+    /// A block that loops (asked by the user, like GarageBand): its points are a pass this long that repeats until the
+    /// block ends. Null = it plays once.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? LoopSec { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     [JsonIgnore] public double EndSec => AtSec + LengthSec;
+    /// <summary>One pass of its points: the loop's, or the whole block.</summary>
+    [JsonIgnore] public double PassSec => LoopSec is > 0 ? LoopSec.Value : LengthSec;
+    /// <summary>How many passes start inside it (the last one may be cut short).</summary>
+    [JsonIgnore] public int Passes => Math.Max(1, (int)Math.Ceiling(LengthSec / PassSec - 1e-9));
 
     internal void Normalize()
     {
@@ -46,18 +55,45 @@ public sealed class AutomationBlock
             p.Curve = double.IsFinite(p.Curve) ? Math.Clamp(p.Curve, -1, 1) : 0;
         }
         Points.Sort((a, b) => a.Sec.CompareTo(b.Sec));
+        // a loop no longer than the block is no loop
+        LoopSec = LoopSec is { } loop && double.IsFinite(loop) && loop >= MinSec && loop < LengthSec - 1e-9 ? loop : null;
     }
 
-    /// <summary>A copy with a new id at another time (the same points).</summary>
+    /// <summary>A copy with a new id at another time (the same points and loop).</summary>
     public AutomationBlock Copy(double atSec) => new()
     {
         AtSec = Math.Max(0, atSec),
         LengthSec = LengthSec,
+        LoopSec = LoopSec,
         Points = [.. Points.Select(p => new AutomationPoint { Sec = p.Sec, Value = p.Value, Curve = p.Curve, Extra = p.Extra })],
     };
 
+    /// <summary>A time inside the block (relative) as a time inside its pass.</summary>
+    public double InPass(double sec) => LoopSec is > 0 && sec >= 0 ? sec % PassSec : sec;
+
     /// <summary>The control's position at a time inside the block (relative): it holds its first and last point.</summary>
-    public double PositionAt(double sec, bool stepped) => Automations.PositionAt(Points, sec, stepped);
+    public double PositionAt(double sec, bool stepped) => Automations.PositionAt(Points, InPass(sec), stepped);
+
+    /// <summary>
+    /// The block with its repeats written out as points, sounding the same (a loop's joins go in
+    /// <see cref="Automations.MinGapSec"/>); a block that doesn't loop is itself.
+    /// </summary>
+    public AutomationBlock WrittenOut(bool stepped)
+    {
+        if (LoopSec == null) return this;
+        var once = new AutomationBlock { Id = Id, AtSec = AtSec, LengthSec = PassSec, Points = Points, Extra = Extra };
+        var all = new AutomationBlock { Id = Id, AtSec = AtSec, LengthSec = LengthSec, Extra = Extra };
+        double pass = PassSec;
+        for (int k = 0; k < Passes; k++)
+        {
+            double at = k * pass;
+            bool last = at + pass >= LengthSec - 1e-9;
+            double to = last ? LengthSec - at : pass - Automations.MinGapSec;
+            foreach (var p in once.Cut(0, to, stepped).Points)
+                all.Points.Add(new() { Sec = at + p.Sec, Value = p.Value, Curve = p.Curve, Extra = p.Extra });
+        }
+        return all;
+    }
 
     /// <summary>
     /// The piece from <paramref name="from"/> to <paramref name="to"/> (relative) as a block of its own, sounding the same:
@@ -65,6 +101,7 @@ public sealed class AutomationBlock
     /// </summary>
     public AutomationBlock Cut(double from, double to, bool stepped)
     {
+        if (LoopSec != null) return WrittenOut(stepped).Cut(from, to, stepped);
         var piece = new AutomationBlock { AtSec = AtSec + from, LengthSec = Math.Max(MinSec, to - from) };
         void Add(double sec, double curve = 0) => piece.Points.Add(new() { Sec = sec - from, Value = PositionAt(sec, stepped), Curve = curve });
         void Between(double a, double b)
@@ -288,6 +325,19 @@ public static class Automations
         }
         lane.Touch();
         return last;
+    }
+
+    /// <summary>
+    /// Loops a block up to <paramref name="lengthSec"/> (the loop handle, like GarageBand): what it held is one pass,
+    /// repeated until its new end. One that already loops keeps its pass; a length inside the first pass takes the loop away.
+    /// </summary>
+    public static void Loop(AutomationLane lane, string id, double lengthSec)
+    {
+        if (BlockById(lane, id) is not { } b) return;
+        b.LoopSec ??= b.LengthSec;
+        b.LengthSec = Math.Max(AutomationBlock.MinSec, lengthSec);
+        b.Normalize();
+        lane.Touch();
     }
 
     /// <summary>A block in two at a timeline time, sounding the same. False when the time isn't inside it.</summary>

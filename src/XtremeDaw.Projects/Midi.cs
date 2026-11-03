@@ -98,6 +98,11 @@ public sealed class MidiClip
     public double? PatternBeats { get; set; }
     /// <summary>Which of its pattern's instruments it plays; null = the first one, the only one until another is added.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? PatternPart { get; set; }
+    /// <summary>
+    /// A clip of its own that loops (asked by the user, like GarageBand): its notes are a pass of this many beats that
+    /// repeats until the clip ends, as a pattern's do. Null = it plays once; always null on a pattern's clip.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? LoopBeats { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     /// <summary>Four bars, what a new clip gets.</summary>
@@ -107,8 +112,10 @@ public sealed class MidiClip
 
     public double LengthSec(double bpm) => LengthBeats * 60 / Math.Max(1, bpm);
 
-    /// <summary>One pass of its notes: the pattern's, or the whole clip.</summary>
-    public double CellBeats => PatternId != null && PatternBeats is > 0 ? PatternBeats.Value : LengthBeats;
+    /// <summary>One pass of its notes: the pattern's, its loop's, or the whole clip.</summary>
+    public double CellBeats => PatternId != null && PatternBeats is > 0 ? PatternBeats.Value : LoopBeats is > 0 ? LoopBeats.Value : LengthBeats;
+    /// <summary>Its notes repeat: a pattern's clip or a looped one.</summary>
+    public bool Repeats => PatternId != null || LoopBeats != null;
     /// <summary>How many passes start inside the clip (the last one may be cut short).</summary>
     public int Passes => Math.Max(1, (int)Math.Ceiling(LengthBeats / CellBeats - 1e-9));
 
@@ -137,7 +144,7 @@ public sealed class MidiClip
         var copy = new MidiClip
         {
             AtSec = AtSec, LengthBeats = LengthBeats, Notes = [.. Notes.Select(n => n.Copy())],
-            PatternId = PatternId, PatternName = PatternName, PatternBeats = PatternBeats, PatternPart = PatternPart, Extra = Extra,
+            PatternId = PatternId, PatternName = PatternName, PatternBeats = PatternBeats, PatternPart = PatternPart, LoopBeats = LoopBeats, Extra = Extra,
         };
         if (!ties && PatternId == null)
             foreach (var n in copy.Notes) n.Tie = false;
@@ -157,8 +164,11 @@ public sealed class MidiClip
         {
             PatternId = PatternName = PatternPart = null;
             PatternBeats = null;
+            // a loop no longer than the clip is no loop
+            LoopBeats = LoopBeats is { } loop && double.IsFinite(loop) && loop >= MinBeats && loop < LengthBeats - 1e-9 ? loop : null;
             return;
         }
+        LoopBeats = null;
         if (string.IsNullOrWhiteSpace(PatternPart)) PatternPart = null;
         PatternName = string.IsNullOrWhiteSpace(PatternName) ? "Patrón" : PatternName.Trim();
         PatternBeats = PatternBeats is { } beats && double.IsFinite(beats) ? Math.Clamp(beats, MinBeats, MaxBeats) : LengthBeats;
@@ -328,6 +338,65 @@ public static class MidiEditing
         foreach (var t in p.Tracks) t.MidiClips?.RemoveAll(c => c.Id == clipId);
     }
 
+    /// <summary>
+    /// Trims a clip's start to <paramref name="atSec"/> and keeps its end where it is. The notes stay where they sound:
+    /// they move by the cut, the ones that end before the new start go, and one that crosses it is cut there. A pattern's
+    /// clip can't be trimmed this way: its notes are one pass counted from the clip's start.
+    /// </summary>
+    public static void TrimStart(Project p, string clipId, double atSec)
+    {
+        var (track, c) = Find(p, clipId);
+        if (track.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
+        if (c.PatternId != null) throw new ArgumentException(Texts.T("err.midi.trimPattern", "Un clip de patrón no se recorta por el inicio: sus notas cuentan desde su principio."));
+        double beatSec = 60 / Math.Max(1, p.Settings.Bpm), end = c.AtSec + c.LengthBeats * beatSec;
+        double at = ClipEditing.ToSample(Math.Clamp(atSec, 0, end - MidiClip.MinBeats * beatSec));
+        double cut = (at - c.AtSec) / beatSec;
+        WriteOut(c);
+        c.Notes.RemoveAll(n => n.Beat - cut + n.Beats < MidiNote.MinBeats);
+        foreach (var n in c.Notes)
+        {
+            double beat = n.Beat - cut;
+            if (beat < 0) { n.Beats += beat; beat = 0; }
+            n.Beat = beat;
+        }
+        c.AtSec = at;
+        c.LengthBeats -= cut;
+        c.Normalize();
+    }
+
+    /// <summary>
+    /// Loops a clip of its own up to <paramref name="lengthBeats"/> (the loop handle, like GarageBand): what it held is
+    /// one pass, repeated until its new end. A clip that already loops or a pattern's keeps its pass; a length inside
+    /// the first pass takes the loop away.
+    /// </summary>
+    public static void Loop(Project p, string clipId, double lengthBeats)
+    {
+        var (track, c) = Find(p, clipId);
+        if (track.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
+        if (c.PatternId == null) c.LoopBeats ??= c.LengthBeats;
+        c.LengthBeats = Math.Clamp(lengthBeats, MidiClip.MinBeats, MidiClip.MaxBeats);
+        c.Normalize();
+    }
+
+    /// <summary>A looped clip's repeats written out as notes of its own, so it sounds the same without the loop.</summary>
+    static void WriteOut(MidiClip c)
+    {
+        if (c.PatternId != null || c.LoopBeats == null) return;
+        List<MidiNote> notes = [];
+        for (int pass = 0; pass < c.Passes; pass++)
+            foreach (var n in c.Notes)
+                if (c.Heard(n, pass, out double from, out double to) && to > from)
+                {
+                    var copy = n.Copy();
+                    copy.Beat = from;
+                    copy.Beats = to - from;
+                    if (pass > 0) copy.Tie = false;
+                    notes.Add(copy);
+                }
+        c.Notes = notes;
+        c.LoopBeats = null;
+    }
+
     /// <summary>Moves a clip to <paramref name="atSec"/>, its length as it is.</summary>
     public static void Move(Project p, string clipId, double atSec)
     {
@@ -454,7 +523,7 @@ public static class MidiEditing
         else
         {
             right = new MidiClip { AtSec = at, Extra = c.Extra };
-            if (c.PatternId != null)
+            if (c.Repeats)
             {
                 for (int pass = 0; pass < c.Passes; pass++)
                     foreach (var n in c.Notes)
@@ -550,7 +619,7 @@ public static class MidiEditing
 
     /// <summary>
     /// Moves where each note starts to the nearest step of <paramref name="gridBeats"/> (the piano roll's magnet) on
-    /// the song's grid, not the clip's: a clip that doesn't start on a beat still lands its notes on the beats. The
+    /// the song's grid, not the clip's (a dotted step starts over at each bar): a clip that doesn't start on a beat still lands its notes on the beats. The
     /// length stays. <paramref name="which"/> = the notes to move (null = all). Returns how many moved; a grid of 0
     /// (the magnet off) moves none.
     /// </summary>
@@ -563,7 +632,7 @@ public static class MidiEditing
         {
             if (which != null && !which.Contains(n)) continue;
             double song = clipBeat + n.Beat;
-            double snapped = Math.Round(song / gridBeats) * gridBeats;
+            double snapped = ClipEditing.Snap(song, new SnapGrid(gridBeats, Bar: Subdivisions.BarBeats), false);
             // a note pulled before the clip's start stays at its start
             double beat = Math.Max(0, snapped - clipBeat);
             if (Math.Abs(beat - n.Beat) < 1e-9) continue;
@@ -754,7 +823,7 @@ public static class MidiPatterns
     public sealed record Part(string? Id, Track Track, MidiClip Clip);
 
     /// <summary>Starts this close (seconds) make one use of a pattern.</summary>
-    const double SameStart = 1e-4;
+    public const double SameStart = 1e-4;
 
     /// <summary>The lengths offered for a pass, in bars.</summary>
     public static readonly int[] Bars = [1, 2, 4, 8, 16];
@@ -800,7 +869,8 @@ public static class MidiPatterns
         while (used.Contains($"Patrón {n}")) n++;
         c.PatternId = Ids.New("pat");
         c.PatternName = $"Patrón {n}";
-        c.PatternBeats = c.LengthBeats;
+        c.PatternBeats = c.CellBeats;
+        c.LoopBeats = null;
         return c;
     }
 

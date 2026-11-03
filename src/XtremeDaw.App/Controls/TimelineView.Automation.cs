@@ -12,7 +12,9 @@ namespace XtremeDaw.App.Controls;
 /// row right under its track, with its name in the header column and its blocks over a shadow of the track's clips. A
 /// block goes like a MIDI clip: double click on the empty lane makes one, its top strip moves it (with Ctrl, a copy) and
 /// its edges trim it. Inside it, a click adds a point, a drag moves it, a double click takes it out and Shift+drag draws;
-/// the handle in the middle of a stretch bends it, and a double click on it makes it straight again. They fold with the
+/// the handle in the middle of a stretch bends it, and a double click on it makes it straight again. The right end of its
+/// top strip loops it (like GarageBand): its points repeat until where the drag stops, each repeat with the loop icon, and
+/// a point edited in any repeat changes them all. They fold with the
 /// track's chevron, go with their track when it folds into a folder, and a dragged track carries them folded. Like the
 /// rest of the control it only raises events: the window edits the project.
 /// </summary>
@@ -63,7 +65,7 @@ public sealed partial class TimelineView
     /// <summary>How close a bent stretch is drawn to its curve (px between its segments).</summary>
     const double AutoBendStep = 4;
 
-    enum AutoDrag { None, Point, Bend, Draw, Move, Left, Right }
+    enum AutoDrag { None, Point, Bend, Draw, Move, Left, Right, Loop }
 
     string? selectedBlock;
     // the "auto" gesture: the lane and block, the block as it goes (a copy, never the project's), what the drag does
@@ -73,6 +75,8 @@ public sealed partial class TimelineView
     bool autoCopy;
     int autoTrack = -1, autoPoint = -1;
     double autoPen, autoFrom;
+    // where the pass being edited starts in the block (relative): a looped block's points are its first pass's
+    double autoPassAt;
 
     /// <summary>A track's lanes on screen: none folded, none while it is carried.</summary>
     IEnumerable<AutomationLane> LanesOf(Track t) => t.Automation is not { } list || t.AutomationFolded || IsDragged(t.Id) ? [] : list.Where(l => !l.Hidden);
@@ -111,7 +115,7 @@ public sealed partial class TimelineView
         var pts = b.Points;
         double y = AutoY(r);
         for (int k = pts.Count - 1; k >= 0; k--)
-            if (pts[k].Sec <= b.LengthSec && Math.Abs(p.X - X(b.AtSec + pts[k].Sec)) <= AutoGrab && Math.Abs(p.Y - AutoY(y, r.H, pts[k].Value)) <= AutoGrab) return k;
+            if (pts[k].Sec <= b.PassSec && Math.Abs(p.X - X(b.AtSec + pts[k].Sec)) <= AutoGrab && Math.Abs(p.Y - AutoY(y, r.H, pts[k].Value)) <= AutoGrab) return k;
         return -1;
     }
 
@@ -128,7 +132,7 @@ public sealed partial class TimelineView
     {
         var a = block.Points[k];
         var b = block.Points[k + 1];
-        return b.Sec <= block.LengthSec && Math.Abs(b.Value - a.Value) >= AutoFlat && (b.Sec - a.Sec) * pps >= AutoHandleMinW;
+        return b.Sec <= block.PassSec && Math.Abs(b.Value - a.Value) >= AutoFlat && (b.Sec - a.Sec) * pps >= AutoHandleMinW;
     }
 
     /// <summary>The stretch whose handle is under the pointer, or -1.</summary>
@@ -149,8 +153,21 @@ public sealed partial class TimelineView
     AutoDrag AutoEdgeAt(Row r, AutomationBlock b, Point p)
     {
         if (Math.Abs(p.X - X(b.AtSec)) <= AutoEdge) return AutoDrag.Left;
+        bool strip = p.Y < AutoY(r) + AutoStrip + 1;
+        // the right end of the top strip loops it, the rest of that edge trims it
+        if (strip && p.X <= X(b.EndSec) && X(b.EndSec) - p.X <= AutoLoopGrab) return AutoDrag.Loop;
         if (Math.Abs(p.X - X(b.EndSec)) <= AutoEdge) return AutoDrag.Right;
-        return p.Y < AutoY(r) + AutoStrip + 1 ? AutoDrag.Move : AutoDrag.None;
+        return strip ? AutoDrag.Move : AutoDrag.None;
+    }
+
+    /// <summary>Px from a block's right end, on its top strip, that grab its loop.</summary>
+    const double AutoLoopGrab = 10;
+
+    /// <summary>Whether the pointer is on a block's loop corner (its pointer is <see cref="ToolCursors.Loop"/>).</summary>
+    bool OnAutoLoop(Row r)
+    {
+        var p = lastPointer;
+        return p.X >= HeaderW && AutoBlockAt(r.Lane!, Sec(p.X)) is { } b && AutoPointAt(r, b, p) < 0 && AutoEdgeAt(r, b, p) == AutoDrag.Loop;
     }
 
     /// <summary>What the pointer says over a lane.</summary>
@@ -220,6 +237,17 @@ public sealed partial class TimelineView
         bool picked = b.Id == selectedBlock || b == autoDraft;
         ctx.DrawRectangle(Palette.Alpha(tint, picked ? 0.16 : 0.09), Palette.Pen(Palette.Alpha(tint, picked ? 0.95 : 0.45), picked ? 1.5 : 1), box, 4, 4);
         ctx.FillRectangle(Palette.Alpha(tint, picked ? 0.4 : 0.25), new Rect(box.X + 1, box.Y + 1, Math.Max(1, box.Width - 2), AutoStrip - 1));
+        if (b.LoopSec == null) return;
+        // a looped block: a seam where each repeat starts, with the loop icon on its strip
+        var seam = Palette.Pen(Palette.Alpha(tint, 0.45));
+        double passPx = b.PassSec * pps;
+        for (int k = Math.Max(1, (int)Math.Floor((HeaderW - x0) / passPx)); k < b.Passes; k++)
+        {
+            double px = Math.Round(x0 + k * passPx) + 0.5;
+            if (px > W) break;
+            ctx.DrawLine(seam, new Point(px, box.Top), new Point(px, box.Bottom));
+            if (passPx >= 14) ctx.DrawText(ToolCursors.LoopGlyph, 8, Palette.Alpha(tint, 0.95), new Point(px + 3, box.Y), Icons);
+        }
     }
 
     /// <summary>The curve as lines, from the left of the view to its right, holding its ends.</summary>
@@ -265,7 +293,7 @@ public sealed partial class TimelineView
             }
         for (int k = 0; k < pts.Count; k++)
         {
-            if (pts[k].Sec > b.LengthSec) continue;
+            if (pts[k].Sec > b.PassSec) continue;
             double px = X(b.AtSec + pts[k].Sec);
             if (px < HeaderW - 4 || px > W + 4) continue;
             double py = AutoY(y, h, pts[k].Value);
@@ -378,12 +406,16 @@ public sealed partial class TimelineView
         autoTrack = r.Track;
         autoFrom = block.AtSec;
         autoCopy = false;
+        autoPassAt = 0;
         autoDrag = point >= 0 ? AutoDrag.Point : bend >= 0 ? AutoDrag.Bend : shift ? AutoDrag.Draw : AutoEdgeAt(r, block, p);
         bool added = autoDrag is AutoDrag.None or AutoDrag.Draw;
         if (added)
         {
             if (autoDrag == AutoDrag.None) autoDrag = AutoDrag.Point;
-            point = PutAutoPoint(SnapAt(p.X) - block.AtSec, AutoValueAt(r, p));
+            // in a repeat the point goes into the pass, so every repeat gets it
+            double at = SnapAt(p.X) - block.AtSec;
+            autoPassAt = at - block.InPass(at);
+            point = PutAutoPoint(at - autoPassAt, AutoValueAt(r, p));
         }
         else if (autoDrag == AutoDrag.Move && (modifiers & KeyModifiers.Control) != 0)
         {
@@ -416,7 +448,7 @@ public sealed partial class TimelineView
     int PutAutoPoint(double sec, double value)
     {
         var list = autoDraft!.Points;
-        sec = Math.Clamp(sec, 0, autoDraft.LengthSec);
+        sec = Math.Clamp(sec, 0, autoDraft.PassSec);
         int at = list.FindIndex(x => x.Sec >= sec);
         if (at < 0) at = list.Count;
         if (at < list.Count && Math.Abs(list[at].Sec - sec) < Automations.MinGapSec) list[at].Value = value;
@@ -438,7 +470,11 @@ public sealed partial class TimelineView
                 d.AtSec = Math.Max(0, ClipEditing.Snap(autoFrom + dx, Grid, alt));
                 break;
             case AutoDrag.Right:
+            case AutoDrag.Loop:
+                // the loop's pass is what the block held; ending inside the first pass takes the loop away
+                if (autoDrag == AutoDrag.Loop) d.LoopSec = autoBlock.LoopSec ?? autoBlock.LengthSec;
                 d.LengthSec = Math.Max(AutomationBlock.MinSec, ClipEditing.Snap(autoBlock.EndSec + dx, Grid, alt) - autoBlock.AtSec);
+                if (d.LoopSec is { } pass && d.LengthSec <= pass + 1e-9) d.LoopSec = null;
                 break;
             case AutoDrag.Left:
             {
@@ -459,7 +495,7 @@ public sealed partial class TimelineView
             case AutoDrag.Draw:
             {
                 // the pen replaces what it passes over, one point every AutoDrawGap
-                double at = Math.Clamp(Sec(lastPointer.X) - d.AtSec, 0, d.LengthSec);
+                double at = Math.Clamp(Sec(lastPointer.X) - d.AtSec - autoPassAt, 0, d.PassSec);
                 if (Math.Abs(at - autoPen) < AutoDrawGap) return;
                 double lo = Math.Min(at, autoPen), hi = Math.Max(at, autoPen);
                 list.RemoveAll(x => x.Sec > lo && x.Sec < hi);
@@ -470,9 +506,9 @@ public sealed partial class TimelineView
             case AutoDrag.Point when autoPoint >= 0 && autoPoint < list.Count:
             {
                 double min = autoPoint > 0 ? list[autoPoint - 1].Sec + Automations.MinGapSec : 0;
-                double max = Math.Min(d.LengthSec, autoPoint < list.Count - 1 ? list[autoPoint + 1].Sec - Automations.MinGapSec : double.MaxValue);
+                double max = Math.Min(d.PassSec, autoPoint < list.Count - 1 ? list[autoPoint + 1].Sec - Automations.MinGapSec : double.MaxValue);
                 var p = list[autoPoint];
-                p.Sec = Math.Round(max > min ? Math.Clamp(SnapAt(lastPointer.X) - d.AtSec, min, max) : min, 3);
+                p.Sec = Math.Round(max > min ? Math.Clamp(SnapAt(lastPointer.X) - d.AtSec - autoPassAt, min, max) : min, 3);
                 p.Value = AutoValueAt(r, lastPointer);
                 break;
             }

@@ -128,7 +128,7 @@ public partial class MainWindow
     {
         "plus" => "", "trash" => "", "move" => "", "cut" => "", "mic" => "", "volume" => "",
         "fx" => "", "folder" => "", "marker" => "", "color" => "", "video" => "", "lock" => "",
-        "origin" => "", _ => "",
+        "origin" => "", "loop" => "", _ => "",
     };
 
     /// <summary>One step: where it leads, lit if it is where the project is now, greyed if it was undone.</summary>
