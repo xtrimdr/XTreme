@@ -19,7 +19,9 @@ static class ProjectCommands
         if (sub == "verificar-carpetas") return FolderChecks();
         if (sub == "verificar-marcadores") return MarkerChecks();
         if (sub == "verificar-paquete") return PackageChecks.Run();
+        if (sub == "verificar-guardar-como") return SaveAsChecks.Run();
         if (sub == "verificar-bloqueo") return LockChecks.Run();
+        if (sub == "verificar-bucles") return ClipLoopChecks.Run();
         if (sub == "verificar-ab") return MixCompareChecks.Run();
         if (sub == "verificar-pasos") return StepChecks.Run();
         string? dir = a.Positional.Skip(1).FirstOrDefault();
@@ -150,7 +152,7 @@ static class ProjectCommands
             case "reordenar": ClipEditing.Reorder(p, int.Parse(id) - 1, int.Parse(value) - 1); break;
             case "a-pista": ClipEditing.MoveToTrack(p, id, value, a.Get("intercambiar")); break;
             case "inicio": ClipEditing.ToStart(p, id); break;
-            case "alinear": ClipEditing.AlignToGrid(p, id, ClipEditing.GridSeconds(a.Get("iman", "1/4"), p.Settings.Bpm)); break;
+            case "alinear": ClipEditing.AlignToGrid(p, id, ClipEditing.GridOf(Subdivisions.Migrate(a.Get("iman", "1/4")), p.Settings.Bpm)); break;
             case "fijar-corte": ClipEditing.FixCut(p, id); break;
             case "restaurar": ClipEditing.Reset(p, id); break;
             case "invertir": ClipEditing.Reverse(p, id); break;
@@ -289,7 +291,7 @@ static class ProjectCommands
                 };
                 var others = p.Tracks.SelectMany(t => t.Clips).Where(c => c.Id != id).Select(c => ClipEditing.Window(c, p.FindMedia(c.MediaId)));
                 ClipEditing.Replace(p, ClipEditing.Drag(clip, p.FindMedia(clip.MediaId), mode, dx,
-                    ClipEditing.GridSeconds(a.Get("iman", "1/4"), p.Settings.Bpm), a.Flag("libre"), null, others, sticky, a.Double("pps", 100)));
+                    ClipEditing.GridOf(Subdivisions.Migrate(a.Get("iman", "1/4")), p.Settings.Bpm), a.Flag("libre"), null, others, sticky, a.Double("pps", 100)));
                 break;
         }
         p.AddLog("timeline-edited", op);

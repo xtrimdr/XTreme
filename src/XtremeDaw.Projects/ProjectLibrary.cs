@@ -107,7 +107,7 @@ public static partial class ProjectLibrary
     {
         try
         {
-            var p = ProjectStore.Parse(File.ReadAllText(Path.Combine(dir, ProjectStore.FileName), Encoding.UTF8));
+            var p = ProjectStore.Parse(File.ReadAllText(MainFile(dir), Encoding.UTF8));
             var used = p.Tracks.Where(t => t.Clips.Count > 0).ToList();
             double duration = used.SelectMany(t => t.Clips)
                 .Select(c => c.AtSec + (p.FindMedia(c.MediaId)?.DurationSec ?? 0) * c.Stretch - c.TrimEndSec)
@@ -127,6 +127,10 @@ public static partial class ProjectLibrary
     }
 
     static string Resolve(string dir, string rel) => Path.IsPathRooted(rel) ? rel : Path.Combine(dir, rel);
+
+    /// <summary>A project folder's file, to read it without opening it.</summary>
+    static string MainFile(string dir) =>
+        ProjectStore.FindFile(dir) ?? throw new FileNotFoundException(Texts.T("store.noProject", "La carpeta no tiene un proyecto de XTreme"), dir);
 
     // --- names ------------------------------------------------------------------------------------
 
@@ -213,7 +217,8 @@ public static partial class ProjectLibrary
     /// </summary>
     public static PickedFolder Inspect(string dir)
     {
-        dir = Path.GetFullPath(dir).TrimEnd('\\', '/');
+        // a picked .xtp means its folder
+        dir = ProjectStore.DirOf(dir);
         static bool Openable(string d) => ProjectStore.IsProject(d) || ProjectStore.IsRecoverable(d);
         if (Openable(dir)) return new(PickedKind.Project, dir, []);
         // before the empty check: an empty media/ is the project's, not a place for a new one
@@ -308,6 +313,7 @@ public static partial class ProjectLibrary
                 p.Name = name;
                 store.Save();
             }
+            store.MatchFileToName();
         }
         bool kept = false;
         string root = Root;
@@ -339,7 +345,7 @@ public static partial class ProjectLibrary
     /// </summary>
     public static string Duplicate(string src)
     {
-        var source = ProjectStore.Parse(File.ReadAllText(Path.Combine(src, ProjectStore.FileName), Encoding.UTF8));
+        var source = ProjectStore.Parse(File.ReadAllText(MainFile(src), Encoding.UTF8));
         string root = Root;
         Directory.CreateDirectory(root);
         var (dir, name) = UniqueProject(root, $"{source.Name} (copia)");
@@ -378,6 +384,97 @@ public static partial class ProjectLibrary
         using (var store = ProjectStore.Create(staging, copy)) { }
         Directory.CreateDirectory(Path.Combine(staging, "exports"));
         Directory.Move(staging, dir);
+        RecentProjects.Touch(dir, name);
+        return dir;
+    }
+
+    /// <summary>
+    /// The folder "Guardar como" puts a project in, for the .xtp the user picked: the picked folder itself when it is
+    /// empty, otherwise a new folder named like the file next to it, so the project's media/ never mixes with other files.
+    /// </summary>
+    public static string SaveAsDir(string file)
+    {
+        file = Path.GetFullPath(file);
+        string parent = Path.GetDirectoryName(file) ?? throw new ArgumentException(Texts.T("err.lib.badPath", "Ruta inválida"));
+        bool emptyFolder = Path.GetPathRoot(parent) != parent && Directory.Exists(parent) && !Directory.EnumerateFileSystemEntries(parent).Any();
+        return emptyFolder ? parent : Path.Combine(parent, FolderNameFor(Path.GetFileNameWithoutExtension(file)));
+    }
+
+    /// <summary>
+    /// "Guardar como" / "Guardar una copia": the project in <paramref name="src"/> as a new project at <paramref name="file"/>
+    /// (the folder from <see cref="SaveAsDir"/>), named after the file. The song, the takes inside the project and its
+    /// log come along; linked takes stay linked; exports, saved versions and cache/ don't. Takes are hard-linked on the
+    /// same disk (they're never rewritten) and copied on another one. Everything goes to a hidden folder next to the
+    /// target first, published at the end: a crash or a full disk never leaves half a project. Reads src from disk: the
+    /// window saves it first. Returns the new project's folder.
+    /// </summary>
+    public static string SaveAs(string src, string file, IProgress<double>? progress = null, CancellationToken ct = default)
+    {
+        src = Path.GetFullPath(src);
+        string name = CleanName(Path.GetFileNameWithoutExtension(file));
+        string dir = SaveAsDir(file);
+        if (SamePath(dir, src) || dir.StartsWith(src.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase))
+            throw new IOException(Texts.T("err.lib.saveInside", "Elegí una carpeta fuera del proyecto."));
+        bool intoEmpty = Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any();
+        if (Path.Exists(dir) && !intoEmpty)
+            throw new IOException(Texts.T("err.lib.saveExists", "Ya hay una carpeta {0} ahí. Elegí otro nombre o una carpeta vacía.", Path.GetFileName(dir)));
+
+        var copy = ProjectStore.Parse(File.ReadAllText(MainFile(src), Encoding.UTF8));
+        string parent = Path.GetDirectoryName(dir)!;
+        string staging = Path.Combine(parent, $".guardando-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(staging, ProjectStore.MediaDir));
+            var files = copy.Media.SelectMany(m => new[] { m.Audio, m.Video })
+                .Where(f => !string.IsNullOrEmpty(f) && !Path.IsPathRooted(f))
+                .Select(f => f!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(rel => (Rel: rel, From: Path.GetFullPath(Path.Combine(src, rel))))
+                // only what lives inside the project: anything else is left where it is
+                .Where(f => f.From.StartsWith(src + "\\", StringComparison.OrdinalIgnoreCase) && File.Exists(f.From))
+                .ToList();
+            long total = Math.Max(1, files.Sum(f => new FileInfo(f.From).Length)), done = 0;
+            var buffer = new byte[1 << 20];
+            foreach (var (rel, from) in files)
+            {
+                ct.ThrowIfCancellationRequested();
+                string to = Path.Combine(staging, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                long size = new FileInfo(from).Length;
+                if (!FileLinks.TryHardLink(to, from))
+                {
+                    // takes may be open for playing: read them shared
+                    using var a = new FileStream(from, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var b = new FileStream(to, FileMode.CreateNew, FileAccess.Write);
+                    int n;
+                    while ((n = a.Read(buffer)) > 0)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        b.Write(buffer, 0, n);
+                        progress?.Report((double)(done + b.Position) / total);
+                    }
+                    b.Flush(true);
+                }
+                done += size;
+                progress?.Report((double)done / total);
+            }
+            copy.Id = Ids.New("prj");
+            copy.Name = name;
+            copy.CreatedAt = copy.UpdatedAt = DateTime.UtcNow;
+            copy.Exports = [];
+            copy.Log.Add(new LogEntry { Type = "session-saved-as", Extra = new() { ["from"] = JsonSerializer.SerializeToElement(src) } });
+            using (var store = ProjectStore.Create(staging, copy)) { }
+            Directory.CreateDirectory(Path.Combine(staging, "exports"));
+            // an empty folder the user picked becomes the project: it goes away and the finished copy takes its place
+            if (intoEmpty) Directory.Delete(dir);
+            Directory.Move(staging, dir);
+        }
+        catch
+        {
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
+        progress?.Report(1);
         RecentProjects.Touch(dir, name);
         return dir;
     }

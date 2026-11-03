@@ -9,8 +9,8 @@ namespace XtremeDaw.Projects;
 /// <summary>
 /// An open project folder:
 /// <code>
-///   xtreme_project.json      the project
-///   xtreme_project.json.bak  the previous save
+///   Name.xtp                 the project (JSON inside), named like the project so it reads well in Explorer
+///   Name.xtp.bak             the previous save
 ///   xtreme_project.lock      held while it's open (a second window opens it read-only)
 ///   historial/               snapshots, to go back further than the .bak (versiones.json: their names)
 ///   media/                   recordings and imported files (never rewritten)
@@ -21,7 +21,13 @@ namespace XtremeDaw.Projects;
 /// </summary>
 public sealed class ProjectStore : IDisposable
 {
-    public const string FileName = "xtreme_project.json";
+    /// <summary>The project file's extension ("XTreme project"); inside it is JSON.</summary>
+    public const string Extension = ".xtp";
+    /// <summary>The project file before .xtp: still read, and renamed to Name.xtp the first time it opens.</summary>
+    public const string OldFileName = "xtreme_project.json";
+    /// <summary>The project file of WildTrack and GuitarCam Studio Native: opened and turned into Name.xtp the same way.</summary>
+    public const string WildTrackFileName = "guitarcam.json";
+    static readonly string[] OldFileNames = [OldFileName, WildTrackFileName];
     public const string MediaDir = "media";
     public const string HistoryDir = "historial";
     /// <summary>What can be made again from the media (transposed takes); deleting it only costs time.</summary>
@@ -64,21 +70,71 @@ public sealed class ProjectStore : IDisposable
     /// <summary>Which takes were in the timeline at the last save, to log the ones that left or came back.</summary>
     Dictionary<string, bool> timeline;
 
-    public string FilePath => Path.Combine(Dir, FileName);
+    /// <summary>The project file; it follows the project's name (<see cref="MatchFileToName"/>).</summary>
+    public string FilePath { get; private set; }
     string BakPath => FilePath + ".bak";
     string TmpPath => FilePath + ".tmp";
 
-    ProjectStore(string dir, Project project)
+    ProjectStore(string dir, Project project, string file)
     {
         Dir = dir;
         Project = project;
+        FilePath = file;
         timeline = ProjectHistory.TimelineState(project);
     }
 
-    public static bool IsProject(string dir) => File.Exists(Path.Combine(dir, FileName));
+    public static bool IsProject(string dir) => FindFile(dir) != null;
 
-    /// <summary>A folder that lost xtreme_project.json but still has the .bak or a snapshot: <see cref="Open"/> rescues it.</summary>
-    public static bool IsRecoverable(string dir) => File.Exists(Path.Combine(dir, FileName + ".bak")) || Snapshots(dir).Count > 0;
+    /// <summary>A folder that lost its project file but still has the .bak or a snapshot: <see cref="Open"/> rescues it.</summary>
+    public static bool IsRecoverable(string dir) => Baks(dir).Any() || Snapshots(dir).Count > 0;
+
+    /// <summary>
+    /// The project file of a folder: its .xtp (with several, the one named like the folder, else the newest), or the
+    /// file of an older version (xtreme_project.json, WildTrack's guitarcam.json). Null when it has none.
+    /// </summary>
+    public static string? FindFile(string dir)
+    {
+        var xtp = Files(dir, "*" + Extension);
+        if (xtp.Count > 0)
+        {
+            string own = FolderName(dir) + Extension;
+            return xtp.Find(f => string.Equals(Path.GetFileName(f), own, StringComparison.OrdinalIgnoreCase))
+                ?? xtp.MaxBy(File.GetLastWriteTimeUtc);
+        }
+        return OldFileNames.Select(n => Path.Combine(dir, n)).FirstOrDefault(File.Exists);
+    }
+
+    /// <summary>The folder a path means: a project file's folder, or the path itself.</summary>
+    public static string DirOf(string path)
+    {
+        path = Path.GetFullPath(path);
+        return IsProjectFile(path) && File.Exists(path) ? Path.GetDirectoryName(path)! : path.TrimEnd('\\', '/');
+    }
+
+    public static bool IsProjectFile(string path) =>
+        path.EndsWith(Extension, StringComparison.OrdinalIgnoreCase) || OldFileNames.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The project file a project named <paramref name="name"/> gets in <paramref name="dir"/>.</summary>
+    public static string FileFor(string dir, string name) => Path.Combine(dir, ProjectLibrary.FolderNameFor(name) + Extension);
+
+    static string FolderName(string dir) => Path.GetFileName(Path.GetFullPath(dir).TrimEnd('\\', '/'));
+
+    /// <summary>A folder's files by pattern, checked by their real ending (Windows matches "*.xtp" on "a.xtpx" too).</summary>
+    static List<string> Files(string dir, string pattern)
+    {
+        try
+        {
+            string end = pattern[1..];
+            return Directory.Exists(dir) ? Directory.GetFiles(dir, pattern).Where(f => f.EndsWith(end, StringComparison.OrdinalIgnoreCase)).ToList() : [];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    static IEnumerable<string> Baks(string dir) =>
+        Files(dir, "*" + Extension + ".bak").Concat(OldFileNames.SelectMany(n => Files(dir, n + ".bak")));
 
     /// <summary>Creates the folder (it must not hold a project yet) and writes the first save.</summary>
     public static ProjectStore Create(string dir, Project project)
@@ -86,7 +142,7 @@ public sealed class ProjectStore : IDisposable
         if (IsProject(dir)) throw new IOException("Esa carpeta ya tiene un proyecto");
         Directory.CreateDirectory(Path.Combine(dir, MediaDir));
         project.Normalize();
-        var store = new ProjectStore(dir, project);
+        var store = new ProjectStore(dir, project, FileFor(dir, project.Name));
         store.TakeLock();
         if (store.ReadOnly) throw new IOException(store.ReadOnlyReason);
         store.Save();
@@ -95,8 +151,8 @@ public sealed class ProjectStore : IDisposable
 
     public static ProjectStore Open(string dir)
     {
-        var (project, from, notices) = LoadWithFallback(dir);
-        var store = new ProjectStore(dir, project);
+        var (project, file, from, notices) = LoadWithFallback(dir);
+        var store = new ProjectStore(dir, project, file);
         store.Notices.AddRange(notices);
         store.TakeLock();
         if (project.Format != Project.FormatId)
@@ -107,12 +163,15 @@ public sealed class ProjectStore : IDisposable
         {
             Directory.CreateDirectory(Path.Combine(dir, MediaDir));
             Migrate(project);
+            // an xtreme_project.json, a WildTrack guitarcam.json or a file still named after an old name becomes Name.xtp
+            store.MatchFileToName();
             store.SweepPartialCopies();
             var recovered = store.RecoverRecordings();
             recovered.AddRange(store.RecoverMidiTakes());
             int adopted = store.AdoptStrayMedia();
-            // a project rescued from the .bak or a snapshot goes back to being the main file right away
-            if (from != FileName || recovered.Count > 0 || adopted > 0) store.Save();
+            // a project rescued from the .bak or a snapshot goes back to being the main file right away; a converted one
+            // is written as XTreme's at once (an old format id inside a .xtp would open, but shouldn't stay)
+            if (from != file || store.FilePath != file || recovered.Count > 0 || adopted > 0) store.Save();
             foreach (var j in recovered) File.Delete(j); // only once the project has the takes
         }
         store.CheckMedia();
@@ -129,10 +188,14 @@ public sealed class ProjectStore : IDisposable
         p.Version = Project.CurrentVersion;
     }
 
-    static (Project Project, string From, List<string> Notices) LoadWithFallback(string dir)
+    /// <summary>The project, the file it is saved in, the file it was read from and what to tell the user.</summary>
+    static (Project Project, string File, string From, List<string> Notices) LoadWithFallback(string dir)
     {
         var notices = new List<string>();
-        string main = Path.Combine(dir, FileName);
+        // without a main file, the newest .bak says what it was called
+        string main = FindFile(dir)
+            ?? Baks(dir).OrderByDescending(File.GetLastWriteTimeUtc).Select(b => b[..^".bak".Length]).FirstOrDefault()
+            ?? Path.Combine(dir, FolderName(dir) + Extension);
         Exception? first = null;
         Project? TryParse(string path)
         {
@@ -147,7 +210,7 @@ public sealed class ProjectStore : IDisposable
                 return null;
             }
         }
-        if (TryParse(main) is { } ok) return (ok, FileName, notices);
+        if (TryParse(main) is { } ok) return (ok, main, main, notices);
 
         // the newest readable copy wins: the last snapshot can be newer than the .bak
         var best = new[] { main + ".bak" }
@@ -162,11 +225,12 @@ public sealed class ProjectStore : IDisposable
         notices.Add(Texts.T("store.damaged", "El proyecto estaba dañado: se abrió desde {0}", what));
         if (File.Exists(main))
         {
-            string keep = Path.Combine(dir, $"xtreme_project.dañado-{DateTime.Now.ToString(SnapshotStamp, CultureInfo.InvariantCulture)}.json");
+            // .json, not .xtp: it must never be taken for the project
+            string keep = Path.Combine(dir, $"{Path.GetFileNameWithoutExtension(main)}.dañado-{DateTime.Now.ToString(SnapshotStamp, CultureInfo.InvariantCulture)}.json");
             File.Move(main, keep);
             notices.Add(Texts.T("store.damagedKept", "El archivo dañado quedó como {0}", Path.GetFileName(keep)));
         }
-        return (best.Project, best.Path, notices);
+        return (best.Project, main, best.Path, notices);
     }
 
     public static Project Parse(string json)
@@ -445,6 +509,34 @@ public sealed class ProjectStore : IDisposable
         Save(); // no automatic version of it: it is the one just brought back
         Notices.Clear();
         CheckMedia();
+    }
+
+    /// <summary>
+    /// Renames the project file (and its .bak) to Name.xtp after the project's name, so a renamed project, a copy or an
+    /// old xtreme_project.json reads right in Explorer. Keeps the old name when the new one is taken or the file is held.
+    /// </summary>
+    public void MatchFileToName()
+    {
+        if (ReadOnly) return;
+        lock (writeLock)
+        {
+            string target = FileFor(Dir, Project.Name);
+            if (target == FilePath) return;
+            // only the case changed: the same file on Windows
+            bool same = string.Equals(target, FilePath, StringComparison.OrdinalIgnoreCase);
+            if (!same && File.Exists(target)) return;
+            try
+            {
+                string oldBak = BakPath;
+                if (File.Exists(FilePath)) Retry(() => File.Move(FilePath, target));
+                FilePath = target;
+                if (!same && File.Exists(oldBak)) Retry(() => File.Move(oldBak, BakPath, true));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // held by something else: it keeps working under its old name
+            }
+        }
     }
 
     void TakeLock()

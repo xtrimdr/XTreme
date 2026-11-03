@@ -26,7 +26,9 @@ static class TailCommands
             // a copy of its JSON, so a project open in the app stays as it is
             string copy = Path.Combine(Path.GetTempPath(), "xtlab-colas");
             Directory.CreateDirectory(copy);
-            File.Copy(Path.Combine(Path.GetFullPath(dir), "xtreme_project.json"), Path.Combine(copy, "xtreme_project.json"), true);
+            string file = ProjectStore.FindFile(Path.GetFullPath(dir)) ?? throw new FileNotFoundException("No hay un proyecto en " + dir);
+            foreach (var old in Directory.GetFiles(copy)) File.Delete(old);
+            File.Copy(file, Path.Combine(copy, "colas" + ProjectStore.Extension), true);
             using var store = ProjectStore.Open(copy);
             project = store.Project;
         }

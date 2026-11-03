@@ -16,7 +16,9 @@ namespace XtremeDaw.App.Controls;
 /// The "Proyectos" manager. Same as SessionPicker in the web app (SessionPicker.tsx):
 /// list with search, new project with a template, rename (F2), save as template, duplicate, show in
 /// Explorer, delete to the Recycle Bin, forget missing ones, projects folder. Differences, all from the
-/// native format: it lists xtreme_project.json projects, and "Abrir carpeta…" on a web project offers an import.
+/// native format: it lists .xtp projects (and the older xtreme_project.json), "Abrir…" opens a .xtp from anywhere,
+/// a new project can go anywhere ("Guardar en…"), and any project can be saved somewhere else ("Guardar como…" goes on
+/// in the copy, "Guardar una copia…" stays here).
 /// The window wires the callbacks; this control never touches the open project directly.
 /// </summary>
 public sealed partial class ProjectsDialog : UserControl
@@ -49,6 +51,15 @@ public sealed partial class ProjectsDialog : UserControl
     /// <summary>Writes what's pending of the open project (before duplicating it).</summary>
     public Func<Task>? FlushCurrent { get; set; }
 
+    /// <summary>
+    /// "Guardar como…" (true) / "Guardar una copia…" (false) of a project folder: the window picks the place, saves what
+    /// is pending and copies it. Returns the new folder, or null if the user cancelled; throws to show the error here.
+    /// </summary>
+    public Func<string, string, bool, Task<string?>>? SaveCopy { get; set; }
+
+    /// <summary>The folder the user picked for a new project ("Guardar en…") was empty: it becomes the project.</summary>
+    bool newDirEmpty;
+
     /// <summary>Closes the open project so its folder can be renamed; the window reopens it at the returned dir.</summary>
     public Func<Task>? CloseCurrent { get; set; }
 
@@ -75,7 +86,8 @@ public sealed partial class ProjectsDialog : UserControl
         HelpButton.Click += (_, _) => HelpRequested?.Invoke();
         NewsButton.Click += (_, _) => NewsRequested?.Invoke();
         NewButton.Click += (_, _) => StartNew();
-        OpenFolderButton.Click += async (_, _) => await OpenFolder();
+        OpenFolderButton.Click += async (_, _) => await OpenFile();
+        NewWhere.Click += async (_, _) => await PickNewPlace();
         UnpackButton.Click += async (_, _) => await Unpack();
         SearchBox.TextChanged += (_, _) => RenderList();
         NewCancel.Click += (_, _) => SetDraft(null);
@@ -273,7 +285,7 @@ public sealed partial class ProjectsDialog : UserControl
             if (version != previewVersion) return;
             var result = await Task.Run(() => ProjectLibrary.PreviewNew(d.Name));
             if (version != previewVersion || draft?.Kind != DraftKind.New || draft.Name != d.Name) return;
-            NewPath.Text = result.Dir;
+            NewPath.Text = System.IO.Path.Combine(result.Dir, ProjectLibrary.FolderNameFor(result.Name) + ProjectStore.Extension);
             NewTaken.IsVisible = result.Name != d.Name.Trim();
             NewTaken.Text = Loc.T("proj.taken", result.Name);
         }
@@ -310,7 +322,7 @@ public sealed partial class ProjectsDialog : UserControl
             {
                 string freeName = FreeName(name);
                 string dir = await Task.Run(() => d.Dir != null
-                    ? ProjectLibrary.Create(freeName, tpl, d.Dir, mode)
+                    ? ProjectLibrary.Create(freeName, tpl, NewDirIn(d.Dir, freeName), mode)
                     : ProjectLibrary.Create(name, tpl, mode: mode));
                 ProjectTemplates.LastId = tpl?.Id ?? ProjectTemplates.None;
                 AppConfig.Set("newProjectMode", mode);
@@ -484,29 +496,81 @@ public sealed partial class ProjectsDialog : UserControl
         return picked.FirstOrDefault()?.TryGetLocalPath();
     }
 
-    async Task OpenFolder() =>
+    /// <summary>"Abrir…": a .xtp from anywhere (or the xtreme_project.json or WildTrack guitarcam.json of an older project).</summary>
+    async Task OpenFile() =>
         await Run("__pick", async () =>
         {
-            var dir = await PickFolder(Loc.T("proj.pick.project"));
-            if (dir == null) return;
-            var found = await Task.Run(() => ProjectLibrary.Inspect(dir));
+            var sp = TopLevel.GetTopLevel(this)?.StorageProvider;
+            if (sp == null) return;
+            var start = Directory.Exists(root) ? await sp.TryGetFolderFromPathAsync(root) : null;
+            var picked = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = Loc.T("proj.pick.project"),
+                SuggestedStartLocation = start,
+                FileTypeFilter = [new FilePickerFileType(Loc.T("proj.fileType")) { Patterns = ["*" + ProjectStore.Extension, ProjectStore.OldFileName, ProjectStore.WildTrackFileName] }],
+            });
+            if (picked.FirstOrDefault()?.TryGetLocalPath() is not { } file) return;
+            var found = await Task.Run(() => ProjectLibrary.Inspect(file));
             switch (found.Kind)
             {
                 case ProjectLibrary.PickedKind.Project:
-                    if (OpenProject != null) await OpenProject(found.Dir);
+                    if (Same(found.Dir, CurrentDir)) Cancel();
+                    else if (OpenProject != null) await OpenProject(found.Dir);
                     break;
-                case ProjectLibrary.PickedKind.Empty:
-                    busy = null;
-                    SetDraft(new Draft(DraftKind.New, System.IO.Path.GetFileName(found.Dir) is { Length: > 0 } n ? n : NextDefaultName(), found.Dir));
-                    break;
-                case ProjectLibrary.PickedKind.Several:
-                    throw new IOException(Loc.T("proj.pick.several", string.Join(", ", found.Found.Select(System.IO.Path.GetFileName))));
                 case ProjectLibrary.PickedKind.WebProject:
                     throw new IOException(Loc.T("proj.pick.web"));
                 default:
                     throw new IOException(Loc.T("proj.pick.none"));
             }
         }, Loc.T("proj.err.picker"));
+
+    /// <summary>"Guardar en…" of the new project form: an empty folder is the project; any other gets a folder inside.</summary>
+    async Task PickNewPlace()
+    {
+        if (draft?.Kind != DraftKind.New || busy != null) return;
+        var dir = await PickFolder(Loc.T("proj.pick.where"));
+        if (dir == null || draft?.Kind != DraftKind.New) return;
+        newDirEmpty = await Task.Run(() => { try { return !Directory.EnumerateFileSystemEntries(dir).Any(); } catch (IOException) { return false; } catch (UnauthorizedAccessException) { return false; } });
+        draft = draft with { Dir = dir };
+        RenderNewForm(false);
+    }
+
+    /// <summary>The folder a new project named <paramref name="name"/> gets at the place picked with "Guardar en…".</summary>
+    string NewDirIn(string place, string name) =>
+        newDirEmpty ? place : System.IO.Path.Combine(place, ProjectLibrary.FolderNameFor(name));
+
+    /// <summary>The row's save menu: "Guardar como…" goes on in the copy, "Guardar una copia…" stays where it is.</summary>
+    void ShowSaveMenu(ProjectLibrary.Summary p, Control anchor)
+    {
+        var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        foreach (var (saveAs, key) in new[] { (true, "proj.saveAs"), (false, "proj.saveCopy") })
+        {
+            var item = new MenuItem { Header = new StackPanel { Spacing = 1, Children =
+            {
+                new TextBlock { Text = Loc.T(key), FontSize = 12 },
+                new TextBlock { Text = Loc.T(key + ".hint"), FontSize = 10.5, Foreground = Res("Faint") },
+            } } };
+            item.Click += async (_, _) => await SaveElsewhere(p, saveAs);
+            menu.Items.Add(item);
+        }
+        menu.ShowAt(anchor);
+    }
+
+    async Task SaveElsewhere(ProjectLibrary.Summary p, bool saveAs) =>
+        await Run($"save:{p.Dir}", async () =>
+        {
+            if (SaveCopy == null) return;
+            string? dir = await SaveCopy(p.Dir, p.Name, saveAs);
+            if (dir == null) return;
+            if (saveAs)
+            {
+                if (OpenProject != null) await OpenProject(dir);
+                return;
+            }
+            await Refresh();
+            highlight = dir;
+            notice = Loc.T("proj.saveCopy.done", dir);
+        }, Loc.T("proj.err.saveAs"));
 
     async Task PickRoot() =>
         await Run("__root", async () =>
@@ -546,7 +610,8 @@ public sealed partial class ProjectsDialog : UserControl
         bool picking = busy == "__pick";
         OpenFolderIcon.IsVisible = !picking;
         OpenFolderSpin.IsVisible = picking;
-        OpenFolderText.Text = picking ? Loc.T("proj.waiting") : Loc.T("proj.openFolder");
+        OpenFolderText.Text = picking ? Loc.T("proj.waiting") : Loc.T("proj.openFile");
+        NewWhere.IsEnabled = idle;
         RootSpin.IsVisible = busy == "__root";
         RootText.Text = root.Length > 0 ? root : "…";
         ToolTip.SetTip(RootText, root);
@@ -568,7 +633,9 @@ public sealed partial class ProjectsDialog : UserControl
         NewVideoButton.IsChecked = newMode == "video";
         NewAudioButton.IsChecked = newMode == "audio";
         CreateSpin.IsVisible = busy == "__create";
-        NewPath.Text = d.Dir ?? (root.Length > 0 ? System.IO.Path.Combine(root, ProjectLibrary.FolderNameFor(FreeName(d.Name))) : "");
+        string file = ProjectLibrary.FolderNameFor(FreeName(d.Name)) + ProjectStore.Extension;
+        NewPath.Text = d.Dir != null ? System.IO.Path.Combine(NewDirIn(d.Dir, FreeName(d.Name)), file)
+            : root.Length > 0 ? System.IO.Path.Combine(root, ProjectLibrary.FolderNameFor(FreeName(d.Name)), file) : "";
         bool taken = name.Length > 0 && NameTaken(name);
         NewTaken.IsVisible = taken;
         if (taken) NewTaken.Text = Loc.T("proj.taken", FreeName(d.Name));
@@ -744,6 +811,9 @@ public sealed partial class ProjectsDialog : UserControl
                     actions.Children.Add(RowAction("", Loc.T("proj.saveTemplate.tip"),
                         () => SetDraft(new Draft(DraftKind.Template, p.Name, p.Dir))));
                 actions.Children.Add(RowAction("", Loc.T("menu.duplicate"), async () => await Duplicate(p)));
+                Button? save = null;
+                save = RowAction("", Loc.T("proj.save.tip"), () => ShowSaveMenu(p, save!));
+                actions.Children.Add(save);
                 Button? pack = null;
                 pack = RowAction("", Loc.T("proj.pack.tip"), () => ShowPackMenu(p, pack!));
                 actions.Children.Add(pack);

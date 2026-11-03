@@ -19,7 +19,7 @@ public sealed record PackResult(string File, int Files, long Bytes, int Missing)
 
 /// <summary>
 /// The project as one ZIP to move it to another computer or keep a backup, and back (the manager's "Paquete").
-/// Takes left outside the folder (imported without copying) go inside, in media/, and the packed xtreme_project.json
+/// Takes left outside the folder (imported without copying) go inside, in media/, and the packed Name.xtp
 /// points to them there, so the package opens anywhere. The lock and cache/ never go: one is this computer's, the
 /// other is remade from media/. Both ways write somewhere temporary first and publish at the end (the ZIP's
 /// <c>.part</c> renamed, the unpacked folder moved), so a crash halfway never leaves a package or a project that
@@ -38,7 +38,9 @@ public static partial class ProjectLibrary
     public static PackResult Pack(string dir, string zipPath, PackageKind kind, IProgress<double>? progress = null, CancellationToken ct = default)
     {
         dir = Path.GetFullPath(dir);
-        var project = ProjectStore.Parse(File.ReadAllText(Path.Combine(dir, ProjectStore.FileName), Encoding.UTF8));
+        var project = ProjectStore.Parse(File.ReadAllText(MainFile(dir), Encoding.UTF8));
+        // the project goes in as Name.xtp, whatever the file is called on this disk
+        string packedName = FolderNameFor(project.Name) + ProjectStore.Extension;
         // entry name -> file on disk; the folder's own files keep their place
         var entries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -90,10 +92,10 @@ public static partial class ProjectLibrary
             {
                 string rel = Inside(f)!;
                 if (rel.StartsWith(ProjectStore.CacheDir + "/", StringComparison.OrdinalIgnoreCase) || rel.Equals(ProjectStore.LockName, StringComparison.OrdinalIgnoreCase)
-                    || rel.Equals(ProjectStore.FileName, StringComparison.OrdinalIgnoreCase) || rel.EndsWith(PartExt, StringComparison.OrdinalIgnoreCase)) continue;
+                    || (!rel.Contains('/') && ProjectStore.IsProjectFile(rel)) || rel.EndsWith(PartExt, StringComparison.OrdinalIgnoreCase)) continue;
                 entries.TryAdd(rel, f);
             }
-        entries.Remove(ProjectStore.FileName);
+        entries.Remove(packedName);
         byte[] json = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(project, ProjectStore.Json));
 
         long total = json.Length + entries.Values.Sum(f => new FileInfo(f).Length), done = 0;
@@ -104,7 +106,7 @@ public static partial class ProjectLibrary
             {
                 using (var zip = new ZipArchive(fs, ZipArchiveMode.Create, leaveOpen: true))
                 {
-                    using (var s = zip.CreateEntry(ProjectStore.FileName, CompressionLevel.Optimal).Open()) s.Write(json);
+                    using (var s = zip.CreateEntry(packedName, CompressionLevel.Optimal).Open()) s.Write(json);
                     done += json.Length;
                     var buffer = new byte[1 << 20];
                     foreach (var (name, file) in entries.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase))
@@ -155,7 +157,8 @@ public static partial class ProjectLibrary
     {
         using var zip = ZipFile.OpenRead(zipPath);
         var files = zip.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
-        var main = files.Where(e => e.Name.Equals(ProjectStore.FileName, StringComparison.OrdinalIgnoreCase))
+        // packages made before .xtp carry xtreme_project.json
+        var main = files.Where(e => ProjectStore.IsProjectFile(e.Name))
             .OrderBy(e => e.FullName.Count(c => c == '/')).FirstOrDefault()
             ?? throw new InvalidDataException(Texts.T("store.pack.notProject", "Ese ZIP no tiene un proyecto de XTreme adentro"));
         string prefix = main.FullName[..^main.Name.Length];
@@ -192,6 +195,7 @@ public static partial class ProjectLibrary
                 store.Project.Name = name;
                 store.Project.AddLog("session-unpacked", Path.GetFileName(zipPath));
                 store.Save();
+                store.MatchFileToName();
             }
             Directory.CreateDirectory(Path.Combine(staging, "exports"));
             Directory.Move(staging, dir);

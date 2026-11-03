@@ -122,13 +122,13 @@
             <TextBlock Text="{loc:T proj.new}" />
           </StackPanel>
         </Button>
-        <Button Grid.Column="1" x:Name="OpenFolderButton" Classes="btn outline" Margin="8,0,0,0" ToolTip.Tip="{loc:T proj.openFolder.tip}">
+        <Button Grid.Column="1" x:Name="OpenFolderButton" Classes="btn outline" Margin="8,0,0,0" ToolTip.Tip="{loc:T proj.openFile.tip}">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <Panel Width="16" Height="16">
               <TextBlock x:Name="OpenFolderIcon" Classes="icon" Text="&#xE8DA;" FontSize="15" HorizontalAlignment="Center" />
               <Arc x:Name="OpenFolderSpin" Classes="spin" Width="14" Height="14" Stroke="{StaticResource Dim}" IsVisible="False" />
             </Panel>
-            <TextBlock x:Name="OpenFolderText" Text="{loc:T proj.openFolder}" />
+            <TextBlock x:Name="OpenFolderText" Text="{loc:T proj.openFile}" />
           </StackPanel>
         </Button>
         <Button Grid.Column="2" x:Name="UnpackButton" Classes="btn outline" Margin="8,0,0,0" ToolTip.Tip="{loc:T proj.unpack.tip}">
@@ -164,7 +164,10 @@
               </Button>
             </Grid>
           </StackPanel>
-          <TextBlock x:Name="NewPath" Classes="mono" FontSize="11" Foreground="{StaticResource Faint}" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="NewPath" Classes="mono" FontSize="11" Foreground="{StaticResource Faint}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            <Button Grid.Column="1" x:Name="NewWhere" Classes="btn sm outline" Margin="8,0,0,0" Content="{loc:T proj.where}" ToolTip.Tip="{loc:T proj.where.tip}" />
+          </Grid>
           <TextBlock x:Name="NewTaken" FontSize="11" Foreground="{StaticResource Accent}" TextWrapping="Wrap" IsVisible="False" />
           <!-- native only: video or solo audio, the same switch the title bar has once it is open -->
           <StackPanel Spacing="6" Margin="0,4,0,0">

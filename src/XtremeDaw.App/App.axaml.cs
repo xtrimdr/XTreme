@@ -19,8 +19,8 @@ public partial class App : Application
         TrackKnobs.Load();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // XTreme.exe [carpeta]
-            var dir = desktop.Args?.FirstOrDefault();
+            // XTreme.exe [carpeta | proyecto.xtp] (a double click on a .xtp passes the file)
+            var dir = desktop.Args?.FirstOrDefault() is { Length: > 0 } arg ? XtremeDaw.Projects.ProjectStore.DirOf(arg) : null;
             // the splash paints first; the main window (slow to build) comes once it is on screen
             var splash = new SplashWindow();
             splash.Opened += (_, _) => Dispatcher.UIThread.Post(() =>

@@ -249,6 +249,8 @@ static class Program
               proyecto duracion carpeta           cuánto dura el tema y si entra en cada red (historias, X, Reels, TikTok)
               proyecto verificar-marcadores verifica orden, nombres, saltos, deshacer y guardado de marcadores y del rango A–B
               proyecto verificar-paquete   empaqueta un proyecto con una toma de afuera y lo desempaqueta: lo que suena, el respaldo y un ZIP tramposo
+              proyecto verificar-guardar-como   el archivo .xtp y Guardar como: el formato anterior, renombrar, rescatar del .bak, copiar a otra carpeta
+              proyecto verificar-bucles    clips, clips MIDI y bloques de automatización en bucle: repeticiones, seguir al original, dividir, guardar
               proyecto verificar-bloqueo   la regla del bloqueo: un clip o una pista bloqueados no se mueven, recortan ni borran, y grabar no los pisa
               proyecto verificar-ab        el A/B de la mezcla: ida y vuelta, mute y solo quietos, pistas y buses nuevos, deshacer
               proyecto editar carpeta ganancia clip dB | curva clip "seg:dB,..."   volumen del clip y su curva (seg desde el inicio de la toma)
@@ -307,7 +309,7 @@ static class Program
               midi patron-unico carpeta --clip id   saca el clip del patrón (suena igual)
               midi patron-disolver carpeta --clip id   termina el patrón de ese clip: todos sus clips quedan únicos
               midi patron-borrar carpeta --clip id   borra el patrón de ese clip con todos sus clips
-              midi cuantizar carpeta --clip id [--grilla bar|1/2|1/4|1/8|1/8T|1/16|1/32|1/64|1/4beat|1/6beat|1/3step|1/6step]
+              midi cuantizar carpeta --clip id [--grilla bar|1/2…1/64|1/2T…1/32T|1/2D…1/16D]
                                            mueve el comienzo de sus notas a la grilla de la canción (el largo queda)
               midi velocidad carpeta --clip id [--rango 100]
                                            escala las velocidades alrededor de su promedio (50 las acerca, 0 las

@@ -54,12 +54,12 @@ static class PackageChecks
             var sn = Names(share);
             var bn = Names(backup);
             Check("para compartir: el proyecto, la toma y la de afuera: " + string.Join(" ", sn),
-                sn.SequenceEqual(["media/de-afuera/base.wav", "media/toma1.wav", "xtreme_project.json"]) && r1.Missing == 0);
+                sn.SequenceEqual(["Tema.xtp", "media/de-afuera/base.wav", "media/toma1.wav"]) && r1.Missing == 0);
             Check("respaldo: además la toma sin usar y la exportación, sin cache ni lock",
                 bn.Contains("media/vieja.wav") && bn.Contains("exports/video.mp4") && bn.Contains("media/de-afuera/base.wav")
                 && !bn.Any(n => n.StartsWith("cache/") || n == ProjectStore.LockName) && r2.Files == bn.Count);
             Check("sin .part al terminar", !File.Exists(share + ".part") && !File.Exists(backup + ".part"));
-            Check("el proyecto original no se tocó", File.ReadAllText(Path.Combine(src, ProjectStore.FileName)).Contains(outsideFile.Replace("\\", "\\\\")));
+            Check("el proyecto original no se tocó", File.ReadAllText(ProjectStore.FindFile(src)!).Contains(outsideFile.Replace("\\", "\\\\")));
 
             string a = ProjectLibrary.Unpack(share, root), b = ProjectLibrary.Unpack(backup, root);
             Check("desempaquetar dos veces no pisa: " + Path.GetFileName(a) + " / " + Path.GetFileName(b),
@@ -77,7 +77,7 @@ static class PackageChecks
             string evil = Path.Combine(tmp, "trampa.zip");
             using (var z = ZipFile.Open(evil, ZipArchiveMode.Create))
             {
-                using (var w = new StreamWriter(z.CreateEntry(ProjectStore.FileName).Open())) w.Write("""{"name":"Trampa"}""");
+                using (var w = new StreamWriter(z.CreateEntry("proyecto" + ProjectStore.Extension).Open())) w.Write("""{"name":"Trampa"}""");
                 using (var w = new StreamWriter(z.CreateEntry("../../fuera.txt").Open())) w.Write("no");
             }
             bool refused = false;
