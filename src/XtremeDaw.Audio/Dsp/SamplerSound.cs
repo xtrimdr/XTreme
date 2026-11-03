@@ -84,6 +84,34 @@ public sealed class SamplerSound
     /// <summary>The shortest loop: 10 frames (a tone of 4.8 kHz); shorter would only buzz at a pitch of its own.</summary>
     public const int MinLoop = 10;
 
+    /// <summary>How far a loop point looks for a zero crossing: 50 ms, a full cycle of the lowest note worth looping.</summary>
+    public const int ZeroReach = 2400;
+
+    /// <summary>
+    /// The frame nearest to <paramref name="frame"/> where the sound, as it plays (after <paramref name="reverse"/>), goes
+    /// from below zero to zero or above, or -1 with none within <paramref name="reach"/>. Always going up, so a loop's two
+    /// ends meet in the same direction and the turn doesn't kink; on the sum of the channels, because a stereo sample
+    /// rarely crosses in both at once. The frame returned is the first one of the rise: as a loop's start it plays first,
+    /// as its end the one before it plays last, so the turn looks like any other crossing of the wave.
+    /// </summary>
+    public static int ZeroCrossing(float[] left, float[] right, bool reverse, int frame, int reach = ZeroReach)
+    {
+        int n = left.Length;
+        if (right.Length != n) right = left;
+        float At(int i)
+        {
+            int k = reverse ? n - 1 - i : i;
+            return left[k] + right[k];
+        }
+        bool Rises(int i) => i >= 1 && i < n && At(i - 1) < 0 && At(i) >= 0;
+        for (int d = 0; d <= reach; d++)
+        {
+            if (Rises(frame - d)) return frame - d;
+            if (Rises(frame + d)) return frame + d;
+        }
+        return -1;
+    }
+
     /// <summary>The end of the loop fades into what comes before its start, so turning back is a continuation.</summary>
     static void Seam(float[] d, int from, int to, double crossfade)
     {

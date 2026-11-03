@@ -75,6 +75,13 @@ static class SamplerChecks
         return Math.Sqrt(sum / Math.Max(1, to - from));
     }
 
+    /// <summary>The step from the last frame of a forward loop to its first, as the voice hears it turn around.</summary>
+    static double SeamStep(float[] x, double from, double to)
+    {
+        var s = Sound(x, SamplerLoop.Forward, from, to);
+        return Math.Abs(s.L[0][SamplerSound.Pad + s.LoopEnd - 1] - s.L[0][SamplerSound.Pad + s.LoopStart]);
+    }
+
     /// <summary>The frequency from the zero crossings going up, between two frames.</summary>
     static double Hz(float[] x, int from, int to)
     {
@@ -192,6 +199,18 @@ static class SamplerChecks
         var mix = seam.L[0];
         double seamJump = Math.Abs(mix[SamplerSound.Pad + seam.LoopEnd - 1] - mix[SamplerSound.Pad + seam.LoopStart - 1]);
         Row("Loop: el crossfade cierra la costura", $"{seamJump:0.0000}", "< 0.001", seamJump < 1e-3);
+        // loop points on zero crossings: a loop that isn't a whole number of periods stops clicking
+        var swing = Sine(437, 1);
+        double sineStep = 2 * Math.PI * 437 / Sr * 0.5, freeJump = SeamStep(swing, 0.2013, 0.8127);
+        int zeroFrom = SamplerSound.ZeroCrossing(swing, swing, false, (int)(0.2013 * Sr)), zeroTo = SamplerSound.ZeroCrossing(swing, swing, false, (int)(0.8127 * Sr));
+        double zeroJump = SeamStep(swing, zeroFrom / (double)Sr, zeroTo / (double)Sr);
+        Row("Cruce por cero: el punto queda en la subida", $"{swing[zeroFrom - 1]:0.000} → {swing[zeroFrom]:0.000}", "- → +", swing[zeroFrom - 1] < 0 && swing[zeroFrom] >= 0);
+        Row("Cruce por cero: lo busca a menos de un período", $"{Math.Abs(zeroFrom - 0.2013 * Sr):0} cuadros", $"≤ {Sr / 437.0:0}", Math.Abs(zeroFrom - 0.2013 * Sr) <= Sr / 437.0);
+        Row("Cruce por cero: la costura no salta", $"{zeroJump:0.000} (libre {freeJump:0.000})", $"< {2 * sineStep:0.000}", zeroJump < 2 * sineStep && freeJump > 2 * sineStep);
+        int backwards = SamplerSound.ZeroCrossing(swing, swing, true, Sr / 2);
+        Row("Cruce por cero: al revés, en la subida de lo que suena", $"{swing[swing.Length - backwards]:0.000} → {swing[swing.Length - 1 - backwards]:0.000}", "- → +", swing[swing.Length - backwards] < 0 && swing[swing.Length - 1 - backwards] >= 0);
+        var hush = new float[Sr / 10];
+        Row("Cruce por cero: en silencio no hay", SamplerSound.ZeroCrossing(hush, hush, false, Sr / 20).ToString(), "-1", SamplerSound.ZeroCrossing(hush, hush, false, Sr / 20) == -1);
 
         // 8. modes
         var (oneShot, _) = Render(plain with { OneShot = true }, Sound(flat), [On(0, Sr / 10, 60)], Sr);

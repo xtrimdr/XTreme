@@ -27,6 +27,8 @@ public sealed class SamplerWindow : Window
     /// <summary>How often the voices' heads move on the wave.</summary>
     const int HeadsMs = 33;
     const double KnobSize = 34;
+    /// <summary>How wide the view goes on a loop point: some 40 ms, a few cycles of a low note.</summary>
+    const double LoopCloseFrames = 2000;
     static readonly string[] NoteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
     readonly List<Action> refresh = [];
@@ -45,6 +47,10 @@ public sealed class SamplerWindow : Window
     readonly Button pitchFix = new() { Classes = { "chip" }, Height = 26, MinHeight = 26, Padding = new Thickness(8, 0), FontSize = 11, Focusable = false };
     readonly Sampler player;
     double sampleSec;
+    float[]? soundLeft, soundRight;
+    bool soundReversed;
+    /// <summary>The flags land on zero crossings; a preference of this machine, on by default.</summary>
+    bool zeroSnap = AppConfig.Get("samplerZero") != "0";
     (int Key, double Cents)? heard;
     bool measuring;
     /// <summary>Under this many cents it counts as in tune: no ear tells that much on a held note.</summary>
@@ -128,18 +134,20 @@ public sealed class SamplerWindow : Window
         top.Children.Add(SampleBar());
         wave.SetEmpty(Loc.T("sampler.drop"), Loc.T("sampler.drop.hint"));
         wave.PickRequested += () => PickFile();
-        wave.MarkerMoved += (m, f) =>
+        wave.MarkerMoved += (m, f, free) =>
         {
+            double point = ZeroPoint(m, f, free);
             switch (m)
             {
-                case SamplerWaveView.Marker.Start: Edit(s => s.Start = f, "start"); break;
-                case SamplerWaveView.Marker.End: Edit(s => s.End = f, "end"); break;
-                case SamplerWaveView.Marker.LoopStart: Edit(s => s.LoopStart = f, "loopStart"); break;
-                case SamplerWaveView.Marker.LoopEnd: Edit(s => s.LoopEnd = f, "loopEnd"); break;
+                case SamplerWaveView.Marker.Start: Edit(s => s.Start = point, "start"); break;
+                case SamplerWaveView.Marker.End: Edit(s => s.End = point, "end"); break;
+                case SamplerWaveView.Marker.LoopStart: Edit(s => s.LoopStart = point, "loopStart"); break;
+                case SamplerWaveView.Marker.LoopEnd: Edit(s => s.LoopEnd = point, "loopEnd"); break;
             }
         };
+        ToolTip.SetTip(wave, Loc.T("sampler.wave.tip"));
         top.Children.Add(wave);
-        top.Children.Add(markerInfo);
+        top.Children.Add(WaveBar());
         refresh.Add(() =>
         {
             if (Current() is not { } s) return;
@@ -177,6 +185,46 @@ public sealed class SamplerWindow : Window
     }
 
     string Time(double fraction) => (fraction * sampleSec).ToString("0.000", CultureInfo.CurrentCulture) + " s";
+
+    /// <summary>Under the wave: where the flags are, the ways to reach a loop point up close, and the magnet that lands the flags on zero crossings.</summary>
+    Control WaveBar()
+    {
+        Button Chip(string text, string tip, Action click)
+        {
+            var b = new Button { Classes = { "chip" }, Height = 24, MinHeight = 24, Padding = new Thickness(8, 0), FontSize = 11, Content = text, Focusable = false };
+            ToolTip.SetTip(b, tip);
+            b.Click += (_, _) => click();
+            return b;
+        }
+        var whole = Chip(Loc.T("sampler.view.all"), Loc.T("sampler.view.all.tip"), wave.ShowAll);
+        var from = Chip(Loc.T("sampler.view.loopStart"), Loc.T("sampler.view.loop.tip"), () => wave.ShowAround(wave.LoopStart, LoopCloseFrames));
+        var to = Chip(Loc.T("sampler.view.loopEnd"), Loc.T("sampler.view.loop.tip"), () => wave.ShowAround(wave.LoopEnd, LoopCloseFrames));
+        var zero = new ToggleButton { Classes = { "chip" }, Height = 24, MinHeight = 24, Padding = new Thickness(8, 0), FontSize = 11, Content = Loc.T("sampler.zero"), Focusable = false, IsChecked = zeroSnap };
+        ToolTip.SetTip(zero, Loc.T("sampler.zero.tip"));
+        wave.ShowCrossings = zeroSnap;
+        zero.Click += (_, _) =>
+        {
+            wave.ShowCrossings = zeroSnap = zero.IsChecked == true;
+            try { AppConfig.Set("samplerZero", zeroSnap ? "1" : "0"); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* View preference only. */ }
+        };
+        void ShowWhole() => whole.IsEnabled = !wave.ShowsAll;
+        wave.ViewChanged += ShowWhole;
+        ShowWhole();
+        refresh.Add(() =>
+        {
+            bool looped = sampleSec > 0 && Current() is { Mode: SamplerSettings.Gate } s && s.Loop != SamplerSettings.LoopOff;
+            from.IsEnabled = to.IsEnabled = looped;
+            zero.IsEnabled = sampleSec > 0;
+        });
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        markerInfo.VerticalAlignment = VerticalAlignment.Center;
+        bar.Children.Add(markerInfo);
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { whole, from, to, zero } };
+        Grid.SetColumn(tools, 1);
+        bar.Children.Add(tools);
+        return bar;
+    }
 
     Control SampleBar()
     {
@@ -528,13 +576,24 @@ public sealed class SamplerWindow : Window
     }
 
     /// <summary>The sample on screen; null peaks = none. <paramref name="state"/> says why, when something is wrong or on its way.</summary>
-    public void ShowSample(string? name, byte[]? peaks, double seconds, int sampleRate, int channels, string? state)
+    public void ShowSample(string? name, byte[]? peaks, float[]? left, float[]? right, bool reverse, double seconds, int sampleRate, int channels, string? state)
     {
         sampleSec = seconds;
+        (soundLeft, soundRight, soundReversed) = (left, right, reverse);
         sampleName.Text = name ?? Loc.T("sampler.none");
         sampleInfo.Text = state ?? (peaks == null ? "" : $"{seconds.ToString("0.00", CultureInfo.CurrentCulture)} s · {sampleRate / 1000.0:0.#} kHz · {(channels > 1 ? Loc.T("sampler.stereo") : Loc.T("sampler.monoFile"))}");
-        wave.SetPeaks(peaks);
+        wave.SetSample(peaks, left, right, reverse);
         Refresh();
+    }
+
+    /// <summary>A flag on the nearest crossing, if the magnet is on and there is one near and it fits between the flags.</summary>
+    double ZeroPoint(SamplerWaveView.Marker m, double f, bool free)
+    {
+        if (free || !zeroSnap || soundLeft is not { Length: > 0 } l || soundRight is not { } r) return f;
+        int frame = SamplerSound.ZeroCrossing(l, r, soundReversed, (int)Math.Round(f * l.Length));
+        if (frame < 0) return f;
+        double snapped = frame / (double)l.Length;
+        return wave.Limit(m, snapped) == snapped ? snapped : f;
     }
 
     /// <summary>Every control shows the settings as they are now. Setting a value here never counts as an edit.</summary>

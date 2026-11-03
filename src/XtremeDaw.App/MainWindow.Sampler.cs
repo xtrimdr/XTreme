@@ -359,7 +359,7 @@ public partial class MainWindow
         if (peaks != null && t.Track.Sampler is { Reverse: true }) peaks = [.. peaks.Reverse()];
         string? state = loaded.Missing ? Loc.T("sampler.missing") : loaded.Loading ? Loc.T("sampler.reading") : null;
         window.ShowTrack(t.Track.Name, t.Track.Color);
-        window.ShowSample(media?.Name, peaks, seconds, media?.SampleRate ?? 0, media?.Channels ?? 0, state);
+        window.ShowSample(media?.Name, peaks, loaded.Left, loaded.Right, t.Track.Sampler is { Reverse: true }, seconds, media?.SampleRate ?? 0, media?.Channels ?? 0, state);
         window.ShowPitch(loaded.Heard, loaded.Measuring);
     }
 }
