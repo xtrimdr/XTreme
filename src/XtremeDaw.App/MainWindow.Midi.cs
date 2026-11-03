@@ -47,9 +47,20 @@ public partial class MainWindow
         pianoHost.Children.Add(header);
         DockPanel.SetDock(pianoToolPanel, Dock.Right);
         pianoHost.Children.Add(pianoToolPanel);
+        var velocityBar = new Border
+        {
+            Background = Palette.Panel, BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(12, 4),
+            Child = BuildPianoVelocityTools(),
+        };
+        DockPanel.SetDock(velocityBar, Dock.Bottom);
+        pianoHost.Children.Add(velocityBar);
         pianoHost.Children.Add(pianoRoll);
         InitPianoTools();
 
+        pianoRoll.CellLengthChanged += beats =>
+        {
+            if (pianoClipId is { } id) _ = SetPatternBeats(id, beats);
+        };
         pianoRoll.NotesCommitted += async (clipId, notes) =>
         {
             if (store == null || MidiEditing.TryFind(store.Project, clipId) == null) return;
@@ -96,6 +107,28 @@ public partial class MainWindow
             }, clones.Count > 0 ? "midi-clip-duplicated" : "midi-clip-moved");
             Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
         };
+        Timeline.MidiClipTrimmed += async (clipId, atSec) =>
+        {
+            if (store == null) return;
+            string? trackId = null;
+            await EditTimeline(p =>
+            {
+                MidiEditing.TrimStart(p, clipId, atSec);
+                return trackId = MidiEditing.Find(p, clipId).Track.Id;
+            }, "midi-clip-trimmed");
+            Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
+        };
+        Timeline.MidiClipLooped += async (clipId, beats) =>
+        {
+            if (store == null) return;
+            string? trackId = null;
+            await EditTimeline(p =>
+            {
+                MidiEditing.Loop(p, clipId, beats);
+                return trackId = MidiEditing.Find(p, clipId).Track.Id;
+            }, "midi-clip-looped");
+            Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
+        };
         Timeline.MidiClipOpenRequested += (_, clipId) => OpenInPiano(clipId);
         Timeline.MidiClipCreateRequested += async (track, sec) =>
         {
@@ -130,6 +163,9 @@ public partial class MainWindow
         pianoPartsButton.Click += (_, _) => ShowPianoParts();
         ToolTip.SetTip(pianoPartsButton, Loc.T("piano.parts.tip"));
         title.Children.Add(pianoPartsButton);
+        BuildPianoPatternButtons();
+        title.Children.Add(pianoAddPartButton);
+        title.Children.Add(pianoMakePatternButton);
         // the track's instrument: which one (a menu to change it) and its window
         title.Children.Add(new Border { Width = 1, Height = 20, Background = Palette.Line, Margin = new Thickness(4, 0) });
         pianoInstrumentButton.Click += (_, _) =>
@@ -146,13 +182,13 @@ public partial class MainWindow
         title.Children.Add(pianoOpenButton);
 
         // the magnet: its own choice, remembered apart from the timeline's (notes want finer steps than takes)
-        pianoRoll.SnapMode = AppConfig.Get("pianoSnap") is { } saved && SnapChoices.PianoIds.Contains(saved) ? saved : "1/16";
+        pianoRoll.SnapMode = AppConfig.Get("pianoSnap") is { } saved && SnapChoices.PianoIds.Contains(Subdivisions.Migrate(saved)) ? Subdivisions.Migrate(saved) : "1/16";
         pianoSnapButton.Click += (_, _) => ShowPianoSnapMenu();
         ShowPianoSnap();
         var snapRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         snapRow.Children.Add(pianoSnapButton);
         // the grid: the magnet's steps, or its own (the same choices as the timeline's ruler menu)
-        pianoRoll.GridMode = AppConfig.Get("pianoGrid") is { } grid && GridIds.Contains(grid) ? grid : "snap";
+        pianoRoll.GridMode = AppConfig.Get("pianoGrid") is { } grid && GridIds.Contains(Subdivisions.Migrate(grid)) ? Subdivisions.Migrate(grid) : "snap";
         pianoGridButton.Click += (_, _) => ShowPianoGridMenu(pianoGridButton);
         ToolTip.SetTip(pianoGridButton, Loc.T("piano.grid.tip"));
         ShowPianoGrid();
@@ -165,17 +201,17 @@ public partial class MainWindow
         row.Children.Add(title);
         row.Children.Add(BuildPianoToolbar());
         row.Children.Add(BuildPianoScaleTools());
-        row.Children.Add(BuildPianoVelocityTools());
         row.Children.Add(snapRow);
         return row;
     }
 
-    /// <summary>The velocity lane's step choices (0 = free) in its menu; any other comes from the box.</summary>
+    /// <summary>The velocity lane's step choices (0 = free) in its menu; any other comes from "Otro…".</summary>
     static readonly int[] VelSteps = [0, 4, 8, 10, 16, 32];
 
     /// <summary>
-    /// The velocity lane's tools in the header (asked by the user): show or hide it, pencil or line, and the vertical
-    /// step (a box for any value and a menu with the common ones), all remembered in config.json.
+    /// The velocity lane's tools, on a bar right under it (asked by the user: up in the header they read as unrelated to
+    /// it): show or hide it, pencil or line, and the step of a drag (a chip that says what it is, with the common values
+    /// and any other), all remembered in config.json.
     /// </summary>
     Control BuildPianoVelocityTools()
     {
@@ -198,46 +234,37 @@ public partial class MainWindow
             tools.Children.Add(b);
         }
         var toolSeg = new Border { Classes = { "seg" }, Child = tools, VerticalAlignment = VerticalAlignment.Center };
-        var stepBox = new TextBox
-        {
-            Classes = { "field", "mono" }, Width = 52, Height = 28, MinHeight = 28, FontSize = 12, Padding = new Thickness(6, 0),
-            VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Right,
-        };
-        ToolTip.SetTip(stepBox, Loc.T("piano.vel.step.tip"));
-        var stepMenu = new Button { Classes = { "chip" }, Content = "\u25BE", Height = 28, MinHeight = 28, Width = 28, Padding = new Thickness(0), FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
-        ToolTip.SetTip(stepMenu, Loc.T("piano.vel.step.menu"));
+        var stepChip = new Button { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(stepChip, Loc.T("piano.vel.step.tip"));
         Action<bool>? showLane = null;
-        var stepLabel = new TextBlock { Text = Loc.T("piano.vel.step"), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center };
 
-        void ShowStep() => stepBox.Text = pianoRoll.VelocityStep > 1 ? pianoRoll.VelocityStep.ToString() : Loc.T("piano.snap.off");
+        void ShowStep() => stepChip.Content = Loc.T("piano.vel.step", pianoRoll.VelocityStep > 1 ? pianoRoll.VelocityStep.ToString() : Loc.T("piano.snap.off")) + "  \u25BE";
         void SetStep(int v)
         {
             pianoRoll.VelocityStep = v;
             ShowStep();
             SaveViewPref("pianoVelStep", pianoRoll.VelocityStep.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
-        void ApplyBox()
+        void AskStep() => AskName(stepChip, null, Loc.T("piano.vel.step.ask"), pianoRoll.VelocityStep.ToString(), Loc.T("piano.length.ok"), text =>
         {
-            string t = stepBox.Text?.Trim() ?? "";
-            if (int.TryParse(t, out int v) && v >= 0 && v <= 127) SetStep(v);
-            else if (t.Length == 0 || t == Loc.T("piano.snap.off")) SetStep(0);
-            else ShowStep();
-        }
-        stepBox.KeyDown += (_, e) =>
-        {
-            if (e.Key == Avalonia.Input.Key.Enter) { ApplyBox(); pianoRoll.Focus(); e.Handled = true; }
-            else if (e.Key == Avalonia.Input.Key.Escape) { ShowStep(); pianoRoll.Focus(); e.Handled = true; }
-        };
-        stepBox.LostFocus += (_, _) => ApplyBox();
-        stepMenu.Click += (_, _) =>
+            if (int.TryParse(text, out int v) && v >= 0 && v <= 127) SetStep(v);
+            else Status(Loc.T("piano.vel.step.bad"));
+        });
+        stepChip.Click += (_, _) =>
         {
             var refresh = new List<Action>();
             var list = new List<object>();
             foreach (int v in VelSteps)
                 list.Add(MenuCheck(v == 0 ? Loc.T("piano.snap.off") : v.ToString(), () => pianoRoll.VelocityStep == v || v == 0 && pianoRoll.VelocityStep <= 1, () => SetStep(v), refresh));
-            var menu = Popup(list, 140);
-            menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
-            OpenAnchoredMenu(menu, stepMenu);
+            list.Add(MenuAction(Loc.T("piano.length.other") + "\u2026", () =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(AskStep);
+                return Task.CompletedTask;
+            }));
+            var menu = Popup(list, 160);
+            // the bar sits at the very bottom: its menus open upward
+            menu.Placement = PlacementMode.TopEdgeAlignedLeft;
+            OpenAnchoredMenu(menu, stepChip);
         };
 
         void ShowLane(bool on)
@@ -245,8 +272,7 @@ public partial class MainWindow
             showLane?.Invoke(on);
             pianoRoll.VelocityShown = on;
             show.IsChecked = on;
-            toolSeg.IsEnabled = stepBox.IsEnabled = stepMenu.IsEnabled = on;
-            stepLabel.Opacity = on ? 1 : 0.35;
+            toolSeg.IsEnabled = stepChip.IsEnabled = on;
         }
         show.Click += (_, _) =>
         {
@@ -263,9 +289,7 @@ public partial class MainWindow
 
         row.Children.Add(show);
         row.Children.Add(toolSeg);
-        row.Children.Add(stepLabel);
-        row.Children.Add(stepBox);
-        row.Children.Add(stepMenu);
+        row.Children.Add(stepChip);
         var adjust = new Button { Classes = { "chip" }, Content = Loc.T("piano.vel.adjust"), Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(adjust, Loc.T("piano.vel.adjust.tip"));
         adjust.Click += (_, _) => ShowVelocityAdjust(adjust);
@@ -317,7 +341,7 @@ public partial class MainWindow
             Padding = new Thickness(12, 10), Background = Palette.Raised, BorderBrush = Palette.Line, BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8), Child = body,
         };
-        var flyout = new Flyout { Content = card, FlyoutPresenterClasses = { "bare" }, Placement = PlacementMode.BottomEdgeAlignedRight };
+        var flyout = new Flyout { Content = card, FlyoutPresenterClasses = { "bare" }, Placement = PlacementMode.TopEdgeAlignedLeft };
 
         // the result shows in the card, which stays open to apply again (Ctrl+Z undoes each one)
         void Done(int changed)
@@ -379,7 +403,12 @@ public partial class MainWindow
 
     static string GridLabel(string id) => id switch
     {
-        "auto" => Loc.T("grid.auto"), "snap" => Loc.T("grid.snap"), "bar" => Loc.T("snap.label.1"), _ => id,
+        "auto" => Loc.T("grid.auto"), "snap" => Loc.T("grid.snap"), _ => SnapChoices.Label(id),
+    };
+
+    static string GridHint(string id) => id switch
+    {
+        "auto" => Loc.T("grid.auto.hint"), "snap" => Loc.T("grid.snap.hint"), _ => SnapChoices.Hint(id),
     };
 
     void ShowPianoGrid() => pianoGridButton.Content = Loc.T("piano.grid", GridLabel(pianoRoll.GridMode));
@@ -394,14 +423,13 @@ public partial class MainWindow
         var list = new List<object> { new MenuItem { Header = Loc.T("grid.title"), IsEnabled = false, FontSize = 11 } };
         foreach (var id in GridIds)
         {
-            string hint = id switch { "auto" => Loc.T("grid.auto.hint"), "snap" => Loc.T("grid.snap.hint"), _ => Loc.T("grid.fixed.hint", GridLabel(id)) };
+            if (id == "bar" || SnapChoices.BreakBefore(id)) list.Add(new Separator());
             list.Add(MenuCheck(GridLabel(id), () => pianoRoll.GridMode == id, () =>
             {
                 pianoRoll.GridMode = id;
                 ShowPianoGrid();
                 SaveViewPref("pianoGrid", id);
-            }, refresh, tip: hint));
-            if (id == "snap") list.Add(new Separator());
+            }, refresh, tip: GridHint(id)));
         }
         var menu = Popup(list, 260);
         if (anchor == pianoGridButton) menu.Placement = PlacementMode.BottomEdgeAlignedLeft;

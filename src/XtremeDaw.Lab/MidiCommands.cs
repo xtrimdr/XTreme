@@ -109,7 +109,7 @@ static class MidiCommands
             case "cuantizar":
             {
                 string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip.");
-                double grid = Grid(a.Get("grilla", "1/16")) ?? throw new ArgumentException("--grilla: bar, 1/2, 1/4, 1/8, 1/8T, 1/16, 1/32, 1/64, 1/4beat, 1/6beat, 1/3step o 1/6step.");
+                double grid = Grid(a.Get("grilla", "1/16")) ?? throw new ArgumentException("--grilla: " + string.Join(", ", Subdivisions.All) + ".");
                 Console.WriteLine($"{MidiEditing.Quantize(p, clip, grid)} notas movidas a {a.Get("grilla", "1/16")}.");
                 break;
             }
@@ -213,7 +213,7 @@ static class MidiCommands
     }
 
     /// <summary>The piano roll's magnet steps in beats: "1/16" = 0.25, "1/8T" = a third.</summary>
-    static double? Grid(string s) => ClipEditing.GridSeconds(s.Replace("1/8t", "1/8T"), 60) is > 0 and var beats ? beats : null;
+    static double? Grid(string s) => ClipEditing.GridSeconds(Subdivisions.Migrate(s), 60) is > 0 and var beats ? beats : null;
 
     /// <summary>The MIDI inputs Windows has, with what Configuración → MIDI says of each one.</summary>
     static int Inputs()
@@ -829,15 +829,28 @@ static class MidiCommands
             && MidiEditing.Quantize(q, 0, 120, 0) == 0;
         Show("Teclado: cuantizar a la grilla", $"{moved} movidas", "2", quantOk);
 
-        // the magnet: fractions of a step (a sixteenth) and of a beat; Line and Cell have no length of their own, and a
-        // cell goes to its start where the other lines go to the nearest
+        // the magnet: straight, triplet and dotted values, the old ids on their new names; Line has no length of its own,
+        // a cell goes to its start where the other lines go to the nearest
         static bool Near(double a, double b) => Math.Abs(a - b) < 1e-9;
-        bool snapOk = Near(ClipEditing.GridSeconds("1/6step", 60), 1.0 / 24) && Near(ClipEditing.GridSeconds("1/3step", 60), 1.0 / 12)
-            && Near(ClipEditing.GridSeconds("1/4beat", 60), ClipEditing.GridSeconds("1/16", 60)) && Near(ClipEditing.GridSeconds("1/6beat", 60), 1.0 / 6)
-            && ClipEditing.GridSeconds("line", 60) == 0 && ClipEditing.GridSeconds("cell", 60) == 0
+        bool snapOk = Near(ClipEditing.GridSeconds("1/32T", 60), 1.0 / 12) && Near(ClipEditing.GridSeconds("1/4T", 60), 2.0 / 3)
+            && Near(ClipEditing.GridSeconds("1/8D", 60), 0.75) && Near(ClipEditing.GridSeconds("1/2D", 60), 3) && Near(ClipEditing.GridSeconds("bar", 60), 4)
+            && Subdivisions.Migrate("1/4beat") == "1/16" && Subdivisions.Migrate("1/6beat") == "1/16T" && Subdivisions.Migrate("1/3step") == "1/32T"
+            && Subdivisions.Migrate("cell") == "line" && Subdivisions.Migrate("1/8t") == "1/8T" && Subdivisions.Migrate("1/4d") == "1/4D"
+            && ClipEditing.GridSeconds("line", 60) == 0 && ClipEditing.GridSeconds("1/4beat", 60) == 0
             && Near(ClipEditing.Snap(0.9, 1, false), 1) && Near(ClipEditing.Snap(0.9, new SnapGrid(1, true), false), 0)
             && Near(ClipEditing.Snap(5.0 / 24, new SnapGrid(1.0 / 24, true), false), 5.0 / 24) && Near(ClipEditing.Snap(0.9, new SnapGrid(1, true), true), 0.9);
-        Show("Imán: pasos, tiempos y celda", snapOk ? "bien" : "mal", "bien", snapOk);
+        Show("Imán: valores, tresillos y puntillos", snapOk ? "bien" : "mal", "bien", snapOk);
+
+        // a dotted value starts over at each bar: a 1/4D in 4/4 (60 BPM, a beat a second) has lines at 0, 1.5 and 3, and the
+        // next bar's at 4; 3.6 is nearer to 4 than to 3, and its cell is the one at 3. Even values stay evenly spaced.
+        var dotted = ClipEditing.GridOf("1/4D", 60);
+        bool dotOk = Near(ClipEditing.Snap(3.6, dotted, false), 4) && Near(ClipEditing.Snap(3.4, dotted, false), 3)
+            && Near(ClipEditing.Snap(5.4, dotted, false), 5.5) && Near(ClipEditing.Snap(7.9, dotted with { Cell = true }, false), 7)
+            && Near(ClipEditing.Snap(4.1, ClipEditing.GridOf("1/4T", 60), false), 4) && Near(ClipEditing.Snap(4.5, ClipEditing.GridOf("1/4T", 60), false), 4 + 2.0 / 3);
+        var dq = new List<MidiNote> { new() { Pitch = 60, Beat = 3.6, Beats = 0.5 }, new() { Pitch = 62, Beat = 5.6, Beats = 0.5 } };
+        MidiEditing.Quantize(dq, 0, 60, 1.5);
+        dotOk &= Near(dq[0].Beat, 4) && Near(dq[1].Beat, 5.5);
+        Show("Imán: el puntillo empieza en cada compás", dotOk ? "bien" : "mal", "bien", dotOk);
 
         // scales: G natural minor, degrees past the octave, notes out of it and a scale without seven notes
         var gMinor = MusicScale.Find(7, "minor")!;

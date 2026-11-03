@@ -4,8 +4,8 @@ using System.Text.Json;
 
 namespace XtremeDaw.Projects;
 
-/// <summary>The five clip handles in the web app's Timeline.tsx.</summary>
-public enum ClipEditMode { Move, TrimStart, TrimEnd, FadeIn, FadeOut, StretchStart, StretchEnd }
+/// <summary>The clip handles: the five of the web app's Timeline.tsx, the stretch ones and the loop (<see cref="ClipLoops"/>).</summary>
+public enum ClipEditMode { Move, TrimStart, TrimEnd, FadeIn, FadeOut, StretchStart, StretchEnd, Loop }
 
 /// <summary>Which edges of a moved clip stick to the edges of the others (the snap to other clips).</summary>
 [Flags]
@@ -13,10 +13,11 @@ public enum SnapEdges { None = 0, Start = 1, End = 2, Both = Start | End }
 
 /// <summary>
 /// What a time snaps to: lines every <paramref name="Step"/> seconds (0 = none), the nearest one or, with
-/// <paramref name="Cell"/>, the start of the cell it falls in (FL Studio's Cell, asked by the user). A plain number is a
-/// step with nearest lines.
+/// <paramref name="Cell"/>, the start of the cell it falls in. With <paramref name="Bar"/> (a bar's length) the lines
+/// start over at each bar, which only changes anything for a step that doesn't fit a whole number of times in it (the
+/// dotted values, <see cref="Subdivisions"/>). A plain number is a step with nearest lines.
 /// </summary>
-public readonly record struct SnapGrid(double Step, bool Cell = false)
+public readonly record struct SnapGrid(double Step, bool Cell = false, double Bar = 0)
 {
     public static implicit operator SnapGrid(double step) => new(step);
 }
@@ -37,12 +38,13 @@ public static class ClipEditing
     public static ClipEnvelope.ClipWindow Window(Clip c, Media? m, double? durationSec = null) =>
         ClipEnvelope.Window(durationSec ?? (m?.DurationSec ?? 0) * c.Stretch, c.AtSec, c.TrimStartSec, c.TrimEndSec, c.EffectiveSyncMs(m));
 
-    public static double GridSeconds(string mode, double bpm) => (mode switch
-    {
-        "bar" => 4, "1/2" => 2, "1/4" => 1, "1/8" => 0.5,
-        "1/8T" => 1.0 / 3, "1/16" => 0.25, "1/32" => 0.125, "1/64" => 0.0625,
-        "1/6beat" => 1.0 / 6, "1/4beat" => 0.25, "1/3step" => 1.0 / 12, "1/6step" => 1.0 / 24, _ => 0,
-    }) * 60 / Math.Max(1, bpm);
+    public static double GridSeconds(string mode, double bpm) => Subdivisions.Beats(mode) * 60 / Math.Max(1, bpm);
+
+    /// <summary>A value's lines at <paramref name="bpm"/>: its step, starting over at each bar.</summary>
+    public static SnapGrid GridOf(string mode, double bpm) => new(GridSeconds(mode, bpm), Bar: Subdivisions.BarBeats * 60 / Math.Max(1, bpm));
+
+    /// <summary>Whether lines every <paramref name="step"/> starting over at each <paramref name="bar"/> are just evenly spaced.</summary>
+    public static bool FitsBar(double step, double bar) => bar <= 0 || step >= bar - 1e-9 || Math.Abs(bar / step - Math.Round(bar / step)) < 1e-6;
 
     // JavaScript Math.round: half ties go toward positive infinity, including negative offsets.
     static double JsRound(double v) => Math.Floor(v + 0.5);
@@ -53,8 +55,16 @@ public static class ClipEditing
     const double SamplesPerSec = 48000;
     public static double ToSample(double sec) => JsRound(sec * SamplesPerSec) / SamplesPerSec;
     static double Limit(double v, double max) => Math.Max(0, Math.Min(max, v));
-    public static double Snap(double sec, SnapGrid grid, bool free) => free || grid.Step <= 0 ? sec
-        : (grid.Cell ? Math.Floor(sec / grid.Step + CellSlack) : JsRound(sec / grid.Step)) * grid.Step;
+    public static double Snap(double sec, SnapGrid grid, bool free)
+    {
+        if (free || grid.Step <= 0) return sec;
+        double step = grid.Step;
+        if (FitsBar(step, grid.Bar)) return (grid.Cell ? Math.Floor(sec / step + CellSlack) : JsRound(sec / step)) * step;
+        // a dotted step: the lines of the bar it falls in, and the next bar's first one
+        double barStart = Math.Floor(sec / grid.Bar + CellSlack) * grid.Bar, r = sec - barStart;
+        double lo = Math.Floor(r / step + CellSlack) * step, hi = Math.Min(lo + step, grid.Bar);
+        return barStart + (grid.Cell || r - lo < hi - r ? lo : hi);
+    }
     /// <summary>In steps: a time on a line that floating point left just short of it is still in that line's cell.</summary>
     const double CellSlack = 1e-9;
 
@@ -228,6 +238,8 @@ public static class ClipEditing
         Unlocked(track, clip);
         Remember(p, track, clip);
         track.Clips.Remove(clip);
+        // a loop goes with its source
+        if (clip.LoopOf == null) track.Clips.RemoveAll(c => c.LoopOf == clip.Id);
         if (track.Clips.Count == 0) track.Name = FreeTrackName(p, p.Tracks.IndexOf(track) + 1);
     }
 
@@ -350,7 +362,7 @@ public static class ClipEditing
     }
 
     /// <summary>Puts a clip's start (its anchor, where the take begins) on the nearest line of the grid.</summary>
-    public static void AlignToGrid(Project p, string id, double grid, double? durationSec = null)
+    public static void AlignToGrid(Project p, string id, SnapGrid grid, double? durationSec = null)
     {
         var (track, clip) = Find(p, id);
         Unlocked(track, clip);
@@ -545,6 +557,7 @@ public static class ClipEditing
         {
             var copy = Copy(clip);
             copy.Id = Ids.New("clp");
+            copy.LoopOf = null;
             copy.AtSec = ToSample(clip.AtSec + (shift ?? end - start));
             track.Clips.Insert(track.Clips.IndexOf(clip) + 1, copy);
             copies.Add(copy.Id);

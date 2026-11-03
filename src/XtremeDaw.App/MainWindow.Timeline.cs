@@ -30,7 +30,7 @@ public partial class MainWindow
     static readonly string[] ClipSnapLabels = [.. ClipSnapIds.Select(id => Loc.T($"snap.clips.label.{id}"))];
     static readonly string[] ClipSnapHints = [.. ClipSnapIds.Select(id => Loc.T($"snap.clips.hint.{id}"))];
     /// <summary>The grid's spacing options for the ruler's menu (<see cref="TimelineView.GridMode"/>): auto, the snap's, or fixed.</summary>
-    static readonly string[] GridIds = ["auto", "snap", "bar", "1/2", "1/4", "1/8", "1/8T", "1/16", "1/32", "1/64"];
+    static readonly string[] GridIds = ["auto", "snap", .. Subdivisions.All];
 
     /// <summary>Column widths from which each piece of the corner toolbar fits (their widths add up from the left, the
     /// clear toggles at the right edge) and from which the footer keeps its height slider and its zoom icon.</summary>
@@ -110,21 +110,13 @@ public partial class MainWindow
     /// marks the timeline shows (<see cref="SocialLengths"/>, several at once, each one toggled).</summary>
     void ShowGridMenu(Point point)
     {
-        string label(string id) => id switch
-        {
-            "auto" => Loc.T("grid.auto"), "snap" => Loc.T("grid.snap"), "bar" => Loc.T("snap.label.1"), _ => id,
-        };
-        string hint(string id) => id switch
-        {
-            "auto" => Loc.T("grid.auto.hint"), "snap" => Loc.T("grid.snap.hint"), _ => Loc.T("grid.fixed.hint", label(id)),
-        };
         void Save() { timelinePrefs?.Stop(); timelinePrefs?.Start(); }
         var refresh = new List<Action>();
         var list = new List<object> { new MenuItem { Header = Loc.T("grid.title"), IsEnabled = false, FontSize = 11 } };
         foreach (var id in GridIds)
         {
-            list.Add(MenuCheck(label(id), () => Timeline.GridMode == id, () => { Timeline.GridMode = id; Save(); }, refresh, tip: hint(id)));
-            if (id == "snap") list.Add(new Separator());
+            if (id == "bar" || SnapChoices.BreakBefore(id)) list.Add(new Separator());
+            list.Add(MenuCheck(GridLabel(id), () => Timeline.GridMode == id, () => { Timeline.GridMode = id; Save(); }, refresh, tip: GridHint(id)));
         }
         list.Add(new Separator());
         list.Add(new MenuItem { Header = Loc.T("social.title"), IsEnabled = false, FontSize = 11 });
@@ -149,7 +141,7 @@ public partial class MainWindow
         string clipSnap = AppConfig.Get("snapToClips") is "true" ? "both" : AppConfig.Get("snapToClips") ?? "off";
         SnapClipsBox.SelectedIndex = Math.Max(0, Array.IndexOf(ClipSnapIds, clipSnap));
         Timeline.SnapToClips = ClipSnapValues[SnapClipsBox.SelectedIndex];
-        Timeline.GridMode = AppConfig.Get("timelineGrid") is { } gm && GridIds.Contains(gm) ? gm : "auto";
+        Timeline.GridMode = AppConfig.Get("timelineGrid") is { } gm && GridIds.Contains(Subdivisions.Migrate(gm)) ? Subdivisions.Migrate(gm) : "auto";
         Timeline.SocialMarks = SocialLengths.Parse(AppConfig.Get("socialMarks"));
         Timeline.RulerMenuRequested += ShowGridMenu;
         Timeline.RulerInBars = AppConfig.Get("rulerMode") != "time";
@@ -287,6 +279,16 @@ public partial class MainWindow
                 return ClipEditing.Find(p, clip.Id).Track.Id;
             }, clones.Count > 0 ? "clip-duplicated" : "clip-edited", clip.Id);
         };
+        Timeline.ClipLoopRequested += async (clipId, endSec) =>
+        {
+            var lengths = LiveLengths();
+            await EditTimeline(p =>
+            {
+                var (track, clip) = ClipEditing.Find(p, clipId);
+                ClipLoops.LoopTo(p, clipId, endSec, lengths(clip));
+                return track.Id;
+            }, "clip-looped", clipId);
+        };
         Timeline.ClipsMoved += async (clips, midi) =>
         {
             var ids = Timeline.BoxedClipIds.ToList();
@@ -333,7 +335,11 @@ public partial class MainWindow
         UpdateUndoButtons();
         try
         {
+            // the loops' repeats follow their source, whatever the edit did to it (ClipLoops)
+            var lengths = LiveLengths();
+            var loops = ClipLoops.Take(st.Project, lengths);
             string? selected = edit(st.Project);
+            ClipLoops.Keep(st.Project, loops, lengths);
             if (activity != null) st.Project.AddLog(activity);
             MarkDirty();
             await ApplyTracks(st);
@@ -553,8 +559,8 @@ public partial class MainWindow
     /// the magnet. MIDI and locked clips stay where they are.</summary>
     async Task AlignClips(List<string> ids)
     {
-        double grid = Timeline.SnapSec;
-        if (grid <= 0) { Status(Loc.T("menu.alignGrid.off")); return; }
+        var grid = Timeline.SnapLines;
+        if (grid.Step <= 0) { Status(Loc.T("menu.alignGrid.off")); return; }
         if (sel == null || ids.Count == 0) return;
         string trackId = sel.Track.Id;
         var lengths = LiveLengths();
@@ -861,7 +867,7 @@ public partial class MainWindow
                 enabled: enabled, icon: locked ? "" : "", tip: Loc.T("lock.track.tip")));
             list.Add(new Separator());
         }
-        list.Add(FolderSubmenu(track, enabled));
+        list.AddRange(FolderItems(track, enabled));
         list.Add(new Separator());
         int free = picked.Count(t => !ClipEditing.HasLock(t.Track));
         list.Add(MenuAction(Loc.T("menu.removeTracks", free), () => RemoveTracks(group), "Supr", enabled && free > 0, danger: true,
@@ -1046,7 +1052,7 @@ public partial class MainWindow
         list.Add(new MenuItem { Header = MenuHeader(Loc.T("mix.list.fx"), fxIcon), ItemsSource = TrackFxItems(track, anchor), IsEnabled = enabled });
         list.Add(new MenuItem { Header = MenuHeader(Loc.T("auto.menu"), new TextBlock { Classes = { "icon" }, Text = "\uE9D2", FontSize = 12 }), ItemsSource = AutomationItems(track), IsEnabled = enabled });
         list.Add(new Separator());
-        list.Add(FolderSubmenu(track, enabled));
+        list.AddRange(FolderItems(track, enabled));
         list.Add(MenuAction(Loc.T("separator.addAbove"), () => NewSeparatorAbove(track), enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")));
         list.Add(new Separator());
         list.Add(MenuAction(Loc.T("preset.save") + "…", () => { SavePreset(track, anchor, point); return Task.CompletedTask; }, enabled: true, icon: "", tip: Loc.T("preset.save.tip")));

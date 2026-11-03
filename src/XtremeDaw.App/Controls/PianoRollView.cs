@@ -105,6 +105,8 @@ public sealed partial class PianoRollView : Control
     string? title;
     /// <summary>What can be edited: the clip, or one pass of its pattern.</summary>
     double clipBeats = MidiClip.DefaultBeats;
+    /// <summary>The loop length when a pattern's end was grabbed, for the drag and for Esc.</summary>
+    double cellFrom;
     /// <summary>Where the view puts the clip's start: its place on the timeline, or 0 in a pattern.</summary>
     double clipAtSec;
     /// <summary>The pattern on screen (null on a clip of its own), and the timeline beat the opened clip starts on.</summary>
@@ -139,7 +141,7 @@ public sealed partial class PianoRollView : Control
     /// <summary>The magnet's fixed length in beats, or 0 when it is off or follows the zoom: there is nothing to quantize to.</summary>
     public double QuantizeBeats => ClipEditing.GridSeconds(ActiveSnap, 60);
     /// <summary>The magnet's lines in beats right now (0 = free).</summary>
-    double SnapBeats => ActiveSnap is "line" or "cell" ? DrawnUnit() : QuantizeBeats;
+    double SnapBeats => ActiveSnap == "line" ? DrawnUnit() : QuantizeBeats;
 
     /// <summary>
     /// How the grid's lines are spaced: "snap" (the magnet's steps; Auto while it has no fixed length), "auto" (by zoom) or one of
@@ -187,6 +189,8 @@ public sealed partial class PianoRollView : Control
     public event Action<double>? VelocityHeightChanged;
     /// <summary>A click inside another clip of the track: the window shows that one (<see cref="SetClip"/>) before the click goes on.</summary>
     public event Action<string>? ClipPicked;
+    /// <summary>A pattern's loop length was dragged by its end in the ruler: the new length in beats, for the window to set.</summary>
+    public event Action<double>? CellLengthChanged;
 
     /// <summary>How a drag in the velocity lane edits: painting bar by bar, or a straight line (a ramp).</summary>
     public enum VelTool { Pencil, Line }
@@ -405,7 +409,7 @@ public sealed partial class PianoRollView : Control
     {
         double step = SnapBeats;
         if (step <= 0 || (modifiers & KeyModifiers.Alt) != 0) return Math.Max(0, beat);
-        return Math.Max(0, ClipEditing.Snap(beat, new SnapGrid(step, floor || ActiveSnap == "cell"), false));
+        return Math.Max(0, ClipEditing.Snap(beat, new SnapGrid(step, floor, Subdivisions.BarBeats), false));
     }
 
     /// <summary>The track's other clip under a timeline beat (the last one drawn wins), or null.</summary>
@@ -428,6 +432,12 @@ public sealed partial class PianoRollView : Control
     }
 
     bool OnEdge(MidiNote n, Point p) => p.X >= NoteRect(n).Right - EdgeGrab;
+
+    /// <summary>The note's left end (the right one wins on a short note): dragging it moves where the note starts.</summary>
+    bool OnStartEdge(MidiNote n, Point p) => !OnEdge(n, p) && p.X <= NoteRect(n).Left + EdgeGrab;
+
+    /// <summary>The loop end of a pattern in the ruler: its handle sits on the end line there.</summary>
+    bool OnCellEdge(Point p) => patternId != null && p.Y < RulerH && Math.Abs(p.X - X(clipBeats)) <= EdgeGrab + 2;
 
     // --- drawing ----------------------------------------------------------------------------------
 
@@ -485,21 +495,25 @@ public sealed partial class PianoRollView : Control
         ctx.DrawLine(line, new Point(0, gb + 0.5), new Point(W, gb + 0.5));
     }
 
-    /// <summary>Bars strong, beats softer, the magnet's steps faint (only when they are at least 6 px apart).</summary>
+    /// <summary>Bars strong, beats softer, the magnet's steps faint (only when they are at least 6 px apart). The steps
+    /// start over at each bar, so a dotted grid lines up with the bars.</summary>
     void DrawColumns(DrawingContext ctx, double top, double bottom, double W)
     {
         var bar = Palette.Pen(Palette.Alpha(Palette.LineColor, 1));
         var beat = Palette.Pen(Palette.Alpha(Palette.LineColor, 0.55));
         var step = Palette.Pen(Palette.Alpha(Palette.LineColor, 0.25));
-        double unit = DrawnUnit();
-        double first = Math.Floor(BeatA(KeyW) / unit) * unit;
-        for (double b = Math.Max(0, first); XA(b) <= W; b += unit)
-        {
-            double x = Math.Round(XA(b)) + 0.5;
-            if (x < KeyW) continue;
-            bool isBar = Math.Abs(b / 4 - Math.Round(b / 4)) < 1e-9, isBeat = Math.Abs(b - Math.Round(b)) < 1e-9;
-            ctx.DrawLine(isBar ? bar : isBeat ? beat : step, new Point(x, top), new Point(x, bottom));
-        }
+        double unit = DrawnUnit(), barBeats = Subdivisions.BarBeats;
+        int perBar = unit >= barBeats ? 1 : (int)Math.Ceiling(barBeats / unit - 1e-6);
+        double every = Math.Max(unit, barBeats);
+        for (double b0 = Math.Max(0, Math.Floor(BeatA(KeyW) / every) * every); XA(b0) <= W; b0 += every)
+            for (int k = 0; k < perBar; k++)
+            {
+                double b = b0 + k * unit, x = Math.Round(XA(b)) + 0.5;
+                if (x > W) break;
+                if (x < KeyW) continue;
+                bool isBar = Math.Abs(b / 4 - Math.Round(b / 4)) < 1e-9, isBeat = Math.Abs(b - Math.Round(b)) < 1e-9;
+                ctx.DrawLine(isBar ? bar : isBeat ? beat : step, new Point(x, top), new Point(x, bottom));
+            }
     }
 
     /// <summary>The step of the lines on screen: the grid's, or beats or bars when those are too close together to draw.</summary>
@@ -545,6 +559,9 @@ public sealed partial class PianoRollView : Control
         var edge = Palette.Pen(Palette.Alpha(color, 0.85));
         DrawEdge(ctx, edge, X(0), gb, W);
         DrawEdge(ctx, edge, X(clipBeats), gb, W);
+        // a pattern's loop end has its handle in the ruler: it is dragged to change the loop
+        if (patternId != null && X(clipBeats) is var cx && cx >= KeyW && cx <= W)
+            ctx.FillRectangle(Palette.Alpha(color, 0.95), new Rect(Math.Round(cx) - 4, RulerH - 8, 8, 6));
     }
 
     static void DrawEdge(DrawingContext ctx, IPen pen, double x, double gb, double W)
@@ -946,6 +963,12 @@ public sealed partial class PianoRollView : Control
             e.Handled = true;
             return;
         }
+        if (props.IsLeftButtonPressed && OnCellEdge(p))
+        {
+            cellFrom = clipBeats;
+            Start("cell", e);
+            return;
+        }
         // inside another clip of the track (not on a note of this one): that clip is the one edited from here on
         if (p.Y >= RulerH && p.Y < GridBottom && p.X >= KeyW && NoteAt(p) == null)
         {
@@ -1128,7 +1151,7 @@ public sealed partial class PianoRollView : Control
         heardPitch = hit.Pitch;
         NoteAuditioned?.Invoke(hit.Pitch, hit.Velocity);
         bool copy = (modifiers & KeyModifiers.Shift) != 0 && !changed;
-        Start(copy ? "copy" : OnEdge(hit, p) && !changed ? "resize" : "move", e);
+        Start(copy ? "copy" : OnEdge(hit, p) && !changed ? "resize" : OnStartEdge(hit, p) && !changed ? "resizeStart" : "move", e);
         InvalidateVisual();
     }
 
@@ -1216,6 +1239,8 @@ public sealed partial class PianoRollView : Control
                 if (scrubHeld) Scrub();
                 break;
             case "resize": DragResize(); break;
+            case "resizeStart": DragResizeStart(); break;
+            case "cell": DragCell(); break;
             case "erase": EraseAt(lastPointer); break;
             case "paint": PaintAt(lastPointer); break;
             case "lasso": lasso.Add(lastPointer); break;
@@ -1278,6 +1303,36 @@ public sealed partial class PianoRollView : Control
         foreach (var (n, f) in from) n.Beats = Math.Max(MidiNote.MinBeats, f.Beats + dl);
         lastBeats = held.Beats;
         changed |= dl != 0;
+    }
+
+    /// <summary>The left end dragged: the notes selected start where the pointer lands, their ends where they were.</summary>
+    void DragResizeStart()
+    {
+        if (held == null) return;
+        var (_, b0, l0) = from[held];
+        double start = Math.Max(0, Snap(b0 + (lastPointer.X - down.X) / beatW));
+        double dBeat = Math.Min(start, b0 + l0 - (SnapBeats > 0 && (modifiers & KeyModifiers.Alt) == 0 ? SnapBeats : MidiNote.MinBeats)) - b0;
+        // no note of the selection starts before 0 or ends under its minimum
+        foreach (var (_, f) in from)
+        {
+            dBeat = Math.Max(dBeat, -f.Beat);
+            dBeat = Math.Min(dBeat, f.Beats - MidiNote.MinBeats);
+        }
+        foreach (var (n, f) in from)
+        {
+            n.Beat = f.Beat + dBeat;
+            n.Beats = f.Beats - dBeat;
+        }
+        lastBeats = held.Beats;
+        changed |= dBeat != 0;
+    }
+
+    /// <summary>The pattern's loop end dragged by grid steps (a sixteenth with the grid off, never under one).</summary>
+    void DragCell()
+    {
+        double beats = Snap(cellFrom + (lastPointer.X - down.X) / beatW);
+        clipBeats = Math.Max(MidiClip.MinBeats, beats);
+        InvalidateVisual();
     }
 
     void EraseAt(Point p)
@@ -1410,6 +1465,7 @@ public sealed partial class PianoRollView : Control
 
     void EndGesture(IPointer? pointer)
     {
+        if (gesture == "cell" && moved && clipBeats != cellFrom) CellLengthChanged?.Invoke(clipBeats);
         if (gesture == "copy" && changed)
         {
             DropOutside([.. selected]);
@@ -1442,6 +1498,7 @@ public sealed partial class PianoRollView : Control
     public void CancelGesture()
     {
         if (gesture == null) return;
+        if (gesture == "cell") clipBeats = cellFrom;
         EndScrub();
         gesture = null;
         held = null;
@@ -1525,8 +1582,9 @@ public sealed partial class PianoRollView : Control
         var p = lastPointer;
         var c = StandardCursorType.Arrow;
         if (clipId != null && ChordChipAt(p) >= 0) c = StandardCursorType.Hand;
+        else if (clipId != null && OnCellEdge(p)) c = StandardCursorType.SizeWestEast;
         else if (clipId != null && p.X >= KeyW && p.Y >= RulerH && p.Y < GridBottom)
-            c = NoteAt(p) is { } n ? (OnEdge(n, p) ? StandardCursorType.RightSide : StandardCursorType.SizeAll)
+            c = NoteAt(p) is { } n ? (OnEdge(n, p) ? StandardCursorType.RightSide : OnStartEdge(n, p) ? StandardCursorType.LeftSide : StandardCursorType.SizeAll)
                 : Beat(p.X) >= 0 && Beat(p.X) < clipBeats || OtherAt(BeatA(p.X)) != null ? StandardCursorType.Cross : StandardCursorType.Arrow;
         else if (p.X < KeyW && p.Y >= RulerH && p.Y < GridBottom) c = StandardCursorType.Hand;
         if (clipId != null && OnVelSplit(p)) c = StandardCursorType.SizeNorthSouth;

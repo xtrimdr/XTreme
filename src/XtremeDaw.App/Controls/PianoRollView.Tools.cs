@@ -116,7 +116,8 @@ public sealed partial class PianoRollView
     /// <summary>Writes a note in the step under the pointer unless the row has one there: dragging leaves a line of them. Shift stays on the row it began.</summary>
     void PaintAt(Point p)
     {
-        double step = SnapBeats > 0 ? SnapBeats : 0.25, at = Math.Floor(Math.Max(0, Beat(p.X)) / step) * step;
+        double step = SnapBeats > 0 ? SnapBeats : 0.25;
+        double at = Math.Max(0, ClipEditing.Snap(Origin + Math.Max(0, Beat(p.X)), new SnapGrid(step, true, Subdivisions.BarBeats), false) - Origin);
         if (at >= clipBeats) return;
         int pitch = (modifiers & KeyModifiers.Shift) != 0 ? PitchAt(down.Y) : WritePitch(p.Y);
         if (notes.Any(n => n.Pitch == pitch && Math.Abs(n.Beat - at) < 1e-6)) return;
