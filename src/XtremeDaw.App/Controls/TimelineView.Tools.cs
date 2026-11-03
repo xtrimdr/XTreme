@@ -8,10 +8,11 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>What a press on the timeline's lanes does (native only, the tool strip in the project's bar).</summary>
-public enum TimelineTool { Select, Range, Split, Erase, Listen, Zoom, Hand }
+public enum TimelineTool { Select, Draw, Paint, Range, Split, Erase, Listen, Zoom, Hand }
 
 /// <summary>
-/// The timeline's tools (native only, asked by the user): besides Seleccionar (everything the lanes did before), Rango
+/// The timeline's tools (native only, asked by the user): besides Seleccionar (everything the lanes did before) and
+/// Lápiz and Pincel (TimelineView.Pencil.cs), Rango
 /// marks a stretch over one or more tracks, Dividir cuts a clip where you click, Borrar takes away every clip it
 /// touches, Escuchar plays the track alone from the click while the button is held, Zoom zooms on a click (Alt, out) or
 /// to the stretch dragged, and Mano drags the view. A tool only changes what a press on the lanes does: the headers,
@@ -31,6 +32,7 @@ public sealed partial class TimelineView
             CancelGesture();
             tool = value;
             splitHover = null;
+            pencilHover = null;
             UpdateCursor();
             InvalidateVisual();
         }
@@ -52,6 +54,10 @@ public sealed partial class TimelineView
     double rangeTop;
     /// <summary>The clips the eraser went over in this drag, drawn faded until it is released.</summary>
     readonly HashSet<string> erasing = [];
+    /// <summary>A right press on the lanes: the menu it opens if it is released without dragging (a drag erases instead).</summary>
+    Action? rightMenu;
+    /// <summary>How far a right press moves before it erases instead of opening the menu.</summary>
+    const double RightEraseSlop = 4;
     /// <summary>Dividir: the lane and time the cut would go at, drawn as a line on the clip under the pointer.</summary>
     (int Lane, double Sec)? splitHover;
     /// <summary>Where a Zoom drag started, in seconds.</summary>
@@ -76,6 +82,9 @@ public sealed partial class TimelineView
             case TimelineTool.Zoom:
                 zoomFrom = Sec(p.X);
                 StartGesture("zoom", e);
+                return true;
+            case TimelineTool.Draw or TimelineTool.Paint when lane:
+                PencilPressed(i, p, e);
                 return true;
             case TimelineTool.Range when lane:
                 StartRange(i, p, e);
@@ -142,9 +151,24 @@ public sealed partial class TimelineView
         }
     }
 
+    /// <summary>A right press on the lanes: a drag erases what it goes over (as in FL Studio); a click opens <paramref name="menu"/> on release.</summary>
+    void StartRightErase(PointerPressedEventArgs e, Action menu)
+    {
+        erasing.Clear();
+        rightMenu = menu;
+        StartGesture("erase", e);
+    }
+
     /// <summary>The eraser takes every clip it goes over.</summary>
     void DragErase()
     {
+        if (rightMenu != null && !moved)
+        {
+            // a right press only erases once it is a drag; the clip it started on goes too
+            if (Math.Abs(lastPointer.X - down.X) < RightEraseSlop && Math.Abs(lastPointer.Y - down.Y) < RightEraseSlop) return;
+            moved = true;
+            if (down.X >= HeaderW && AnyClipAt(HitTrack(down.Y), down.X) is { } first) erasing.Add(first);
+        }
         int i = HitTrack(lastPointer.Y);
         if (lastPointer.X >= HeaderW && AnyClipAt(i, lastPointer.X) is { } c && erasing.Add(c)) moved = true;
     }
@@ -216,6 +240,8 @@ public sealed partial class TimelineView
     {
         if (tool == TimelineTool.Select || lastPointer.X < HeaderW || lastPointer.Y < RulerH || RowEdgeAt(lastPointer) != null) return null;
         if (HitRow(lastPointer.Y) is { Folder: not null }) return null;
+        // over a clip the pencil picks it up as the brush
+        if (Drawing && AnyClipAt(HitTrack(lastPointer.Y), lastPointer.X) != null) return CursorOf(StandardCursorType.Hand);
         return tool == TimelineTool.Range ? CursorOf(StandardCursorType.Ibeam) : ToolCursors.Of(tool, FreeTime);
     }
 }

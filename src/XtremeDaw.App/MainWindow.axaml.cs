@@ -196,6 +196,7 @@ public partial class MainWindow : Window
             Projects.Hide();
         };
         Projects.FlushCurrent = FlushProjectOperation;
+        Projects.SaveCopy = SaveProjectCopy;
         Projects.CloseCurrent = async () =>
         {
             await FlushProjectOperation();
@@ -710,6 +711,10 @@ public partial class MainWindow : Window
             case "save":
                 SaveSoon();
                 break;
+            case "saveAs":
+                e.Handled = true;
+                await SaveAsShortcut();
+                return;
             case "newTrack":
                 e.Handled = true;
                 await NewTrackShortcut();
@@ -731,7 +736,7 @@ public partial class MainWindow : Window
             case "deleteClose":
                 if (Timeline.Range != null) await DeleteRangeSelection(close: true);
                 break;
-            case "toolSelect" or "toolRange" or "toolSplit" or "toolErase" or "toolListen" or "toolZoom" or "toolHand":
+            case "toolSelect" or "toolDraw" or "toolPaint" or "toolRange" or "toolSplit" or "toolErase" or "toolListen" or "toolZoom" or "toolHand":
                 ToolKey(action);
                 break;
             case "play":

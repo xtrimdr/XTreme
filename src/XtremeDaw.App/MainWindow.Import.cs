@@ -120,14 +120,16 @@ public partial class MainWindow
     /// <param name="atSec">Where they land; null = the playhead.</param>
     /// <param name="trackId">The track it was asked on, which takes it when that stretch is free; null = the rule above.</param>
     /// <param name="picture">A video brings its picture too; without it, only its sound.</param>
-    async Task ImportAudio(IReadOnlyList<string> paths, double? atSec = null, string? trackId = null, bool picture = false)
+    /// <returns>The id of the last clip it made; null if none.</returns>
+    async Task<string?> ImportAudio(IReadOnlyList<string> paths, double? atSec = null, string? trackId = null, bool picture = false)
     {
-        if (!CanImport()) { Status(Loc.T("imp.busy")); return; }
-        if (await LinkOrCopy(paths) is not { } link) return;
-        if (!CanImport()) { Status(Loc.T("imp.busy")); return; } // the question stayed open while something else started
+        if (!CanImport()) { Status(Loc.T("imp.busy")); return null; }
+        if (await LinkOrCopy(paths) is not { } link) return null;
+        if (!CanImport()) { Status(Loc.T("imp.busy")); return null; } // the question stayed open while something else started
         var st = store!;
         string dir = st.Dir;
         int done = 0;
+        string? last = null;
         var toast = Toasts.ShowProgress(Loc.T("imp.importing", Path.GetFileName(paths[0])));
         try
         {
@@ -173,7 +175,7 @@ public partial class MainWindow
                     continue;
                 }
                 // the project may have changed while the file was copied
-                if (store != st || !CanImport()) { Toast(Loc.T(link && !wav ? "imp.switched.link" : "imp.switched", name)); return; }
+                if (store != st || !CanImport()) { Toast(Loc.T(link && !wav ? "imp.switched.link" : "imp.switched", name)); return null; }
                 if (link && wav) Toast(Loc.T("imp.link.wav", name));
                 double at = atSec ?? engine.PositionSec;
                 string? selected = done == 0 ? trackId ?? sel?.Track.Id : null;
@@ -181,6 +183,7 @@ public partial class MainWindow
                 {
                     var track = AudioImport.AddClip(p, file, at, selected, fit: trackId != null);
                     importedAudio[track.Clips[^1].MediaId] = audio;
+                    last = track.Clips[^1].Id;
                     return track.Id;
                 }, "audio-imported");
                 done++;
@@ -191,5 +194,6 @@ public partial class MainWindow
             toast.Close();
         }
         if (done > 0) Status(done == 1 ? Loc.T("imp.done.one") : Loc.T("imp.done.many", done));
+        return last;
     }
 }

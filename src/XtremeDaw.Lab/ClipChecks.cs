@@ -361,6 +361,26 @@ static class ClipChecks
         Check(noVideo && !filmedClip.Reversed, "un clip con video no se invierte");
         var turnedJson = System.Text.Json.JsonSerializer.Serialize(turned, ProjectStore.Json);
         Check(System.Text.Json.JsonSerializer.Deserialize<Clip>(turnedJson, ProjectStore.Json)!.Reversed && !System.Text.Json.JsonSerializer.Serialize(new Clip(), ProjectStore.Json).Contains("reversed"), "se guarda solo si está invertido");
+        // the pencil: copies of a brush where it was clicked, side by side when dragged, never over a clip
+        var loop = new Media { DurationSec = 4, Audio = "media/loop.wav" };
+        var brush = new Clip { MediaId = loop.Id, AtSec = 7, TrimStartSec = 1 };
+        var painted = new Project { Media = [loop], Tracks = [new Track { Clips = [new Clip { MediaId = loop.Id, AtSec = 6 }] }] };
+        var drawn = ClipStamp.Audio(painted, brush, painted.Tracks[0].Id, [0, 3, 6, 9]);
+        var drawnClips = painted.Tracks[0].Clips.Where(c => drawn.Contains(c.Id)).Select(c => ClipEditing.Window(c, loop)).ToList();
+        Check(drawn.Count == 2 && Near(drawnClips[0].Start, 0) && Near(drawnClips[1].Start, 3) && Near(drawnClips[0].End - drawnClips[0].Start, 3),
+            "el lápiz pone copias que empiezan a sonar donde se hizo clic, una al lado de la otra, y saltea las que pisan un clip");
+        var drumTrack = new Track { Kind = TrackKinds.Midi, MidiClips = [] };
+        var keysTrack = new Track { Kind = TrackKinds.Midi, MidiClips = [] };
+        var drums = new Project { Settings = { Bpm = 120 }, Tracks = [drumTrack, keysTrack] };
+        var beat = MidiEditing.AddClip(drums, drumTrack.Id, 0, 4);
+        beat.Notes = [new MidiNote { Pitch = 36, Beat = 0, Beats = 1 }];
+        string pattern = MidiPatterns.Create(drums, beat.Id).PatternId!;
+        var patternBrush = ClipStamp.PatternBrush(drums, pattern)!;
+        var uses = ClipStamp.Midi(drums, patternBrush, drumTrack.Id, [2, 4, 1]);
+        Check(uses.Count == 2 && MidiPatterns.Clips(drums, pattern).Count() == 3 && Near(MidiEditing.Find(drums, uses[1]).Clip.AtSec, 4),
+            "un patrón con el lápiz: cada copia es un uso más del patrón, y no se encima con otro");
+        Check(ClipStamp.Midi(drums, patternBrush, Guid.NewGuid().ToString(), [8]).Count == 0 && ClipStamp.Audio(drums, brush, drumTrack.Id, [8]).Count == 0,
+            "una toma no va en una pista MIDI ni un clip MIDI fuera de una");
         Console.WriteLine($"Edición de clips: {n} comprobaciones correctas (sin modificar archivos).");
         return 0;
     }

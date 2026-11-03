@@ -1104,8 +1104,10 @@ public sealed partial class TimelineView : Control
 
     /// <summary>The folders in drawing order: the lifted one last.</summary>
     IEnumerable<Folder> FolderOrder() => folders.Where(f => f.Id != liftedId).Concat(folders.Where(f => f.Id == liftedId));
-    SnapGrid Grid => new(snapMode is "line" or "cell" ? LineStep : FixedSnap, snapMode == "cell");
-    /// <summary>The magnet's lines in seconds, whatever kind it is (0 = off).</summary>
+    SnapGrid Grid => new(snapMode == "line" ? LineStep : FixedSnap, Bar: 4 * BeatSec);
+    /// <summary>The magnet's lines, whatever kind it is (a step of 0 = off).</summary>
+    public SnapGrid SnapLines => Grid;
+    /// <summary>The magnet's step in seconds (0 = off).</summary>
     public double SnapSec => Grid.Step;
     /// <summary>The magnet's length when it has a fixed one, or 0.</summary>
     double FixedSnap => ClipEditing.GridSeconds(snapMode, Bpm);
@@ -1254,12 +1256,14 @@ public sealed partial class TimelineView : Control
         ctx.FillRectangle(Palette.App, new Rect(0, 0, W, H));
 
         BuildGrid(W);
+        litPattern = hoverPattern ?? SelectedPattern();
         using (ctx.PushClip(new Rect(HeaderW, RulerH, W - HeaderW, Math.Max(0, H - RulerH))))
         {
             foreach (var f in folders) if (f.Id != liftedId) DrawFolderLane(ctx, f, W);
             DrawDropHole(ctx, W);
             foreach (int i in DrawOrder()) DrawLane(ctx, i, W);
             DrawAutoLanes(ctx, W);
+            DrawPatternLinks(ctx, W);
             if (liftedId != null && folderById.TryGetValue(liftedId, out var liftedFolder)) DrawFolderLane(ctx, liftedFolder, W);
             if (recordingLanes != null)
                 foreach (int r in recordingLanes) DrawRecordingBar(ctx, r, W);
@@ -1276,15 +1280,17 @@ public sealed partial class TimelineView : Control
             if (gesture == "box" && moved)
                 ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.08), Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.7)), BoxRect());
             DrawZoomBand(ctx, H);
+            DrawPencil(ctx);
         }
         DrawRuler(ctx, W);
-        if (markerStripShown) DrawStrip(ctx, W);
+        DrawRangeStrip(ctx, W);
+        DrawStrip(ctx, W);
         DrawChordStrip(ctx, W);
 
         // sticky headers
         ctx.FillRectangle(Palette.Panel, new Rect(0, 0, HeaderW, H));
         ctx.FillRectangle(Palette.Panel, new Rect(0, 0, HeaderW, RulerH));
-        DrawChordStripLabel(ctx);
+        DrawStripLabels(ctx);
         ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, RulerH - 0.5), new Point(W, RulerH - 0.5));
         using (ctx.PushClip(new Rect(0, RulerH, HeaderW, Math.Max(0, H - RulerH))))
         {
@@ -1565,6 +1571,43 @@ public sealed partial class TimelineView : Control
                 using (ctx.PushClip(bar))
                     ctx.DrawGeometry(null, Palette.Pen(silent ? Palette.Faint : Palette.Alpha(color, 0.8), 1), geo);
             }
+            if (t.Track.MidiClips is not { } midi) continue;
+            foreach (var m in midi)
+            {
+                var (start, end) = MidiSpan(m);
+                double x0 = X(start), x1 = X(end);
+                if (x1 < HeaderW || x0 > W) continue;
+                var bar = new Rect(x0, sy + 0.5, Math.Max(2, x1 - x0), Math.Max(1, strip - 1));
+                ctx.DrawRectangle(Palette.Alpha(tint, silent ? 0.08 : 0.2), strip >= MiniWaveAt ? Palette.Pen(Palette.Alpha(tint, silent ? 0.2 : 0.45)) : null,
+                    bar, Math.Min(3, bar.Height / 2), Math.Min(3, bar.Height / 2));
+                if (strip < MiniWaveAt || m.Notes.Count == 0) continue;
+                using (ctx.PushClip(bar))
+                    DrawMiniNotes(ctx, m, x0, end - start, bar.Top + 1, bar.Height - 2, W, silent ? Palette.Faint : Palette.Alpha(tint, 0.8));
+            }
+        }
+    }
+
+    /// <summary>A MIDI clip's notes squeezed into a mini map strip, repeats of a pattern included, like the lane draws them.</summary>
+    void DrawMiniNotes(DrawingContext ctx, MidiClip c, double x0, double lengthSec, double top, double h, double W, IBrush fill)
+    {
+        int lo = 127, hi = 0;
+        foreach (var n in c.Notes) { lo = Math.Min(lo, n.Pitch); hi = Math.Max(hi, n.Pitch); }
+        int span = Math.Max(12, hi - lo + 1);
+        lo -= (span - (hi - lo + 1)) / 2;
+        double rowH = Math.Max(1, Math.Min(2, h / span)), beatPx = BeatSec * pps;
+        double length = lengthSec / BeatSec, cell = c.Repeats ? c.CellBeats : length;
+        for (int pass = Math.Max(0, (int)Math.Floor((HeaderW - x0) / (cell * beatPx))); pass * cell < length - 1e-9; pass++)
+        {
+            if (x0 + pass * cell * beatPx > W) break;
+            foreach (var n in c.Notes)
+            {
+                if (!MidiClip.Slice(n, pass, cell, length, out double from, out double to)) continue;
+                double nx = x0 + from * beatPx;
+                if (nx > W) break;
+                double nw = Math.Max(1, (to - from) * beatPx - 1);
+                if (nx + nw < HeaderW) continue;
+                ctx.FillRectangle(fill, new Rect(nx, top + (span - 1 - (n.Pitch - lo)) / (double)span * (h - rowH), nw, rowH));
+            }
         }
     }
 
@@ -1767,14 +1810,14 @@ public sealed partial class TimelineView : Control
     /// <summary>The grid's fixed spacing in seconds (a subdivision, or the snap's when linked), or 0 when it follows the zoom.</summary>
     double FixedGrid => gridMode switch { "auto" => 0, "snap" => FixedSnap, _ => ClipEditing.GridSeconds(gridMode, Bpm) };
 
-    /// <summary>The spacing of the lines drawn at this zoom, what Línea and Celda snap to: a fixed grid's own or the finest
-    /// tick, doubling up to whole bars while they are too close together to draw.</summary>
+    /// <summary>The spacing of the lines drawn at this zoom, what Auto snaps to: a fixed grid's own or the finest
+    /// tick, doubling up to whole bars while they are too close together to draw (a dotted grid goes straight to the bar).</summary>
     double LineStep
     {
         get
         {
             double beat = BeatSec, g = FixedGrid, step = g >= beat ? g : FineTick(beat);
-            while (step * pps < MinGridPx) step *= 2;
+            while (step * pps < MinGridPx) step = ClipEditing.FitsBar(step, 4 * beat) ? step * 2 : 4 * beat;
             return step;
         }
     }
@@ -1790,13 +1833,16 @@ public sealed partial class TimelineView : Control
     }
 
     /// <summary>Bars mode: the lines between two labelled bars (beats, or single bars when labels skip some; a fixed
-    /// grid of a beat or more draws its own spacing, down to none for "bar").</summary>
+    /// grid of a beat or more draws its own spacing, down to none for "bar", a dotted one starting over at each bar).</summary>
     (double Sub, int N) BarSubs(int step, double beat, double bar)
     {
         if (step != 1) return (bar, step);
         double g = FixedGrid;
-        return g >= beat ? (g, (int)Math.Round(bar / g)) : (beat, 4);
+        return g >= beat ? (g, (int)Math.Ceiling(bar / g - 1e-6)) : (beat, 4);
     }
+
+    /// <summary>The fine ticks in a bar: how many of <paramref name="fine"/> fit (a dotted one leaves a shorter last cell).</summary>
+    static int TicksInBar(double fine, double bar) => (int)Math.Ceiling(bar / fine - 1e-6);
 
     void DrawRuler(DrawingContext ctx, double W)
     {
@@ -1854,23 +1900,26 @@ public sealed partial class TimelineView : Control
                 {
                     double bx = X(b * bar + k * sub);
                     ctx.DrawLine(beatPen, new Point(bx, rulerH - 6), new Point(bx, rulerH));
-                    if (sub * pps >= MinorLabelPx)
+                    bool onBeat = Math.Abs(k * sub / beat - Math.Round(k * sub / beat)) < 1e-6;
+                    if (sub * pps >= MinorLabelPx && (step != 1 || onBeat))
                         ctx.DrawText((step == 1 ? (int)Math.Round(k * sub / beat) + 1 : b + k + 1).ToString(), 10, Palette.Faint, new Point(bx + 3, 17), Palette.Mono);
                 }
         }
-        // zoomed in past the beats (native only): every half, quarter… of a beat, the beats labelled "bar.beat"
+        // zoomed in past the beats (native only): every half, quarter… of a beat, starting over at each bar, the beats
+        // labelled "bar.beat"
         double fine = FineTick(beat);
         if (step != 1 || fine >= beat) return;
-        int perBeat = (int)Math.Round(beat / fine);
-        for (long n = Math.Max(0, (long)Math.Floor(Sec(HeaderW) / fine)); ; n++)
-        {
-            double tx = X(n * fine);
-            if (tx > W) break;
-            if (n % (perBeat * 4) == 0) continue;
-            bool onBeat = n % perBeat == 0;
-            ctx.DrawLine(beatPen, new Point(tx, onBeat ? rulerH - 9 : rulerH - 5), new Point(tx, rulerH));
-            if (onBeat) ctx.DrawText($"{n / (perBeat * 4) + 1}.{n / perBeat % 4 + 1}", 10, Palette.Faint, new Point(tx + 3, 17), Palette.Mono);
-        }
+        int perBar = TicksInBar(fine, bar);
+        for (long b = Math.Max(0, (long)Math.Floor(Sec(HeaderW) / bar)); X(b * bar) <= W; b++)
+            for (int k = 1; k < perBar; k++)
+            {
+                double tx = X(b * bar + k * fine);
+                if (tx > W) break;
+                double inBeats = k * fine / beat;
+                bool onBeat = Math.Abs(inBeats - Math.Round(inBeats)) < 1e-6;
+                ctx.DrawLine(beatPen, new Point(tx, onBeat ? rulerH - 9 : rulerH - 5), new Point(tx, rulerH));
+                if (onBeat) ctx.DrawText($"{b + 1}.{(int)Math.Round(inBeats) + 1}", 10, Palette.Faint, new Point(tx + 3, 17), Palette.Mono);
+            }
     }
 
     // x of every ruler tick in view (major = labelled step, minor = beat / subdivision), rebuilt each Render so the
@@ -1915,13 +1964,14 @@ public sealed partial class TimelineView : Control
         }
         double fine = FineTick(beat);
         if (step != 1 || fine >= beat) return;
-        int perBeat = (int)Math.Round(beat / fine);
-        for (long n = Math.Max(0, (long)Math.Floor(Sec(HeaderW) / fine)); ; n++)
-        {
-            double tx = X(n * fine);
-            if (tx > W) break;
-            if (n % (perBeat * 4) != 0) grid.Add((tx, false));
-        }
+        int perBar = TicksInBar(fine, bar);
+        for (long b = Math.Max(0, (long)Math.Floor(Sec(HeaderW) / bar)); X(b * bar) <= W; b++)
+            for (int k = 1; k < perBar; k++)
+            {
+                double tx = X(b * bar + k * fine);
+                if (tx > W) break;
+                grid.Add((tx, false));
+            }
     }
 
     void DrawLane(DrawingContext ctx, int i, double W)
@@ -1943,6 +1993,7 @@ public sealed partial class TimelineView : Control
         foreach (var (gx, major) in grid)
             if (gx >= HeaderW) ctx.DrawLine(major ? majorPen : minorPen, new Point(gx, y), new Point(gx, y + lh));
         foreach (var c in t.Clips) DrawClip(ctx, t, c, y, sel, W);
+        DrawLoopGhost(ctx, i, y, W);
         if (t.Track.IsMidi) DrawMidiClips(ctx, i, y, W);
         DrawJoins(ctx, i, W);
         if (Range is { } r && rangeTracks.Contains(t.Track.Id)) DrawRange(ctx, y, lh, W, r.Start, r.End);
@@ -1958,6 +2009,8 @@ public sealed partial class TimelineView : Control
         double x0 = X(w.Start), x1 = X(w.End);
         sel = sel && (SelectedClipId == null || c.Clip.Id == SelectedClipId) || boxed.Contains(c.Clip.Id);
         if (x1 < HeaderW || x0 > W) return;
+        // while its loop is dragged the repeats are the ghost's (DrawLoopGhost)
+        if (loopSource != null && moved && c.Clip.LoopOf == loopSource) return;
         var clip = new Rect(x0, y + 5, Math.Max(2, x1 - x0), lh - 10);
         // a track with a color tints its clips with it (native only); without one they stay as in the web
         var tint = TrackIcons.ColorOf(t.Track);
@@ -2033,6 +2086,8 @@ public sealed partial class TimelineView : Control
             bool locked = ClipEditing.IsLocked(t.Track, c.Clip);
             if (sel || clip.Contains(lastPointer)) DrawEdgeHandles(ctx, c, clip, x0 + f.FadeIn * pps, x1 - f.FadeOut * pps, locked);
             double tabAt = !c.Offline && MediaBadge(clip) != null ? 52 : 22;
+            // a repeat of a loop says so, like GarageBand's
+            if (model.LoopOf != null && clip.Width > 20) DrawClipTab(ctx, clip, clip.Width - 4, ToolCursors.LoopGlyph);
             if (locked && clip.Width > tabAt + 2) DrawClipTab(ctx, clip, tabAt, "");
             if (locked) tabAt += 22;
             if (model.Reversed && clip.Width > tabAt + 2) DrawClipTab(ctx, clip, tabAt, "");
@@ -2260,8 +2315,9 @@ public sealed partial class TimelineView : Control
         }
         Tick(Math.Max(clip.Left + 5, fadeInX), mid - quarter, ClipEditMode.FadeIn, Palette.AccentColor);
         Tick(Math.Min(clip.Right - 5, fadeOutX), mid - quarter, ClipEditMode.FadeOut, Palette.AccentColor);
-        // a locked clip keeps its length: no trim tabs
+        // a locked clip keeps its length: no trim tabs and no loop
         if (locked) return;
+        DrawLoopCorner(ctx, clip, lit == ClipEditMode.Loop);
         if (stretching)
         {
             StretchTick(ctx, clip.Left + 8, mid + quarter, Math.Round(Math.Min(16, quarter * 2 - 4)), lit == ClipEditMode.TrimStart);
@@ -2840,6 +2896,7 @@ public sealed partial class TimelineView : Control
         if (buttons.IsLeftButtonPressed || buttons.IsRightButtonPressed)
         {
             if (ChordStripPressed(p, e, buttons.IsRightButtonPressed)) return;
+            if (RangePressed(p, e, buttons.IsRightButtonPressed)) return;
             if (StripPressed(p, e, buttons.IsRightButtonPressed)) return;
         }
         if (buttons.IsRightButtonPressed)
@@ -2848,19 +2905,16 @@ public sealed partial class TimelineView : Control
             if (p.Y < RulerH && p.X > HeaderW) RulerMenuRequested?.Invoke(p);
             else if (row?.Folder is { } folder) FolderContextRequested?.Invoke(folder, p);
             // the empty space under the last row, header or lanes, offers a new track
-            else if (row == null && p.Y >= RulerH) NewTrackRequested?.Invoke(p);
+            else if (row == null && p.Y >= RulerH)
+            {
+                if (p.X > HeaderW) { StartRightErase(e, () => NewTrackRequested?.Invoke(p)); return; }
+                NewTrackRequested?.Invoke(p);
+            }
             else if (i >= 0 && i < tracks.Count && p.Y >= RulerH)
             {
-                if (p.X > HeaderW && tracks[i].Track.IsMidi && MidiContext(i, p)) { e.Handled = true; return; }
                 if (p.X < HeaderW && tracks[i].Track.IsMidi && InstrumentRect(i).Contains(p)) { Select(i); InstrumentChipPressed(i, p, true); e.Handled = true; return; }
-                // The header asks for the track menu (no clip); the lane, for the clip under the pointer.
-                var clip = p.X > HeaderW ? ClipAt(i, p.X) : null;
-                SelectedClipId = clip?.Clip.Id ?? tracks[i].Clips.FirstOrDefault(c => c.Clip.Id == SelectedClipId)?.Clip.Id;
-                // on a picked track the others stay picked, so the menu's folder entries move them all; on a boxed
-                // clip the others stay boxed, so the menu acts on them all
-                if (picked.Count > 1 && picked.Contains(tracks[i].Track.Id) || clip != null && boxed.Count > 1 && boxed.Contains(clip.Clip.Id)) SelectOne(i);
-                else Select(i);
-                ClipContextRequested?.Invoke(tracks[i], clip, p);
+                if (p.X > HeaderW) { StartRightErase(e, () => TrackMenu(i, p)); return; }
+                TrackMenu(i, p);
             }
             e.Handled = true;
             return;
@@ -3044,7 +3098,7 @@ public sealed partial class TimelineView : Control
             }
             dragMode = cloning ? ClipEditMode.Move : GrabMode(clip, p);
             // a locked clip is selected but neither moved, trimmed nor stretched; its fades still drag
-            if (ClipEditing.IsLocked(tracks[i].Track, clip.Clip) && dragMode is ClipEditMode.Move or ClipEditMode.TrimStart or ClipEditMode.TrimEnd or ClipEditMode.StretchStart or ClipEditMode.StretchEnd)
+            if (ClipEditing.IsLocked(tracks[i].Track, clip.Clip) && dragMode is ClipEditMode.Move or ClipEditMode.TrimStart or ClipEditMode.TrimEnd or ClipEditMode.StretchStart or ClipEditMode.StretchEnd or ClipEditMode.Loop)
             {
                 SelectClip(i, clip.Clip.Id);
                 LockedTouched?.Invoke(tracks[i], clip);
@@ -3063,6 +3117,7 @@ public sealed partial class TimelineView : Control
             dragged = clip;
             original = ClipEditing.Copy(clip.Clip);
             preview = ClipEditing.Copy(clip.Clip);
+            if (dragMode == ClipEditMode.Loop) StartLoop(i, clip);
             StartGesture("clip", e);
             return;
         }
@@ -3190,6 +3245,7 @@ public sealed partial class TimelineView : Control
     {
         var w = Window(clip);
         double left = X(w.Start), right = X(w.End);
+        if (OnLoopCorner(clip, p, right)) return ClipEditMode.Loop;
         var c = DisplayClip(clip);
         var f = ClipEnvelope.FitFades(c.FadeInSec, c.FadeOutSec, w.End - w.Start);
         // the top half of an edge (or of the tab where a fade ends) drags the fade; the bottom half trims
@@ -3207,6 +3263,19 @@ public sealed partial class TimelineView : Control
         return ClipEditMode.Move;
     }
 
+    /// <summary>The menu of track <paramref name="i"/>'s header (no clip) or of the clip under the pointer in its lane.</summary>
+    void TrackMenu(int i, Point p)
+    {
+        if (p.X > HeaderW && tracks[i].Track.IsMidi && MidiContext(i, p)) return;
+        var clip = p.X > HeaderW ? ClipAt(i, p.X) : null;
+        SelectedClipId = clip?.Clip.Id ?? tracks[i].Clips.FirstOrDefault(c => c.Clip.Id == SelectedClipId)?.Clip.Id;
+        // on a picked track the others stay picked, so the menu's folder entries move them all; on a boxed
+        // clip the others stay boxed, so the menu acts on them all
+        if (picked.Count > 1 && picked.Contains(tracks[i].Track.Id) || clip != null && boxed.Count > 1 && boxed.Contains(clip.Clip.Id)) SelectOne(i);
+        else Select(i);
+        ClipContextRequested?.Invoke(tracks[i], clip, p);
+    }
+
     void StartGesture(string kind, PointerPressedEventArgs e)
     {
         gesture = kind;
@@ -3216,7 +3285,7 @@ public sealed partial class TimelineView : Control
         moved = false;
         capturedPointer = e.Pointer;
         e.Pointer.Capture(this);
-        if (kind is "clip" or "reorder" or "scrub" or "range" or "box" or "erase" or "zoom") dragScroll.Start();
+        if (kind is "clip" or "reorder" or "scrub" or "range" or "box" or "erase" or "zoom" or "pencil") dragScroll.Start();
         e.Handled = true;
     }
 
@@ -3229,7 +3298,9 @@ public sealed partial class TimelineView : Control
         else
         {
             UpdateCursor();
+            UpdatePatternHover();
             if (tool == TimelineTool.Split) UpdateSplitHover();
+            if (Drawing) UpdatePencilHover();
         }
         UpdateMediaTip();
         InvalidateVisual();
@@ -3252,6 +3323,8 @@ public sealed partial class TimelineView : Control
         if (gesture != null) return;
         lastPointer = new Point(-1, -1);
         splitHover = null;
+        pencilHover = null;
+        hoverPattern = null;
         UpdateMediaTip();
         InvalidateVisual();
     }
@@ -3339,6 +3412,8 @@ public sealed partial class TimelineView : Control
             DragRange();
         else if (gesture == "erase")
             DragErase();
+        else if (gesture == "pencil")
+            DragPencil();
         else if (gesture == "midi") UpdateMidiDrag();
         else if (gesture is "zoom" or "listen")
         {
@@ -3380,6 +3455,13 @@ public sealed partial class TimelineView : Control
                 // a carried clip that would cross zero holds them all back, off the edge they stuck to
                 if (preview.AtSec != at) stuckTo = null;
             }
+            else if (dragged != null && original != null && dragMode == ClipEditMode.Loop)
+            {
+                // the clip stays as it is: what changes is how far its repeats reach
+                overIndex = fromIndex;
+                stuckTo = null;
+                DragLoop(dxPx / pps);
+            }
             else if (dragged != null && original != null)
             {
                 int lane = HitTrack(lastPointer.Y);
@@ -3419,15 +3501,19 @@ public sealed partial class TimelineView : Control
         var movedTracks = dragIds.ToList();
         bool gathers = dragGathers;
         List<string> erased = [.. erasing];
+        int paintedLane = pencilLane;
+        var painted = kind == "pencil" ? TakePencil() : null;
         bool midiCarry = kind == "midi" && midiCarrying;
         List<Clip>? together = kind == "clip" && (carriedAlong.Count > 0 || midiCarried.Count > 0) && value != null ? [value, .. carriedPreview.Values]
             : midiCarry ? [.. carriedPreview.Values] : null;
         var midiMoves = together != null ? MidiMoves() : [];
         string? grabbedId = kind == "midi" ? midiHeld?.Id : dragged?.Clip.Id;
         var midi = kind == "midi" && !midiCarry ? MidiResult() : null;
+        var loop = kind == "clip" ? TakeLoop() : null;
         bool stayed = kind == "clip" ? value?.AtSec == original?.AtSec && target == null : midiCarry ? carryShift == 0 : midi == null;
         clones = cloning && changed && !stayed && extractTo.Clip == null ? CloneIds(kind) : [];
         var toggle = toggleBase;
+        var menu = kind == "erase" && !changed ? rightMenu : null;
         // the new height is applied while the dragged one still holds: applied after, the rows below went back to the
         // old height for a moment and glided from there, so everything jumped on release
         if (kind == "row-height" && changed && heightDrag is { } rh) RowHeightRequested?.Invoke(rh.Id, rh.H);
@@ -3436,6 +3522,8 @@ public sealed partial class TimelineView : Control
         e.Pointer.Capture(null);
         if (kind == "range" && Range == null) ClearRange();
         if (kind == "erase" && erased.Count > 0) ClipsErased?.Invoke(erased);
+        menu?.Invoke();
+        if (painted is { Count: > 0 } && paintedLane >= 0 && paintedLane < tracks.Count) PencilPlaced?.Invoke(tracks[paintedLane], painted);
         if (kind == "zoom") EndZoom(lastPointer, (modifiers & KeyModifiers.Alt) != 0);
         if (kind is "marker" or "loop") StripReleased(kind, changed);
         if (kind == "chords") ChordsReleased(changed);
@@ -3450,6 +3538,10 @@ public sealed partial class TimelineView : Control
         }
         else if (together != null) ClipsMoved?.Invoke(together, midiMoves);
         else if (extractTo.Clip != null) ExtractMidiRequested?.Invoke(extractTo.Clip, extractTo.Track);
+        else if (loop is { } lp)
+        {
+            if (lp.Changed) ClipLoopRequested?.Invoke(lp.Source, lp.End);
+        }
         else if (kind == "clip" && changed && value != null) ClipEditCommitted?.Invoke(value, target, swap);
         if (kind == "curve" && changed && value != null) ClipEditCommitted?.Invoke(value, null, null);
         if (kind == "midi") ReleaseMidi(midi);
@@ -3471,12 +3563,16 @@ public sealed partial class TimelineView : Control
     {
         ClearRange();
         ClearGesture();
+        CancelChordDrag();
     }
     void ClearGesture()
     {
         if (gesture == "listen") ListenEnded?.Invoke();
         stretchText = null;
+        loopSource = null;
         if (erasing.Count > 0) erasing.Clear();
+        rightMenu = null;
+        if (gesture == "pencil") TakePencil();
         bool reordered = gesture == "reorder" && moved;
         if (reordered)
         {
@@ -3530,18 +3626,31 @@ public sealed partial class TimelineView : Control
         int i = row is { Folder: null, Lane: null } h ? h.Track : -1;
         if (ToolCursor() is { } toolCursor) { Cursor = toolCursor; return; }
         var cursor = StandardCursorType.Arrow;
-        if (InStrip(lastPointer)) cursor = StripCursor(lastPointer);
-        else if (InChordStrip(lastPointer)) cursor = ChordAt(lastPointer) != null ? StandardCursorType.Hand : StandardCursorType.Arrow;
+        if (InRangeStrip(lastPointer)) cursor = RangeCursor(lastPointer);
+        else if (InStrip(lastPointer)) cursor = StripCursor(lastPointer);
+        else if (InChordStrip(lastPointer)) cursor = ChordCursor(lastPointer);
         else if (OnGrip(lastPointer)) cursor = StandardCursorType.SizeWestEast;
         else if (RowEdgeAt(lastPointer) != null) cursor = StandardCursorType.SizeNorthSouth;
         else if (row is { Lane: not null } autoRow)
+        {
+            if (OnAutoLoop(autoRow))
+            {
+                Cursor = ToolCursors.Loop;
+                return;
+            }
             cursor = AutoCursor(autoRow);
+        }
         else if (row?.Folder is { } fo)
         {
             if (lastPointer.X < 20 || (lastPointer.X < HeaderW && (FoldRect(fo).Contains(lastPointer) || FolderIconRect(fo).Contains(lastPointer))))
                 cursor = StandardCursorType.Hand;
             else if (FolderFxHit(fo, lastPointer) is { } fx)
                 cursor = fx.Dial ? StandardCursorType.SizeNorthSouth : StandardCursorType.Hand;
+        }
+        else if (i >= 0 && i < tracks.Count && tracks[i].Track.IsMidi && lastPointer.X >= HeaderW && MidiClipAt(i, lastPointer.X) is { } loopClip && OnMidiLoop(i, loopClip, lastPointer))
+        {
+            Cursor = ToolCursors.Loop;
+            return;
         }
         else if (MidiCursor(i, lastPointer) is { } midiCursor) cursor = midiCursor;
         else if (i >= 0 && i < tracks.Count)
@@ -3553,7 +3662,12 @@ public sealed partial class TimelineView : Control
             else if (lastPointer.X >= HeaderW && ClipAt(i, lastPointer.X) is { } clip)
             {
                 var mode = GrabMode(clip, lastPointer);
-                if (mode is ClipEditMode.TrimStart or ClipEditMode.TrimEnd or ClipEditMode.StretchStart or ClipEditMode.StretchEnd && ClipEditing.IsLocked(tracks[i].Track, clip.Clip)) mode = ClipEditMode.Move;
+                if (mode is ClipEditMode.TrimStart or ClipEditMode.TrimEnd or ClipEditMode.StretchStart or ClipEditMode.StretchEnd or ClipEditMode.Loop && ClipEditing.IsLocked(tracks[i].Track, clip.Clip)) mode = ClipEditMode.Move;
+                if (mode == ClipEditMode.Loop)
+                {
+                    Cursor = ToolCursors.Loop;
+                    return;
+                }
                 if (mode is ClipEditMode.StretchStart or ClipEditMode.StretchEnd)
                 {
                     Cursor = ToolCursors.Stretch;

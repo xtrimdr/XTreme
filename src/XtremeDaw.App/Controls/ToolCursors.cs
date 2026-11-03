@@ -12,6 +12,7 @@ namespace XtremeDaw.App.Controls;
 /// Zoom: + and, with Alt, −). Rango uses the system's text cursor and Seleccionar the usual ones, so they are not here.
 /// The hand is drawn from <see cref="FxIcon"/>'s path because Segoe Fluent Icons has no open hand. <see cref="Stretch"/>
 /// is no tool: it is the pointer on a clip's edge with Ctrl, a two-way arrow under a stopwatch, so it never reads as a trim.
+/// <see cref="Loop"/> is the pointer on a clip's or block's loop corner: the two round arrows its repeats show (<see cref="LoopGlyph"/>).
 /// </summary>
 static class ToolCursors
 {
@@ -27,7 +28,7 @@ static class ToolCursors
     /// <see cref="FxIcon.Hand"/>, a drawn icon's key.</summary>
     public static string Glyph(TimelineTool t, bool alt = false) => t switch
     {
-        TimelineTool.Select => "\uE8B0", TimelineTool.Range => "\uE933", TimelineTool.Split => "\uE8C6",
+        TimelineTool.Select => "\uE8B0", TimelineTool.Draw => "\uE70F", TimelineTool.Paint => "\uE771",TimelineTool.Range => "\uE933", TimelineTool.Split => "\uE8C6",
         TimelineTool.Erase => "\uE75C", TimelineTool.Listen => "\uE7F6", TimelineTool.Zoom => alt ? "\uE71F" : "\uE8A3",
         _ => FxIcon.Hand,
     };
@@ -37,9 +38,34 @@ static class ToolCursors
     const double StretchGlyphSize = 13;
     /// <summary>The arrow's line in the cursor, and the arrow itself: the click lands on it.</summary>
     const int StretchArrowY = 22;
-    static Cursor? stretch;
+    static Cursor? stretch, loop;
 
     public static Cursor Stretch => stretch ??= MakeStretch();
+
+    /// <summary>The Segoe glyph of a loop (two round arrows): the loop handle, its pointer and every repeat show it.</summary>
+    public const string LoopGlyph = "";
+
+    public static Cursor Loop => loop ??= MakeLoop();
+
+    static Cursor MakeLoop()
+    {
+        try
+        {
+            var bmp = new RenderTargetBitmap(new PixelSize(Size, Size));
+            using (var ctx = bmp.CreateDrawingContext())
+            {
+                var outline = new TextLayout(LoopGlyph, Icons, IconSize, Brushes.Black);
+                var glyph = new TextLayout(LoopGlyph, Icons, IconSize, Brushes.White);
+                var at = new Point((Size - glyph.Width) / 2, (Size - glyph.Height) / 2);
+                for (int dx = -1; dx <= 1; dx++)
+                    for (int dy = -1; dy <= 1; dy++)
+                        if (dx != 0 || dy != 0) outline.Draw(ctx, at + new Point(dx, dy));
+                glyph.Draw(ctx, at);
+            }
+            return new Cursor(bmp, new PixelPoint(Size / 2, Size / 2));
+        }
+        catch { return new Cursor(StandardCursorType.RightSide); }
+    }
 
     static Cursor MakeStretch()
     {
@@ -68,10 +94,11 @@ static class ToolCursors
     {
         alt &= t == TimelineTool.Zoom;
         if (cache.TryGetValue((t, alt), out var c)) return c;
-        // where the click lands: the scissors' crossing, the eraser's tip, the lens' middle; the rest, the middle
+        // where the click lands: the pencil's, the brush's and the eraser's tips, the lens' middle; the rest, the middle
         var hot = t switch
         {
             TimelineTool.Erase => new PixelPoint(10, 22),
+            TimelineTool.Draw or TimelineTool.Paint => new PixelPoint(7, 25),
             TimelineTool.Zoom => new PixelPoint(14, 14),
             _ => new PixelPoint(Size / 2, Size / 2),
         };

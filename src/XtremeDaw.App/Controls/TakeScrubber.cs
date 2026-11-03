@@ -9,17 +9,23 @@ namespace XtremeDaw.App.Controls;
 /// The Biblioteca's mini player wave: the take's peaks as thin bars, what was already heard in the accent and the rest
 /// faint, plus a hover line. Click or drag to jump. It only raises <see cref="SeekRequested"/> (a fraction 0..1);
 /// the window moves the preview. Without peaks yet (they are read in the background) it shows a flat line.
+/// Dragging out of the wave, above or below, raises <see cref="CarryRequested"/> instead, so the window can carry the
+/// file to the timeline; sideways it keeps seeking.
 /// </summary>
 public sealed class TakeScrubber : Control
 {
     /// <summary>Bar width and gap in px: thin enough to read as a wave, wide enough to stay crisp.</summary>
     const double BarW = 2, Gap = 1;
+    /// <summary>How far above or below the wave the pointer goes before a scrub turns into a drag out.</summary>
+    const double CarryOut = 8;
     float[]? peaks;
     float peakMax = 1;
     double progress, hoverX = -1;
     bool dragging;
 
     public event Action<double>? SeekRequested;
+    /// <summary>A scrub left the wave vertically; without a handler the scrub just goes on.</summary>
+    public event Action<PointerEventArgs>? CarryRequested;
 
     public TakeScrubber()
     {
@@ -88,7 +94,15 @@ public sealed class TakeScrubber : Control
     {
         var pt = e.GetPosition(this);
         hoverX = Math.Clamp(pt.X, 0, Bounds.Width);
-        if (dragging) Jump(pt);
+        if (dragging && CarryRequested != null && (pt.Y < -CarryOut || pt.Y > Bounds.Height + CarryOut))
+        {
+            dragging = false;
+            e.Pointer.Capture(null);
+            hoverX = -1;
+            InvalidateVisual();
+            CarryRequested(e);
+        }
+        else if (dragging) Jump(pt);
         else InvalidateVisual();
     }
 

@@ -12,7 +12,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App;
 
 /// <summary>
-/// The timeline's tool strip (native only, asked by the user): Seleccionar, Rango | Dividir, Borrar | Escuchar, Zoom,
+/// The timeline's tool strip (native only, asked by the user): Seleccionar, Lápiz, Pincel, Rango | Dividir, Borrar | Escuchar, Zoom,
 /// Mano, in the project's bar between the edit buttons and Exportar. It is centered on the window like the transport,
 /// and only moves aside when the window is too narrow to keep it there. The tools themselves live in the timeline
 /// (<see cref="TimelineView.Tool"/>); here are their buttons, keys and what their edits do to the project. Escuchar
@@ -23,6 +23,8 @@ public partial class MainWindow
     static readonly (TimelineTool Tool, string Shortcut, string Tip)[] ToolButtons =
     [
         (TimelineTool.Select, "toolSelect", "tool.select.tip"),
+        (TimelineTool.Draw, "toolDraw", "tool.draw.tip"),
+        (TimelineTool.Paint, "toolPaint", "tool.paint.tip"),
         (TimelineTool.Range, "toolRange", "tool.range.tip"),
         (TimelineTool.Split, "toolSplit", "tool.split.tip"),
         (TimelineTool.Erase, "toolErase", "tool.erase.tip"),
@@ -38,7 +40,7 @@ public partial class MainWindow
     const double ToolGap = 12;
 
     readonly Dictionary<TimelineTool, ToggleButton> toolButtons = [];
-    ToggleButton markerStripButton = null!, chordStripButton = null!;
+    ToggleButton rangeStripButton = null!, markerStripButton = null!, chordStripButton = null!;
     /// <summary>The track Escuchar is playing (while held), the one still alone until its fade ends, where the playhead
     /// was before, and which listen a late unsolo belongs to.</summary>
     LiveTrack? listening, listenSolo;
@@ -67,11 +69,10 @@ public partial class MainWindow
             if (ToolGroupEnds.Contains(tool)) ToolStrip.Children.Add(new Border { Classes = { "tsep" }, Margin = new Thickness(3, 0) });
         }
         ToolStrip.Children.Add(new Border { Classes = { "tsep" }, Margin = new Thickness(3, 0) });
-        const string MarkerStripKey = "timeline.markerStrip", ChordStripKey = "timeline.chordStrip";
+        const string RangeStripKey = "timeline.rangeStrip", MarkerStripKey = "timeline.markerStrip", ChordStripKey = "timeline.chordStrip";
+        rangeStripButton = StripButton("\ue8ee", "strip.range.tip", RangeStripKey, on => Timeline.RangeStripShown = on);
         markerStripButton = StripButton("\ue7c1", "strip.markers.tip", MarkerStripKey, on => Timeline.MarkerStripShown = on);
         chordStripButton = StripButton("\ue90b", "strip.chords.tip", ChordStripKey, on => Timeline.ChordStripShown = on);
-        chordStripButton.IsEnabled = false;
-        ToolTip.SetShowOnDisabled(chordStripButton, true);
         ProjectRow.SizeChanged += (_, _) => PlaceTools();
         SessionChip.SizeChanged += (_, _) => PlaceTools();
         ExportButton.SizeChanged += (_, _) => PlaceTools();
@@ -92,6 +93,7 @@ public partial class MainWindow
         };
         Timeline.ListenStarted += StartListening;
         Timeline.ListenEnded += StopListening;
+        InitPencil();
     }
 
     /// <summary>A button that shows or hides one of the timeline's strips, remembered for the app, not per project.</summary>
@@ -123,6 +125,7 @@ public partial class MainWindow
     {
         Timeline.Tool = tool;
         foreach (var (t, b) in toolButtons) b.IsChecked = t == tool;
+        if (tool is TimelineTool.Draw or TimelineTool.Paint) PencilChosen();
     }
 
     /// <summary>A tool's key: picks it (the strip follows).</summary>

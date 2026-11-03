@@ -187,6 +187,23 @@ public partial class MainWindow
         {
             if (sampleLoaded != null) SampleOut.Seek(f * sampleLoadedSec);
         };
+        sampleScrubber.CarryRequested += e =>
+        {
+            if (samplePicked is { } f) DragSample(f, e);
+        };
+        // The name and the details carry the file too; the buttons, the wave and the slider keep their presses.
+        Point? from = null;
+        box.PointerPressed += (_, e) =>
+        {
+            if (samplePicked != null && e.GetCurrentPoint(box).Properties.IsLeftButtonPressed) from = e.GetPosition(box);
+        };
+        box.PointerReleased += (_, _) => from = null;
+        box.PointerMoved += (_, e) =>
+        {
+            if (from is not { } start || Point.Distance(start, e.GetPosition(box)) < LibraryDragStart) return;
+            from = null;
+            if (samplePicked is { } f) DragSample(f, e);
+        };
 
         sampleLoop.Content = IconText("\uE8EE", Loc.T("smp.loop"));
         sampleAuto.Content = IconText("\uE945", Loc.T("smp.auto"));
@@ -314,6 +331,7 @@ public partial class MainWindow
         if (row.File is not { } f) return;
         samplePicked = f;
         ShowPickedSample();
+        PickPencilSample(f);
         if (sampleAuto.IsChecked == true && !f.Broken) PlaySample(f);
     }
 

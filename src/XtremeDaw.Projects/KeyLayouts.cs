@@ -47,7 +47,7 @@ public static class KeyLayouts
             ["split"] = "Insert", ["duplicate"] = "Ctrl+B", ["quantize"] = "Alt+Q",
             ["fit"] = "Shift+D4", ["zoom1"] = "Shift+D1", ["zoom2"] = "Shift+D2", ["zoom3"] = "Shift+D3",
             ["mixer"] = "F9", ["rightPanel"] = "Alt+F8",
-            ["toolSelect"] = "E", ["toolSplit"] = "C", ["toolErase"] = "D", ["toolListen"] = "Y", ["toolZoom"] = "Z",
+            ["toolSelect"] = "E", ["toolDraw"] = "P", ["toolSplit"] = "C", ["toolErase"] = "D", ["toolListen"] = "Y", ["toolZoom"] = "Z",
         }, new Dictionary<string, string>()),
 
         new("reaper", "Reaper", new Dictionary<string, string>

@@ -62,15 +62,15 @@ public partial class MainWindow
     Control BuildPianoToolbar()
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        pianoToolsButton.Content = Loc.T("tool.menu") + "  ▾";
+        pianoToolsButton.Content = IconText("", Loc.T("tool.menu") + "  ▾");
         ToolTip.SetTip(pianoToolsButton, Loc.T("tool.menu.tip"));
         pianoToolsButton.Click += (_, _) => ShowToolCard();
         row.Children.Add(pianoToolsButton);
 
         var writes = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var (tool, key) in new[] { (PianoTool.Draw, "draw"), (PianoTool.Paint, "paint"), (PianoTool.Slice, "slice") })
+        foreach (var (tool, key, glyph) in new[] { (PianoTool.Draw, "draw", ""), (PianoTool.Paint, "paint", ""), (PianoTool.Slice, "slice", "") })
         {
-            var b = new ToggleButton { Classes = { "seg" }, Content = Loc.T($"sc.piano.{key}"), FontSize = 12, IsChecked = tool == PianoTool.Draw };
+            var b = new ToggleButton { Classes = { "seg" }, Content = IconText(glyph, Loc.T($"sc.piano.{key}")), FontSize = 12, IsChecked = tool == PianoTool.Draw };
             ToolTip.SetTip(b, Shortcuts.Tip(Loc.T($"sc.piano.{key}.tip"), Shortcuts.PianoPrefix + key));
             b.Click += (_, _) => SetWriteTool(tool);
             pianoWriteButtons.Add(b);
@@ -78,7 +78,7 @@ public partial class MainWindow
         }
         row.Children.Add(new Border { Classes = { "seg" }, Child = writes, VerticalAlignment = VerticalAlignment.Center });
 
-        pianoViewButton.Content = Loc.T("tool.view") + "  ▾";
+        pianoViewButton.Content = IconText("", Loc.T("tool.view") + "  ▾");
         ToolTip.SetTip(pianoViewButton, Loc.T("tool.view.tip"));
         pianoViewButton.Click += (_, _) => ShowPianoViewMenu();
         row.Children.Add(pianoViewButton);

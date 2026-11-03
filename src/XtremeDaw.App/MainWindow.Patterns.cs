@@ -88,6 +88,7 @@ public partial class MainWindow
             var point = e.GetCurrentPoint(row);
             if (!point.Properties.IsLeftButtonPressed) return;
             pressed = e.ClickCount == 1 ? point.Position : null;
+            if (e.ClickCount == 1) PickPencilPattern(x.Id);
             if (e.ClickCount == 2) OpenPattern(x.Id);
         };
         row.PointerMoved += (_, e) =>
