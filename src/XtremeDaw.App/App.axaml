@@ -197,14 +197,6 @@
       <Setter Property="BorderBrush" Value="{StaticResource Accent40}" />
       <Setter Property="Foreground" Value="{StaticResource Accent}" />
     </Style>
-    <Style Selector="ToggleButton.chip.inspector-power:checked /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.chip.inspector-power:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.chip.inspector-power:checked:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource Accent}" />
-      <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
-      <Setter Property="Foreground" Value="{StaticResource AccentFg}" />
-    </Style>
-    <Style Selector="ToggleButton.chip.inspector-power:not(:checked):pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource Hover}" />
-    </Style>
     <!-- disabled: the web fades the whole button (disabled:opacity-35) -->
     <Style Selector=":is(Button).chip:disabled">
       <Setter Property="Opacity" Value="0.35" />
@@ -218,9 +210,29 @@
       <Setter Property="BorderBrush" Value="{StaticResource Accent40}" />
       <Setter Property="Foreground" Value="{StaticResource Accent}" />
     </Style>
-    <Style Selector="ToggleButton.chip.inspector-power:checked:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <!-- an effect's ON / OFF (Controls/PowerButton, the same in every place): a faint outline while off that lights up
+         like an active chip under the pointer; on (class on), the solid accent, kept under the pointer and disabled.
+         After the chip styles above, so it wins over Button.chip.on and the disabled transparent fill -->
+    <Style Selector="Button.chip.power">
+      <Setter Property="Foreground" Value="{StaticResource Faint}" />
+    </Style>
+    <Style Selector="Button.chip.power:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.power:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent40}" />
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+    </Style>
+    <Style Selector="Button.chip.power.on /template/ ContentPresenter#PART_ContentPresenter, Button.chip.power.on:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.power.on:pressed /template/ ContentPresenter#PART_ContentPresenter, Button.chip.power.on:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource Accent}" />
       <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+      <Setter Property="Foreground" Value="{StaticResource AccentFg}" />
+    </Style>
+    <!-- the EQ's band chips: on (class on) like an active chip, the band being edited (class picked) with an Fg border
+         that the hover keeps -->
+    <Style Selector="Button.chip.eqband">
+      <Setter Property="Foreground" Value="{StaticResource Faint}" />
+    </Style>
+    <Style Selector="Button.chip.eqband.picked /template/ ContentPresenter#PART_ContentPresenter, Button.chip.eqband.picked:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.eqband.picked:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BorderBrush" Value="{StaticResource Fg}" />
     </Style>
 
     <!-- bottom transport bar (Fender Studio Pro style): flat icon buttons, value-over-label cells -->
@@ -406,11 +418,6 @@
     <Style Selector="Button.ghost.slothead:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource AccentSoft}" />
       <Setter Property="Foreground" Value="{StaticResource Accent}" />
-    </Style>
-    <!-- an effect's power button while off: under the pointer it lights up like an active chip (on, it keeps its accent) -->
-    <Style Selector="Button.chip.slotpower:not(.lit):pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource AccentSoft}" />
-      <Setter Property="BorderBrush" Value="{StaticResource Accent40}" />
     </Style>
     <Style Selector="Button.ghost:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />

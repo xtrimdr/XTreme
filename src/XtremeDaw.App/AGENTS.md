@@ -84,10 +84,15 @@ seleccionado, borde 0,45 / 0,9). Los colores de pista son datos del usuario, no 
 
 ## Formato de valores
 
-Respetan la cultura del sistema (en es-AR, con coma):
+Respetan la cultura del sistema (en es-AR, con coma). Volumen, ganancia, paneo y envíos salen siempre de
+`ValueFormat` (no los armes a mano), y las notas de `NoteNames`:
 
-- Ganancia: `$"{db:+0.0;-0.0;0.0} dB"` (`+3,5 dB`); volumen cero: `-∞ dB`.
-- Paneo: `Centro`, `30 L`, `30 R` en el inspector; `C`, `L30`, `R30` compacto en el encabezado de pista.
+- Ganancia y volumen, siempre en dB (decisión del usuario, 2026-11-03: también el slider del inspector, con la curva
+  del fader): `+3,5 dB`; volumen cero: `-∞ dB`. Compacto, sin la unidad, en el encabezado de pista (`+3,5`).
+- Paneo: `Centro`, `30 L`, `30 R` en el inspector; `C`, `L30`, `R30` compacto en el encabezado de pista y el mixer.
+- Envíos: `35%`, con los dB en el tooltip; la tira del mixer marca PRE.
+- Notas en el sistema del idioma (decisión del usuario, 2026-11-03): `Sol3`, `Do#4` en español; `G3`, `C#4` en inglés.
+  Los acordes guardados en letras ("Bbm7") se muestran traducidos solo si son un acorde (`NoteNames.Chord`).
 - Tiempo: `mm:ss.fff` en el reloj; compás.tiempo (`2.2`) al lado.
 - Porcentajes con palabra: `50% · Media`. Separador de datos en una línea: ` · `.
 - Fechas relativas: "recién", "hace 5 min", "hoy 14:30", "ayer 09:10", `dd/MM HH:mm`.
@@ -109,7 +114,7 @@ Respetan la cultura del sistema (en es-AR, con coma):
   `lit`) no cambian de color en hover: el glow es la respuesta. Su fondo y su texto van en el presentador
   (`/template/ ContentPresenter#PART_ContentPresenter`, sin estado en el selector), como los chips ON: puesto solo en
   el `Button`, el texto quieto sale blanco del Fluent.
-- Un botón que pinta sus colores desde código (M/S encendidos, armar, ON, C/LIM, muestras de color) lleva la clase
+- Un botón que pinta sus colores desde código (M/S encendidos, armar, C/LIM, muestras de color) lleva la clase
   **`lit`** mientras está encendido: si no, el hover le tapa el color con gris.
 - **Scrollbars** (pedido del usuario): de 8 px (`ScrollBarSize`) y sin flechas, siempre de ese tamaño cuando hacen falta, y sin aparecer si el contenido
   entra. El contenido les deja su lugar al costado, no pasa por debajo (estilo global en `App.axaml`). No uses el
@@ -133,6 +138,8 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 | `Border.section` (+ `.off`) | tarjeta del inspector |
 | `TextBox.field`, `Button.btn` (`.sm`, `.primary`, `.outline`, `.danger`), `Button.act` (`.danger`) | campos y botones de diálogos y listas: botón de fila 28×28, confirmación roja |
 | `Button.chip.purge` | "Borrar no usadas": contorno tenue que se pone rojo con el hover |
+| `PowerButton` (`Button.chip.power`) | **el** ON/OFF de un efecto, en todo lugar (inspector, Color, mixer, Mastering, banda del EQ): acento lleno prendido, contorno tenue apagado; el tooltip sigue al estado |
+| `SelectButton` | **el** desplegable (presets, tipos, modos); nunca un `ComboBox` |
 | `TextBlock.label` / `.dim` / `.mono` / `.icon` | etiqueta / secundario / números / ícono |
 | `ToolbarPanel` (código) | barra de herramientas que **nunca se superpone** (pedido del usuario): el primer grupo a la izquierda, los demás a la derecha, y los que no entran bajan a otra fila. Toda barra nueva con varios grupos va así, nunca un `DockPanel` que los pise |
 

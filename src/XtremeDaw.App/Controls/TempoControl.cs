@@ -98,9 +98,14 @@ public sealed class TempoControl : Border
         if (double.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && double.IsFinite(v)) Change(v);
     }
     void Change(double v) => Changed?.Invoke(Math.Round(Math.Clamp(v, 40, 300), 1, MidpointRounding.AwayFromZero));
+    /// <summary>The value the readout shows: <see cref="Set"/> runs every tick, so it rebuilds the texts only when this changes.</summary>
+    double shownBpm = double.NaN;
+
     public void Set(double value)
     {
         bpm = value;
+        if (value == shownBpm) return;
+        shownBpm = value;
         string[] parts = value.ToString("0.0", CultureInfo.InvariantCulture).Split('.');
         integer.Text = parts[0]; fraction.Text = parts[1];
     }

@@ -91,7 +91,7 @@ public sealed partial class TimelineView
         var brush = state switch
         {
             InstrumentState.Ready => Palette.Accent, InstrumentState.Loading => Palette.Dim,
-            InstrumentState.Failed => Palette.Alpha(Over, 1), _ => Palette.Faint,
+            InstrumentState.Failed => Palette.Mute, _ => Palette.Faint,
         };
         string name = t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Instrument?.Name ?? Loc.T("vst.testTone");
         ctx.DrawText(name, 11, brush, new Point(r.X + 8, r.Y + 5), ready ? Palette.UiBold : Palette.Ui, Math.Max(0, r.Width - ChipArrowW - 10));
@@ -164,8 +164,9 @@ public sealed partial class TimelineView
     string? SelectedPattern()
     {
         if (SelectedMidiId == null) return null;
-        foreach (var t in tracks)
-            if (t.Track.MidiClips is { } clips)
+        // indexed: it runs on every frame, and a foreach over the track list boxes its enumerator
+        for (int i = 0; i < tracks.Count; i++)
+            if (tracks[i].Track.MidiClips is { } clips)
                 foreach (var c in clips)
                     if (c.Id == SelectedMidiId) return c.PatternId;
         return null;
@@ -326,7 +327,7 @@ public sealed partial class TimelineView
         if (x1 < HeaderW || x0 > W) return;
         bool sel = c.Id == SelectedMidiId || boxed.Contains(c.Id);
         var color = TrackIcons.ColorOf(t.Track) ?? Palette.AccentColor;
-        bool silent = t.Silenced || tracks.Any(o => o.Soloed) && !t.Soloed;
+        bool silent = t.Silenced || anySoloed && !t.Soloed;
         var r = new Rect(x0, y + 5, Math.Max(2, x1 - x0), lh - 10);
         using var opacity = ctx.PushOpacity((silent ? 0.5 : held ? 0.85 : 1) * (erasing.Contains(c.Id) ? 0.25 : 1));
         bool lit = c.PatternId != null && c.PatternId == litPattern;

@@ -45,6 +45,8 @@ public partial class MainWindow
     /// <summary>The live tracks the engine's input taps belong to, in the same order (their meters show the input).</summary>
     LiveTrack?[] armedLive = [];
     string armedKey = "";
+    /// <summary><see cref="ArmSignature"/> when the inputs were last handed to the engine; null = hand them over again.</summary>
+    int? armSignatureShown;
 
     /// <summary>"Ajuste fino de audio (canales nuevos)" of Configuración → Sincronización.</summary>
     double OverdubOffsetMs => Settings.OverdubOffsetMs;
@@ -124,6 +126,10 @@ public partial class MainWindow
     void ShowArm()
     {
         if (RecordingTake) return;
+        // runs on every tick: the lists and the key below are built only when something they read changed
+        int signature = ArmSignature();
+        if (signature == armSignatureShown) return;
+        armSignatureShown = signature;
         var targets = RecordTargets();
         var midi = MidiRecordTargets();
         string key = string.Join("|", targets.Concat(midi).Select(t => $"{t.Id}:{t.Input}:{tracks.FindIndex(l => l.Track == t)}"));
@@ -133,6 +139,24 @@ public partial class MainWindow
         engine.SetInputs(targets.Select(t => InputRoute.Parse(t.Input)).ToList());
         Timeline.ArmedIndices = targets.Concat(midi).Select(t => tracks.FindIndex(l => l.Track == t)).Where(i => i >= 0).ToHashSet();
         if (mixerView) RefreshMixer();
+    }
+
+    /// <summary>
+    /// What <see cref="ShowArm"/> reads, as a hash that allocates nothing: what picks the targets
+    /// (<see cref="RecordSignature"/>), each track's input and the live list (its indices go to the timeline).
+    /// </summary>
+    int ArmSignature()
+    {
+        var h = new HashCode();
+        h.Add(RecordSignature());
+        h.Add(tracks);
+        h.Add(tracks.Count);
+        if (store != null)
+        {
+            var list = store.Project.Tracks;
+            for (int i = 0; i < list.Count; i++) h.Add(list[i].Input);
+        }
+        return h.ToHashCode();
     }
 
     /// <summary>The armed tracks' input peaks go into their meters (UI side, read by the tick).</summary>
@@ -276,7 +300,9 @@ public partial class MainWindow
             foreach (var t in takes)
                 try { store.EndRecording(t.Journal.MediaId); } catch (IOException) { }
             EndMidiTakes(startSec, startSec, discard: true);
-            armedKey = ""; // the engine's inputs may have changed: hand them over again
+            // the engine's inputs may have changed: hand them over again
+            armedKey = "";
+            armSignatureShown = null;
             Toast(Loc.T("rec.startFail", e.Message));
             return;
         }
@@ -363,6 +389,7 @@ public partial class MainWindow
             // after the engine stopped: no note goes into them any more
             played = EndMidiTakes(startSec, endSec, discard || wasCountingIn);
             armedKey = "";
+            armSignatureShown = null;
             Timeline.RecordingLanes = null;
             NewTrackButton.IsEnabled = true;
             Timeline.SetPlayhead(startSec, true); // back to where the take started (the web: to 0)

@@ -43,7 +43,10 @@ public sealed partial class PianoRollView
     NoteLane lane;
     /// <summary>What the lane under the grid shows and edits.</summary>
     public NoteLane Lane { get => lane; set { lane = value; CancelGesture(); InvalidateVisual(); } }
-    string LaneTitle => Loc.T(lane == NoteLane.Velocity ? "piano.velocity" : $"tool.c.lane.{lane.ToString().ToLowerInvariant()}");
+    string LaneTitle => Loc.T(LaneKeys[(int)lane]);
+    /// <summary>The lane title's text key per <see cref="NoteLane"/>, made once: a key built on every render was garbage per frame.</summary>
+    static readonly string[] LaneKeys = [.. Enum.GetValues<NoteLane>().OrderBy(l => (int)l)
+        .Select(l => l == NoteLane.Velocity ? "piano.velocity" : $"tool.c.lane.{l.ToString().ToLowerInvariant()}")];
     int LaneOf(MidiNote n) => NoteLanes.Get(n, lane);
 
     Dictionary<int, string>? keyNames;

@@ -198,22 +198,14 @@ public partial class MainWindow
             string json = System.Text.Json.JsonSerializer.Serialize(collapsed);
             SaveViewPref("collapsed." + scope, json);
         };
-        Button? powerButton = null;
+        PowerButton? powerButton = null;
         if (on != null && toggle != null)
         {
-            var power = powerButton = new Button { Classes = { "chip" }, MinHeight = 24, Height = 24, Padding = new Thickness(6, 0, 8, 0), Margin = new Thickness(6, 0, 0, 0) };
-            power.Click += (_, _) => toggle();
+            var power = powerButton = new PowerButton(on, toggle, powerTip) { Margin = new Thickness(6, 0, 0, 0) };
+            colorRefresh.Add(power.Refresh);
             colorRefresh.Add(() =>
             {
                 bool lit = on();
-                var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-                label.Children.Add(new TextBlock { Classes = { "icon" }, Text = "", FontSize = 11, Foreground = lit ? Palette.App : Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
-                label.Children.Add(new TextBlock { Text = lit ? "ON" : "OFF", FontSize = 10.5, FontWeight = FontWeight.Bold, Foreground = lit ? Palette.App : Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
-                power.Content = label;
-                power.Classes.Set("lit", lit);
-                power.Background = lit ? Palette.Accent : Brushes.Transparent;
-                power.BorderBrush = lit ? Palette.Accent : Palette.Line;
-                ToolTip.SetTip(power, powerTip?.Invoke(lit));
                 content.Opacity = lit ? 1 : 0.4;
                 FxIcon.SetColor(sectionIcon, lit ? Palette.Accent : Palette.Faint);
             });

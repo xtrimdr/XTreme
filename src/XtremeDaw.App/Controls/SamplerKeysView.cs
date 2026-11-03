@@ -71,7 +71,9 @@ public sealed class SamplerKeysView : Control
             double x = KeyX(k);
             ctx.FillRectangle(k == playing ? Palette.Accent : Palette.Dim, new Rect(x, 0, Math.Max(1, w - Gap), h), 2);
             if (k == root && k != playing) ctx.FillRectangle(Palette.Accent, new Rect(x, h - RootMarkH, Math.Max(1, w - Gap), RootMarkH), 1);
-            if (k % 12 == 0 && w >= 15) ctx.DrawText(Palette.Text("C" + (k / 12 - 1), 9, Palette.App), new Point(x + 2, h - 14));
+            // "Do4" / "C4" (cached by NoteNames and Palette), only where it fits whole on the key
+            if (k % 12 == 0 && w >= 15 && Palette.Text(NoteNames.Octave(k / 12 - 1), 9, Palette.App) is var octave && octave.Width + 3 <= w)
+                ctx.DrawText(octave, new Point(x + 2, h - 14));
         }
         for (int k = First; k <= Last; k++)
         {

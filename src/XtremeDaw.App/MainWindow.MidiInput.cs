@@ -89,10 +89,19 @@ public partial class MainWindow
 
     // --- the track's input --------------------------------------------------------------------------
 
-    /// <summary>The input as the header chip shows it, four letters at most: "MIDI" for all of them.</summary>
+    /// <summary>The channel as the header chip shows it ("Can 3" / "Ch 3", not "C3", which reads as a note), by
+    /// channel 1..16, made once: the timeline asks for the chip's text while it draws.</summary>
+    static string[]? channelShort;
+
+    /// <summary>The input as the header chip shows it, short: four letters of its name, "MIDI" for all of them, or the channel.</summary>
     static string MidiInputShort(Track t)
     {
-        if (t.MidiInput == null) return t.MidiChannel == 0 ? "MIDI" : $"C{t.MidiChannel}";
+        if (t.MidiInput == null)
+        {
+            if (t.MidiChannel is < 1 or > 16) return "MIDI";
+            channelShort ??= [.. Enumerable.Range(0, 17).Select(c => Loc.T("midi.channel.short", c))];
+            return channelShort[t.MidiChannel];
+        }
         string name = MidiSetup.Shown(t.MidiInput).Trim();
         return name.Length <= 4 ? name : name[..4];
     }

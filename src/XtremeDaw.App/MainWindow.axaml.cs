@@ -911,7 +911,7 @@ public partial class MainWindow : Window
     {
         // what is shown goes with what is heard; the lanes on the native effects, with the tracks (FollowLanes)
         double pos = engine.HeardSec;
-        bool videoFade = Preview.Playhead != pos && tracks.Any(t => t.Clips.Any(c => c.Clip.FadeInSec > 0 || c.Clip.FadeOutSec > 0 || c.Clip.VideoFadeInSec > 0 || c.Clip.VideoFadeOutSec > 0));
+        bool videoFade = Preview.Playhead != pos && AnyFade();
         Preview.Playhead = pos;
         bool timed = engine.Playing || RecordingBusy;
         videoFade |= timed != Preview.Timed;
@@ -938,8 +938,10 @@ public partial class MainWindow : Window
         {
             // first the transitions, so a crossfade's two clips both ask their decoders for a frame
             newFrame |= t.UpdateTransitions(pos);
-            foreach (var c in t.Clips)
-                newFrame |= c.UpdateVideo(pos, look?.Color, look?.VideoFx);
+            // by index: foreach over the IReadOnlyList boxes an enumerator per track per tick
+            var clips = t.Clips;
+            for (int i = 0; i < clips.Count; i++)
+                newFrame |= clips[i].UpdateVideo(pos, look?.Color, look?.VideoFx);
         }
         if (newFrame || videoFade) Preview.InvalidateVisual();
         RefreshTransport(pos);
@@ -963,9 +965,34 @@ public partial class MainWindow : Window
         if (sel != null)
         {
             grShown = Math.Min(sel.GrPeak, grShown * 0.85);
-            GrText.Text = sel.Channel.Comp.On ? $"{grShown:0.0} dB" : "—";
+            // the text only when its tenth (or the compressor's switch) changes: the tick allocates nothing
+            // (twice the tenths, one less when negative: a reduction under 0.05 dB reads "-0.0", not "0.0")
+            int gr = sel.Channel.Comp.On ? (int)Math.Round(grShown * 10, MidpointRounding.AwayFromZero) * 2 - (grShown < 0 ? 1 : 0) : int.MinValue;
+            if (gr != grTextTenths)
+            {
+                grTextTenths = gr;
+                GrText.Text = gr == int.MinValue ? "—" : $"{grShown:0.0} dB";
+            }
             GrBar.Width = GrTrack.Bounds.Width * Math.Clamp(-grShown / 24, 0, 1);
         }
+    }
+
+    /// <summary>The compressor reduction <see cref="GrText"/> shows, as Tick encodes it (int.MinValue = "—", int.MaxValue = not shown yet).</summary>
+    int grTextTenths = int.MaxValue;
+
+    /// <summary>Whether any clip has a fade (audio or video); for the tick, so loops and no LINQ.</summary>
+    bool AnyFade()
+    {
+        for (int i = 0; i < tracks.Count; i++)
+        {
+            var clips = tracks[i].Clips;
+            for (int k = 0; k < clips.Count; k++)
+            {
+                var c = clips[k].Clip;
+                if (c.FadeInSec > 0 || c.FadeOutSec > 0 || c.VideoFadeInSec > 0 || c.VideoFadeOutSec > 0) return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -1033,17 +1060,27 @@ public partial class MainWindow : Window
     void RefreshClearButtons()
     {
         bool editable = store != null && !store.ReadOnly && !restoring;
-        foreach (var (b, solo) in new[] { (ClearMutesButton, false), (ClearSolosButton, true) })
+        // every tick: no array of pairs, no LINQ
+        bool anyMute = false, anySolo = false;
+        for (int i = 0; i < tracks.Count; i++)
         {
-            bool lit = tracks.Any(t => solo ? t.Channel.Solo : t.Channel.Muted);
-            if (b.Classes.Contains("lit") == lit && b.IsEnabled == editable) continue;
-            b.IsEnabled = editable;
-            b.Classes.Set("lit", lit);
-            b.Background = lit ? (solo ? Palette.Accent : Palette.Mute) : Brushes.Transparent;
-            b.BorderBrush = lit ? Brushes.Transparent : Palette.Line;
-            ((TextBlock)b.Content!).Foreground = lit ? (solo ? Palette.AccentFg : Palette.App) : Palette.Dim;
-            ToolTip.SetTip(b, lit ? Loc.T(solo ? "mixer.clearSolos" : "mixer.clearMutes") : Loc.T(solo ? "timeline.noSolos" : "timeline.noMutes"));
+            anyMute |= tracks[i].Channel.Muted;
+            anySolo |= tracks[i].Channel.Solo;
         }
+        ShowClearButton(ClearMutesButton, false, anyMute, editable);
+        ShowClearButton(ClearSolosButton, true, anySolo, editable);
+    }
+
+    /// <summary>One of <see cref="RefreshClearButtons"/>' two buttons; touches it only when its state changed.</summary>
+    void ShowClearButton(Button b, bool solo, bool lit, bool editable)
+    {
+        if (b.Classes.Contains("lit") == lit && b.IsEnabled == editable) return;
+        b.IsEnabled = editable;
+        b.Classes.Set("lit", lit);
+        b.Background = lit ? (solo ? Palette.Accent : Palette.Mute) : Brushes.Transparent;
+        b.BorderBrush = lit ? Brushes.Transparent : Palette.Line;
+        ((TextBlock)b.Content!).Foreground = lit ? (solo ? Palette.AccentFg : Palette.App) : Palette.Dim;
+        ToolTip.SetTip(b, lit ? Loc.T(solo ? "mixer.clearSolos" : "mixer.clearMutes") : Loc.T(solo ? "timeline.noSolos" : "timeline.noMutes"));
     }
 
     void UpdateUndoButtons()

@@ -34,6 +34,11 @@ public sealed class LiveMonitor : UserControl
     readonly TextBlock audioLabel = new() { FontSize = 11, Foreground = Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock gainText = new() { FontSize = 10, Foreground = Palette.Faint, Classes = { "mono" }, VerticalAlignment = VerticalAlignment.Center };
     (bool Rec, int? Beat)? shown;
+    /// <summary>The recorded time <see cref="elapsed"/> shows (minutes × 1000 + tenths of a second); -1 = none yet.</summary>
+    long elapsedShown = -1;
+    /// <summary>The device and gain (in tenths of dB) the input row shows: <see cref="SetAudio"/> runs every tick.</summary>
+    string? deviceShown;
+    long gainShown = long.MinValue;
 
     /// <summary>The input meter; the window feeds it from the same read as the transport bar's.</summary>
     public StereoMeter Meter { get; } = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -112,7 +117,14 @@ public sealed class LiveMonitor : UserControl
         if (recording)
         {
             int m = (int)(elapsedSec / 60);
-            elapsed.Text = $"{m:00}:{(elapsedSec - m * 60).ToString("00.0", System.Globalization.CultureInfo.InvariantCulture)}";
+            double s = elapsedSec - m * 60;
+            // called every tick: the text only when its tenth changes (in the window's culture, like every other time)
+            long key = m * 1000L + (long)Math.Round(s * 10, MidpointRounding.AwayFromZero);
+            if (key != elapsedShown)
+            {
+                elapsedShown = key;
+                elapsed.Text = $"{m:00}:{s:00.0}";
+            }
         }
         if (shown == (recording, beat)) return;
         shown = (recording, beat);
@@ -131,8 +143,16 @@ public sealed class LiveMonitor : UserControl
     /// <summary>The input device (Loc.T("live.noAudio") without one) and its gain.</summary>
     public void SetAudio(string? device, double gainDb)
     {
-        audioLabel.Text = device ?? Loc.T("live.noAudio");
-        gainText.Text = $"{(gainDb > 0 ? "+" : "")}{gainDb:0} dB";
+        // called every tick: the texts only when the device or the shown tenth of dB changes
+        if (device != deviceShown || audioLabel.Text == null)
+        {
+            deviceShown = device;
+            audioLabel.Text = device ?? Loc.T("live.noAudio");
+        }
+        long tenths = (long)Math.Round(gainDb * 10, MidpointRounding.AwayFromZero);
+        if (tenths == gainShown) return;
+        gainShown = tenths;
+        gainText.Text = $"{gainDb:+0.0;-0.0;0.0} dB";
     }
 
     /// <summary>Shows the camera's newest frame, mirrored or not. Call it every tick.</summary>
@@ -188,15 +208,22 @@ public sealed class LiveMonitor : UserControl
                 bmp = new WriteableBitmap(new PixelSize(w, h), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque);
                 InvalidateMeasure();
             }
-            var target = bmp;
-            if (cam.TryCopyPreview(ref seen, buf =>
-                {
-                    if (buf.Length != w * h * 4) return;
-                    using var fb = target.Lock();
-                    for (int y = 0; y < h; y++) Marshal.Copy(buf, y * w * 4, fb.Address + y * fb.RowBytes, w * 4);
-                }))
+            if (cam.TryCopyPreview(ref seen, copy ??= CopyFrame))
                 InvalidateVisual();
             return true;
+        }
+
+        /// <summary><see cref="CopyFrame"/> made once: a lambda over the tick's locals was a new closure every tick.</summary>
+        Action<byte[]>? copy;
+
+        /// <summary>Copies a preview frame into <see cref="bmp"/> (sized for it by <see cref="Update"/>), row by row.</summary>
+        void CopyFrame(byte[] buf)
+        {
+            if (bmp is not { } target) return;
+            int w = target.PixelSize.Width, h = target.PixelSize.Height;
+            if (buf.Length != w * h * 4) return;
+            using var fb = target.Lock();
+            for (int y = 0; y < h; y++) Marshal.Copy(buf, y * w * 4, fb.Address + y * fb.RowBytes, w * 4);
         }
 
         protected override Size MeasureOverride(Size available)

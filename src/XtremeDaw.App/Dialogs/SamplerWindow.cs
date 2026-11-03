@@ -29,7 +29,6 @@ public sealed class SamplerWindow : Window
     const double KnobSize = 34;
     /// <summary>How wide the view goes on a loop point: some 40 ms, a few cycles of a low note.</summary>
     const double LoopCloseFrames = 2000;
-    static readonly string[] NoteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
     readonly List<Action> refresh = [];
     /// <summary>The knobs' lanes, hooked up once <see cref="Automate"/> is there.</summary>
@@ -348,7 +347,7 @@ public sealed class SamplerWindow : Window
             Dial("R", Loc.T("sampler.release"), time, 0.15, s => s.Release, (s, v) => s.Release = v, Sec, "release")));
         box.Children.Add(Dials(
             Dial(Loc.T("sampler.gain"), Loc.T("sampler.gain.tip"), Scale.Linear(SamplerSettings.MinGainDb, SamplerSettings.MaxGainDb), 0, s => s.GainDb, (s, v) => s.GainDb = v, v => $"{v:+0.0;-0.0;0.0} dB", "gain", SamplerKnob.Gain),
-            Dial(Loc.T("sampler.pan"), Loc.T("sampler.pan.tip"), Scale.Linear(-1, 1), 0, s => s.Pan, (s, v) => s.Pan = Math.Abs(v) < 0.04 ? 0 : v, PanText, "pan", SamplerKnob.Pan),
+            Dial(Loc.T("sampler.pan"), Loc.T("sampler.pan.tip"), Scale.Linear(-1, 1), 0, s => s.Pan, (s, v) => s.Pan = Math.Abs(v) < 0.04 ? 0 : v, ValueFormat.Pan, "pan", SamplerKnob.Pan),
             Dial(Loc.T("sampler.velAmp"), Loc.T("sampler.velAmp.tip"), Scale.Linear(0, 1), 0.7, s => s.VelAmp, (s, v) => s.VelAmp = v, Percent, "velAmp")));
         return Wrap(box);
     }
@@ -356,12 +355,12 @@ public sealed class SamplerWindow : Window
     Control FilterCard()
     {
         var box = Card(Loc.T("sampler.card.filter"));
-        var type = new ComboBox { Height = 28, MinHeight = 28, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(8, 0) };
-        foreach (string f in SamplerSettings.Filters) type.Items.Add(Loc.T("sampler.filter." + f));
+        var type = new SelectButton { Height = 28, MinHeight = 28 };
+        type.SetItems([.. SamplerSettings.Filters.Select(f => Loc.T("sampler.filter." + f))]);
         bool filling = false;
-        type.SelectionChanged += (_, _) =>
+        type.Selected += i =>
         {
-            if (!filling && type.SelectedIndex >= 0) Edit(s => s.Filter = SamplerSettings.Filters[type.SelectedIndex], "filter");
+            if (!filling && i >= 0) Edit(s => s.Filter = SamplerSettings.Filters[i], "filter");
         };
         refresh.Add(() =>
         {
@@ -403,13 +402,13 @@ public sealed class SamplerWindow : Window
             s => s.LfoShape, (s, v) => s.LfoShape = v, "lfoShape"));
         var rate = Dial(Loc.T("sampler.lfoRate"), Loc.T("sampler.lfoRate.tip"), Scale.Exponential(SamplerSettings.MinLfoHz, SamplerSettings.MaxLfoHz), 5, s => s.LfoHz, (s, v) => s.LfoHz = v, HzText, "lfoHz");
         refresh.Add(() => rate.IsEnabled = Current()?.LfoBeat == 0);
-        var sync = new ComboBox { Height = 26, MinHeight = 26, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(6, 0) };
-        foreach (double b in SamplerSettings.LfoBeats) sync.Items.Add(BeatText(b));
+        var sync = new SelectButton { Height = 26, MinHeight = 26 };
+        sync.SetItems([.. SamplerSettings.LfoBeats.Select(BeatText)]);
         ToolTip.SetTip(sync, Loc.T("sampler.lfoSync.tip"));
         bool filling = false;
-        sync.SelectionChanged += (_, _) =>
+        sync.Selected += i =>
         {
-            if (!filling && sync.SelectedIndex >= 0) Edit(s => s.LfoBeat = SamplerSettings.LfoBeats[sync.SelectedIndex], "lfoBeat");
+            if (!filling && i >= 0) Edit(s => s.LfoBeat = SamplerSettings.LfoBeats[i], "lfoBeat");
         };
         refresh.Add(() =>
         {
@@ -538,9 +537,8 @@ public sealed class SamplerWindow : Window
         },
     };
 
-    static string NoteName(int pitch) => NoteNames[pitch % 12] + (pitch / 12 - 1);
+    static string NoteName(int pitch) => NoteNames.Of(pitch);
     static string Percent(double v) => $"{v * 100:0}%";
-    static string PanText(double v) => Math.Abs(v) < 0.005 ? Loc.T("sampler.center") : $"{Math.Abs(v) * 100:0} {(v < 0 ? "L" : "R")}";
     static string Sec(double v) => v < 1 ? $"{v * 1000:0} ms" : $"{v:0.00} s";
     static string HzText(double v) => v >= 1000 ? $"{v / 1000:0.0} kHz" : v >= 10 ? $"{v:0} Hz" : $"{v:0.00} Hz";
 
@@ -549,7 +547,7 @@ public sealed class SamplerWindow : Window
     {
         SamplerKnob.Cutoff => HzText(v),
         SamplerKnob.Gain => $"{v:+0.0;-0.0;0.0} dB",
-        SamplerKnob.Pan => PanText(v),
+        SamplerKnob.Pan => ValueFormat.Pan(v),
         SamplerKnob.LfoPitch => $"{v:0.00} st",
         SamplerKnob.LfoFilter => $"{v:0.0} oct",
         _ => Percent(v),

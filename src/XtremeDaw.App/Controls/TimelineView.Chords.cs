@@ -292,7 +292,7 @@ public sealed partial class TimelineView
             if (box.Right < HeaderW || box.X > W || c.Id == editingNameId) continue;
             bool marked = chordMarks.Contains(c.Id);
             ctx.DrawRectangle(marked ? Palette.AccentSoft : Palette.Raised, marked ? Palette.Pen(Palette.Accent) : null, box, 3, 3);
-            var label = Palette.Text(c.Name, 11, marked ? Palette.Fg : Palette.Dim, Palette.Ui);
+            var label = Palette.Text(NoteNames.Chord(c.Name), 11, marked ? Palette.Fg : Palette.Dim, Palette.Ui);
             if (label.Width + ChordTextPad <= box.Width)
                 ctx.DrawText(label, new Point(Math.Max(box.X + 4, Math.Min(HeaderW + 4, box.Right - label.Width - 4)), top + (ChordH - label.Height) / 2));
         }

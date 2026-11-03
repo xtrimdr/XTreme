@@ -89,8 +89,8 @@ public static class MidiSetup
         int status = raw & 0xFF, d1 = (raw >> 8) & 0x7F, d2 = (raw >> 16) & 0x7F;
         string what = (status & 0xF0) switch
         {
-            0x90 when d2 > 0 => $"{MidiNote.Name(d1)} · {d2}",
-            0x80 or 0x90 => Loc.T("midi.msg.off", MidiNote.Name(d1)),
+            0x90 when d2 > 0 => $"{NoteNames.Of(d1)} · {d2}",
+            0x80 or 0x90 => Loc.T("midi.msg.off", NoteNames.Of(d1)),
             0xB0 when d1 == 64 => Loc.T(d2 >= 64 ? "midi.msg.pedalDown" : "midi.msg.pedalUp"),
             0xB0 => $"CC {d1} · {d2}",
             0xE0 => Loc.T("midi.msg.bend"),

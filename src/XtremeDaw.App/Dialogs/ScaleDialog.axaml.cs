@@ -28,7 +28,8 @@ public sealed partial class ScaleDialog : UserControl
         PointerPressed += (_, e) => { if (e.Source == this) Answer(false); };
     }
 
-    public static string Label(ScaleDetector.Scale s) => Loc.T(s.Minor ? "scale.minor" : "scale.major", s.Root);
+    /// <summary>"Sib mayor": the key with its root in the UI language, spelled as the detector spells it.</summary>
+    public static string Label(ScaleDetector.Scale s) => Loc.T(s.Minor ? "scale.minor" : "scale.major", NoteNames.Spelled(s.Root));
 
     /// <summary>Shows the result; true when the chords have to become markers. <paramref name="canMark"/> is false when
     /// the project can't take them now (read-only, recording).</summary>
@@ -46,8 +47,8 @@ public sealed partial class ScaleDialog : UserControl
             _ => r.Retried ? Loc.T("scale.noBetter") : "",
         };
         Summary.Text = string.Join(" ", new[] { sure, Loc.T("scale.relative", Label(r.Scale.Relative)), Loc.T("scale.confidence", Percent(r.Confidence), Percent(r.ChordFit)), how }.Where(x => x.Length > 0));
-        Notes.Text = string.Join("  ", r.Scale.Notes);
-        var names = r.Chords.GroupBy(c => c.Name).OrderByDescending(g => g.Sum(c => c.EndSec - c.StartSec)).Select(g => g.Key).ToList();
+        Notes.Text = string.Join("  ", r.Scale.Notes.Select(NoteNames.Spelled));
+        var names = r.Chords.GroupBy(c => c.Name).OrderByDescending(g => g.Sum(c => c.EndSec - c.StartSec)).Select(g => NoteNames.Spelled(g.Key)).ToList();
         Chords.Text = names.Count == 0 ? Loc.T("scale.noChords")
             : string.Join("  ", names.Take(MaxChordsShown)) + (names.Count > MaxChordsShown ? "  …" : "");
         MarkersCheck.Content = Loc.T("scale.markers", r.Chords.Count);

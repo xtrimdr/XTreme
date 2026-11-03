@@ -98,8 +98,8 @@ public sealed partial class PianoRollView : Control
     /// <summary>The chord bar: its height, each inversion's box and the room for the chord's name; the most notes a chord can have to get one.</summary>
     const double ChordBarH = 28, ChordChipW = 34, ChordBarPad = 3;
     const int MaxChordNotes = 6;
-
-    static readonly string[] PitchNames = [.. Enumerable.Range(0, Pitches).Select(MidiNote.Name)];
+    /// <summary>The text keys of the inversions' boxes, made once: a key built on every render was garbage per frame.</summary>
+    static readonly string[] InversionKeys = [.. Enumerable.Range(0, MaxChordNotes).Select(i => $"piano.chord.inv.{i}")];
 
     string? clipId;
     string? title;
@@ -240,6 +240,29 @@ public sealed partial class PianoRollView : Control
         });
         edgeScroll.Stop();
         DetachedFromVisualTree += (_, _) => edgeScroll.Stop();
+        layer = new Layer(this);
+        VisualChildren.Add(layer);
+    }
+
+    /// <summary>
+    /// The playhead, drawn over the roll (as <see cref="TimelineView"/>'s layer): while playing, each step repaints only
+    /// this, not every row, line, wave and note. Not hit-testable: the roll under it takes the pointer.
+    /// </summary>
+    sealed class Layer : Control
+    {
+        readonly PianoRollView owner;
+        public Layer(PianoRollView owner) { this.owner = owner; IsHitTestVisible = false; }
+        public override void Render(DrawingContext ctx) => owner.RenderLayer(ctx);
+    }
+
+    readonly Layer layer;
+
+    /// <summary>Repaints the roll and its playhead layer (the playhead's place follows scroll, zoom and size). Hides
+    /// Visual.InvalidateVisual so every caller, inside or outside, keeps both in step.</summary>
+    public new void InvalidateVisual()
+    {
+        base.InvalidateVisual();
+        layer?.InvalidateVisual();
     }
 
     /// <summary>
@@ -290,7 +313,8 @@ public sealed partial class PianoRollView : Control
         InvalidateVisual();
     }
 
-    /// <summary>The playhead in timeline seconds; redraws only when it moved inside (or across) the view.</summary>
+    /// <summary>The playhead in timeline seconds; when it moved inside (or across) the view, redraws only the
+    /// <see cref="Layer"/>.</summary>
     public void SetPlayhead(double sec)
     {
         // kept while hidden too: framing the whole track looks for it
@@ -300,7 +324,7 @@ public sealed partial class PianoRollView : Control
         bool was = playheadSec >= 0 && x0 >= KeyW - 2 && x0 <= W + 2, now = x1 >= KeyW - 2 && x1 <= W + 2;
         if (sec == playheadSec || !was && !now) { playheadSec = sec; return; }
         playheadSec = sec;
-        InvalidateVisual();
+        layer.InvalidateVisual();
     }
 
     /// <summary>
@@ -482,7 +506,7 @@ public sealed partial class PianoRollView : Control
                 ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.08), Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.7)), BoxRect());
             DrawGhost(ctx, W);
             DrawToolGesture(ctx);
-            DrawPlayhead(ctx, RulerH, gb);
+            // the playhead is on the Layer
             SyncChordBar();
             if (gesture == null) DrawChordBar(ctx);
         }
@@ -594,14 +618,15 @@ public sealed partial class PianoRollView : Control
             ctx.FillRectangle(Palette.Alpha(Palette.AppColor, 0.6), new Rect(r.X + rad, gy, gw * n.Velocity / 127.0, 2));
         }
         DrawNoteMarks(ctx, n, r);
-        if (r.Width >= 26 && rowH >= 11)
-            ctx.DrawText(PitchNames[n.Pitch], 9.5, Palette.AccentFg, new Point(r.X + 3, r.Y + (r.Height - 15) / 2), Palette.UiBold);
+        // the name only where it fits whole: "Sol#3" is wider than "G#3"
+        if (r.Width >= 20 && rowH >= 11 && Palette.Text(NoteNames.Of(n.Pitch), 9.5, Palette.AccentFg, Palette.UiBold) is var name && name.Width + 5 <= r.Width)
+            ctx.DrawText(name, new Point(r.X + 3, r.Y + (r.Height - 15) / 2));
     }
 
     // --- chords -----------------------------------------------------------------------------------
 
     /// <summary>"Sol m7": a chord's name.</summary>
-    internal static string ChordLabel(int root, ChordKind kind) => Loc.T("piano.chord.name", TunerView.NoteName((root % 12 + 12) % 12), kind.Suffix).TrimEnd();
+    internal static string ChordLabel(int root, ChordKind kind) => Loc.T("piano.chord.name", NoteNames.Class(root), kind.Suffix).TrimEnd();
 
     /// <summary>The chord tool's notes on this root, in the last inversion (or the highest it has); none that leave MIDI's range.</summary>
     int[] ChordOn(int root)
@@ -712,7 +737,7 @@ public sealed partial class PianoRollView : Control
             var chip = ChordChip(bar, i);
             bool on = i == chordAt, hot = chip.Contains(lastPointer);
             ctx.DrawRectangle(on ? Palette.AccentSoft : hot ? Palette.Hover : Palette.Panel, on ? Palette.Pen(Palette.Accent) : null, chip, 4, 4);
-            var mark = Palette.Text(Loc.T($"piano.chord.inv.{i}"), 10, on ? Palette.Accent : Palette.Dim, Palette.UiBold);
+            var mark = Palette.Text(Loc.T(InversionKeys[i]), 10, on ? Palette.Accent : Palette.Dim, Palette.UiBold);
             ctx.DrawText(mark, new Point(chip.X + 4, chip.Y + (chip.Height - mark.Height) / 2));
             foreach (int pitch in chordVoicings[i])
             {
@@ -760,12 +785,29 @@ public sealed partial class PianoRollView : Control
         }
     }
 
-    void DrawPlayhead(DrawingContext ctx, double top, double bottom)
+    /// <summary>
+    /// Draws the <see cref="Layer"/>: the playhead in the ruler and down the grid, each clipped as the roll clips them.
+    /// The chord bar sat over the playhead, so when the line crosses it the bar is drawn again on top. Allocates
+    /// nothing: it runs on every playhead step.
+    /// </summary>
+    void RenderLayer(DrawingContext ctx)
     {
-        if (playheadSec < 0) return;
-        double x = Math.Round(XA(PlayBeat(playheadSec))) + 0.5;
-        if (x < KeyW || x > Bounds.Width) return;
-        ctx.DrawLine(Palette.Pen(Palette.Accent), new Point(x, top), new Point(x, bottom));
+        if (clipId == null || playheadSec < 0) return;
+        // the roll may not have framed yet in this pass; both do it once, whichever draws first
+        Fit();
+        double W = Bounds.Width, gb = GridBottom;
+        double xa = XA(PlayBeat(playheadSec));
+        if (xa >= KeyW && xa <= W)
+            using (ctx.PushClip(new Rect(KeyW, 0, Math.Max(0, W - KeyW), RulerH)))
+                ctx.DrawLine(Palette.Pen(Palette.Accent, 2), new Point(xa, 0), new Point(xa, RulerH));
+        double x = Math.Round(xa) + 0.5;
+        if (x < KeyW || x > W) return;
+        using (ctx.PushClip(new Rect(KeyW, RulerH, Math.Max(0, W - KeyW), Math.Max(0, gb - RulerH))))
+        {
+            ctx.DrawLine(Palette.Pen(Palette.Accent), new Point(x, RulerH), new Point(x, gb));
+            SyncChordBar();
+            if (gesture == null && ChordBarRect() is { } bar && x >= bar.X - 1 && x <= bar.Right + 1) DrawChordBar(ctx);
+        }
     }
 
     void DrawKeys(DrawingContext ctx, double gb)
@@ -795,7 +837,11 @@ public sealed partial class PianoRollView : Control
                 continue;
             }
             if (rowH >= 9 && (scale == null ? p % 12 == 0 : inScale && rowH >= 11 || scale.IsRoot(p)))
-                ctx.DrawText(PitchNames[p], 9.5, MidiNote.IsBlack(p) && scale != null ? Palette.Fg : Palette.App, new Point(KeyW - 28, y + (rowH - 12) / 2), Palette.Ui);
+            {
+                // right-aligned like the user's key names, so a longer name ("Sol#3") grows to the left
+                var name = Palette.Text(NoteNames.Of(p), 9.5, MidiNote.IsBlack(p) && scale != null ? Palette.Fg : Palette.App, Palette.Ui);
+                ctx.DrawText(name, new Point(Math.Max(2, KeyW - 6 - name.Width), y + (rowH - 12) / 2));
+            }
         }
     }
 
@@ -819,11 +865,6 @@ public sealed partial class PianoRollView : Control
             if (b % every == 0) ctx.DrawText(BarLabel(b + 1), 10, inside ? Palette.Dim : Palette.Faint, new Point(x + 3, 4), Palette.Mono);
         }
         ctx.DrawLine(Palette.Pen(Palette.Line), new Point(KeyW, RulerH - 0.5), new Point(W, RulerH - 0.5));
-        if (playheadSec >= 0)
-        {
-            double x = XA(PlayBeat(playheadSec));
-            if (x >= KeyW && x <= W) ctx.DrawLine(Palette.Pen(Palette.Accent, 2), new Point(x, 0), new Point(x, RulerH));
-        }
     }
 
     /// <summary>A clip on the ruler: a tint over its stretch and a strip in the track's color along the bottom.</summary>

@@ -56,7 +56,8 @@ public partial class MainWindow
         pianoRoll.NoteDetailsRequested += OpenNoteCard;
         pianoRoll.KeyMenuRequested += ShowKeyMenu;
         var chords = new DispatcherTimer(TimeSpan.FromMilliseconds(ChordReadMs), DispatcherPriority.Background, (_, _) => ReadChord());
-        chords.Start();
+        chords.Stop();
+        FollowChordTimer(chords);
     }
 
     Control BuildPianoToolbar()
@@ -277,7 +278,7 @@ public partial class MainWindow
         ToolParamKind.Percent => $"{v} %",
         ToolParamKind.Signed => v > 0 ? $"+{v}" : v.ToString(),
         ToolParamKind.Ms => $"{v} ms",
-        ToolParamKind.Key => MidiNote.Name(v),
+        ToolParamKind.Key => NoteNames.Of(v),
         _ => v.ToString(),
     };
 
@@ -543,7 +544,7 @@ public partial class MainWindow
         if (PianoTrack() is not { } t || store == null || store.ReadOnly) return;
         string id = t.Track.Id;
         string now = t.Track.KeyNames?.GetValueOrDefault(pitch) ?? "";
-        AskName(pianoRoll, null, Loc.T("tool.keyName", MidiNote.Name(pitch)), now, Loc.T("folder.rename.ok"), name =>
+        AskName(pianoRoll, null, Loc.T("tool.keyName", NoteNames.Of(pitch)), now, Loc.T("folder.rename.ok"), name =>
             _ = EditTimeline(p =>
             {
                 var track = p.Tracks.Find(x => x.Id == id);
@@ -556,22 +557,72 @@ public partial class MainWindow
             }, "midi-key-name"));
     }
 
-    readonly int[] chordKeys = new int[16];
     readonly LiveNote[] chordHeld = new LiveNote[16];
+    /// <summary>The keys sounding, lowest first, reused on every read; the last set read and the name it gave, so the
+    /// same keys held are not read (and their name built) again on every tick.</summary>
+    readonly List<int> chordKeys = new(16);
+    readonly List<int> chordLastKeys = new(16);
+    string chordLastName = "";
 
-    /// <summary>The chord being played or, with no keys down, the one selected.</summary>
+    /// <summary>Reads the chord only while the piano roll is on screen: started and stopped as its host shows and hides.</summary>
+    void FollowChordTimer(DispatcherTimer timer)
+    {
+        if (pianoHost.IsVisible) timer.Start();
+        pianoHost.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != IsVisibleProperty) return;
+            if (pianoHost.IsVisible) { timer.Start(); ReadChord(); }
+            else timer.Stop();
+        };
+    }
+
+    /// <summary>The chord being played or, with no keys down, the one selected. Allocates nothing while the keys stay the same.</summary>
     void ReadChord()
     {
         if (!PianoShown) return;
         string name = "";
-        int count = (PianoTrack() ?? sel)?.Keys.Sounding(chordHeld) ?? 0;
+        int count = (ChordTrack() ?? sel)?.Keys.Sounding(chordHeld) ?? 0;
         if (count >= 2)
         {
-            for (int i = 0; i < count; i++) chordKeys[i] = chordHeld[i].Sounds;
-            if (Chords.Read(chordKeys.Take(count).Order().ToList()) is { } read) name = PianoRollView.ChordLabel(read.Root[0], read.Kind);
+            chordKeys.Clear();
+            for (int i = 0; i < count; i++) chordKeys.Add(chordHeld[i].Sounds);
+            chordKeys.Sort();
+            if (!SameKeys(chordKeys, chordLastKeys))
+            {
+                chordLastKeys.Clear();
+                chordLastKeys.AddRange(chordKeys);
+                chordLastName = Chords.Read(chordKeys) is { } read ? PianoRollView.ChordLabel(read.Root[0], read.Kind) : "";
+            }
+            name = chordLastName;
         }
         if (name.Length == 0) name = pianoRoll.SelectedChord;
         if (pianoChordLabel.Text != name) pianoChordLabel.Text = name;
+    }
+
+    static bool SameKeys(List<int> a, List<int> b)
+    {
+        if (a.Count != b.Count) return false;
+        for (int i = 0; i < a.Count; i++)
+            if (a[i] != b[i]) return false;
+        return true;
+    }
+
+    /// <summary>The track of the clip on the roll, as <see cref="PianoTrack"/>, without LINQ: it runs on every chord read.</summary>
+    LiveTrack? ChordTrack()
+    {
+        if (store == null || pianoClipId == null) return null;
+        foreach (var t in store.Project.Tracks)
+        {
+            if (t.MidiClips == null) continue;
+            foreach (var c in t.MidiClips)
+            {
+                if (c.Id != pianoClipId) continue;
+                foreach (var live in tracks)
+                    if (live.Track.Id == t.Id) return live;
+                return null;
+            }
+        }
+        return null;
     }
 
     // --- files -----------------------------------------------------------------------------------------

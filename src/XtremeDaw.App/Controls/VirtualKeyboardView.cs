@@ -23,8 +23,6 @@ public sealed class VirtualKeyboardView : Control
     static readonly int[] WhiteAt = [0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6];
     /// <summary>The computer's keys as this layout names them, by scan code, read once each.</summary>
     static readonly Dictionary<int, string> Letters = [];
-    /// <summary>"C4" and so on, by octave counted from pitch 0.</summary>
-    static readonly string[] OctaveNames = [.. Enumerable.Range(0, 11).Select(o => "C" + (o - 1))];
     const double BlackWidth = 0.62, BlackHeight = 0.6, Gap = 1;
     const int TopPitch = 127;
     /// <summary>How much a notch of the wheel scales it.</summary>
@@ -185,7 +183,9 @@ public sealed class VirtualKeyboardView : Control
             ctx.FillRectangle(on ? Palette.Accent : outside ? Palette.Raised : Palette.Dim, new Rect(x, 0, Math.Max(1, w - Gap), h), 3);
             if (!on && scale != null && scale.IsRoot(k - transpose)) ctx.FillRectangle(Palette.Accent, new Rect(x, h - RootMarkH, Math.Max(1, w - Gap), RootMarkH), 1);
             var ink = on ? Palette.AccentFg : outside ? Palette.Faint : Palette.App;
-            if (k % 12 == 0 && w >= OctaveNameWidth) ctx.DrawText(Palette.Text(OctaveNames[k / 12], 10.5, ink), new Point(x + 4, h - 16));
+            // "Do4" / "C4", only where it fits whole on the key
+            if (k % 12 == 0 && w >= OctaveNameWidth && Palette.Text(NoteNames.Octave(k / 12 - 1), 10.5, ink) is var octave && octave.Width + 6 <= w)
+                ctx.DrawText(octave, new Point(x + 4, h - 16));
             if (w >= LetterWidth && LetterOf(k) is { Length: > 0 } letter) DrawLetter(ctx, letter, x + (w - Gap) / 2, h - 36, on);
         }
         double bw = w * BlackWidth;

@@ -232,7 +232,7 @@ public partial class MainWindow
         // the title with some presence, as the mixer's, and its ON beside it (the ON and the box's edge tell its state)
         var head = new StackPanel { Orientation = Orientation.Horizontal, Height = MasterHeadH, Margin = new Thickness(0, 0, 0, BoxGap) };
         head.Children.Add(BoxTitle(Loc.T("master.title")));
-        var on = OnChip(() => MasterSet.On, () => MasterEdit(m => m.On = !m.On, "on"), Loc.T("master.on.tip"));
+        var on = OnChip(() => MasterSet.On, () => MasterEdit(m => m.On = !m.On, "on"));
         on.IsEnabled = editable;
         on.Margin = new Thickness(10, 0, 0, 0);
         on.VerticalAlignment = VerticalAlignment.Center;
@@ -442,7 +442,7 @@ public partial class MainWindow
     Border StagePanel(string icon, string title, string tip, Func<bool> on, Action toggle, Control content)
     {
         var head = StageHead(icon, title, tip, on);
-        var chip = OnChip(on, toggle, tip);
+        var chip = OnChip(on, toggle);
         chip.IsEnabled = store is { ReadOnly: false };
         chip.Margin = new Thickness(12, 0, 0, 0);
         Grid.SetColumn(chip, 2); head.Children.Add(chip);
@@ -488,13 +488,11 @@ public partial class MainWindow
         };
     }
 
-    /// <summary>An ON chip, lit while <paramref name="on"/>.</summary>
-    Button OnChip(Func<bool> on, Action click, string tip)
+    /// <summary>The ON / OFF of the master or a stage: the effects' one <see cref="PowerButton"/>, its tooltip following the state.</summary>
+    PowerButton OnChip(Func<bool> on, Action click)
     {
-        var b = new Button { Classes = { "chip" }, Focusable = false, Content = "ON", Height = 26, MinHeight = 26, Padding = new Thickness(10, 0), FontSize = 11 };
-        ToolTip.SetTip(b, tip);
-        b.Click += (_, _) => click();
-        masterRefresh.Add(() => b.Classes.Set("on", on()));
+        var b = new PowerButton(on, click);
+        masterRefresh.Add(b.Refresh);
         return b;
     }
 
@@ -559,7 +557,7 @@ public partial class MainWindow
         bool on() => o.Slot(id)?.On == true;
         string title = SlotTitle(SlotName(kind), nth);
         var head = StageHead(kind, title, title, on);
-        var chip = OnChip(on, () => SlotEdit(o, id, s => s.On = !s.On, "on"), Loc.T("mix.list.on"));
+        var chip = OnChip(on, () => SlotEdit(o, id, s => s.On = !s.On, "on"));
         var menu = SlotMenuButton(o, id);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(12, 0, 0, 0), Children = { chip, menu } };
         Grid.SetColumn(actions, 2); head.Children.Add(actions);

@@ -151,7 +151,7 @@ public partial class MainWindow
         if (chord != null)
         {
             string id = chord.Id;
-            list.Add(new MenuItem { Header = chord.Name, IsEnabled = false, FontSize = 11 });
+            list.Add(new MenuItem { Header = NoteNames.Chord(chord.Name), IsEnabled = false, FontSize = 11 });
             list.Add(MenuAction(Loc.T("marker.go"), () => { engine.Seek(chord.Sec); return Task.CompletedTask; }));
             list.Add(MenuAction(Loc.T("marker.rename") + "…", () =>
             {

@@ -103,6 +103,18 @@ static class Palette
         return pens.TryGetValue(k, out var p) ? p : Store(pens, k, new ImmutablePen(b.ToImmutable(), w, null, cap, join));
     }
 
+    static readonly Dictionary<(Color, double, double), IPen> dashedPens = [];
+    /// <summary>The drag outlines' dash (a clip's ghost, a row's drop hole): 4 on, 3 off, in pen widths.</summary>
+    static readonly ImmutableDashStyle DragDash = new([4, 3], 0);
+
+    /// <summary>A dashed pen (<see cref="DragDash"/>) frozen to the brush's current color, cached like <see cref="Pen(IBrush, double, PenLineCap, PenLineJoin)"/>.</summary>
+    public static IPen Dashed(IBrush b, double w)
+    {
+        if (b is not ISolidColorBrush s) return new ImmutablePen(b.ToImmutable(), w, DragDash);
+        var k = (s.Color, s.Opacity, w);
+        return dashedPens.TryGetValue(k, out var p) ? p : Store(dashedPens, k, new ImmutablePen(b.ToImmutable(), w, DragDash));
+    }
+
     /// <summary>Laid-out texts by content and style. The drawn controls repaint every frame while audio runs, and laying
     /// the same labels out again each time churned ~20 MB/s: enough GCs to stall the audio callback. A
     /// <see cref="TextLayout"/>, unlike a FormattedText (which formats its lines again on every draw), is laid out once.

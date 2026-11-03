@@ -204,10 +204,60 @@ public partial class MainWindow
 
     static string TransportBars(double sec, double bpm)
     {
-        long n = (long)Math.Floor(Math.Max(0, sec) * bpm / 15 + 1e-6);
+        long n = BarsKey(sec, bpm);
         return $"{n / 16 + 1}.{n % 16 / 4 + 1}.{n % 4 + 1}";
     }
     static string TransportTime(double sec) => $"{(long)(Math.Max(0, sec) / 60):00}:{Math.Max(0, sec) % 60:00.0}";
+
+    /// <summary>The sixteenth <see cref="TransportBars"/> shows: its text is a function of this number alone.</summary>
+    static long BarsKey(double sec, double bpm) => (long)Math.Floor(Math.Max(0, sec) * bpm / 15 + 1e-6);
+
+    /// <summary>What <see cref="TransportTime"/> shows as one number: its minutes and its rounded tenth of a second.</summary>
+    static long TimeKey(double sec)
+    {
+        sec = Math.Max(0, sec);
+        return (long)(sec / 60) * 1000 + (long)Math.Round(sec % 60 * 10, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>
+    /// The numbers the clock, its total and its tooltip were last built from (<see cref="BarsKey"/> or <see cref="TimeKey"/>):
+    /// <see cref="RefreshTransport"/> runs every tick and rebuilds a text only when its number changes. -1 = rebuild.
+    /// </summary>
+    long clockShown = -1, clockTotalShown = -1, clockTipShown = -1;
+    /// <summary>Whether those texts are in bars: switching the ruler rebuilds them all.</summary>
+    bool? clockBarsShown;
+    /// <summary>
+    /// <see cref="RecordSignature"/> when the record button was last set up: its targets are lists and its tooltip a
+    /// join, so they are rebuilt only when the signature changes (or <see cref="recTip"/> was cleared).
+    /// </summary>
+    int recordSignatureShown;
+
+    /// <summary>
+    /// A hash of everything <see cref="RecordTargets"/>, <see cref="MidiRecordTargets"/> and the record tooltip read:
+    /// the armed ids, the selected track and each track's id, name, clips, kind and lock. Allocates nothing.
+    /// </summary>
+    int RecordSignature()
+    {
+        var h = new HashCode();
+        h.Add(store);
+        if (store == null) return h.ToHashCode();
+        var ids = armedIds;
+        h.Add(ids);
+        h.Add(ids?.Count ?? -1);
+        h.Add(sel?.Track.Id);
+        var list = store.Project.Tracks;
+        for (int i = 0; i < list.Count; i++)
+        {
+            var t = list[i];
+            h.Add(t.Id);
+            h.Add(t.Name);
+            h.Add(t.Clips.Count);
+            h.Add(t.IsMidi);
+            h.Add(t.Locked);
+            h.Add(ids != null && ids.Contains(t.Id));
+        }
+        return h.ToHashCode();
+    }
 
     // under the input meter, small: the format without the driver ("Focusrite USB ASIO · 48 kHz · …"), which goes to the tooltip
     void ShowAudioStatus()
@@ -231,13 +281,34 @@ public partial class MainWindow
     void RefreshTransport(double pos)
     {
         bool bars = Timeline.RulerInBars;
-        TimeText.Text = bars ? TransportBars(pos, engine.Bpm) : TransportTime(pos);
+        double bpm = engine.Bpm;
+        if (bars != clockBarsShown)
+        {
+            clockBarsShown = bars;
+            clockShown = clockTotalShown = clockTipShown = -1;
+        }
+        long now = bars ? BarsKey(pos, bpm) : TimeKey(pos);
+        if (now != clockShown)
+        {
+            clockShown = now;
+            TimeText.Text = bars ? TransportBars(pos, bpm) : TransportTime(pos);
+        }
         // while recording the total is the take so far, like the web
         double total = RecordingBusy ? pos : engine.LengthSec;
-        BarText.Text = "/ " + (bars ? TransportBars(total, engine.Bpm) : TransportTime(total));
-        string tip = bars ? Loc.T("transport.clock.bars.tip", TransportTime(pos))
-            : Loc.T("transport.clock.time.tip", TransportBars(pos, engine.Bpm));
-        if (tip != clockTip) { clockTip = tip; ToolTip.SetTip(ClockButton, tip); }
+        long end = bars ? BarsKey(total, bpm) : TimeKey(total);
+        if (end != clockTotalShown)
+        {
+            clockTotalShown = end;
+            BarText.Text = "/ " + (bars ? TransportBars(total, bpm) : TransportTime(total));
+        }
+        long tipKey = bars ? TimeKey(pos) : BarsKey(pos, bpm);
+        if (tipKey != clockTipShown)
+        {
+            clockTipShown = tipKey;
+            string tip = bars ? Loc.T("transport.clock.bars.tip", TransportTime(pos))
+                : Loc.T("transport.clock.time.tip", TransportBars(pos, bpm));
+            if (tip != clockTip) { clockTip = tip; ToolTip.SetTip(ClockButton, tip); }
+        }
         if (transportPlaying != engine.Playing)
         {
             transportPlaying = engine.Playing;
@@ -253,6 +324,9 @@ public partial class MainWindow
         ShowArm();
         ShowMidiListeners();
         UpdateVirtualLive();
+        int signature = RecordSignature();
+        if (signature == recordSignatureShown && recTip != null) return;
+        recordSignatureShown = signature;
         var targets = RecordTargets();
         // armed MIDI tracks record the keyboard's notes; a MIDI clip already there stays (the new one goes on top)
         targets.AddRange(MidiRecordTargets());

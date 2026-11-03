@@ -335,7 +335,7 @@ public partial class MainWindow
     {
         p.Sustain.IsChecked = virtualKeys.Sustain;
         p.SustainState.Text = Loc.T(virtualKeys.Sustain ? "vkeys.sustain.on" : "vkeys.sustain.off");
-        p.Octave.Text = $"C{virtualKeys.Octave}";
+        p.Octave.Text = NoteNames.Octave(virtualKeys.Octave);
         p.Velocity.Value = virtualKeys.Velocity;
         p.Transpose.Value = virtualKeys.Transpose;
         p.Range.Value = virtualRange;

@@ -70,8 +70,7 @@ public sealed class Fader : Control
 
     public static double ToPos(double v) => Math.Sqrt(Math.Max(0, v) / VolMax);
     public static double ToVol(double p) => Math.Round(VolMax * Math.Pow(Math.Clamp(p, 0, 1), 2) * 100) / 100;
-    /// <summary>"−∞" below -66 dB, otherwise one decimal (Mixer.tsx fmtDb).</summary>
-    public static string Db(double v) => v <= 0.0005 ? "−∞" : $"{20 * Math.Log10(v):0.0}";
+    // its readout in dB is ValueFormat.Db / DbShort, shared with every other volume in the window
 
     public double Value
     {

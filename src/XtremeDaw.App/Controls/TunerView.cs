@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using XtremeDaw.Audio.Dsp;
 
 namespace XtremeDaw.App.Controls;
@@ -27,8 +28,6 @@ public sealed class TunerView : Control
     /// <summary>Blinks per second of the turn arrow just outside the tolerance and at 50 cents off (or more).</summary>
     const double SlowBlinkHz = 1.5, FastBlinkHz = 8;
 
-    static string[]? noteNames;
-
     int midi = -1;
     double cents, hz;
     int hold;
@@ -47,8 +46,7 @@ public sealed class TunerView : Control
     public bool InTune => shown.InTune;
 
     /// <summary>The note's name in the UI language ("Sol#", "G#"), by pitch class 0 = Do / C.</summary>
-    public static string NoteName(int pitchClass) =>
-        (noteNames ??= [.. Enumerable.Range(0, 12).Select(i => Loc.T($"note.{i}"))])[pitchClass];
+    public static string NoteName(int pitchClass) => NoteNames.Class(pitchClass);
 
     /// <summary>Takes the latest reading (null = no clear note) from the UI tick.</summary>
     public void Push(TunerReading? r)
@@ -103,7 +101,7 @@ public sealed class TunerView : Control
         var note = Palette.Text(on ? NoteName(reading.PitchClass) : "—", 34, noteBrush, Palette.UiBold);
         double nx = (w - note.Width) / 2;
         ctx.DrawText(note, new Point(nx, 0));
-        if (on) ctx.DrawText(Palette.Text($"{reading.Octave}", 12, Palette.Dim, Palette.Mono), new Point(nx + note.Width + 2, 26));
+        if (on) ctx.DrawText(Palette.Text(OctaveText(reading.Octave), 12, Palette.Dim, Palette.Mono), new Point(nx + note.Width + 2, 26));
 
         // which way to turn: ▶ at the left when flat (tune up), ◀ at the right when sharp (tune down)
         const double ay = 22, ax = 40;
@@ -133,7 +131,7 @@ public sealed class TunerView : Control
             ctx.DrawRectangle(inTune ? Palette.InTune : Palette.Fg, null, new Rect(x - 2, y - 12, 4, 24), 2, 2);
         }
 
-        var left = Palette.Text(on ? $"{cents:+0;-0;0} c" : Loc.T("tuner.play"), 11, Palette.Dim, on ? Palette.Mono : Palette.Ui);
+        var left = Palette.Text(on ? CentsText(cents) : Loc.T("tuner.play"), 11, Palette.Dim, on ? Palette.Mono : Palette.Ui);
         ctx.DrawText(left, new Point(x0, h - left.Height));
         if (!on) return;
         if (inTune)
@@ -141,9 +139,47 @@ public sealed class TunerView : Control
             var ok = Palette.Text(Loc.T("tuner.ok"), 13, Palette.InTune, Palette.UiBold);
             ctx.DrawText(ok, new Point((w - ok.Width) / 2, h - ok.Height));
         }
-        var right = Palette.Text($"{hz:0.0} Hz", 11, Palette.Dim, Palette.Mono);
+        var right = HzText();
         ctx.DrawText(right, new Point(x1 - right.Width, h - right.Height));
     }
 
     static readonly int[] Ticks = [-50, -25, 0, 25, 50];
+
+    /// <summary>
+    /// The cents readout from −50 to +50, made once: a string per redraw would be garbage, and fed to
+    /// <see cref="Palette.Text"/> a bounded set of strings keeps its cache from filling.
+    /// </summary>
+    static readonly string[] CentsTexts = [.. Enumerable.Range(-50, 101).Select(c => $"{c:+0;-0;0} c")];
+
+    /// <summary>The octave numbers a MIDI note can have (−1 … 10), made once like <see cref="CentsTexts"/>.</summary>
+    static readonly string[] OctaveTexts = [.. Enumerable.Range(-1, 12).Select(o => $"{o}")];
+
+    static string CentsText(double c)
+    {
+        // the format rounds half away from zero, and a value that rounds to 0 takes the "0" section
+        double r = Math.Round(c, MidpointRounding.AwayFromZero);
+        return r is >= -50 and <= 50 ? CentsTexts[(int)r + 50] : $"{c:+0;-0;0} c";
+    }
+
+    static string OctaveText(int o) => o is >= -1 and <= 10 ? OctaveTexts[o + 1] : $"{o}";
+
+    /// <summary>
+    /// The frequency's layout, in tenths of Hz, and the brush it was made with: it changes with every reading, so it is
+    /// kept here and rebuilt only when the shown tenth changes, instead of filling <see cref="Palette.Text"/>'s cache.
+    /// </summary>
+    TextLayout? hzLayout;
+    long hzTenths = long.MinValue;
+    IBrush? hzBrush;
+
+    TextLayout HzText()
+    {
+        long tenths = (long)Math.Round(hz * 10, MidpointRounding.AwayFromZero);
+        if (hzLayout == null || tenths != hzTenths || hzBrush != Palette.Dim)
+        {
+            hzTenths = tenths;
+            hzBrush = Palette.Dim;
+            hzLayout = new TextLayout($"{hz:0.0} Hz", Palette.Mono, 11, Palette.Dim);
+        }
+        return hzLayout;
+    }
 }

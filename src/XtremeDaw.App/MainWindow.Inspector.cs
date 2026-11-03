@@ -165,7 +165,9 @@ public partial class MainWindow
 
     static string LifeLabel(double v) => Loc.T(v < .2 ? "insp.life.0" : v < .45 ? "insp.life.1" : v < .7 ? "insp.life.2" : v < .9 ? "insp.life.3" : "insp.life.4");
     static string AmountLabel(double a) => Loc.T(a < .2 ? "insp.amount.0" : a < .45 ? "insp.amount.1" : a < .7 ? "insp.amount.2" : a < .9 ? "insp.amount.3" : "insp.amount.4");
-    static string Db(double v) => $"{v:+0.0;-0.0;0.0} dB";
+    static string Db(double v) => ValueFormat.Gain(v);
+    /// <summary>The volume slider's step in fader position (0..1): about 0,1 dB around 0 dB, like a fader's wheel with Shift.</summary>
+    const double VolumeStep = 0.005;
     static string Ms(double v) => $"{v:+0.###############;-0.###############;0} ms";
     static string Sec(double v) => $"{v:0.00} s";
     static TextBlock Help(string text) => new() { Text = text, FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap };
@@ -214,23 +216,13 @@ public partial class MainWindow
         inspectorSections[title] = (content, action, header);
         sectionLooks[title] = (icon, on);
         header.Toggled += () => { SetSectionCollapsed(title, !IsCollapsed(title)); SaveCollapsedSections(); };
-        ToggleButton? powerButton = null;
+        PowerButton? powerButton = null;
         if (on != null && power != null)
         {
-            var toggle = powerButton = new ToggleButton { Classes = { "chip", "inspector-power" }, MinHeight = 24, Padding = new Thickness(6, 2), FontSize = 10.5, Margin = new Thickness(6, 0, 0, 0) };
-            toggle.IsCheckedChanged += (_, _) => { if (!syncing) power(toggle.IsChecked == true); };
-            refreshes.Add(() =>
-            {
-                toggle.IsChecked = on();
-                var powerLabel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-                powerLabel.Children.Add(new TextBlock { Classes = { "icon" }, Text = "\uE7E8", FontSize = 11, Foreground = on() ? Palette.App : Palette.Faint });
-                powerLabel.Children.Add(new TextBlock { Text = on() ? "ON" : "OFF", FontSize = 10.5, FontWeight = FontWeight.Bold, Foreground = on() ? Palette.App : Palette.Faint });
-                toggle.Content = powerLabel;
-                toggle.Classes.Set("lit", on());
-                toggle.Background = on() ? Palette.Accent : Brushes.Transparent;
-                toggle.Foreground = on() ? Palette.App : Palette.Faint;
-                ToolTip.SetTip(toggle, SendTitles.TryGetValue(title, out var send) ? Loc.T(on() ? "send.power.off" : "send.power.on", send) : Loc.T(on() ? "mix.list.off" : "mix.list.on"));
-            });
+            var toggle = powerButton = new PowerButton(on, () => { if (!syncing) power(!on()); },
+                lit => SendTitles.TryGetValue(title, out var send) ? Loc.T(lit ? "send.power.off" : "send.power.on", send) : Loc.T(lit ? "mix.list.off" : "mix.list.on"))
+                { Margin = new Thickness(6, 0, 0, 0) };
+            refreshes.Add(toggle.Refresh);
         }
         header.SetTrailing(action, powerButton);
         outer.Children.Add(header); outer.Children.Add(content);
@@ -239,8 +231,6 @@ public partial class MainWindow
         SetSectionCollapsed(title, IsCollapsed(title));
         return content;
     }
-    /// <summary>A send level as the gain it applies, so 100% reads 0,0 dB.</summary>
-    static string SendDb(double v) => v <= 0 ? "-∞ dB" : Db(20 * Math.Log10(v));
 
     InspectorSlider Slider(StackPanel host, string label, double min, double max, double step, double reset,
         Func<double> get, Action<double> set, Func<double, string> format, string? hint = null, Func<double>? maximum = null, List<Action>? refresh = null, Func<bool>? mixed = null)
@@ -334,10 +324,12 @@ public partial class MainWindow
             mute.Classes.Set("muted", muted);
             ToolTip.SetTip(mute, Loc.T(muted ? "insp.unmute.tip" : "insp.mute.tip"));
         });
-        var volumeSlider = Slider(mix, Loc.T("insp.volume"), 0, 1.5, 0.01, 1, () => PickLead.Channel.Volume, v => EditPicked(t => t.Channel.Volume = v, "volume"), v => $"{v * 100:0}%",
+        // the volume travels like the mixer's fader (its position, 0..1, the same as a volume lane's) and reads in dB
+        var volumeSlider = Slider(mix, Loc.T("insp.volume"), 0, 1, VolumeStep, Fader.ToPos(1), () => Fader.ToPos(PickLead.Channel.Volume),
+            p => EditPicked(t => t.Channel.Volume = Fader.ToVol(p), "volume"), p => ValueFormat.Db(Fader.ToVol(p)),
             mixed: () => PicksDiffer(t => t.Channel.Volume));
-        AutomateOn(volumeSlider, () => SingleTrack, AutoTarget.Volume, k => { syncing = true; volumeSlider.Set(Fader.ToVol(k), null); syncing = false; });
-        var panSlider = Slider(mix, Loc.T("insp.pan"), -1, 1, 0.05, 0, () => PickLead.Channel.Pan, v => EditPicked(t => t.Channel.Pan = Math.Abs(v) < 0.04 ? 0 : v, "pan"), v => v == 0 ? "C" : $"{(v < 0 ? "L" : "R")} {Math.Abs(v) * 100:0}",
+        AutomateOn(volumeSlider, () => SingleTrack, AutoTarget.Volume, k => { syncing = true; volumeSlider.Set(k, null); syncing = false; });
+        var panSlider = Slider(mix, Loc.T("insp.pan"), -1, 1, 0.05, 0, () => PickLead.Channel.Pan, v => EditPicked(t => t.Channel.Pan = Math.Abs(v) < 0.04 ? 0 : v, "pan"), ValueFormat.Pan,
             mixed: () => PicksDiffer(t => t.Channel.Pan));
         AutomateOn(panSlider, () => SingleTrack, AutoTarget.Pan, k => { syncing = true; panSlider.Set(k * 2 - 1, null); syncing = false; });
         // several tracks picked: the section's mute shows no state of its own, so this says how many are muted

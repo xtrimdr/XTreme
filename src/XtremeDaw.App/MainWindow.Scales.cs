@@ -34,7 +34,7 @@ public partial class MainWindow
 
     /// <summary>"Sol menor natural", or that there is none.</summary>
     string ScaleLabel() => virtualKeys.Scale is { } s
-        ? Loc.T("scale.current", TunerView.NoteName(s.Root), ScaleName(s.Kind.Id).ToLowerInvariant())
+        ? Loc.T("scale.current", NoteNames.Class(s.Root), ScaleName(s.Kind.Id).ToLowerInvariant())
         : Loc.T("scale.off");
 
     /// <summary>The project's scale reaches the piano roll and the keyboard, if it changed.</summary>
@@ -101,7 +101,7 @@ public partial class MainWindow
         for (int r = 0; r < 12; r++)
         {
             int picked = r;
-            var b = Choice(TunerView.NoteName(r), () => root == picked, () => { root = picked; id ??= lastScaleId; }, padding: 0);
+            var b = Choice(NoteNames.Class(r), () => root == picked, () => { root = picked; id ??= lastScaleId; }, padding: 0);
             b.HorizontalContentAlignment = HorizontalAlignment.Center;
             roots.Children.Add(b);
         }

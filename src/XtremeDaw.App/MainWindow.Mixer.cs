@@ -178,7 +178,6 @@ public partial class MainWindow
     static string BusPresetName(string kind, string label) => Loc.Or($"mix.{kind}.preset.{label}", label);
     static string BusPresetHint(string kind, string label, string hint) => Loc.Or($"mix.{kind}.preset.{label}.hint", hint);
 
-    static string FmtPan(double v) => Math.Abs(v) < 0.01 ? "C" : v < 0 ? $"L{Math.Round(-v * 100):0}" : $"R{Math.Round(v * 100):0}";
     static string FmtHz(double v) => v >= 1000 ? $"{v / 1000:0.0}k" : $"{Math.Round(v):0}";
 
     /// <summary>Knobs for wide ranges move on a log scale (0..1 knob position), like the web's logMap.</summary>
@@ -623,7 +622,7 @@ public partial class MainWindow
         if (!mixerView) return;
         // the mini timeline sits over the Mastering view too
         miniTimeline.Bpm = Timeline.Bpm;
-        miniTimeline.SetPlayhead(pos, tracks.Count == 0 ? 0 : tracks.Max(t => t.EndSec), RecordingBusy);
+        miniTimeline.SetPlayhead(pos, TracksEndSec(), RecordingBusy);
         masterShowL = Math.Max(outL, masterShowL * 0.82f); masterShowR = Math.Max(outR, masterShowR * 0.82f);
         double rmsL = Math.Sqrt(engine.OutRms.MeanSqL), rmsR = Math.Sqrt(engine.OutRms.MeanSqR);
         if (masteringView)
@@ -646,6 +645,29 @@ public partial class MainWindow
     }
 
     long rmsStamp;
+
+    /// <summary>
+    /// Where the last track ends (<see cref="LiveTrack.EndSec"/> of the longest; 0 without tracks), for the tick: by
+    /// index, because EndSec's LINQ over an IReadOnlyList allocates an enumerator per track.
+    /// </summary>
+    double TracksEndSec()
+    {
+        if (tracks.Count == 0) return 0;
+        double end = double.NegativeInfinity;
+        for (int i = 0; i < tracks.Count; i++)
+        {
+            var t = tracks[i];
+            var clips = t.Clips;
+            double clipsEnd = 0;
+            if (clips.Count > 0)
+            {
+                clipsEnd = double.NegativeInfinity;
+                for (int k = 0; k < clips.Count; k++) clipsEnd = Math.Max(clipsEnd, clips[k].ClipEndSec);
+            }
+            end = Math.Max(end, Math.Max(t.MidiEndSec, clipsEnd));
+        }
+        return end;
+    }
 
     /// <summary>
     /// Whether a track's strip shows one bar: every take it plays is mono (<see cref="MediaAudio.Mono"/>); with none, its
@@ -886,11 +908,19 @@ public partial class MainWindow
         var fader = new Fader();
         fader.Changed += v => EditTrack(t, x => x.Channel.Volume = v, "volume");
         var db = new TextBlock { Classes = { "mono" }, FontSize = 10, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
-        mx.Refresh.Add(() => { fader.Value = t.Channel.Volume; db.Text = $"{Fader.Db(t.Channel.Volume)} dB"; });
+        // the readout is a function of the volume alone: rebuilt only when it changes, since a lane moves it every tick
+        double dbShown = double.NaN;
+        void ShowDb(double v)
+        {
+            if (v == dbShown) return;
+            dbShown = v;
+            db.Text = ValueFormat.Db(v);
+        }
+        mx.Refresh.Add(() => { fader.Value = t.Channel.Volume; ShowDb(t.Channel.Volume); });
         AutomateOn(fader, () => t, AutoTarget.Volume, k =>
         {
             fader.Value = Fader.ToVol(k);
-            db.Text = $"{Fader.Db(Fader.ToVol(k))} dB";
+            ShowDb(Fader.ToVol(k));
         });
         var meter = new MixerMeter();
         var faders = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
@@ -1042,13 +1072,14 @@ public partial class MainWindow
 
         var pan = new HBar { Bipolar = true, ResetTo = 0, Margin = new Thickness(0, 4, 0, 6) };
         pan.Changed += setPan;
-        AutomateOn(pan, () => TrackOf(o), AutoTarget.Pan, k => pan.Value = k * 2 - 1);
+        // the readout comes from ValueFormat's tables: following a lane every tick allocates nothing
+        AutomateOn(pan, () => TrackOf(o), AutoTarget.Pan, k => { pan.Value = k * 2 - 1; pan.Readout = ValueFormat.PanShort(k * 2 - 1); });
         mx.Refresh.Add(() =>
         {
             double v = panOf();
             pan.Value = v;
-            pan.Readout = FmtPan(v);
-            ToolTip.SetTip(pan, Loc.T("tl.tip.pan", FmtPan(v)));
+            pan.Readout = ValueFormat.PanShort(v);
+            ToolTip.SetTip(pan, Loc.T("tl.tip.pan", ValueFormat.Pan(v)));
         });
         Grid.SetRow(pan, g.RowDefinitions.Count); g.RowDefinitions.Add(new RowDefinition(PanRowH, GridUnitType.Pixel)); g.Children.Add(pan);
 
@@ -1151,8 +1182,17 @@ public partial class MainWindow
             var bar = new HBar { ResetTo = 0 };
             bar.Changed += v => router.Edit((p, x) => ProjectBuses.SetSend(p, x, id, v, v > 0 ? true : null) != null, $"send.{id}.level");
             var power = ListPower(() => S().On && S().Level > 0, () => router.Edit((p, x) => ProjectBuses.SetSend(p, x, id, on: !S().On) != null, $"send.{id}.on"));
-            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Height = CompactRowH };
-            line.SizeChanged += (_, e) => power.IsVisible = e.NewSize.Width >= RowPowerW;
+            // a send taken before the fader says so after its bar, like the inspector's PRE chip, while the strip has room
+            var preTag = new TextBlock { Text = "PRE", Classes = { "mono" }, FontSize = 9, FontWeight = FontWeight.SemiBold, Foreground = Palette.Dim,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0), IsHitTestVisible = false };
+            bool preRoom = true;
+            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Height = CompactRowH };
+            line.SizeChanged += (_, e) =>
+            {
+                power.IsVisible = e.NewSize.Width >= RowPowerW;
+                preRoom = e.NewSize.Width >= RowNameW;
+                preTag.IsVisible = preRoom && S().Pre;
+            };
             // a right click: the send's menu (asked by the user, like an effect's)
             line.Background = Brushes.Transparent;
             line.PointerReleased += (_, e) =>
@@ -1163,19 +1203,31 @@ public partial class MainWindow
             };
             line.Children.Add(power);
             Grid.SetColumn(bar, 1); line.Children.Add(bar);
+            Grid.SetColumn(preTag, 2); line.Children.Add(preTag);
+            // the readout's whole percent: a lane moves the bar every tick, the text changes only with this
+            double percentShown = double.NaN;
+            void ShowPercent(double level)
+            {
+                double p = Math.Round(level * 100, MidpointRounding.AwayFromZero);
+                if (p == percentShown) return;
+                percentShown = p;
+                bar.Readout = ValueFormat.Percent(level);
+            }
             if (router.Track != null) FollowLane(bar, () => router.Track, AutoTarget.Send(id), k =>
             {
                 bar.Value = k;
-                bar.Readout = $"{k * 100:0}";
+                ShowPercent(k);
             });
             mx.Refresh.Add(() =>
             {
-                var (level, on, _) = S();
+                var (level, on, pre) = S();
                 bar.Value = level;
                 bar.Lit = on;
                 bar.Label = BusById(id)?.Name ?? bus.Name;
-                bar.Readout = $"{level * 100:0}";
-                ToolTip.SetTip(bar, Loc.T("mix.list.send.tip", bar.Label, $"{level * 100:0}"));
+                ShowPercent(level);
+                preTag.IsVisible = preRoom && pre;
+                preTag.Foreground = on ? Palette.Dim : Palette.Faint;
+                ToolTip.SetTip(bar, $"{Loc.T("mix.list.send.tip", bar.Label, $"{level * 100:0}")} · {ValueFormat.Db(level)} · {Loc.T(pre ? "mix.list.send.pre" : "mix.list.send.post")}");
             });
             sends.Children.Add(line);
         }
@@ -1633,17 +1685,8 @@ public partial class MainWindow
     /// </summary>
     (Border Box, StackPanel Body) FxPanel(StackPanel host, string title, string icon, Func<bool> on, Action? toggle, Func<bool, string> tip, Control? extra = null)
     {
-        var glyph = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
-        var state = new TextBlock { FontSize = 10, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center };
-        // a hand over it, and off it lights up in the accent under the pointer (asked by the user, like the row's other
-        // buttons; class slotpower in App.axaml)
-        var power = new Button { Classes = { "chip", "slotpower" }, Height = 24, MinHeight = 24, Padding = new Thickness(6, 0), CornerRadius = new CornerRadius(4),
-            Cursor = new Cursor(StandardCursorType.Hand), Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { glyph, state } } };
-        power.Click += (_, _) => toggle?.Invoke();
-        bool hot = false;
-        void PaintPower() => glyph.Foreground = state.Foreground = on() ? Palette.App : hot ? Palette.Accent : Palette.Faint;
-        power.PointerEntered += (_, _) => { hot = true; PaintPower(); };
-        power.PointerExited += (_, _) => { hot = false; PaintPower(); };
+        // the effect's ON, the same everywhere (PowerButton); a panel without a toggle has none
+        var power = new PowerButton(on, () => toggle?.Invoke(), tip);
         power.IsVisible = toggle != null;
         var iconText = FxIcon.Create(icon, 12);
         iconText.VerticalAlignment = VerticalAlignment.Center; iconText.Margin = new Thickness(toggle == null ? 0 : 8, 0, 0, 0);
@@ -1663,7 +1706,7 @@ public partial class MainWindow
         box.SizeChanged += (_, e) =>
         {
             bool narrow = e.NewSize.Width < FxNarrowW;
-            state.IsVisible = !narrow;
+            power.ShowLabel = !narrow;
             iconText.IsVisible = !narrow;
             head.Margin = new Thickness(narrow ? 4 : 6, 0);
             name.Margin = new Thickness(narrow ? 4 : 6, 0, narrow ? 2 : 4, 0);
@@ -1671,12 +1714,7 @@ public partial class MainWindow
         mx.Refresh.Add(() =>
         {
             bool lit = on();
-            PaintPower();
-            state.Text = lit ? "ON" : "OFF";
-            power.Classes.Set("lit", lit);
-            power.Background = lit ? Palette.Accent : Brushes.Transparent;
-            power.BorderBrush = lit ? Palette.Accent : Palette.Line;
-            ToolTip.SetTip(power, tip(lit));
+            power.Refresh();
             FxIcon.SetColor(iconText, lit ? Palette.Accent : Palette.Faint);
             name.Foreground = lit ? Palette.Fg : Palette.Faint;
             body.Opacity = lit ? 1 : 0.4;

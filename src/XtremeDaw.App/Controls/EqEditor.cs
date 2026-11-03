@@ -19,10 +19,13 @@ public sealed class EqEditor : StackPanel
     int selected;
     bool filling;
     bool customPreset;
-    readonly ComboBox preset = new() { FontSize = 11, MinHeight = 26 };
-    readonly ComboBox type = new() { FontSize = 12, MinHeight = 28 };
-    readonly Button power = new() { Classes = { "chip" }, FontSize = 11 };
+    readonly SelectButton preset = new() { Height = 26, MinHeight = 26 };
+    readonly SelectButton type = new() { Height = 28, MinHeight = 28 };
+    readonly PowerButton power;
     readonly Button[] chips = new Button[TrackEq.BandCount];
+    /// <summary>The 12 and 24 dB/oct buttons of a cut, in <see cref="Slopes"/>' order.</summary>
+    readonly Button[] slopeButtons = new Button[Slopes.Length];
+    static readonly int[] Slopes = [12, 24];
     readonly EqGraph graph;
     readonly InspectorSlider freq, gain, q, dynThreshold, dynRange, dynAttack, dynRelease;
     readonly Button dynButton = new() { Classes = { "chip" }, FontSize = 11, Padding = new Thickness(8, 2), Focusable = false, HorizontalAlignment = HorizontalAlignment.Left };
@@ -54,8 +57,8 @@ public sealed class EqEditor : StackPanel
         graph = new EqGraph(height: big ? BigGraphH : 150);
         liveTimer.Tick += (_, _) => TickLive();
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
-        row.Children.Add(new TextBlock { Text = "Plantilla", Classes = { "dim" }, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
-        preset.ItemsSource = TrackEq.Presets.Select(p => p.Label).ToArray();
+        row.Children.Add(new TextBlock { Text = Loc.T("eq.preset"), Classes = { "dim" }, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+        preset.SetItems(TrackEq.Presets.Select(p => p.Label).ToArray());
         Grid.SetColumn(preset, 1); row.Children.Add(preset); Children.Add(row);
         if (!big)
         {
@@ -66,9 +69,9 @@ public sealed class EqEditor : StackPanel
             open.Click += (_, _) => BigRequested?.Invoke();
             Grid.SetColumn(open, 2); row.Children.Add(open);
         }
-        preset.SelectionChanged += (_, _) =>
+        preset.Selected += i =>
         {
-            int index = preset.SelectedIndex - (customPreset ? 1 : 0);
+            int index = i - (customPreset ? 1 : 0);
             if (filling || index < 0) return;
             Publish(FromPreset(index, eq));
         };
@@ -79,7 +82,7 @@ public sealed class EqEditor : StackPanel
         for (int i = 0; i < TrackEq.BandCount; i++)
         {
             int index = i;
-            var b = new Button { Content = (i + 1).ToString(), Classes = { "chip", "mono" }, FontSize = 11,
+            var b = new Button { Content = (i + 1).ToString(), Classes = { "chip", "eqband", "mono" }, FontSize = 11,
                 HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(0), MinHeight = 28 };
             b.Click += (_, _) => { selected = index; Set(eq); };
             b.DoubleTapped += (_, _) => Patch(index, x => x.On = !x.On);
@@ -87,12 +90,13 @@ public sealed class EqEditor : StackPanel
         }
         Children.Add(bands);
         var controls = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
-        type.ItemsSource = Types.Select(t => TypeName(BiquadSpec.ParseType(t))).ToArray();
-        type.SelectionChanged += (_, _) => { if (!filling && type.SelectedIndex >= 0) Patch(selected, b => { b.Type = Types[type.SelectedIndex]; b.On = true; }); };
+        type.SetItems(Types.Select(t => TypeName(BiquadSpec.ParseType(t))).ToArray());
+        type.Selected += i => { if (!filling && i >= 0) Patch(selected, b => { b.Type = Types[i]; b.On = true; }); };
         controls.Children.Add(type);
-        power.Click += (_, _) => Patch(selected, b => b.On = !b.On);
+        power = new PowerButton(() => eq.Bands.Count > selected && eq.Bands[selected].On, () => Patch(selected, b => b.On = !b.On),
+            on => Loc.T(on ? "eq.band.off" : "eq.band.on")) { Height = 28, MinHeight = 28, Margin = new Thickness(4, 0) };
         Grid.SetColumn(power, 1); controls.Children.Add(power);
-        var reset = new Button { Content = "Reset", Classes = { "chip" }, FontSize = 11 };
+        var reset = new Button { Content = Loc.T("eq.reset"), Classes = { "chip" }, FontSize = 11 };
         ToolTip.SetTip(reset, Loc.T("eq.reset.tip"));
         reset.Click += (_, _) => Patch(selected, b =>
         {
@@ -102,15 +106,17 @@ public sealed class EqEditor : StackPanel
         freq = new InspectorSlider(Loc.T("eq.freq"), 0, 1000, 1, 0, p => $"{TrackEq.FmtHz(FromPos(p))} Hz",
             p => Patch(selected, b => { b.Freq = FromPos(p); b.On = true; }));
         gain = new InspectorSlider(Loc.T("eq.gain"), -18, 18, 0.1, 0, v => $"{v:+0.0;-0.0;0.0} dB", v => Patch(selected, b => { b.Gain = v; b.On = true; }));
-        q = new InspectorSlider("Ancho (Q)", 0.3, 12, 0.05, 1, v => $"{v:0.00}", v => Patch(selected, b => { b.Q = v; b.On = true; }),
+        q = new InspectorSlider(Loc.T("eq.q"), 0.3, 12, 0.05, 1, v => $"{v:0.00}", v => Patch(selected, b => { b.Q = v; b.On = true; }),
             Loc.T("eq.q.tip"));
         Children.Add(freq); Children.Add(gain); Children.Add(q);
-        slope.Children.Add(new TextBlock { Text = "Pendiente", Classes = { "dim" }, VerticalAlignment = VerticalAlignment.Center });
-        foreach (int s in new[] { 12, 24 })
+        slope.Children.Add(new TextBlock { Text = Loc.T("eq.slope"), Classes = { "dim" }, VerticalAlignment = VerticalAlignment.Center });
+        for (int k = 0; k < Slopes.Length; k++)
         {
+            int s = Slopes[k];
             var b = new Button { Content = $"{s} dB/oct", Classes = { "chip" }, FontSize = 11, Padding = new Thickness(5, 2) };
             ToolTip.SetTip(b, Loc.T(s == 12 ? "eq.cut.soft" : "eq.cut.firm"));
-            b.Click += (_, _) => Patch(selected, x => { x.Slope = s; x.On = true; }); slope.Children.Add(b);
+            b.Click += (_, _) => Patch(selected, x => { x.Slope = s; x.On = true; });
+            slopeButtons[k] = b; slope.Children.Add(b);
         }
         Children.Add(slope);
         ToolTip.SetTip(dynButton, Loc.T("eq.dyn.tip"));
@@ -191,17 +197,17 @@ public sealed class EqEditor : StackPanel
         var b = eq.Bands[selected];
         int p = PresetIndex(eq);
         customPreset = p < 0;
-        preset.ItemsSource = (customPreset ? new[] { Loc.T("mix.custom.m") } : Array.Empty<string>()).Concat(TrackEq.Presets.Select(x => Loc.Or("mix.eq." + x.Id, x.Label))).ToArray();
+        preset.SetItems((customPreset ? new[] { Loc.T("mix.custom.m") } : Array.Empty<string>()).Concat(TrackEq.Presets.Select(x => Loc.Or("mix.eq." + x.Id, x.Label))).ToArray());
         preset.SelectedIndex = customPreset ? 0 : p;
         ToolTip.SetTip(preset, p < 0 ? Loc.T("mix.eq.manual") : Loc.Or("mix.eq." + TrackEq.Presets[p].Id + ".hint", TrackEq.Presets[p].Hint));
         type.SelectedIndex = Array.IndexOf(Types, b.Type);
-        power.Content = b.On ? "ON" : "OFF";
-        ToolTip.SetTip(power, Loc.T(b.On ? "eq.band.off" : "eq.band.on"));
+        power.Refresh();
         for (int i = 0; i < chips.Length; i++)
         {
             var band = eq.Bands[i];
-            chips[i].Foreground = band.On ? Palette.Accent : Palette.Faint;
-            chips[i].BorderBrush = i == selected ? Palette.Fg : Palette.Line;
+            // classes, not colors from code: the hover would cover them (App.axaml's Button.chip.eqband)
+            chips[i].Classes.Set("on", band.On);
+            chips[i].Classes.Set("picked", i == selected);
             ToolTip.SetTip(chips[i], Loc.T("eq.chip.tip", TypeName(BiquadSpec.ParseType(band.Type)), TrackEq.FmtHz(band.Freq), band.On ? "" : Loc.T("eq.chip.off")));
         }
         freq.ResetValue = ToPos(EqSettings.Defaults()[selected].Freq);
@@ -212,7 +218,7 @@ public sealed class EqEditor : StackPanel
         dynButton.Classes.Set("on", b.Dyn && !cut);
         dynBox.IsVisible = b.Dyn && !cut;
         dynThreshold.Set(b.DynThreshold); dynRange.Set(b.DynRange); dynAttack.Set(b.DynAttackMs); dynRelease.Set(b.DynReleaseMs);
-        foreach (var child in slope.Children.OfType<Button>()) child.Foreground = Equals(child.Content, $"{b.Slope} dB/oct") ? Palette.Accent : Palette.Dim;
+        for (int k = 0; k < Slopes.Length; k++) slopeButtons[k].Classes.Set("on", Slopes[k] == b.Slope);
         graph.Set(eq, selected);
         filling = false;
     }

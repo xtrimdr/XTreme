@@ -116,12 +116,8 @@ public partial class MainWindow
     /// <summary>A position (0..1) as its parameter reads.</summary>
     string LaneValue(LiveTrack t, AutomationLane l, double k)
     {
-        if (l.Target == AutoTarget.Volume) return $"{Fader.Db(Fader.ToVol(k))} dB";
-        if (l.Target == AutoTarget.Pan)
-        {
-            double pan = k * 2 - 1;
-            return Math.Abs(pan) < 0.01 ? "C" : pan < 0 ? $"L{-pan * 100:0}" : $"R{pan * 100:0}";
-        }
+        if (l.Target == AutoTarget.Volume) return ValueFormat.Db(Fader.ToVol(k));
+        if (l.Target == AutoTarget.Pan) return ValueFormat.PanShort(k * 2 - 1);
         if (l.Target == AutoTarget.Mute) return Loc.T(k >= 0.5 ? "auto.mute.on" : "auto.mute.off");
         if (AutoTarget.SamplerOf(l.Target) is { } knob) return SamplerWindow.KnobText(knob, SamplerKnobs.Value(knob, k));
         if (Automations.FxParamOf(t.Channel.Slots, l.Target) is { } f)

@@ -369,7 +369,7 @@ public partial class MainWindow
         var fader = new Fader();
         fader.Changed += v => BusEdit(id, b => b.Volume = v, "volume");
         var db = new TextBlock { Classes = { "mono" }, FontSize = 10, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
-        mx.Refresh.Add(() => { fader.Value = B().Volume; db.Text = $"{Fader.Db(B().Volume)} dB"; });
+        mx.Refresh.Add(() => { fader.Value = B().Volume; db.Text = ValueFormat.Db(B().Volume); });
         var meter = new MixerMeter();
         var faders = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { fader, meter } };
 
@@ -627,8 +627,8 @@ public partial class MainWindow
             bar.Value = level;
             bar.Lit = on;
             bar.Opacity = mixed ? 0.6 : 1;
-            bar.Readout = mixed ? Loc.T("insp.mixed") : $"{level * 100:0}%";
-            ToolTip.SetTip(bar, mixed ? Loc.T("insp.mixed") : $"{Loc.T("mix.list.send.tip", bus.Name, $"{level * 100:0}")} · {SendDb(level)}");
+            bar.Readout = mixed ? Loc.T("insp.mixed") : ValueFormat.Percent(level);
+            ToolTip.SetTip(bar, mixed ? Loc.T("insp.mixed") : $"{Loc.T("mix.list.send.tip", bus.Name, $"{level * 100:0}")} · {ValueFormat.Db(level)}");
             pre.Content = mixedPre ? "–" : "PRE";
             if (mixedPre) ToolTip.SetTip(pre, Loc.T("insp.mixed"));
             FxIcon.SetColor(icon, lit ? Palette.Accent : Palette.Faint);
