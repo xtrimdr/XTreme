@@ -5,8 +5,38 @@
       "items": [
         {
           "icon": "E8C6",
+          "title": "Snap and grid with the same values",
+          "text": "The snap, the ruler and the piano roll share one list: Bar, 1/2 to 1/64, triplets (1/2T to 1/32T) and dotted values (1/2D to 1/16D), which start at each bar.",
+          "topic": "move-trim"
+        },
+        {
+          "icon": "E7C1",
+          "title": "Range, markers and chords",
+          "text": "The range and the markers each have their own strip, and each strip can be shown or hidden. Double-click the range strip to clear it. The chords strip shows even without chords: double-click it to write one, and drag to move or stretch them.",
+          "topic": "markers-loop"
+        },
+        {
+          "icon": "E792",
+          "title": "Save as",
+          "text": "Save a project in any folder with Save as or Save a copy, and open it from wherever it is with Open. The project file is now Name.xtp; older projects, WildTrack ones included, are converted when you open them.",
+          "topic": "save-as"
+        },
+        {
+          "icon": "E8EE",
+          "title": "Looped clips",
+          "text": "Drag the top right corner of a take, a MIDI clip or an automation block and it repeats up to where you let go. Each repeat carries the loop icon.",
+          "topic": "loop-clip"
+        },
+        {
+          "icon": "E70F",
+          "title": "Pencil and brush on the timeline",
+          "text": "Pick a clip, a pattern or a sample and place it with a click of the pencil, or repeat it along a stretch with the brush. A sample can also be dragged from the Library player. The mixer no longer squashes the faders when you make it smaller.",
+          "topic": "tools"
+        },
+        {
+          "icon": "E8C6",
           "title": "Tools on MIDI clips",
-          "text": "Split, Delete, Listen and Range now work on MIDI clips. Splitting doesn't change what sounds. Piano roll notes go through the track's effects.",
+          "text": "Split, Delete, Listen and Range now work on MIDI clips. Right-click and drag over clips to delete them, with any tool. Splitting doesn't change what sounds. Piano roll notes go through the track's effects.",
           "topic": "split-copy"
         },
         {
@@ -52,8 +82,14 @@
         {
           "icon": "F0E2",
           "title": "Several instruments in a pattern",
-          "text": "Add instruments to a pattern from the piano roll: each goes on its own track, and the others' notes show behind as ghost notes.",
+          "text": "Add instruments to a pattern from the piano roll: each goes on its own track, and the others' notes show behind as ghost notes. On the timeline, a line joins the clips that play together.",
           "topic": "patterns"
+        },
+        {
+          "icon": "EC4F",
+          "title": "Click-free loops in the Sampler",
+          "text": "Zoom the wave down to each sample with the wheel. Snap to zero leaves the flags where the wave crosses zero.",
+          "topic": "sampler"
         },
         {
           "icon": "EC4F",

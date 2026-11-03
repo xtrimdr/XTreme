@@ -45,13 +45,14 @@
           "id": "new-project",
           "icon": "E838",
           "title": "Create or open a project",
-          "keywords": "new manager projects template open folder start song",
+          "keywords": "new manager projects template open folder file xtp start song",
           "intro": "Each song is a project with its own folder. The app starts in **Projects**.",
           "steps": [
             "Click **New project** and give it a name.",
             "Choose **Video + audio** or **Audio only**.",
             "Choose a template, or start without tracks. Templates bring tracks, effects and the Reverb and Delay buses.",
-            "To open an existing one, click it in the list or use **Open folder…**."
+            "To open an existing one, click it in the list or use **Open…** and choose its **.xtp** file, wherever it is.",
+            "To save it somewhere other than the projects folder, click **Save in…** before creating it."
           ],
           "notes": [
             "To return to the list from an open project, click the project name in the top bar and choose **Projects…**."
@@ -259,7 +260,7 @@
             "To **trim** it, drag the lower handle on an edge.",
             "To **stretch** it without changing the pitch, hold **Ctrl** and drag that handle. The label shows the speed against the recording. The clip goes quiet until its sound is ready.",
             "To **fade**, drag the upper handle on an edge.",
-            "With the snap on, the clip's start lands on a grid line: **Line** uses the nearest visible one and **Cell** the start of the cell it falls in; both change with the zoom. To move it freely, hold **Alt** while dragging.",
+            "With the snap on, the clip's start lands on a grid line: **Auto** uses the nearest visible one and changes with the zoom; the fixed values go from **Bar** to **1/64**, with triplets (**T**) and dotted values (**D**), which start over at each bar. The ruler (right click) offers the same values for drawing the grid. To move it freely, hold **Alt** while dragging.",
             "To **copy** it, hold **Shift** and drag the clip: the original stays where it was."
           ],
           "notes": [
@@ -286,7 +287,25 @@
             "On a MIDI clip, a note across the cut stays in both pieces and keeps sounding as one.",
             "On a pattern, cut on the line between two passes to keep both pieces linked. Anywhere else, the right piece becomes a clip of its own."
           ],
-          "see": ["select-many", "tools", "move-trim"]
+          "see": ["select-many", "tools", "move-trim", "loop-clip"]
+        },
+        {
+          "id": "loop-clip",
+          "icon": "E8EE",
+          "title": "Loop a clip",
+          "keywords": "loop repeat extend passes garageband",
+          "intro": "Extends a clip by repeating it. Works on takes, MIDI clips and automation blocks.",
+          "steps": [
+            "Hover the clip's top right corner: the two-arrow pointer appears.",
+            "Drag to the right: the clip repeats up to where you let go, and the last pass is cut there.",
+            "Each repeat shows the loop icon.",
+            "To remove it, drag the corner back to the end of the first pass."
+          ],
+          "notes": [
+            "On a take, the repeats follow the original: move or trim it and they are made again. A repeat you edit by itself becomes a clip of its own.",
+            "On a MIDI clip or an automation block, whatever you edit in any pass changes them all."
+          ],
+          "see": ["split-copy", "move-trim", "automation"]
         },
         {
           "id": "select-many",
@@ -323,17 +342,20 @@
           "id": "tools",
           "icon": "E90F",
           "title": "Use the tools",
-          "keywords": "scissors eraser hand magnifier zoom cursor select",
+          "keywords": "scissors eraser hand magnifier zoom cursor select pencil brush draw paint",
           "intro": "They're in the center of the top bar and change what a click does on the tracks.",
           "steps": [
             "**Select** ({key:toolSelect}): the usual.",
+            "**Pencil** ({key:toolDraw}): click a clip to pick it and click an empty spot to place it; drag to position it.",
+            "**Brush** ({key:toolPaint}): like the pencil, but dragging repeats it along the stretch.",
             "**Range** ({key:toolRange}): marks a section.",
             "**Split** ({key:toolSplit}): one click cuts the clip.",
-            "**Erase** ({key:toolErase}): removes what it touches.",
+            "**Erase** ({key:toolErase}): removes what it touches. With any tool, right-click and drag over clips also removes them.",
             "**Listen** ({key:toolListen}): hold down on a clip to hear that track alone.",
             "**Zoom** ({key:toolZoom}) and **Hand** ({key:toolHand}): zoom in and move the view."
           ],
           "notes": [
+            "A click on a pattern in Patterns or on a sample in the Library also picks it for the pencil and the brush.",
             "Split, Delete and Listen work on takes and MIDI clips."
           ],
           "see": ["navigate"]
@@ -365,7 +387,7 @@
           "steps": [
             "Drag the file onto the timeline, or click **New track → Import audio…**.",
             "For your sound folders, open **Library → Samples** and add a folder.",
-            "Listen with **Space** and drag the sample onto a track.",
+            "Listen with **Space** and drag the sample onto a track, from the list or from the player: its name, or the wave pulled up or down.",
             "Choose **Copy to project** or **Link**. **Don't show again** keeps that choice; change it in **Settings → Save and export**."
           ],
           "notes": [
@@ -426,17 +448,18 @@
           "id": "markers-loop",
           "icon": "E7C1",
           "title": "Use markers and the loop",
-          "keywords": "repeat section chorus a-b range chapters youtube",
-          "intro": "Both live in the strip above the ruler.",
+          "keywords": "repeat section chorus a-b range chapters youtube chords strip",
+          "intro": "Above the ruler there are three strips: range, markers and chords.",
           "steps": [
-            "Add a marker at the playhead with {key:marker}, or double-click the strip.",
+            "Add a marker at the playhead with {key:marker}, or double-click the markers strip.",
             "Jump between markers with {key:prevMarker} and {key:nextMarker}.",
-            "Drag in the strip to mark the A–B range. The loop turns on.",
+            "Drag in the range strip to mark the A–B range. The loop turns on. Double-click that strip to clear it.",
             "Toggle the loop with {key:loop}. {key:loopIn} and {key:loopOut} set A and B at the playhead."
           ],
           "notes": [
-            "Right-click the strip → **Copy chapters for YouTube**.",
-            "Two buttons next to the tools show or hide the markers and chords strips."
+            "To write a chord, double-click the chords strip and type its name. Double-click a chord to rename it. Drag it to move it, or drag an edge to make it longer or shorter; with several marked, they move together.",
+            "Right-click the markers strip → **Copy chapters for YouTube**.",
+            "Three buttons next to the tools show or hide the range, markers and chords strips."
           ]
         },
         {
@@ -628,13 +651,14 @@
             "Right-click the control → **Automate…**, or the track's menu → **Automation**. In a plugin: click **Automate** in its window's bar and move the parameter.",
             "A lane appears under the track.",
             "Click adds a point, dragging moves it and double-click deletes it. Shift+drag draws.",
-            "Drag the circle in the middle of a segment to curve it."
+            "Drag the circle in the middle of a segment to curve it.",
+            "Drag a block's top right corner to loop it."
           ],
           "notes": [
             "With a lane on, moving that control by hand does nothing: the lane rules.",
             "**Automate** turns off by itself once the lane is made; another click cancels it. A bus's effects don't have it."
           ],
-          "see": ["clip-volume"]
+          "see": ["clip-volume", "loop-clip"]
         },
         {
           "id": "compare",
@@ -960,6 +984,8 @@
             "Drag the **S** and **E** flags to choose which part plays.",
             "Under **Mode**: **Note** sounds while the note lasts; **One shot** plays whole, for drum hits.",
             "Choose a **Loop** so it keeps sounding while the note lasts, and move it with the **L** flags.",
+            "To keep the loop from clicking, leave **Snap to zero** on: the flags land where the wave crosses zero. Alt leaves them free.",
+            "The wheel zooms the wave down to each sample. **Loop start** and **Loop end** go straight to each flag; a double-click shows it whole again.",
             "Drag the envelope's points, and try the **Filter** and the **LFO**."
           ],
           "notes": [
@@ -1054,11 +1080,11 @@
           "keywords": "loop rhythm drums link same clips fl studio instruments ghost notes",
           "intro": "Linked clips: editing one changes them all.",
           "steps": [
-            "Right-click a MIDI clip → **Create pattern**.",
-            "Duplicate or copy the clip: the copy stays linked.",
+            "Press **Create pattern** at the top of the piano roll, or right-click a MIDI clip → **Create pattern**.",
+            "Duplicate or copy the clip: the copy stays linked. Its clips carry the chain icon, and pointing at one marks them all.",
             "Stretch a clip by its right edge to repeat the loop.",
-            "**Several instruments**: in the piano roll, the instruments chip → **Add instrument**. Each one goes on its own track, with its own notes.",
-            "In that list, a click moves to another instrument and the eye shows or hides its ghost notes.",
+            "**Several instruments**: in the piano roll, **Add instrument**. Each one goes on its own track, with its own notes, and a line joins the clips that play together.",
+            "In the instruments chip, a click moves to another instrument and the eye shows or hides its ghost notes.",
             "**Make unique** takes a clip out of the pattern."
           ],
           "notes": [
@@ -1147,6 +1173,24 @@
           ],
           "settings": "save",
           "see": ["undo-versions"]
+        },
+        {
+          "id": "save-as",
+          "icon": "E792",
+          "title": "Save as or save a copy",
+          "keywords": "save as copy another folder usb drive location xtp file move",
+          "intro": "A project can be saved in any folder. Its file is **Name.xtp**, next to its media and exports folders.",
+          "steps": [
+            "In **Projects**, click the save button {icon:E792} on the row, or use {key:saveAs} with the project open.",
+            "Choose **Save as…** to keep working in the copy, or **Save a copy…** to stay in the original.",
+            "Choose the folder and the name. In an empty folder, the project goes right there; in any other, a folder with its name is created."
+          ],
+          "notes": [
+            "The original is left as it is. Exports and saved versions are not copied.",
+            "To open it later, double-click the .xtp or use **Open…** in Projects.",
+            "WildTrack projects open with **Open…** too: choose their **guitarcam.json** and it becomes a .xtp."
+          ],
+          "see": ["new-project", "share-project"]
         },
         {
           "id": "library",

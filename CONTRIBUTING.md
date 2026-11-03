@@ -36,7 +36,7 @@ La guía completa está en [AGENTS.md](AGENTS.md) (y, para la ventana, en [src/X
   `Assets/Lang/*.json`. Identificadores y comentarios del código, en inglés.
 - **Estilo**: escribí como el código que ya está (clases `sealed`, `<summary>` en cada clase, comentarios
   solo para el *por qué*).
-- **Formato del proyecto**: lo que se guarda en `xtreme_project.json` es compatible hacia atrás.
+- **Formato del proyecto**: lo que se guarda en el `.xtp` es compatible hacia atrás.
 - Sin dependencias nuevas de NuGet sin charlarlo antes.
 
 ### Licencia de tus aportes

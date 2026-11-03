@@ -14,8 +14,9 @@ lo que falta en [PENDIENTES.md](PENDIENTES.md); [HECHO.md](HECHO.md) es historia
 
 - **XTreme** (internamente "Xtreme DAW") es un **DAW** para grabar, mezclar y exportar que
   también hace **videos de guitarra**: tomas con cámara y audio, y un video con un panel por toma. El exe es
-  `XTreme.exe` y los ajustes van en `%APPDATA%\XTreme` (`AppFolder`). Dentro de cada proyecto el archivo es `xtreme_project.json`.
-  Los nombres anteriores de la app no se leen ni se migran (decisión del usuario, 2026-11-02).
+  `XTreme.exe` y los ajustes van en `%APPDATA%\XTreme` (`AppFolder`). El archivo del proyecto es `<Nombre>.xtp` (JSON por dentro, decisión del usuario, 2026-11-03), dentro de su carpeta; un `xtreme_project.json` se renombra solo al abrir (`ProjectStore.MatchFileToName`).
+  Los ajustes de los nombres anteriores de la app no se leen ni se migran (decisión del usuario, 2026-11-02); los
+  proyectos de WildTrack sí abren (`guitarcam.json`, formato `guitarcam-project`: pasan a `.xtp` al abrirlos; pedido del usuario, 2026-11-03).
 - **El foco manda.** Las funciones de DAW tienen que servir para el video y no complicar el camino de **"grabo,
   mezclo y exporto"**. Si algo nuevo agrega pasos o pantallas a ese camino, replantealo o preguntá.
 - **Las decisiones son del usuario.** Lo que describen estas guías lo eligió el usuario: no lo cambies sin preguntar,
@@ -123,7 +124,7 @@ perder las notas: antes de ponerlo en la pista y antes de exportar se prueba una
   ninguno, el usuario los suma (pedido del usuario, 2026-10-29; `ProjectBuses.Shown`, `ShowSend`); el timeline, el mixer y el inspector muestran solo esos. La versión 3 trajo esto: los campos de la 2
   (Reverb/Delay fijos, retornos, `reverbSend`…, el fader/M/S/slots de carpeta) se leen como `Old*` y se convierten al
   normalizar.
-- **Clip**: un pedazo de un media en una pista (`AtSec`, `TrimStartSec`, `TrimEndSec`, `GainDb`, `GainCurve`, encuadre). Al cambiar el tempo la ventana pregunta si se estiran los clips (`TempoDialog`, pedido del usuario); si sí, van todos (decisión del usuario, sin elegir cuáles, video incluido): `TempoFollow` multiplica por viejo/nuevo todos los tiempos del timeline (clips, automatización, marcadores, acordes, loop) y `Stretch` dice cuánto más largo suena su media; sus tiempos ya lo cuentan, lo que lee el media pasa por `MediaSec`. El sonido estirado es un render en `cache/` (`PitchShifter.Render`, `TransposeCache`) y mientras se hace el clip calla (decisión del usuario). "Detectar tempo" no estira: solo mueve la grilla (`SetGrid`). Un clip también se estira a mano (Ctrl+arrastrar un borde, `ClipEditMode.StretchStart/End`): escala sus tiempos con el mismo `Rescale`, así que un cambio de tempo después se multiplica encima. El deshacer guarda `ProjectSettings.TimeScale`, no el tempo. `TimeMap` detecta los ataques y hace que el render vaya a 1:1 alrededor de cada uno, para que no se corran: el estiramiento va entre ataques (pedido del usuario: loops de ritmo). `Pitch` son semitonos propios del clip, sumados al `Transpose` de la pista (`SemitonesOn`, pedido del usuario): van por el mismo render, sin cambiar el largo. Con `Reversed` suena al revés sin tocar el archivo: sus tiempos cuentan en el sentido en que se oye (`ClipEditing.Reverse`).
+- **Clip**: un pedazo de un media en una pista (`AtSec`, `TrimStartSec`, `TrimEndSec`, `GainDb`, `GainCurve`, encuadre). Al cambiar el tempo la ventana pregunta si se estiran los clips (`TempoDialog`, pedido del usuario); si sí, van todos (decisión del usuario, sin elegir cuáles, video incluido): `TempoFollow` multiplica por viejo/nuevo todos los tiempos del timeline (clips, automatización, marcadores, acordes, loop) y `Stretch` dice cuánto más largo suena su media; sus tiempos ya lo cuentan, lo que lee el media pasa por `MediaSec`. El sonido estirado es un render en `cache/` (`PitchShifter.Render`, `TransposeCache`) y mientras se hace el clip calla (decisión del usuario). "Detectar tempo" no estira: solo mueve la grilla (`SetGrid`). Un clip también se estira a mano (Ctrl+arrastrar un borde, `ClipEditMode.StretchStart/End`): escala sus tiempos con el mismo `Rescale`, así que un cambio de tempo después se multiplica encima. El deshacer guarda `ProjectSettings.TimeScale`, no el tempo. `TimeMap` detecta los ataques y hace que el render vaya a 1:1 alrededor de cada uno, para que no se corran: el estiramiento va entre ataques (pedido del usuario: loops de ritmo). `Pitch` son semitonos propios del clip, sumados al `Transpose` de la pista (`SemitonesOn`, pedido del usuario): van por el mismo render, sin cambiar el largo. Con `Reversed` suena al revés sin tocar el archivo: sus tiempos cuentan en el sentido en que se oye (`ClipEditing.Reverse`). **Bucle** (`ClipLoops`, pedido del usuario, como GarageBand): las vueltas de una toma son clips enteros con `LoopOf` = el original, así el motor no sabe de bucles; nunca se editan sueltas: `ClipLoops.Keep` (en `EditTimeline` y el inspector) las rehace cuando cambia el original. Un clip MIDI (`LoopBeats`) y un bloque de automatización (`LoopSec`) repiten su primera vuelta como un patrón.
 - **ChordMarker** (`Project.ChordMarkers`): un acorde detectado (`Sec`, `EndSec`, `Name`), aparte de `Project.Markers`
   (decisión del usuario: no se pisan con los marcadores y se borran juntos). Las ediciones pasan por `ProjectMarkers`.
 - **Sampler** (`Track.Sampler`, `SamplerSettings`, decisión del usuario, 2026-11-02: un sample por ahora): el instrumento nativo de una pista MIDI; nunca junto con `Track.Instrument`. Su sample es un `Media` más (`SamplerMedia`, cuenta como usado en `ProjectHistory.UsedMediaIds`) y lo demás son números en el proyecto, con su deshacer. En el motor (`Dsp/Sampler.cs`, `Dsp/SamplerSound.cs`): `SamplerPatch` y `SamplerSound` son inmutables y se reemplazan enteros, `Sampler` lleva las voces (preasignadas) y lo usan igual `LiveTrack` y `MixRenderer`. Cada voz depende solo del tiempo desde su nota y, por los carriles de sus perillas (`SamplerCurves`, `sampler:<perilla>`, `SamplerKnob`: se leen en los pasos de control de la voz, en el cuadro de la canción, no por `InsertAutomator`), del cuadro de la canción: cualquier tamaño de bloque da los mismos floats. El slide y el portamento son de la voz (`NoteEvent.Bend`, `NoteBend`), no el pitch bend del canal, y `NoteEvent.Pan` se suma al paneo del sampler. El sonido guarda niveles limitados en banda (`Levels`) para que subir el tono no genere aliasing. `SamplerRoot` saca la raíz del nombre o del sonido.
@@ -150,8 +151,8 @@ incompatible de formato → subí `Project.CurrentVersion` y migrá al abrir. ID
 ### Carpeta del proyecto y guardado
 
 ```
-xtreme_project.json      el proyecto
-xtreme_project.json.bak  el guardado anterior
+Nombre.xtp               el proyecto (sigue al nombre: `ProjectStore.FindFile`, `FilePath`)
+Nombre.xtp.bak           el guardado anterior
 xtreme_project.lock      mientras está abierto (una segunda ventana lo abre en solo lectura)
 historial/               copias para volver atrás
 media/                   grabaciones e importados
@@ -159,7 +160,8 @@ cache/                   lo que se rehace desde media/ (tomas transpuestas y est
 exports/
 ```
 
-- Todo guardado es **atómico**: temporal → forzado a disco → `File.Replace`. Nunca escribas `xtreme_project.json` directo.
+- Todo guardado es **atómico**: temporal → forzado a disco → `File.Replace`. Nunca escribas el `.xtp` directo.
+- Un proyecto puede vivir en cualquier carpeta: "Abrir…" toma un `.xtp`, "Guardar en…" ubica uno nuevo, y "Guardar como…" / "Guardar una copia…" (`ProjectLibrary.SaveAs`, decisión del usuario: las dos) lo copian a otra carpeta, armado en `.guardando-*` y publicado al final; una carpeta vacía pasa a ser la del proyecto, en otra se crea una con su nombre.
 - Toda edición pasa por `MarkDirty()` → `SaveSoon()`: cuándo se escribe lo elige el usuario (`SaveMode`, en
   Configuración → Guardado y exportación): 1,5 s después de cada edición (por defecto), cada X minutos o a mano (serializa en la UI,
   escribe en segundo plano, en orden). Ctrl+S y el diskette fuerzan; las tomas, las exportaciones y el cambiar de proyecto

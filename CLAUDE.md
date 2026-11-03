@@ -18,7 +18,7 @@ tools\probar.ps1 -NoAbrir "qué probar"
 # Después preguntale si lo abre ahora o lo deja en la lista. Si elige abrir: la última copia con la lista a la vista
 tools\probar.ps1 -Abrir
 
-# Qué falta probar y qué marcó el usuario como que no anda; un arreglo vuelve a por probar con su número
+# Qué falta probar y qué marcó el usuario como que no anda o anda mal; un arreglo vuelve a por probar con su número
 tools\probar.ps1 -Lista
 tools\probar.ps1 -NoAbrir -Arregla 12
 ```

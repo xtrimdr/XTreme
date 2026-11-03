@@ -5,8 +5,38 @@
       "items": [
         {
           "icon": "E8C6",
+          "title": "Imán y grilla con los mismos valores",
+          "text": "El imán, la regla y el piano roll usan la misma lista: Compás, 1/2 a 1/64, tresillos (1/2T a 1/32T) y puntillos (1/2D a 1/16D), que arrancan en cada compás.",
+          "topic": "move-trim"
+        },
+        {
+          "icon": "E7C1",
+          "title": "Rango, marcadores y acordes",
+          "text": "El rango y los marcadores tienen cada uno su franja, y cada franja se prende o se apaga sola. Doble clic en la del rango lo saca. La de acordes se muestra aunque no haya acordes: escribilos con doble clic, movelos y estiralos arrastrando.",
+          "topic": "markers-loop"
+        },
+        {
+          "icon": "E792",
+          "title": "Guardar como",
+          "text": "Guardá un proyecto en cualquier carpeta con Guardar como o Guardar una copia, y abrilo desde donde esté con Abrir. El archivo del proyecto ahora es Nombre.xtp; los proyectos anteriores, también los de WildTrack, se convierten solos al abrirlos.",
+          "topic": "save-as"
+        },
+        {
+          "icon": "E8EE",
+          "title": "Clips en bucle",
+          "text": "Arrastrá la esquina de arriba a la derecha de una toma, un clip MIDI o un bloque de automatización y se repite hasta donde soltás. Cada repetición lleva el ícono del bucle.",
+          "topic": "loop-clip"
+        },
+        {
+          "icon": "E70F",
+          "title": "Lápiz y pincel en el timeline",
+          "text": "Elegí un clip, un patrón o un sample y ponelo con un clic del lápiz, o repetilo a lo largo de un tramo con el pincel. Un sample también se arrastra desde el reproductor de la Biblioteca. El mixer ya no aplasta los faders cuando lo achicás.",
+          "topic": "tools"
+        },
+        {
+          "icon": "E8C6",
           "title": "Herramientas en clips MIDI",
-          "text": "Dividir, Borrar, Escuchar y el Rango ahora actúan sobre clips MIDI. Dividir no cambia lo que suena. Las notas del piano roll pasan por los efectos de la pista.",
+          "text": "Dividir, Borrar, Escuchar y el Rango ahora actúan sobre clips MIDI. Clic derecho y arrastrar sobre los clips los borra, con cualquier herramienta. Dividir no cambia lo que suena. Las notas del piano roll pasan por los efectos de la pista.",
           "topic": "split-copy"
         },
         {
@@ -52,8 +82,14 @@
         {
           "icon": "F0E2",
           "title": "Varios instrumentos en un patrón",
-          "text": "Sumá instrumentos a un patrón desde el piano roll: cada uno va en su pista, y las notas de los otros se ven de fondo como notas fantasma.",
+          "text": "Sumá instrumentos a un patrón desde el piano roll: cada uno va en su pista, y las notas de los otros se ven de fondo como notas fantasma. En el timeline, una línea une los clips que suenan juntos.",
           "topic": "patterns"
+        },
+        {
+          "icon": "EC4F",
+          "title": "Loops sin clics en el Sampler",
+          "text": "Acercá la onda hasta cada muestra con la ruedita. Imán al cero deja las banderas donde la onda cruza el cero.",
+          "topic": "sampler"
         },
         {
           "icon": "EC4F",

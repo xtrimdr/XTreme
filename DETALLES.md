@@ -84,13 +84,14 @@ andan los del grupo Transporte, salvo mientras se escribe en un campo de texto d
 | Ctrl+C / Ctrl+X / Ctrl+V | copiar / cortar los clips elegidos (tomas y clips MIDI) / pegarlos en el cabezal, desde la pista elegida |
 | Supr | quitar el clip (o los marcados, o la pista vacía); con un rango, borrarlo |
 | Shift+Supr | borrar el rango y cerrar el hueco (lo de después se corre) |
-| 1 a 7 | herramientas: Seleccionar / Rango / Dividir / Borrar / Escuchar / Zoom / Mano |
+| 1 a 9 | herramientas: Seleccionar / Rango / Dividir / Borrar / Escuchar / Zoom / Mano / Lápiz / Pincel |
 | Ctrl+Z / Ctrl+Y | deshacer / rehacer |
 | Ctrl+Shift+N | nueva pista |
 | Clic derecho en la regla | cómo se dibuja la grilla: Auto, igual que el imán o una subdivisión fija |
 | Arrastrar en vacío sobre las pistas (Ctrl: sumar) | marcar varios clips con un rectángulo para moverlos o borrarlos juntos |
 | Ctrl+clic / Shift+clic en un encabezado | marcar varias pistas (una por una / un rango) para moverlas juntas |
 | Ctrl+S | guardar ya |
+| Ctrl+Shift+S | guardar como… |
 | B / P | plegar o abrir el panel del canal / del proyecto (si está oculto con su botón de la barra de título, lo vuelve a mostrar) |
 | Enter | maximizar el panel que tocaste último: video, timeline, piano roll, mixer o mastering (otra vez Enter vuelve a como estaba) |
 | F11 | pantalla completa (otra vez F11 vuelve a como estaba) |
@@ -106,7 +107,9 @@ Clic derecho en la franja: agregar marcador, empezar o terminar el rango ahí, s
 nombre de la lista o repetir hasta el siguiente. Un rango marcado con Shift+arrastrar desde fuera de un clip (o con la herramienta Rango),
 en una pista o en varias, también se puede repetir desde su menú.
 
-Las herramientas del timeline están en el centro de la barra del proyecto: **Seleccionar** (lo de siempre), **Rango**
+Las herramientas del timeline están en el centro de la barra del proyecto: **Seleccionar** (lo de siempre), **Lápiz** (clic en un clip lo toma; clic en un
+lugar vacío pone una copia, y arrastrar la ubica), **Pincel** (igual, pero arrastrar repite el clip a lo largo del tramo,
+una copia al lado de la otra; un clic en un patrón de Patrones o en un sample de la Biblioteca también los carga), **Rango**
 (marca un tramo de una o varias pistas; clic derecho: borrarlo, borrarlo y cerrar el hueco, repetirlo), **Dividir**
 (un clic corta el clip ahí, en la grilla), **Borrar** (saca los clips que toca), **Escuchar** (mantené apretado sobre
 un clip para oír esa pista sola desde ahí), **Zoom** (clic acerca, Alt+clic aleja, arrastrar muestra ese tramo) y
@@ -135,8 +138,8 @@ Las dependencias van hacia abajo (App → Projects → Audio): el motor y el mod
 interfaz, y todo lo que hacen se puede ejercitar desde `xtlab`. El proyecto se guarda en una carpeta:
 
 ```
-xtreme_project.json      el proyecto
-xtreme_project.json.bak  el guardado anterior
+Nombre.xtp               el proyecto (JSON); doble clic lo abre
+Nombre.xtp.bak           el guardado anterior
 historial/               copias para volver atrás
 media/                   grabaciones e importados (nunca se reescriben); mientras se graba, los diarios de las tomas y las notas de las MIDI (.notas)
 cache/                   tomas transpuestas y estiradas por el tempo (se rehacen solas si se borran)
@@ -173,7 +176,7 @@ la consola, sin abrir la ventana.
 | `midi partitura carpeta --clip id --a x.pdf` | el clip como partitura en PDF: doble pentagrama, 4/4, cuantizado a 1/16, con la armadura de la escala del proyecto si es mayor o menor natural |
 | `midi escala carpeta [--raiz C4] [--escala minor]` | la escala del proyecto; sin `--escala`, ninguna |
 | `midi ajustar-escala carpeta --clip id` | lleva a la escala del proyecto las notas que quedaron afuera |
-| `midi cuantizar carpeta --clip id [--grilla 1/16]` | mueve el comienzo de las notas a la grilla de la canción (bar, 1/2, 1/4, 1/8, 1/8T, 1/16, 1/32, 1/64, 1/4beat, 1/6beat, 1/3step, 1/6step) |
+| `midi cuantizar carpeta --clip id [--grilla 1/16]` | mueve el comienzo de las notas a la grilla de la canción (bar, 1/2 a 1/64, tresillos 1/2T a 1/32T, puntillos 1/2D a 1/16D, que empiezan en cada compás) |
 | `midi velocidad carpeta --clip id [--rango 100]` | escala las velocidades alrededor de su promedio (50 las acerca, 0 las empareja, 150 da más dinámica) |
 | `midi humanizar carpeta --clip id [--cantidad 10] [--semilla n]` | mueve cada velocidad al azar hasta ± cantidad |
 | `midi entradas` | los teclados y controladores MIDI que ve Windows, con sus ajustes de Configuración → MIDI |
@@ -224,6 +227,7 @@ la consola, sin abrir la ventana.
 | `proyecto verificar-ab` | comprueba el A/B de la mezcla |
 | `proyecto editar carpeta bloquear\|desbloquear clip\|pista` | fija un clip (o toda la pista): no se mueve, no se recorta, no se borra y grabar no lo pisa |
 | `proyecto verificar-bloqueo` | comprueba la regla del bloqueo |
+| `proyecto verificar-bucles` | comprueba los bucles de tomas, clips MIDI y bloques de automatización: repeticiones, que sigan al original, dividir y guardar |
 | `proyecto editar carpeta transicion clip corte\|fundido\|negro [--segundos 0.5]`, `proyecto transiciones carpeta` | la transición que entra a ese clip (imagen y sonido) y la lista de uniones de cada pista |
 | `proyecto editar carpeta nueva-carpeta\|a-carpeta\|sacar-de-carpeta\|mover-carpeta\|quitar-carpeta\|carpeta …` | carpetas de pistas: agrupar, mover adentro y afuera, renombrar y plegar |
 | `proyecto editar carpeta nuevo-separador [nombre] [--en n] [--visible] \| lado id izquierda\|derecha` | separadores con nombre (nacen ocultos en el timeline salvo `--visible`; `carpeta id --ocultar` lo alterna) y de qué lado del mixer va cada tira |
@@ -239,8 +243,8 @@ la consola, sin abrir la ventana.
 | `proyecto envios carpeta quien [bus [nivel] [--pre\|--post] [--apagar\|--prender] [--quitar\|--sumar]] [--salida bus\|master]` | la salida y los envíos de una pista (número o id) o `carpeta:n`; un bus (`bus:n`) sale solo al master, así que lo rechaza; `--quitar`/`--sumar` saca o vuelve a poner un bus en su lista |
 | `proyecto vinculados carpeta`, `proyecto copiar-vinculado carpeta medio`, `proyecto reencontrar carpeta medio --archivo X`, `proyecto reencontrar carpeta [medio] --buscar-en Y` | dónde están los archivos de cada toma, copia a media/ lo vinculado y vuelve a encontrar lo que falta |
 | `proyecto cortar-copia carpeta medio [--al-final]` | copia y mata el proceso a la mitad (o al terminar, sin guardar) |
-| `proyecto verificar-deshacer\|verificar-pasos\|verificar-clips\|verificar-tomas\|verificar-importar\|verificar-vinculados\|verificar-historial\|verificar-carpetas\|verificar-marcadores\|verificar-paquete` | pruebas automáticas sobre una carpeta temporal |
-| `proyectos lista\|plantillas\|nuevo\|renombrar\|duplicar\|borrar\|olvidar\|carpeta\|buscar` | lo que hace el gestor de proyectos (`buscar`: qué abre "Abrir carpeta") |
+| `proyecto verificar-deshacer\|verificar-pasos\|verificar-clips\|verificar-tomas\|verificar-importar\|verificar-vinculados\|verificar-historial\|verificar-carpetas\|verificar-marcadores\|verificar-paquete\|verificar-guardar-como` | pruebas automáticas sobre una carpeta temporal |
+| `proyectos lista\|plantillas\|nuevo\|renombrar\|duplicar\|borrar\|olvidar\|carpeta\|buscar` | lo que hace el gestor de proyectos (`buscar`: qué abre una carpeta, un .xtp o un guitarcam.json de WildTrack elegido) |
 | `proyectos empaquetar carpeta [--completo] [--salida x.zip] \| desempaquetar x.zip` | el proyecto en un ZIP (para compartir: lo que suena; `--completo`: también las tomas sin usar, las versiones y las exportaciones) y de vuelta a un proyecto nuevo |
 | `proyectos guardar-plantilla\|borrar-plantilla` | plantillas de proyecto del usuario |
 | `proyectos plantillas-video\|guardar-plantilla-video\|aplicar-plantilla-video\|borrar-plantilla-video` | plantillas de video (filtro, ajustes y efectos) |

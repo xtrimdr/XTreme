@@ -61,11 +61,12 @@ Spanish by default; the language is chosen in Settings.
 | Ctrl+A / Ctrl+D | select all clips / clear the selection |
 | Del | remove the clip (or the empty track); with a range, delete it |
 | Shift+Del | delete the range and close the gap (what follows slides left) |
-| 1 to 7 | tools: Select / Range / Split / Erase / Listen / Zoom / Hand |
+| 1 to 9 | tools: Select / Range / Split / Erase / Listen / Zoom / Hand / Pencil / Brush |
 | Ctrl+Z / Ctrl+Y | undo / redo |
 | Ctrl+Shift+N | new track |
 | Ctrl+click / Shift+click on a header | pick several tracks (one by one / a range) to move them together |
 | Ctrl+S | save now |
+| Ctrl+Shift+S | save as… |
 | B / P | fold or open the channel panel / the project panel (hidden with its title bar button, it shows it again) |
 | Enter | maximize the panel you touched last: video, timeline, piano roll, mixer or mastering (Enter again goes back to how it was) |
 | F11 | full screen (F11 again goes back to how it was) |
@@ -79,7 +80,9 @@ A double-click adds a marker; markers drag, a click jumps there and a double-cli
 to add a marker, start or end the range there or remove it, and on a marker to pick a name from the list or loop to
 the next one.
 
-The timeline tools sit in the middle of the project bar: **Select** (as always), **Range** (marks a stretch of one or
+The timeline tools sit in the middle of the project bar: **Select** (as always), **Pencil** (a click on a clip picks it; a click on an empty spot
+places a copy, and dragging positions it), **Brush** (the same, but dragging repeats the clip along the stretch, side by
+side; a click on a pattern in Patterns or on a sample in the Library loads both), **Range** (marks a stretch of one or
 several tracks; right-click: delete it, delete it and close the gap, loop it), **Split** (a click cuts the clip
 there, on the grid), **Erase** (removes the clips it touches), **Listen** (hold the button on a clip to hear that
 track alone from there), **Zoom** (click zooms in, Alt+click out, a drag shows that stretch) and **Hand** (drag to
@@ -103,8 +106,8 @@ Dependencies point downward (App → Projects → Audio): the engine and the pro
 the interface, and everything they do can be exercised from `xtlab`. A project is saved in a folder:
 
 ```
-xtreme_project.json      the project
-xtreme_project.json.bak  the previous save
+Name.xtp                 the project (JSON); a double click opens it
+Name.xtp.bak             the previous save
 historial/               copies to go back to
 media/                   recordings and imports (never rewritten); while recording, the takes' journals and the MIDI takes' notes (.notas)
 exports/                 exported videos and audio
@@ -116,6 +119,8 @@ exports/                 exported videos and audio
 console without opening the window. Its commands and options are in Spanish (for example `grabar`, `mezclar`,
 `exportar`, `proyecto`, `proyectos`); run it without arguments to see the help, or see the command table in
 the [Spanish version](DETALLES.md#xtlab).
+
+`xtlab proyecto verificar-bucles`: checks looped takes, MIDI clips and automation blocks: repeats, following the original, splitting and saving.
 
 `xtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: optional component state, install, and a download test against a local server.
 

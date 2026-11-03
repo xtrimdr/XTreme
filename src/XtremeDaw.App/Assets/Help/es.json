@@ -45,13 +45,14 @@
           "id": "new-project",
           "icon": "E838",
           "title": "Crear o abrir un proyecto",
-          "keywords": "nuevo gestor proyectos plantilla abrir carpeta empezar tema cancion",
+          "keywords": "nuevo gestor proyectos plantilla abrir carpeta archivo xtp empezar tema cancion",
           "intro": "Cada tema es un proyecto, con su propia carpeta. La app arranca en **Proyectos**.",
           "steps": [
             "Tocá **Nuevo proyecto** y ponele un nombre.",
             "Elegí **Video + audio** o **Solo audio**.",
             "Elegí una plantilla, o empezá sin pistas. Las plantillas traen pistas, efectos y los buses de Reverb y Delay.",
-            "Para abrir uno que ya existe, tocalo en la lista o usá **Abrir carpeta…**."
+            "Para abrir uno que ya existe, tocalo en la lista o usá **Abrir…** y elegí su archivo **.xtp**, esté donde esté.",
+            "Para guardarlo en otro lugar que la carpeta de proyectos, tocá **Guardar en…** antes de crearlo."
           ],
           "notes": [
             "Para volver a la lista desde un proyecto abierto, tocá el nombre del proyecto en la barra de arriba y elegí **Proyectos…**."
@@ -259,7 +260,7 @@
             "Para **recortar**, arrastrá la manija de abajo en un borde.",
             "Para **estirar** sin cambiar el tono, mantené **Ctrl** y arrastrá esa manija. La etiqueta dice la velocidad contra lo grabado. El clip calla hasta que su sonido está listo.",
             "Para hacer un **fade**, arrastrá la manija de arriba en un borde.",
-            "Con el imán prendido, el comienzo del clip cae en una línea de la grilla: **Línea** usa la más cercana de las que se ven y **Celda** el comienzo de la celda donde cae; las dos cambian con el zoom. Para moverlo libre, mantené **Alt** mientras arrastrás.",
+            "Con el imán prendido, el comienzo del clip cae en una línea de la grilla: **Auto** usa la más cercana de las que se ven y cambia con el zoom; los valores fijos van de **Compás** a **1/64**, con tresillos (**T**) y puntillos (**D**), que arrancan de nuevo en cada compás. La regla (clic derecho) ofrece los mismos valores para dibujar la grilla. Para moverlo libre, mantené **Alt** mientras arrastrás.",
             "Para **copiarlo**, mantené **Shift** y arrastrá el clip: el original queda en su lugar."
           ],
           "notes": [
@@ -286,7 +287,25 @@
             "En un clip MIDI, una nota que cruza el corte queda en los dos pedazos y sigue sonando como una sola.",
             "En un patrón, cortá en la raya de una vuelta para que los dos pedazos sigan enlazados. En otro lugar, el de la derecha queda como clip propio."
           ],
-          "see": ["select-many", "tools", "move-trim"]
+          "see": ["select-many", "tools", "move-trim", "loop-clip"]
+        },
+        {
+          "id": "loop-clip",
+          "icon": "E8EE",
+          "title": "Repetir un clip en bucle",
+          "keywords": "loop bucle repetir alargar vueltas garageband",
+          "intro": "Alarga un clip repitiéndolo. Sirve para tomas, clips MIDI y bloques de automatización.",
+          "steps": [
+            "Pasá el mouse por la esquina de arriba a la derecha del clip: aparece el puntero de las dos flechas.",
+            "Arrastrá hacia la derecha: el clip se repite hasta donde soltás y la última vuelta queda cortada ahí.",
+            "Cada repetición muestra el ícono del bucle.",
+            "Para sacarlo, arrastrá la esquina hasta el final de la primera vuelta."
+          ],
+          "notes": [
+            "En una toma, las repeticiones siguen al original: si lo movés o lo recortás, se rehacen. Una repetición que editás sola queda como clip propio.",
+            "En un clip MIDI o un bloque de automatización, lo que edités en cualquier vuelta cambia todas."
+          ],
+          "see": ["split-copy", "move-trim", "automation"]
         },
         {
           "id": "select-many",
@@ -323,17 +342,20 @@
           "id": "tools",
           "icon": "E90F",
           "title": "Usar las herramientas",
-          "keywords": "tijera goma mano lupa zoom cursor seleccionar",
+          "keywords": "tijera goma mano lupa zoom cursor seleccionar lápiz pincel dibujar pintar",
           "intro": "Están en el centro de la barra superior y cambian qué hace el clic en las pistas.",
           "steps": [
             "**Seleccionar** ({key:toolSelect}): lo de siempre.",
+            "**Lápiz** ({key:toolDraw}): clic en un clip para tomarlo y clic en un lugar vacío para ponerlo; arrastrá para ubicarlo.",
+            "**Pincel** ({key:toolPaint}): igual que el lápiz, pero arrastrando lo repite a lo largo del tramo.",
             "**Rango** ({key:toolRange}): marca un tramo.",
             "**Dividir** ({key:toolSplit}): un clic corta el clip.",
-            "**Borrar** ({key:toolErase}): saca lo que toca.",
+            "**Borrar** ({key:toolErase}): saca lo que toca. Con cualquier herramienta, clic derecho y arrastrar sobre los clips también los borra.",
             "**Escuchar** ({key:toolListen}): mantené apretado sobre un clip para oír esa pista sola.",
             "**Zoom** ({key:toolZoom}) y **Mano** ({key:toolHand}): acercar y mover la vista."
           ],
           "notes": [
+            "Un clic en un patrón de Patrones o en un sample de la Biblioteca también lo elige para el lápiz y el pincel.",
             "Dividir, Borrar y Escuchar valen para tomas y clips MIDI."
           ],
           "see": ["navigate"]
@@ -365,7 +387,7 @@
           "steps": [
             "Arrastrá el archivo al timeline, o tocá **Nueva pista → Importar audio…**.",
             "Para tus carpetas de sonidos, abrí **Biblioteca → Samples** y sumá una carpeta.",
-            "Escuchá con **Espacio** y arrastrá el sample a una pista.",
+            "Escuchá con **Espacio** y arrastrá el sample a una pista, desde la lista o desde el reproductor: el nombre, o la onda sacándola hacia arriba o abajo.",
             "Elegí **Copiar al proyecto** o **Vincular**. Con **No mostrar más** queda esa opción; se cambia en **Configuración → Guardado y exportación**."
           ],
           "notes": [
@@ -426,17 +448,18 @@
           "id": "markers-loop",
           "icon": "E7C1",
           "title": "Usar marcadores y el loop",
-          "keywords": "repetir seccion estribillo a-b rango capitulos youtube",
-          "intro": "Ambos viven en la franja de arriba de la regla.",
+          "keywords": "repetir seccion estribillo a-b rango capitulos youtube acordes franja",
+          "intro": "Arriba de la regla hay tres franjas: rango, marcadores y acordes.",
           "steps": [
-            "Agregá un marcador en el cabezal con {key:marker}, o con doble clic en la franja.",
+            "Agregá un marcador en el cabezal con {key:marker}, o con doble clic en la franja de marcadores.",
             "Saltá entre marcadores con {key:prevMarker} y {key:nextMarker}.",
-            "Arrastrá en la franja para marcar el rango A–B. Se prende el loop.",
+            "Arrastrá en la franja del rango para marcar el rango A–B. Se prende el loop. Doble clic en esa franja lo saca.",
             "Prendé o apagá el loop con {key:loop}. También ponés A y B en el cabezal con {key:loopIn} y {key:loopOut}."
           ],
           "notes": [
-            "Clic derecho en la franja → **Copiar capítulos para YouTube**.",
-            "Dos botones al lado de las herramientas muestran u ocultan las franjas de marcadores y de acordes."
+            "Para escribir un acorde, doble clic en la franja de acordes y tipeá su nombre. Doble clic en un acorde lo renombra. Arrastralo para moverlo o tomalo de un borde para alargarlo o acortarlo; con varios marcados, se mueven juntos.",
+            "Clic derecho en la franja de marcadores → **Copiar capítulos para YouTube**.",
+            "Tres botones al lado de las herramientas muestran u ocultan las franjas de rango, marcadores y acordes."
           ]
         },
         {
@@ -628,13 +651,14 @@
             "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista → **Automatización**. En un plugin: tocá **Automatizar** en la barra de su ventana y mové el parámetro.",
             "Aparece un carril debajo de la pista.",
             "Clic agrega un punto, arrastrar lo mueve y doble clic lo borra. Shift+arrastrar dibuja.",
-            "Arrastrá el círculo en medio de un tramo para curvarlo."
+            "Arrastrá el círculo en medio de un tramo para curvarlo.",
+            "Arrastrá la esquina de arriba a la derecha de un bloque para repetirlo en bucle."
           ],
           "notes": [
             "Con un carril prendido, mover ese control a mano no sirve: manda el carril.",
             "**Automatizar** se apaga solo al crear el carril; otro clic lo cancela. Los efectos de un bus no lo tienen."
           ],
-          "see": ["clip-volume"]
+          "see": ["clip-volume", "loop-clip"]
         },
         {
           "id": "compare",
@@ -960,6 +984,8 @@
             "Arrastrá las banderas **S** y **E** para elegir qué parte suena.",
             "En **Modo**: **Nota** suena mientras dura la nota; **One shot** suena entero, para golpes de batería.",
             "Elegí un **Loop** para que siga sonando mientras dura la nota, y movés su tramo con las banderas **L**.",
+            "Para que el loop no haga clic, dejá prendido **Imán al cero**: las banderas caen donde la onda cruza el cero. Alt las deja libres.",
+            "La ruedita acerca la onda hasta ver cada muestra. **Inicio del loop** y **Fin del loop** van directo a cada bandera; doble clic vuelve a verla entera.",
             "Arrastrá los puntos de la envolvente, y probá el **Filtro** y el **LFO**."
           ],
           "notes": [
@@ -1054,11 +1080,11 @@
           "keywords": "loop ritmo bateria enlazar clips iguales fl studio instrumentos notas fantasma",
           "intro": "Clips enlazados: editar uno cambia todos.",
           "steps": [
-            "Clic derecho en un clip MIDI → **Crear patrón**.",
-            "Duplicá o copiá el clip: la copia queda enlazada.",
+            "Tocá **Crear patrón** arriba del piano roll, o clic derecho en un clip MIDI → **Crear patrón**.",
+            "Duplicá o copiá el clip: la copia queda enlazada. Sus clips llevan el ícono de cadena, y al señalar uno se marcan todos.",
             "Estirá un clip por el borde derecho para repetir la vuelta.",
-            "**Varios instrumentos**: en el piano roll, el chip de instrumentos → **Sumar instrumento**. Cada uno va en su pista, con sus notas.",
-            "En esa lista, un clic pasa a otro instrumento y el ojo muestra u oculta sus notas fantasma.",
+            "**Varios instrumentos**: en el piano roll, **Sumar instrumento**. Cada uno va en su pista, con sus notas, y una línea une los clips que suenan juntos.",
+            "En el chip de instrumentos, un clic pasa a otro instrumento y el ojo muestra u oculta sus notas fantasma.",
             "**Hacer único** saca un clip del patrón."
           ],
           "notes": [
@@ -1147,6 +1173,24 @@
           ],
           "settings": "save",
           "see": ["undo-versions"]
+        },
+        {
+          "id": "save-as",
+          "icon": "E792",
+          "title": "Guardar como o guardar una copia",
+          "keywords": "guardar como copia otra carpeta pendrive disco ubicacion xtp archivo mover",
+          "intro": "Un proyecto se puede guardar en cualquier carpeta. Su archivo es **Nombre.xtp**, junto a sus carpetas media y exports.",
+          "steps": [
+            "En **Proyectos**, tocá el botón de guardar {icon:E792} de la fila, o usá {key:saveAs} con el proyecto abierto.",
+            "Elegí **Guardar como…** para seguir trabajando en la copia, o **Guardar una copia…** para seguir en el original.",
+            "Elegí la carpeta y el nombre. En una carpeta vacía, el proyecto queda ahí; en otra, se crea una carpeta con su nombre."
+          ],
+          "notes": [
+            "El original no se toca. Las exportaciones y las versiones guardadas no se copian.",
+            "Para abrirlo después, hacé doble clic en el .xtp o usá **Abrir…** en Proyectos.",
+            "Los proyectos de WildTrack también se abren con **Abrir…**: elegí su **guitarcam.json** y pasa a .xtp."
+          ],
+          "see": ["new-project", "share-project"]
         },
         {
           "id": "library",

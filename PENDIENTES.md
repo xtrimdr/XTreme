@@ -10,6 +10,8 @@ _Ideas y mejoras para la nativa._
 > **Foco:** la app sigue siendo para hacer videos de guitarra. Lo de DAW tiene que servir para eso
 > y no puede complicar el camino de "grabo, mezclo y exporto el video".
 
+- **Doble clic en un .xtp con XTreme abierto**: hoy abre otra ventana (y el mismo proyecto, en solo lectura). Que lo reciba la ventana abierta (una sola instancia, el archivo por un pipe) y pregunte si guarda el actual.
+
 ### Pedidas
 
 #### 1. Usarla también como DAW, solo audio
