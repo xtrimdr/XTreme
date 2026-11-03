@@ -44,14 +44,14 @@ static class TestListCommands
 
     static void Show(TestListData d)
     {
-        foreach (var (state, title) in new[] { (TestItem.Fails, "No anda"), (TestItem.Pending, "Por probar") })
+        foreach (var (state, title) in new[] { (TestItem.Fails, "No anda"), (TestItem.WorksBadly, "Anda mal"), (TestItem.Improve, "A mejorar"), (TestItem.Pending, "Por probar") })
         {
             var items = d.Items.Where(i => i.State == state).ToList();
             Console.WriteLine($"{title} ({items.Count})");
             foreach (var i in items)
             {
                 Console.WriteLine($"  #{i.Id}  {i.Text}  (intento {i.Tries}, copia {i.Build})");
-                if (i.Note != null) Console.WriteLine($"       Nota: {i.Note}");
+                if (i.Note != null) Console.WriteLine($"       Nota{(i.Draft != null ? " sin guardar" : "")}: {i.Note}");
             }
         }
         Console.WriteLine($"Anda ({d.Count(TestItem.Works)})");
@@ -80,9 +80,12 @@ static class TestListCommands
             Row("una copia vieja no tiene el cambio, una nueva sí",
                 TestList.Missing(d.Items[0], first) && !TestList.Missing(d.Items[0], second) && !TestList.Missing(d.Items[1], second));
 
+            TestList.Hold(path, a, TestItem.WorksBadly, " a medias ");
+            d = TestList.Read(path);
+            Row("una nota sin guardar no mueve el ítem", d.Items[0].State == TestItem.Pending && d.Items[0].Draft == TestItem.WorksBadly && d.Items[0].Note == "a medias");
             TestList.Mark(path, a, TestItem.Fails, " se corta el audio ");
             d = TestList.Read(path);
-            Row("el veredicto y la nota quedan", d.Items[0].State == TestItem.Fails && d.Items[0].Note == "se corta el audio");
+            Row("el veredicto y la nota quedan", d.Items[0].State == TestItem.Fails && d.Items[0].Draft == null && d.Items[0].Note == "se corta el audio");
             Row("arreglar lo vuelve a pendiente", TestList.Fixed(path, a, second, "Exportar otra vez"));
             d = TestList.Read(path);
             Row("con otro intento, la nota y el texto nuevo",

@@ -7,7 +7,7 @@ namespace XtremeDaw.Projects;
 /// <summary>One change to try by hand: what to try, the test copy that first has it and what the user found.</summary>
 public sealed class TestItem
 {
-    public const string Pending = "pending", Works = "ok", Fails = "fail";
+    public const string Pending = "pending", Works = "ok", Fails = "fail", WorksBadly = "bad", Improve = "improve";
 
     public int Id { get; set; }
     public string Text { get; set; } = "";
@@ -16,6 +16,8 @@ public sealed class TestItem
     public DateTime At { get; set; }
     public string State { get; set; } = Pending;
     public string? Note { get; set; }
+    /// <summary>The verdict picked while the note is being written: the item stays where it is until it is saved.</summary>
+    public string? Draft { get; set; }
     /// <summary>How many times it went out to be tried: a fix after "no anda" adds one.</summary>
     public int Tries { get; set; } = 1;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
@@ -96,6 +98,7 @@ public static class TestList
             if (d.Items.Find(i => i.Id == id) is not { } item) return;
             found = true;
             item.State = TestItem.Pending;
+            item.Draft = null;
             item.Build = build;
             item.At = DateTime.Now;
             item.Tries++;
@@ -109,8 +112,19 @@ public static class TestList
     {
         if (d.Items.Find(i => i.Id == id) is not { } item) return;
         item.State = state;
-        item.Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        item.Draft = null;
+        item.Note = CleanNote(note);
     });
+
+    /// <summary>A note still being written and its verdict: on disk in case the copy being tried dies, without moving the item.</summary>
+    public static void Hold(string path, int id, string? draft, string? note) => Update(path, d =>
+    {
+        if (d.Items.Find(i => i.Id == id) is not { } item) return;
+        item.Draft = draft;
+        item.Note = CleanNote(note);
+    });
+
+    static string? CleanNote(string? note) => string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
     public static void Remove(string path, int id) => Update(path, d => d.Items.RemoveAll(i => i.Id == id));
 

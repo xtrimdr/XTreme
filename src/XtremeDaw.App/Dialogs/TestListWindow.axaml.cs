@@ -1,5 +1,6 @@
 using System.Globalization;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -10,21 +11,35 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App.Dialogs;
 
 /// <summary>
-/// "Para probar" (asked by the user): the changes waiting to be tried, each marked Anda or No anda with a note. A
-/// window of its own and not a dialog, so it stays next to the app while trying things. It opens without taking the
-/// focus, and marking gives the focus back to the main window, so Space keeps meaning play instead of pressing the
-/// same button again. <see cref="MainWindow"/> reads the file; the list here only shows it.
+/// "Para probar" (asked by the user): the changes waiting to be tried, in tabs, each marked Anda, A mejorar, Anda mal or
+/// No anda. All but Anda open a note and the item stays in place until Guardar, so it does not jump away while being explained;
+/// the note reaches the disk as a draft before that, because the copy being tried can die. A window of its own and not
+/// a dialog, so it stays next to the app while trying things. It opens without taking the focus, and marking gives the
+/// focus back to the main window, so Space keeps meaning play instead of pressing the same button again.
+/// <see cref="MainWindow"/> reads the file; the list here only shows it.
 /// </summary>
 public sealed partial class TestListWindow : Window
 {
     static readonly IBrush Amber = Palette.Brush("#f59e0b");
     /// <summary>A list that changes under the pointer would swallow the click that took the focus off a note.</summary>
     const int NoteSaveDelayMs = 300;
+    /// <summary>What each tab shows, in the order of the buttons.</summary>
+    static readonly (string Key, (string State, string Key)[] Groups)[] TabList =
+    [
+        ("test.list.pending", [(TestItem.Pending, "")]),
+        ("test.list.fix", [(TestItem.Fails, "test.list.fail"), (TestItem.WorksBadly, "test.list.bad"), (TestItem.Improve, "test.list.improve")]),
+        ("test.list.done", [(TestItem.Works, "")]),
+    ];
 
     readonly string path;
+    readonly ToggleButton[] tabs;
     readonly Dictionary<int, (TextBox Box, TestItem Item)> notes = [];
+    TestListData? current;
     TestListData? waiting;
     int focusNote;
+    int tab;
+    /// <summary>The end of the writes in order: a note saved by losing the focus cannot land after the click that took it.</summary>
+    Task<bool> writes = Task.FromResult(true);
 
     /// <summary>The file changed from here.</summary>
     public event Action? Changed;
@@ -35,6 +50,16 @@ public sealed partial class TestListWindow : Window
     {
         this.path = path;
         InitializeComponent();
+        tabs = [PendingTab, FixTab, DoneTab];
+        for (int i = 0; i < tabs.Length; i++)
+        {
+            int index = i;
+            tabs[i].Click += (_, _) =>
+            {
+                tab = index;
+                if (current != null) Fill(current);
+            };
+        }
         Header.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) BeginMoveDrag(e);
@@ -46,21 +71,22 @@ public sealed partial class TestListWindow : Window
             foreach (var (id, n) in notes)
                 if (NoteChanged(n.Box, n.Item))
                 {
-                    string? text = n.Box.Text;
-                    Save(() => TestList.Mark(path, id, n.Item.State, text), NoteSaveDelayMs);
+                    string? text = n.Box.Text, draft = n.Item.Draft;
+                    Save(() => TestList.Hold(path, id, draft, text), NoteSaveDelayMs);
                 }
         };
         Closing += (_, _) =>
         {
             // the app may be closing too: what is on the screen goes to disk now
             foreach (var (id, n) in notes)
-                if (NoteChanged(n.Box, n.Item)) Try(() => TestList.Mark(path, id, n.Item.State, n.Box.Text));
+                if (NoteChanged(n.Box, n.Item)) Try(() => TestList.Hold(path, id, n.Item.Draft, n.Box.Text));
         };
     }
 
     /// <summary>Shows the list, unless a note is being written: rebuilding would take it away from under the keyboard.</summary>
     public void Fill(TestListData data)
     {
+        current = data;
         if (IsActive && notes.Values.Any(n => n.Box.IsFocused))
         {
             waiting = data;
@@ -69,17 +95,19 @@ public sealed partial class TestListWindow : Window
         waiting = null;
         notes.Clear();
         Rows.Children.Clear();
-        foreach (var (state, key) in new[]
-                 {
-                     (TestItem.Pending, "test.list.pending"), (TestItem.Fails, "test.list.fails"), (TestItem.Works, "test.list.works"),
-                 })
+        for (int i = 0; i < tabs.Length; i++)
+        {
+            tabs[i].IsChecked = i == tab;
+            tabs[i].Content = $"{Loc.T(TabList[i].Key)} · {TabList[i].Groups.Sum(g => data.Count(g.State))}";
+        }
+        foreach (var (state, key) in TabList[tab].Groups)
         {
             var items = data.Items.Where(i => i.State == state).ToList();
             if (items.Count == 0) continue;
-            Rows.Children.Add(new TextBlock { Classes = { "label" }, Text = $"{Loc.T(key)} · {items.Count}", Margin = new(2, 4, 0, 0) });
+            if (key != "") Rows.Children.Add(new TextBlock { Classes = { "label" }, Text = $"{Loc.T(key)} · {items.Count}", Margin = new(2, 4, 0, 0) });
             foreach (var i in items) Rows.Children.Add(Row(i));
         }
-        if (data.Items.Count == 0) Rows.Children.Add(new TextBlock { Classes = { "dim" }, Text = Loc.T("test.list.empty"), Margin = new(2, 4, 0, 0) });
+        if (Rows.Children.Count == 0) Rows.Children.Add(new TextBlock { Classes = { "dim" }, Text = Loc.T("test.list.empty"), Margin = new(2, 4, 0, 0) });
         ClearButton.IsEnabled = data.Count(TestItem.Works) > 0;
         if (notes.TryGetValue(focusNote, out var note))
         {
@@ -112,21 +140,29 @@ public sealed partial class TestListWindow : Window
             return Card(body);
         }
 
+        string shown = item.Draft ?? item.State;
         var note = new TextBox
         {
             Classes = { "field" }, Text = item.Note, Watermark = Loc.T("test.list.note"), TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
-            IsVisible = item.State == TestItem.Fails || item.Note != null,
+            IsVisible = shown is TestItem.Fails or TestItem.WorksBadly or TestItem.Improve || item.Note != null,
         };
         note.LostFocus += (_, _) =>
         {
-            if (NoteChanged(note, item)) Save(() => TestList.Mark(path, item.Id, item.State, note.Text), NoteSaveDelayMs);
+            if (NoteChanged(note, item))
+            {
+                string? text = note.Text;
+                Save(() => TestList.Hold(path, item.Id, item.Draft, text), NoteSaveDelayMs);
+            }
             else if (waiting is { } d) Dispatcher.UIThread.Post(() => Fill(d));
         };
         notes[item.Id] = (note, item);
 
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var buttons = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
         buttons.Children.Add(Verdict(item, note, TestItem.Works, "", "test.list.ok", Palette.InTune));
+        buttons.Children.Add(Verdict(item, note, TestItem.Improve, "", "test.list.improve", Amber));
+        buttons.Children.Add(Verdict(item, note, TestItem.WorksBadly, "", "test.list.bad", Amber));
         buttons.Children.Add(Verdict(item, note, TestItem.Fails, "", "test.list.fail", Amber));
+        if (note.IsVisible) buttons.Children.Add(SaveButton(item, note));
         body.Children.Add(buttons);
         body.Children.Add(note);
         return Card(body);
@@ -143,10 +179,13 @@ public sealed partial class TestListWindow : Window
 
     static bool NoteChanged(TextBox box, TestItem item) => (box.Text ?? "").Trim() != (item.Note ?? "");
 
-    /// <summary>Anda or No anda; pressing the one already lit takes the item back to pending.</summary>
+    /// <summary>
+    /// Anda takes effect at once; the others wait for the note and <see cref="SaveButton"/>. Pressing the one
+    /// lit undoes it: a verdict still in draft is dropped, a saved one takes the item back to pending.
+    /// </summary>
     Button Verdict(TestItem item, TextBox note, string state, string glyph, string key, IBrush color)
     {
-        bool lit = item.State == state;
+        bool lit = (item.Draft ?? item.State) == state;
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         row.Children.Add(new TextBlock { Classes = { "icon" }, Text = glyph, FontSize = 12, Foreground = lit ? color : Palette.Dim, VerticalAlignment = VerticalAlignment.Center });
         row.Children.Add(new TextBlock { Text = Loc.T(key), Foreground = lit ? color : Palette.Dim, VerticalAlignment = VerticalAlignment.Center });
@@ -154,20 +193,47 @@ public sealed partial class TestListWindow : Window
         if (lit) b.BorderBrush = color;
         b.Click += (_, _) =>
         {
-            string next = lit ? TestItem.Pending : state;
             string? text = note.Text;
-            if (next == TestItem.Fails) focusNote = item.Id;
-            else (Owner as Window)?.Activate();
-            Save(() => TestList.Mark(path, item.Id, next, text));
+            if (!lit && state != TestItem.Works)
+            {
+                focusNote = item.Id;
+                Save(() => TestList.Hold(path, item.Id, state, text));
+                return;
+            }
+            (Owner as Window)?.Activate();
+            if (lit && item.Draft != null) Save(() => TestList.Hold(path, item.Id, null, text));
+            else Save(() => TestList.Mark(path, item.Id, lit ? TestItem.Pending : state, text));
         };
         return b;
     }
 
-    /// <summary>Writes off the UI thread (other sessions may hold the list a moment), then asks to read it again.</summary>
+    /// <summary>Keeps the verdict and the note: only here does the item leave its tab.</summary>
+    Button SaveButton(TestItem item, TextBox note)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        row.Children.Add(new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Text = Loc.T("test.list.save"), VerticalAlignment = VerticalAlignment.Center });
+        var b = new Button { Classes = { "chip" }, MinHeight = 30, Content = row };
+        b.Click += (_, _) =>
+        {
+            string? text = note.Text;
+            string state = item.Draft ?? item.State;
+            (Owner as Window)?.Activate();
+            Save(() => TestList.Mark(path, item.Id, state, text));
+        };
+        return b;
+    }
+
+    /// <summary>
+    /// Writes off the UI thread (other sessions may hold the list a moment), then asks to read it again. <paramref name="write"/>
+    /// must not touch a control: it runs on that other thread.
+    /// </summary>
     async void Save(Action write, int delayMs = 0)
     {
         ErrorText.Text = null;
-        bool ok = await Task.Run(() => Try(write));
+        var mine = writes.ContinueWith(_ => Try(write), TaskScheduler.Default);
+        writes = mine;
+        bool ok = await mine;
         if (delayMs > 0) await Task.Delay(delayMs);
         if (ok) Changed?.Invoke();
     }

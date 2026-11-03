@@ -52,7 +52,7 @@ public partial class MainWindow
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
         testListStamp = stamp;
 
-        int pending = d.Count(TestItem.Pending), fails = d.Count(TestItem.Fails);
+        int pending = d.Count(TestItem.Pending), fails = d.Count(TestItem.Fails) + d.Count(TestItem.WorksBadly) + d.Count(TestItem.Improve);
         TestListCount.Text = pending.ToString();
         ToolTip.SetTip(TestListButton, Loc.T("test.list.tip", pending, fails));
         if (testListSeen >= 0)
