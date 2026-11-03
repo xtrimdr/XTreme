@@ -135,6 +135,7 @@ public partial class MainWindow
             masteringMeter = null;
             if (mixerView) SetBottomRowHeight(mixerH);
             RefreshMixer();
+            ApplyMixerMinHeight();
         }
     }
 

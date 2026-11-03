@@ -67,8 +67,45 @@ public partial class MainWindow
     const double FolderGap = 6;
     /// <summary>Below this width an effect panel drops its ON/OFF text and icon, and puts its knob over its other controls.</summary>
     const double FxNarrowW = 150;
-    /// <summary>The mixer keeps its own height: its strips want more room than the timeline.</summary>
-    const double MixerDefaultH = 440, MixerMinH = 250;
+    /// <summary>The mixer keeps its own height: its strips want more room than the timeline. The Piano roll and Mastering
+    /// views that share its place stop at <see cref="ViewMinH"/>.</summary>
+    const double MixerDefaultH = 440, ViewMinH = 250;
+    /// <summary>The least a strip's fader gets (px): shorter, the mixer is awkward to use (asked by the user).</summary>
+    const double FaderRoomH = 120;
+    /// <summary>What the mixer's place takes around the strips (host margin, mini timeline, header, scroll bar) until it is measured.</summary>
+    const double MixerChromeGuess = 92;
+    /// <summary>The share of the window the mixer's minimum never goes past, so a small window can still show the timeline.</summary>
+    const double MixerMinShare = 0.7;
+    double mixerChromeH = MixerChromeGuess;
+    /// <summary>What a strip takes besides its fader (px): card margin and border, the grid's margin, head, controls, the fader's margin and the foot.</summary>
+    double StripFixedH => StripGap * 2 + 2 + 14 + StripHeadH + StripTopH + 6 + StripFootH;
+
+    /// <summary>
+    /// The mixer's least height: room for every strip's head, its shown lists and a usable fader, so it grows with the
+    /// lists (dragging a list taller pushes the timeline instead of crushing the faders). Capped in a small window.
+    /// </summary>
+    double MixerMinH
+    {
+        get
+        {
+            if (masteringView || pianoView) return ViewMinH;
+            double min = Math.Ceiling(mixerChromeH + StripFixedH + FaderRoomH);
+            if (Root.Bounds.Height > 0) min = Math.Min(min, Root.Bounds.Height * MixerMinShare);
+            return Math.Max(ViewMinH, min);
+        }
+    }
+
+    /// <summary>Applies <see cref="MixerMinH"/> to the row the mixer is in, growing it when it is shorter (after the lists change, or back from another view).</summary>
+    void ApplyMixerMinHeight()
+    {
+        if (!MixerShown || maxPanel == MaxPanel.Views) return;
+        double min = MixerMinH;
+        var row = stackedViews ? AudioArea.RowDefinitions[2] : Root.RowDefinitions[3];
+        if (stackedViews && !AudioSplitter.IsVisible) return;
+        row.MinHeight = min;
+        if (row.Height.IsAbsolute && row.Height.Value < min) row.Height = new GridLength(min);
+        mixerH = Math.Max(mixerH, min);
+    }
 
     /// <summary>The strips with what the window updates on them (and an effect's window, <see cref="ShowSlotWindow"/>, its own).</summary>
     sealed class MixerLayout
@@ -193,7 +230,17 @@ public partial class MainWindow
         mixerStrips.Children.Add(mixerLayout.Strips);
         mixerScroll.Content = mixerStrips;
         InitMixerMenu();
-        mixerScroll.SizeChanged += (_, _) => { mixerStrips.MinWidth = mixerScroll.Viewport.Width; RefreshMixer(); };
+        mixerScroll.SizeChanged += (_, _) =>
+        {
+            mixerStrips.MinWidth = mixerScroll.Viewport.Width;
+            // what the place takes besides the strips, as laid out now (the mini timeline comes and goes with the layout)
+            if (MixerShown && mixerScroll.Viewport.Height > 0)
+            {
+                double chrome = MixerHost.Bounds.Height + MixerHost.Margin.Top + MixerHost.Margin.Bottom - mixerScroll.Viewport.Height;
+                if (chrome > 0 && Math.Abs(chrome - mixerChromeH) > 0.5) { mixerChromeH = chrome; ApplyMixerMinHeight(); }
+            }
+            RefreshMixer();
+        };
         // the same two-button switch as the timeline's corner
         var rulerSwitch = new Border
         {
@@ -1224,6 +1271,7 @@ public partial class MainWindow
             row.Height = new GridLength(SendsRow ? head ? ListHeadH : mixerSendsH : 0, GridUnitType.Pixel);
             what.IsVisible = SendsRow;
         }
+        ApplyMixerMinHeight();
     }
 
     /// <summary>What a slot is called in the compact list: the musician's word (Vida, Comp…).</summary>
