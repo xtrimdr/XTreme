@@ -18,6 +18,9 @@ namespace XtremeDaw.App;
 public partial class MainWindow
 {
     readonly Button pianoPartsButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
+    /// <summary>Adding an instrument and making a pattern are in sight, on the header (asked by the user: they were hard to find).</summary>
+    readonly Button pianoAddPartButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
+    readonly Button pianoMakePatternButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
     /// <summary>The parts whose ghost notes are hidden (<see cref="GhostKey"/>).</summary>
     readonly HashSet<string> ghostsHidden = [];
 
@@ -36,8 +39,32 @@ public partial class MainWindow
     /// <summary>The chip: the instrument being edited and how many the pattern holds.</summary>
     void RefreshPianoParts(Project? p, MidiClip? clip, XtremeDaw.Projects.Track? track)
     {
-        pianoPartsButton.IsVisible = clip?.PatternId != null;
+        pianoPartsButton.IsVisible = pianoAddPartButton.IsVisible = clip?.PatternId != null;
+        pianoMakePatternButton.IsVisible = clip != null && clip.PatternId == null;
+        pianoAddPartButton.IsEnabled = pianoMakePatternButton.IsEnabled = store?.ReadOnly == false;
         if (clip?.PatternId is { } id) pianoPartsButton.Content = $"{track?.Name} · {PartsLabel(MidiPatterns.Parts(p!, id).Count)}  ▾";
+    }
+
+    /// <summary>The two buttons of the header, wired once.</summary>
+    void BuildPianoPatternButtons()
+    {
+        pianoMakePatternButton.Content = IconText("", Loc.T("midi.pattern.create"));
+        ToolTip.SetTip(pianoMakePatternButton, Loc.T("midi.pattern.create.tip"));
+        pianoMakePatternButton.Click += async (_, _) =>
+        {
+            if (pianoClipId is not { } clipId) return;
+            await EditPattern(clipId, p => MidiPatterns.Create(p, clipId), "midi-pattern-created");
+            RefreshPiano(PianoRollView.Frame.Clip);
+        };
+        pianoAddPartButton.Content = IconText("", Loc.T("piano.parts.add"));
+        ToolTip.SetTip(pianoAddPartButton, Loc.T("piano.parts.add.tip"));
+        pianoAddPartButton.Click += (_, _) =>
+        {
+            if (pianoClipId is not { } clipId) return;
+            var menu = Popup(AddPartItems(clipId), 240);
+            menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
+            OpenAnchoredMenu(menu, pianoAddPartButton);
+        };
     }
 
     /// <summary>The instrument's clip beside the one on screen, so moving between them stays in the same use of the pattern.</summary>

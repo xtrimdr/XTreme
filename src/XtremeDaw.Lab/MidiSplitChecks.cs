@@ -66,6 +66,24 @@ static class MidiSplitChecks
         ok &= CheckRange();
         ok &= CheckUndo();
         ok &= CheckPreview();
+        ok &= CheckTrimStart();
+        return ok;
+    }
+
+    /// <summary>The left edge of a clip: the notes stay where they sound, the end stays, a note crossing the start is cut there.</summary>
+    static bool CheckTrimStart()
+    {
+        var p = New(out var t);
+        var c = MidiEditing.AddClip(p, t.Id, 2, 8);
+        c.Notes.Add(Note(60, 0, 2));
+        c.Notes.Add(Note(62, 3, 2));
+        c.Notes.Add(Note(64, 6, 2));
+        double end = c.AtSec + c.LengthBeats * 60 / Bpm;
+        MidiEditing.TrimStart(p, c.Id, c.AtSec + 4 * 60 / Bpm);
+        bool ok = Math.Abs(c.AtSec + c.LengthBeats * 60 / Bpm - end) < 1e-6 && Math.Abs(c.LengthBeats - 4) < 1e-9
+            && c.Notes.Count == 2 && c.Notes[0].Pitch == 62 && Math.Abs(c.Notes[0].Beat - 0) < 1e-9 && Math.Abs(c.Notes[0].Beats - 1) < 1e-9
+            && c.Notes[1].Pitch == 64 && Math.Abs(c.Notes[1].Beat - 2) < 1e-9;
+        Console.WriteLine($"{"Recortar inicio de clip MIDI",-62} {(ok ? "igual" : "DISTINTO")}");
         return ok;
     }
 

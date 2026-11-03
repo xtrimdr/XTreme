@@ -254,9 +254,10 @@ public partial class MainWindow
         return header;
     }
 
-    /// <summary>The track menu's "Carpeta" entries: out of its folder, into another one, or a new folder with it. On a
-    /// track picked with others they act on all the picked ones.</summary>
-    MenuItem FolderSubmenu(LiveTrack track, bool enabled)
+    /// <summary>The track menu's folder entries: a new folder with it, right in the menu (one click to group), and a
+    /// "Carpeta" submenu only when there is somewhere else to go (out of its folder, into another one). On a track
+    /// picked with others they act on all the picked ones.</summary>
+    IEnumerable<object> FolderItems(LiveTrack track, bool enabled)
     {
         var items = new List<object>();
         var p = store!.Project;
@@ -278,9 +279,9 @@ public partial class MainWindow
             item.Click += async (_, _) => await MoveGroup(x => { foreach (var t in group) TrackFolders.MoveInto(x, t, id); });
             items.Add(item);
         }
-        if (items.Count > 0) items.Add(new Separator());
-        items.Add(MenuAction(group.Count > 1 ? Loc.T("folder.newWithMany", group.Count) : Loc.T("folder.newWith"), () => NewFolder(group), enabled: enabled, icon: ""));
-        return new MenuItem { Header = MenuHeader(Loc.T("folder.menu"), new TextBlock { Text = "", Classes = { "icon" }, FontSize = 12 }), ItemsSource = items, IsEnabled = enabled };
+        yield return MenuAction(group.Count > 1 ? Loc.T("folder.group") : Loc.T("folder.newWith"), () => NewFolder(group), enabled: enabled, icon: "");
+        if (items.Count > 0)
+            yield return new MenuItem { Header = MenuHeader(Loc.T("folder.menu"), new TextBlock { Text = "", Classes = { "icon" }, FontSize = 12 }), ItemsSource = items, IsEnabled = enabled };
     }
 
     // --- folders in the mixer ----------------------------------------------------------------------

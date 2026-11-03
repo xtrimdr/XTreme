@@ -6,7 +6,8 @@ namespace XtremeDaw.Audio.Dsp;
 /// </summary>
 public static class ClipEnvelope
 {
-    public const double MinClipSec = 0.1;
+    /// <summary>Shortest a clip can be trimmed, stretched or split to: just enough to stay a clip (48 samples), not a length the user feels.</summary>
+    public const double MinClipSec = 0.001;
 
     public readonly record struct ClipWindow(
         double Origin,
