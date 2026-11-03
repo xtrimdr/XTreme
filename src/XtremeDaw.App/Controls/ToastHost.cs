@@ -65,8 +65,8 @@ public sealed class ToastHost : StackPanel
             HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
             Content = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 },
         };
-        ToolTip.SetTip(close, Loc.T("toast.close"));
-        Avalonia.Automation.AutomationProperties.SetName(close, Loc.T("toast.close"));
+        ToolTip.SetTip(close, Loc.T("common.close"));
+        Avalonia.Automation.AutomationProperties.SetName(close, Loc.T("common.close"));
         close.Click += (_, _) => Close();
 
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };

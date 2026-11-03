@@ -33,7 +33,7 @@ public partial class MainWindow
     List<string> RailSections()
     {
         bool group = PickedGroup() != null;
-        if (sel == null || sel.Track.IsMidi && !group) return [];
+        if (sel == null) return [];
         // several tracks picked share no effects (MainWindow.InspectorGroup.cs)
         List<string> list = ["Mezcla", RailBreak, .. group ? [] : chainSections, RailBreak, .. sendSections, RailBreak, "Transponer"];
         list.RemoveAll(t => t != RailBreak && !sectionLooks.ContainsKey(t));

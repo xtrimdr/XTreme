@@ -32,6 +32,8 @@ public sealed class MixTrackSpec
 {
     /// <summary>The track's name, for its stem file.</summary>
     public string Name { get; init; } = "";
+    /// <summary>The track's id: what a slot that listens to it names (<see cref="InsertSpec.Key"/>).</summary>
+    public string Id { get; init; } = "";
     public IReadOnlyList<MixClipSpec> Clips { get; init; } = [];
     /// <summary>A MIDI track's notes (<see cref="NoteSynth"/>), added to its clips' sound before the chain; null = none.</summary>
     public NoteSequence? Notes { get; init; }
@@ -39,6 +41,8 @@ public sealed class MixTrackSpec
     public Vst.VstInstance? Instrument { get; init; }
     /// <summary>The native sampler that plays <see cref="Notes"/> instead of the test tone; null = none.</summary>
     public SamplerRig? Sampler { get; init; }
+    /// <summary>The native granular that plays <see cref="Notes"/> instead of the test tone; null = none.</summary>
+    public GranularRig? Granular { get; init; }
     /// <summary>The project's tempo, for the instrument's transport.</summary>
     public double Tempo { get; init; } = 120;
     /// <summary>True when there is something to play: clips or notes.</summary>
@@ -187,6 +191,19 @@ public sealed class TrackDspChain
     /// <summary>How long its output waits before it adds into its folder, bus or the master (the PDC, <see cref="MixLatency"/>).</summary>
     public LatencyDelay OutDelay { get; } = new();
 
+    volatile SidechainKey? keyOut;
+    /// <summary>Its signal for the slots that listen to this track (after its slots, before pan and fader); null = nobody does.</summary>
+    public SidechainKey? KeyOut { get => keyOut; set => keyOut = value; }
+
+    /// <summary>Where in the keys this block goes: what it writes into <see cref="KeyOut"/> and what its own listening slots read.</summary>
+    public int KeyOffset { get => rack.KeyOffset; set => rack.KeyOffset = value; }
+
+    /// <inheritdoc cref="InsertRack.Keys"/>
+    public Func<string, SidechainKey?>? Keys { get => rack.Keys; set => rack.Keys = value; }
+
+    /// <inheritdoc cref="InsertRack.KeyIds"/>
+    public string[] KeyIds => rack.KeyIds;
+
     public void Configure(MixTrackSpec spec)
     {
         Volume = spec.Volume;
@@ -314,6 +331,7 @@ public sealed class TrackDspChain
 
         rack.Frame = Frame;
         grDb = rack.Process(bl, br);
+        keyOut?.Write(rack.KeyOffset, bl, br);
         spectrum?.Write(bl, br);
 
         bool mute = Muted || (anySolo && !Solo);
@@ -506,6 +524,18 @@ public sealed class BusDspChain
     /// <summary>A slot's effect by its id, for what the window shows live; null if it isn't in the chain.</summary>
     public ITrackInsert? Find(string id) => rack.Find(id);
 
+    /// <summary>The song frame its input belongs to, for slots that follow the beat: the block's, less how late what feeds it arrives (the PDC).</summary>
+    public long Frame { get => rack.Frame; set => rack.Frame = value; }
+
+    /// <summary>Where in the keys this block is, for its slots that listen to a track.</summary>
+    public int KeyOffset { get => rack.KeyOffset; set => rack.KeyOffset = value; }
+
+    /// <inheritdoc cref="InsertRack.Keys"/>
+    public Func<string, SidechainKey?>? Keys { get => rack.Keys; set => rack.Keys = value; }
+
+    /// <summary>Live: how late its input arrives (<see cref="MixLatency.Plan.NodeArrive"/>), set with the PDC.</summary>
+    public int InputLatency { get; set; }
+
     /// <summary>How long its output waits before it adds into the next node or the master (the PDC).</summary>
     public LatencyDelay OutDelay { get; } = new();
 
@@ -654,8 +684,17 @@ public sealed class InsertRack(int sampleRate)
     /// <summary>The inserts the UI last set, in order (the audio thread may still be fading over to them).</summary>
     public IReadOnlyList<ITrackInsert> Inserts => wanted;
 
-    /// <summary>The timeline frame of the next block, for a VST3 slot's lanes.</summary>
+    /// <summary>The timeline frame of the next block, for a VST3 slot's lanes and the pump's beat.</summary>
     public long Frame { get; set; }
+
+    /// <summary>Where in the keys (<see cref="SidechainKey"/>) the next block is, for the slots that listen to another track.</summary>
+    public int KeyOffset { get; set; }
+
+    /// <summary>The key of a track by its id, for the slots that listen to one (<see cref="InsertSpec.Key"/>); null = none. UI thread.</summary>
+    public Func<string, SidechainKey?>? Keys { get; set; }
+
+    /// <summary>The tracks the slots last set listen to (UI thread), for the run order.</summary>
+    public string[] KeyIds { get; private set; } = [];
 
     /// <summary>How late the slots' output comes out, all added up (UI thread: the slots it last set).</summary>
     public int LatencySamples
@@ -682,6 +721,15 @@ public sealed class InsertRack(int sampleRate)
     {
         var next = TrackInserts.Build(specs, wanted, wantedIds, sampleRate, out var ids);
         wantedIds = ids;
+        var keyIds = new List<string>();
+        for (int i = 0; i < next.Length; i++)
+        {
+            if (Sidechains.Of(next[i]) is not { } k) continue;
+            string? id = specs[i].Key;
+            k.Key.Source = id != null ? Keys?.Invoke(id) : null;
+            if (id != null) keyIds.Add(id);
+        }
+        KeyIds = [.. keyIds];
         // a chain that isn't sounding yet starts where its slots are, with nothing to fade
         if (!fade) foreach (var i in next) (i as FxShell)?.Snap();
         if (next == wanted) return;
@@ -713,6 +761,8 @@ public sealed class InsertRack(int sampleRate)
         for (int k = 0; k < cur.Length; k++)
         {
             if (cur[k] is Vst.VstInsert vst) vst.Frame = Frame;
+            else if (cur[k] is FxShell { Inner: PumpInsert pump }) pump.Frame = Frame;
+            if (Sidechains.Of(cur[k]) is { } keyed) keyed.Key.Pos = KeyOffset;
             cur[k].Process(bl, br);
             if (meters) reduction += cur[k].TakeGrDb();
         }
@@ -919,7 +969,7 @@ public static class MixRenderer
                 if (w.End > maxEnd) maxEnd = w.End;
             }
             // an instrument's own release and effects ring past the last note: two seconds of room
-            if (t.Notes != null) maxEnd = Math.Max(maxEnd, t.Notes.End / (double)sampleRate + (t.Instrument != null ? InstrumentTailSec : t.Sampler?.TailSec(t.Notes, sampleRate) ?? 0));
+            if (t.Notes != null) maxEnd = Math.Max(maxEnd, t.Notes.End / (double)sampleRate + (t.Instrument != null ? InstrumentTailSec : t.Sampler?.TailSec(t.Notes, sampleRate) ?? t.Granular?.TailSec ?? 0));
         }
         return maxEnd;
     }
@@ -958,6 +1008,15 @@ public static class MixRenderer
         return (outL, outR);
     }
 
+    /// <summary>A key for each track that some slot listens to, in a track's, a folder's or bus's, or the master's chain.</summary>
+    static Dictionary<string, SidechainKey> KeysFor(IReadOnlyList<MixTrackSpec> tracks, MixBusSpec bus)
+    {
+        var ids = tracks.Select(t => t.Id).Where(id => id.Length > 0).ToHashSet();
+        return tracks.SelectMany(t => t.Inserts ?? []).Concat(bus.Nodes.SelectMany(n => n.Inserts)).Concat(bus.MasterInserts)
+            .Select(s => s.Key).OfType<string>().Where(ids.Contains).Distinct()
+            .ToDictionary(id => id, _ => new SidechainKey(ChunkFrames, Sets));
+    }
+
     /// <summary>A destination of a track or a node: a later node (<paramref name="to"/> &gt; <paramref name="from"/>) or the master (-1).</summary>
     static int Valid(int to, int from, int nodes) => to > from && to < nodes ? to : -1;
 
@@ -980,7 +1039,11 @@ public static class MixRenderer
         bool master = true,
         double stopSec = double.PositiveInfinity)
     {
+        // the tracks some slot listens to (a sidechain): each one's key, one stretch per buffer set
+        var keys = KeysFor(tracks, busSpec);
+        SidechainKey? KeyOf(string id) => keys.GetValueOrDefault(id);
         var bus = new MixGraphBus(sampleRate);
+        bus.Slots.Keys = KeyOf;
         bus.Configure(busSpec);
         // the folders and buses, in their run order; each one's output and sends only go to later ones (or the master)
         var nodeSpecs = busSpec.Nodes;
@@ -994,7 +1057,7 @@ public static class MixRenderer
         // every chain made, so the VST3 effects it opened (each its own process) close at the end, or if one fails to open
         var made = new List<IReadOnlyList<ITrackInsert>>();
         var instruments = new List<(Vst.InstrumentRender Render, float[] L, float[] R)?>();
-        var samplers = new List<Sampler?>();
+        var samplers = new List<NoteInstrument?>();
         void Close()
         {
             foreach (var inserts in made)
@@ -1012,7 +1075,7 @@ public static class MixRenderer
         }
         for (int j = 0; j < nodeCount; j++)
         {
-            var node = nodes[j] = new BusDspChain(sampleRate);
+            var node = nodes[j] = new BusDspChain(sampleRate) { Keys = KeyOf };
             Open(() => node.Configure(nodeSpecs[j]));
             made.Add(node.Inserts);
             nodeOut[j] = Valid(nodeSpecs[j].Output, j, nodeCount);
@@ -1036,16 +1099,25 @@ public static class MixRenderer
 
         var active = new List<(MixClipSpec[] Clips, ClipAudioJoins?[] Joins, NoteSequence? Notes, TrackDspChain Chain, int Out, MixSendSpec[] Sends, LatencyDelay[] Delays)>();
         var slotLanes = new List<Func<double, IReadOnlyList<InsertSpec>?>?>();
+        var activeIds = new List<string>();
         // each instrument track's plugin, in its own process, and the stretch it rendered (null = the test tone)
         for (int k = 0; k < tracks.Count; k++)
         {
             var t = tracks[k];
             bool mute = t.Muted || (anySolo && !t.Solo);
-            if (only >= 0 ? k != only : mute || !t.HasSound) continue;
-            var chain = new TrackDspChain(sampleRate);
+            // a track a slot listens to runs even muted, or outside a stem: its signal is the key, its output stays silent
+            var key = t.HasSound ? KeyOf(t.Id) : null;
+            if (only >= 0 ? k != only && key == null : (mute && key == null) || !t.HasSound) continue;
+            var chain = new TrackDspChain(sampleRate) { Keys = KeyOf, KeyOut = key };
             Open(() => chain.Configure(t));
             made.Add(chain.Inserts);
-            if (only >= 0) chain.Muted = chain.Solo = false;
+            if (key != null) key.Attached = true;
+            activeIds.Add(t.Id);
+            if (only >= 0)
+            {
+                chain.Solo = false;
+                chain.Muted = k != only;
+            }
             MixSendSpec[] sends = [.. t.Sends.Where(s => s.Sounds && s.To >= 0 && s.To < nodeCount)];
             chain.Sends = [.. sends.Select(s => new TrackSend(null, s.To, (float)Math.Clamp(s.Level, 0, 1), s.Pre))];
             var clips = t.Clips.ToArray();
@@ -1060,6 +1132,12 @@ public static class MixRenderer
                 player.Set(rig.Patch);
                 samplers[^1] = player;
             }
+            else if (t.Granular is { } grains && t.Instrument == null && t.Notes != null)
+            {
+                var player = new Granular(sampleRate) { Sound = grains.Sound, Notes = t.Notes, Curves = grains.Curves };
+                player.Set(grains.Patch);
+                samplers[^1] = player;
+            }
             if (t.Instrument != null && t.Notes != null)
             {
                 var inst = t.Instrument;
@@ -1072,6 +1150,7 @@ public static class MixRenderer
             }
         }
         if (only >= 0) anySolo = false;
+        var trackLevels = Sidechains.Levels(active.Count, k => active[k].Chain.KeyIds.Select(id => activeIds.IndexOf(id)));
         // each instrument, freshly opened, may still be loading its samples: the export can't start until it sounds
         Open(() =>
         {
@@ -1140,6 +1219,8 @@ public static class MixRenderer
         {
             var set = sets[c % sets.Length];
             int at = c * ChunkFrames, len = Math.Min(ChunkFrames, totalFrames - at);
+            int keyBase = c % sets.Length * ChunkFrames;
+            foreach (var key in keys.Values) key.Begin(keyBase, len);
             void Track(int k)
             {
                 var (clips, joins, notes, chain, _, _, delays) = active[k];
@@ -1154,6 +1235,7 @@ public static class MixRenderer
                 {
                     int n = Math.Min(Quantum, len - off);
                     chain.Frame = at + off;
+                    chain.KeyOffset = keyBase + off;
                     if (lanes != null && (at + off) % AutoStep == 0 && lanes((at + off) / (double)sampleRate) is { } specs) chain.SetInserts(specs);
                     TrackDspChain.SampleClips(clips, at + off, n, sampleRate, chain.BufferL(n), chain.BufferR(n), joins);
                     if (inst is { } p)
@@ -1173,8 +1255,12 @@ public static class MixRenderer
                     }
                 }
             }
-            if (active.Count > 1) Parallel.For(0, active.Count, new ParallelOptions { CancellationToken = token }, Track);
-            else if (active.Count == 1) Track(0);
+            // a source before the tracks that listen to it, in parallel within a level
+            foreach (var group in trackLevels)
+            {
+                if (group.Length > 1) Parallel.For(0, group.Length, new ParallelOptions { CancellationToken = token }, i => Track(group[i]));
+                else Track(group[0]);
+            }
             // summed in the tracks' order into the master and the nodes, so every sample is the same float every time
             Array.Clear(set.L, 0, len);
             Array.Clear(set.R, 0, len);
@@ -1216,6 +1302,8 @@ public static class MixRenderer
                 for (int off = 0; off < len; off += Quantum)
                 {
                     int n = Math.Min(Quantum, len - off);
+                    nodes[j].Frame = c * (long)ChunkFrames + off - plan.NodeArrive[j];
+                    nodes[j].KeyOffset = c % sets.Length * ChunkFrames + off;
                     nodes[j].Process(set.NodeL[j].AsSpan(off, n), set.NodeR[j].AsSpan(off, n), nodePre[j], set.PreL[j].AsSpan(off, n), set.PreR[j].AsSpan(off, n));
                 }
             }
@@ -1248,6 +1336,8 @@ public static class MixRenderer
                 int n = Math.Min(Quantum, len - off), pos = at + off;
                 var ml = set.L.AsSpan(off, n);
                 var mr = set.R.AsSpan(off, n);
+                bus.Slots.Frame = pos - plan.Master;
+                bus.Slots.KeyOffset = c % sets.Length * ChunkFrames + off;
                 bus.Process(ml, mr, limit, master);
 
                 int skip = Math.Max(0, latency - pos);

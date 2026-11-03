@@ -67,7 +67,7 @@ public static class AudioToMidi
         lock (sessionLock)
         {
             if (session != null) return session;
-            if (!Available) throw new InvalidOperationException(Texts.T("err.toMidi.noModel", "Falta el modelo de extracción (basic-pitch\\nmp.onnx). Reinstalá XTreme."));
+            if (!Available) throw new InvalidOperationException(Texts.T("err.toMidi.noModel", "Falta el modelo para extraer MIDI. Reinstalá XTreme."));
             try
             {
                 using var options = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };

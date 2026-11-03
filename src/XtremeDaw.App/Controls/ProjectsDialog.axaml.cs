@@ -130,7 +130,7 @@ public sealed partial class ProjectsDialog : UserControl
     {
         CurrentDir = currentDir;
         IsVisible = true;
-        ToolTip.SetTip(CloseButton, Loc.T(CanCancel ? "settings.close" : "proj.closeEmpty.tip"));
+        ToolTip.SetTip(CloseButton, Loc.T(CanCancel ? "common.close" : "proj.closeEmpty.tip"));
         draft = null;
         confirmDelete = null;
         error = notice = null;
@@ -622,7 +622,8 @@ public sealed partial class ProjectsDialog : UserControl
         NoticeText.IsVisible = error != null || notice != null;
         NoticePanel.IsVisible = NoticeText.IsVisible;
         NoticeText.Text = error ?? notice;
-        NoticeText.Foreground = error != null ? (IBrush)this.FindResource("Rec")! : (IBrush)this.FindResource("Dim")!;
+        // a notice that isn't a problem ("Plantilla guardada") goes without the warning sign
+        NoticeIcon.IsVisible = error != null;
         RenderList();
     }
 
@@ -838,7 +839,7 @@ public sealed partial class ProjectsDialog : UserControl
             }
             else
             {
-                var forget = new Button { Classes = { "btn" }, Height = 28, Padding = new Thickness(10, 0), FontSize = 11, Content = "Quitar de la lista" };
+                var forget = new Button { Classes = { "btn", "sm" }, Content = Loc.T("proj.forget") };
                 forget.Click += async (_, _) => await Forget(p);
                 actions.Children.Add(forget);
             }
@@ -873,7 +874,7 @@ public sealed partial class ProjectsDialog : UserControl
         submit.Content = label;
         submit.Click += async (_, _) => await SubmitDraft();
 
-        var error = new TextBlock { Text = Loc.T("proj.nameTaken"), FontSize = 11, Foreground = Res("Rec"), Margin = new Thickness(16, -4, 16, 10), IsVisible = renameTaken };
+        var error = new TextBlock { Text = Loc.T("proj.nameTaken"), Classes = { "notice" }, Margin = new Thickness(16, -4, 16, 10), IsVisible = renameTaken };
         input.TextChanged += (_, _) =>
         {
             if (draft == null) return;
@@ -900,7 +901,7 @@ public sealed partial class ProjectsDialog : UserControl
         form.Children.Add(input);
         if (savingTemplate)
         {
-            var cancel = new Button { Classes = { "btn" }, Content = Loc.T("transport.count.cancel"), Margin = new Thickness(8, 0, 0, 0) };
+            var cancel = new Button { Classes = { "btn" }, Content = Loc.T("common.cancel"), Margin = new Thickness(8, 0, 0, 0) };
             cancel.Click += (_, _) => SetDraft(null);
             Grid.SetColumn(cancel, 1);
             form.Children.Add(cancel);
@@ -917,9 +918,9 @@ public sealed partial class ProjectsDialog : UserControl
     {
         var text = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
         text.Inlines!.Add(new Avalonia.Controls.Documents.Run(Loc.T("hist.trashAsk.a")));
-        text.Inlines.Add(new Avalonia.Controls.Documents.Run($"\"{p.Name}\"") { FontWeight = FontWeight.SemiBold });
+        text.Inlines.Add(new Avalonia.Controls.Documents.Run(Loc.T("common.quoted", p.Name)) { FontWeight = FontWeight.SemiBold });
         text.Inlines.Add(new Avalonia.Controls.Documents.Run(Loc.T("proj.trashAsk.b")));
-        var cancel = new Button { Classes = { "btn", "sm" }, Content = Loc.T("transport.count.cancel"), Margin = new Thickness(12, 0, 0, 0) };
+        var cancel = new Button { Classes = { "btn", "sm" }, Content = Loc.T("common.cancel"), Margin = new Thickness(12, 0, 0, 0) };
         cancel.Click += (_, _) =>
         {
             confirmDelete = null;

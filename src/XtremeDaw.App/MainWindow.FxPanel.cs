@@ -40,19 +40,22 @@ public partial class MainWindow
     /// <summary>A value as its unit reads, by the same rules as the rest of the window.</summary>
     static string FxText(FxParam p, double v)
     {
-        if (v <= p.OffBelow) return Loc.T("master.off");
+        if (v <= p.OffBelow) return Loc.T(p.OffText ?? "master.off");
+        if (p.StepName(v) is { } name) return Loc.T(name);
         return p.Unit switch
         {
             FxUnit.Percent => $"{v * 100:0}%",
             FxUnit.Db => FmtDb(v),
             FxUnit.Hz => $"{FmtHz(v)} Hz",
-            FxUnit.Ms => v < 10 ? $"{v:0.0} ms" : $"{v:0} ms",
+            FxUnit.Ms => v < 0.1 ? $"{v * 1000:0} µs" : v < 10 ? $"{v:0.0} ms" : $"{v:0} ms",
             FxUnit.Sec => $"{v:0.0} s",
-            FxUnit.Ratio => $"{v:0.0}:1",
+            FxUnit.Ratio => p.Steps != null ? $"{v:0.#}:1" : $"{v:0.0}:1",
             FxUnit.Ceiling => $"{v:0.0} dBTP",
             FxUnit.Recorte => v <= 0 ? Loc.T("master.clip.auto") : $"{v:0.0} dB",
             FxUnit.Rate => $"{v:0.00} Hz",
             FxUnit.Count => $"{v:0}",
+            FxUnit.Division => PumpParams.Names[Math.Clamp((int)Math.Round(v), 0, PumpParams.Names.Length - 1)],
+            FxUnit.Signed => $"{v * 100:+0;-0;0}%",
             _ => $"{v:0.#} dB",
         };
     }
@@ -140,6 +143,11 @@ public partial class MainWindow
     void FxBody(StackPanel body, SlotOwner o, InsertSlot slot, List<Action> refresh, Action<EqEditor>? onEq = null, string[]? hide = null)
     {
         string id = slot.Id, kind = slot.Type;
+        if (kind == TrackInserts.Pump)
+        {
+            PumpBody(body, o, id, refresh);
+            return;
+        }
         var knobs = new List<Knob>();
         var grid = FxGrid(knobs);
         void Add(FxParam p, UniformGrid to, List<Knob> list, Func<bool>? enabled = null, Func<bool>? shown = null)
@@ -179,11 +187,15 @@ public partial class MainWindow
                 break;
         }
 
+        if (TrackInserts.HasCompGraph(kind)) body.Children.Add(CompGraphOf(o, id, refresh));
+        if (TrackInserts.TakesKey(kind)) body.Children.Add(KeyChoice(o, id, refresh));
+
         bool Manual() => o.Slot(id)?.Comp?.Preset == "custom";
         bool Free() => o.Slot(id)?.Delay?.Sync != true;
         var all = FxDefs.Params(kind);
+        Func<bool>? Shown(FxParam p) => kind == InsertSlot.DelayKind && p.Id == "time" ? Free : null;
         foreach (var p in all.Where(p => !p.Fine && hide?.Contains(p.Id) != true))
-            Add(p, grid, knobs, kind == InsertSlot.CompKind && p.Id == "amount" ? () => !Manual() : null, kind == InsertSlot.DelayKind && p.Id == "time" ? Free : null);
+            Add(p, grid, knobs, kind == InsertSlot.CompKind && p.Id == "amount" ? () => !Manual() : null, Shown(p));
         foreach (var p in FxDefs.Common(kind)) Add(p, grid, knobs);
         body.Children.Add(grid);
 
@@ -192,7 +204,7 @@ public partial class MainWindow
         if (fine.Length == 0) return;
         var fineKnobs = new List<Knob>();
         var fineGrid = FxGrid(fineKnobs, 6);
-        foreach (var p in fine) Add(p, fineGrid, fineKnobs);
+        foreach (var p in fine) Add(p, fineGrid, fineKnobs, shown: Shown(p));
         fineGrid.IsVisible = Manual();
         var button = new Button { Classes = { "ghost" }, FontSize = 11, Padding = new Thickness(8, 6), Focusable = false, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
         void Label() => button.Content = (fineGrid.IsVisible ? "▾ " : "▸ ") + Loc.T("insp.fine");
@@ -200,6 +212,59 @@ public partial class MainWindow
         button.Click += (_, _) => { fineGrid.IsVisible = !fineGrid.IsVisible; Label(); };
         body.Children.Add(button);
         body.Children.Add(fineGrid);
+    }
+
+    /// <summary>
+    /// What a compressor, a gate or the pump listens to (its sidechain): its own input or another track, by name. A track that
+    /// was removed shows as such and it listens to its own input meanwhile (an undo brings it back).
+    /// </summary>
+    Control KeyChoice(SlotOwner o, string id, List<Action> refresh)
+    {
+        var pick = StripSelect([]);
+        ToolTip.SetTip(pick, Loc.T("fx.key.tip"));
+        var sources = new List<string>();
+        pick.Selected += i => SlotEdit(o, id, s => s.Sidechain = i <= 0 || i > sources.Count ? null : sources[i - 1], "sidechain");
+        refresh.Add(() =>
+        {
+            sources.Clear();
+            var names = new List<string> { Loc.T("fx.key.own") };
+            foreach (var t in store?.Project.Tracks ?? [])
+            {
+                if (t.Id == o.OwnerId) continue;
+                sources.Add(t.Id);
+                names.Add(t.Name);
+            }
+            pick.SetItems([.. names]);
+            string? key = o.Slot(id)?.Sidechain;
+            int at = key == null ? 0 : sources.IndexOf(key) + 1;
+            if (key != null && at == 0) pick.ShowNone(Loc.T("fx.key.gone"));
+            else pick.SelectedIndex = at;
+        });
+        var label = new TextBlock { Text = Loc.T("fx.key"), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(0, 2, 0, 2) };
+        row.Children.Add(label);
+        Grid.SetColumn(pick, 1);
+        row.Children.Add(pick);
+        return row;
+    }
+
+    /// <summary>Whether a slot listens to a track that is in the project (one that was removed leaves it on its own input).</summary>
+    bool Keyed(InsertSlot s) => s.Sidechain is { } k && store?.Project.Tracks.Exists(t => t.Id == k) == true;
+
+    /// <summary>
+    /// A compressor's graph (asked by the user, for every compressor): the running effect when it is in the engine, and the
+    /// curve from the slot's settings when it isn't, rebuilt on every edit.
+    /// </summary>
+    CompGraph CompGraphOf(SlotOwner o, string id, List<Action> refresh)
+    {
+        var graph = new CompGraph { Live = () => (o.Insert(id) is FxShell s ? s.Inner : o.Insert(id)) as ICompGraph, Margin = new Thickness(0, 2, 0, 2) };
+        refresh.Add(() =>
+        {
+            if (o.Slot(id) is { } slot && ChannelDsp.Specs([slot], 0) is [var spec])
+                graph.Offline = TrackInserts.CurveOf(spec, graph.Offline, Audio.PlaybackEngine.SampleRate);
+            graph.InvalidateVisual();
+        });
+        return graph;
     }
 
     static EqInsert? InsertEq(ITrackInsert? insert) => insert is FxShell shell ? shell.Inner as EqInsert : null;

@@ -9,7 +9,8 @@ namespace XtremeDaw.App;
 /// <summary>
 /// The "Para probar" list in a test copy (<see cref="TestList"/>): the button in the title bar with what is left to
 /// try, and <see cref="TestListWindow"/>, which opens by itself when something is waiting. Agents add to the list from
-/// other processes, so the file is watched for as long as the window is open. Outside a test copy none of this runs.
+/// other processes, so the file is watched for as long as the window is open. The list is a window of its own, with its
+/// button in the taskbar (asked by the user), like the panels' windows. Outside a test copy none of this runs.
 /// </summary>
 public partial class MainWindow
 {
@@ -37,6 +38,8 @@ public partial class MainWindow
             if (File.GetLastWriteTimeUtc(path) != testListStamp) ReadTestList(path);
         };
         timer.Start();
+        // its own window (with its taskbar button, asked by the user): it closes with the main one
+        Closed += (_, _) => testPanel?.Close();
     }
 
     /// <summary>Reads the file and updates the button and the panel; null if it is being swapped (the next tick reads it).</summary>
@@ -80,6 +83,6 @@ public partial class MainWindow
         panel.Closed += (_, _) => testPanel = null;
         testPanel = panel;
         ReadTestList(path);
-        panel.Show(this);
+        panel.Show();
     }
 }

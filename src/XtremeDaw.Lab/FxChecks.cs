@@ -101,6 +101,19 @@ static class FxChecks
         var untouched = new Project();
         untouched.Normalize();
         Row("Proyecto nuevo: master sin efectos", $"{untouched.Settings.Master.Slots.Count}", "0", untouched.Settings.Master.Slots.Count == 0);
+        // the master's ON is the whole chain's: off, a peak over the Techo passes the limiter untouched
+        var offMaster = new MasterSettings { On = false, LimOn = true, ChainInSlots = true };
+        var offBus = new MixGraphBus(Sr);
+        offBus.Configure(new MixBusSpec { Master = offMaster.ToParams() });
+        offBus.Reset();
+        var hot = Signal(Sr, i => 0.99 * Math.Sin(2 * Math.PI * 220 * i / Sr));
+        static double Peak(float[] x) => x.Length == 0 ? 0 : x.Max(v => Math.Abs(v));
+        double offPeak = Peak(RunBus(offBus, hot));
+        var onBus = new MixGraphBus(Sr);
+        onBus.Configure(new MixBusSpec { Master = new MasterSettings { On = true, LimOn = true, ChainInSlots = true }.ToParams() });
+        onBus.Reset();
+        double onPeak = Peak(RunBus(onBus, hot));
+        Row("Master apagado: el limitador también", $"{onPeak:0.00} / {offPeak:0.00}", "< 0,9 / 0,99", onPeak < 0.9 && offPeak > 0.98);
         // a look lands on the slots wherever they were moved to, and leaves the rest alone
         ChannelInserts.Move(old.Slots, old.Slots[4].Id, -4);
         var width = old.Slots[0];

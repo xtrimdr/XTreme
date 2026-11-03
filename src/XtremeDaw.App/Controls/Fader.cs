@@ -51,8 +51,8 @@ public sealed class Fader : Control
         Width = CapW + 4;
         MinHeight = CapH + 24;
         Cursor = new Cursor(StandardCursorType.SizeNorthSouth);
-        ToolTip.SetTip(this, "Arrastrá o usá la rueda (Shift = fino) · doble click: 0 dB");
-        AutomationProperties.SetName(this, "Volumen");
+        ToolTip.SetTip(this, Loc.T("fader.tip"));
+        AutomationProperties.SetName(this, Loc.T("fader.name"));
     }
 
     /// <summary>The narrow cap, for a strip with little room.</summary>

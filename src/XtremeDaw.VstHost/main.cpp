@@ -1833,7 +1833,8 @@ int HostMain(const std::string& path, const std::string& cid, const std::wstring
         return 2;
     }
 
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    // OLE, not just COM: a plugin's window registers itself for drag and drop, which fails on a thread without it.
+    OleInitialize(nullptr);
     WNDCLASSW wc {};
     wc.lpfnWndProc = EditorProc;
     wc.hInstance = GetModuleHandleW(nullptr);

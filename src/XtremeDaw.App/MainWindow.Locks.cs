@@ -61,18 +61,23 @@ public partial class MainWindow
             return trackId;
         }, locked ? "track-locked" : "track-unlocked");
 
+    bool ClipIsLocked(string clipId) => store != null && store.Project.Tracks.Any(t => t.Clips.Any(c => c.Id == clipId && c.Locked));
+
+    bool TrackIsLocked(string trackId) => store?.Project.Tracks.Find(t => t.Id == trackId)?.Locked == true;
+
     /// <summary>The clip menu's "Bloquear clip", ticked while it is locked; on a locked track it says the track holds it.</summary>
     MenuItem ClipLockItem(LiveTrack track, LiveClip clip, bool enabled)
     {
+        string trackId = track.Track.Id, clipId = clip.Clip.Id;
         if (track.Track.Locked)
-            return MenuAction(Loc.T("lock.clip.byTrack"), () => SetTrackLocked(track.Track.Id, false), enabled: enabled, icon: "",
+            return MenuAction(Loc.T("lock.clip.byTrack"), () => SetTrackLocked(trackId, false), enabled: enabled, icon: "",
                 tip: Loc.T("lock.clip.byTrack.tip"));
-        return MenuAction(Loc.T(clip.Clip.Locked ? "lock.clip.off" : "lock.clip.on"), () => SetClipLocked(track.Track.Id, clip.Clip.Id, !clip.Clip.Locked),
-            enabled: enabled, icon: clip.Clip.Locked ? "" : "", tip: Loc.T("lock.clip.tip"));
+        return MenuCheck(Loc.T("lock.clip.on"), () => ClipIsLocked(clipId), () => _ = SetClipLocked(trackId, clipId, !ClipIsLocked(clipId)), [],
+            tip: Loc.T("lock.clip.tip"), enabled: enabled);
     }
 
-    /// <summary>The track menu's "Bloquear pista".</summary>
-    MenuItem TrackLockItem(LiveTrack track, bool enabled) =>
-        MenuAction(Loc.T(track.Track.Locked ? "lock.track.off" : "lock.track.on"), () => SetTrackLocked(track.Track.Id, !track.Track.Locked),
-            enabled: enabled, icon: track.Track.Locked ? "" : "", tip: Loc.T("lock.track.tip"));
+    /// <summary>The track menu's "Bloquear pista", ticked while it is locked.</summary>
+    MenuItem TrackLockItem(string trackId, bool enabled, List<Action> refresh) =>
+        MenuCheck(Loc.T("lock.track.on"), () => TrackIsLocked(trackId), () => _ = SetTrackLocked(trackId, !TrackIsLocked(trackId)), refresh,
+            tip: Loc.T("lock.track.tip"), enabled: enabled);
 }

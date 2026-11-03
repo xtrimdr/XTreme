@@ -54,7 +54,6 @@ public sealed class SamplerWindow : Window
     bool measuring;
     /// <summary>Under this many cents it counts as in tune: no ear tells that much on a held note.</summary>
     const double TunedCents = 2;
-    static readonly IBrush Amber = Palette.Brush("#f59e0b");
 
     /// <summary>The settings of the track now; null once it no longer has a sampler.</summary>
     public Func<SamplerSettings?> Current { get; init; } = null!;
@@ -321,7 +320,7 @@ public sealed class SamplerWindow : Window
         bool tuned = Math.Abs((h.Key - s.Root) * 100 + h.Cents + s.Fine) < TunedCents;
         pitchFix.IsEnabled = !tuned;
         pitchText.Text = tuned ? $"{NoteName(h.Key)} · {Loc.T("sampler.pitch.tuned")}" : $"{NoteName(h.Key)} {h.Cents:+0;-0;0} ct";
-        pitchText.Foreground = tuned ? Palette.InTune : Amber;
+        pitchText.Foreground = tuned ? Palette.InTune : Palette.Mute;
     }
 
     /// <summary>What the detector found in the part of the sample in use; null = no clear pitch.</summary>

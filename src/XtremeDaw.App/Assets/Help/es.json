@@ -90,7 +90,7 @@
             "**Abajo de todo**: reloj, reproducir, grabar, tempo, click, afinador y las vistas Timeline, Piano roll, Mixer y Mastering. Tocar de nuevo la vista activa vuelve al timeline.",
             "**Maximizar**: {key:maximize} o {icon:E740} le da toda la ventana al panel que tocaste último (video, timeline, piano roll, mixer o mastering). Otra vez, vuelve todo como estaba."
           ],
-          "see": ["look", "shortcuts"]
+          "see": ["look", "panel-windows", "shortcuts"]
         },
         {
           "id": "news",
@@ -223,7 +223,7 @@
           ],
           "notes": [
             "Calibrá de nuevo si cambiás de interfaz o de buffer. Cada par de entrada y salida guarda su medición.",
-            "Para ajustar un solo canal, usá **Offset de audio** en la sección **Sincronización** del canal."
+            "Para ajustar un solo canal, usá **Corrimiento del audio** en la sección **Sincronización** del canal."
           ],
           "settings": "sync",
           "see": ["audio-setup", "video-sync"]
@@ -280,7 +280,7 @@
           "intro": "Se aplica al clip elegido o a todos los marcados.",
           "steps": [
             "Poné el cabezal donde querés cortar y dividí con {key:split}.",
-            "Duplicá con {key:duplicate}: la copia cae justo después.",
+            "Duplicá con {key:duplicate}: la copia cae justo después o, con el imán prendido, en el próximo paso entero del imán.",
             "Copiá con {key:copy} o cortá con {key:cut}.",
             "Pegá con {key:paste}: empieza en el cabezal y en la pista elegida."
           ],
@@ -313,11 +313,12 @@
           "icon": "E8B3",
           "title": "Seleccionar varios clips",
           "keywords": "marcar seleccion multiple rectangulo grupo",
-          "intro": "Para mover o borrar varios de una vez.",
+          "intro": "Para mover, editar o borrar varios de una vez.",
           "steps": [
             "Arrastrá en la parte vacía de las pistas: se marca todo lo que toque el rectángulo.",
             "**Ctrl+clic** en un clip lo suma o lo saca.",
             "Arrastrá uno de los marcados por el cuerpo y se mueven todos.",
+            "Arrastrá un borde, un fade o el bucle de uno de los marcados y cambian todos igual.",
             "Borralos con {key:delete}.",
             "{key:selectAll} marca todos los clips y {key:deselect} saca la selección."
           ],
@@ -392,10 +393,11 @@
             "Elegí **Copiar al proyecto** o **Vincular**. Con **No mostrar más** queda esa opción; se cambia en **Configuración → Guardado y exportación**."
           ],
           "notes": [
+            "Un sample de la Biblioteca también se suelta en la ventana de un plugin (un sampler, una caja de ritmos), como desde el Explorador.",
             "Si movés o borrás un archivo vinculado, sus clips quedan sin conexión. En la Biblioteca llevan la marca **Vinculado**.",
             "Para traer un vinculado adentro, tocá **Copiar al proyecto** en su fila de la Biblioteca. Tu archivo queda donde está.",
             "Si un archivo se movió, tocá **Elegir el archivo…** o **Buscar en una carpeta…** en la Biblioteca o en el menú del clip gris.",
-            "Borrar un canal vinculado lo saca del proyecto: tu archivo no se toca. Un paquete lleva copia de los vinculados.",
+            "Quitar un canal vinculado de la Biblioteca (o con **Borrar no usados**) lo saca del proyecto sin preguntar: tu archivo no se toca. Un paquete lleva copia de los vinculados.",
             "Lo que solo lee FFmpeg no se vincula: entra como WAV.",
             "Formatos: WAV, MP3, FLAC, OGG, M4A y AIFF. Algunos necesitan FFmpeg."
           ],
@@ -569,9 +571,75 @@
             "El **⋯** o el clic derecho lo apaga, duplica o elimina."
           ],
           "notes": [
-            "Los efectos propios van por grupos: **Dinámica**, **EQ**, **Saturación**, **Modulación** y **Espacio y estéreo**."
+            "Los efectos propios van por grupos: **Dinámica**, **Compresores clásicos**, **EQ**, **Saturación**, **Modulación** y **Espacio y estéreo**."
           ],
           "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
+        },
+        {
+          "id": "comp-models",
+          "icon": "E9D9",
+          "title": "Compresores clásicos",
+          "keywords": "compresor clásico fet óptico opto vca bus vari-mu válvula 1176 la-2a ssl dbx fairchild glue pegar",
+          "intro": "Cinco compresores con el carácter de los equipos de estudio más usados, cada uno con sus controles y su forma de reaccionar.",
+          "steps": [
+            "Tocá **+ Efecto** → **Compresores clásicos** y elegí uno.",
+            "**FET**: rápido y agresivo, con ataque desde 20 µs. Subí **Entrada** para comprimir más (el nivel se compensa); **Todos** junta los cuatro ratios.",
+            "**Óptico**: suave y musical. Solo **Reducción** y **Ganancia**; el ataque y el release los pone la celda según el material.",
+            "**VCA de bus**: limpio, para pegar una mezcla o un grupo. Ratio, ataque y release por pasos, **Auto** y **SC HPF** para que los graves no lo hagan bombear.",
+            "**VCA clásico**: mide el promedio (RMS) y suelta a 120 dB/s; con golpe en bombos y bajos. Rodilla **Dura** o **Suave**, ratio hasta ∞.",
+            "**Vari-Mu**: válvula, ratio que crece con el nivel y color. **Tiempo** 1 a 4 fijo, 5 y 6 automático."
+          ],
+          "notes": [
+            "**Dry** y **Wet** dan compresión en paralelo.",
+            "El gráfico del panel muestra la curva, con un punto donde está la señal, y los últimos segundos de entrada, salida y reducción. Lo tienen todos los compresores, también el **Compresor** de Dinámica.",
+            "El medidor de reducción de la tira muestra cuánto comprime cada uno.",
+            "Todas sus perillas se pueden automatizar."
+          ],
+          "see": [
+            "add-fx",
+            "pump"
+          ]
+        },
+        {
+          "id": "pump",
+          "icon": "ECC8",
+          "title": "Bombeo: sidechain al tempo",
+          "keywords": "sidechain bombeo ducking kickstart bombo bajo pad volumen tempo",
+          "intro": "El **Bombeo** baja el volumen en cada tiempo y lo deja volver, como un compresor con sidechain al bombo, sin rutear nada.",
+          "steps": [
+            "En la pista (o el bus) que querés que respire, tocá **+ Efecto** → **Dinámica** → **Bombeo**.",
+            "Arriba, **Tempo** o **Sidechain**, y cada cuánto baja: 1/16, 1/8, 1/4, 1/2 o 1/1.",
+            "La perilla grande, **Profundidad**, es cuánto baja.",
+            "Debajo del gráfico, elegí una **forma**; **Largo** (cuánto del tiempo tarda en volver) y **Curva** la ajustan."
+          ],
+          "notes": [
+            "Sigue el tempo del proyecto y cae en el tiempo aunque arranques en cualquier lugar.",
+            "En los controles finos: **Ataque** (cuánto tarda en bajar) y **Desplazar** (antes o después del tiempo).",
+            "El gráfico muestra la curva sobre el sonido (lo que entra, tenue; lo que sale, en color) y una línea que la recorre con lo que suena. Con **Sidechain**, la barra de la derecha es el nivel de la pista que manda: dispara al pasar la raya de acento.",
+            "Con **Sidechain** cada golpe decide cuándo baja y las perillas pasan a ser las de un compresor: **Umbral** (Auto: la mitad del pico reciente), **Ataque**, **Hold** y **Release**.",
+            "El medidor de reducción de la tira muestra cuánto baja."
+          ],
+          "see": ["sidechain", "add-fx", "comp-presets"]
+        },
+        {
+          "id": "sidechain",
+          "icon": "ECC8",
+          "title": "Sidechain: que otra pista mande",
+          "keywords": "sidechain bombo bajo ducking compresor puerta bombeo kick fantasma ghost",
+          "intro": "Un compresor, una puerta o el **Bombeo** pueden reaccionar a otra pista en vez de a la suya: el bajo se agacha cuando suena el bombo.",
+          "steps": [
+            "En la pista que tiene que agacharse (el bajo, el pad), agregá un **Compresor** o un **Bombeo**.",
+            "En el desplegable **Sidechain** del efecto, elegí la pista que manda (el bombo).",
+            "Ajustá el umbral y la cantidad del compresor, o el umbral, la profundidad y el release del Bombeo."
+          ],
+          "notes": [
+            "Se escucha la pista después de sus efectos y antes de su fader: bajarle el volumen no cambia cuánto agacha a las otras.",
+            "Una pista muteada igual manda: sirve un bombo \"fantasma\" que no se oye.",
+            "Con una pista elegida, el **Bombeo** baja en cada golpe de esa pista en vez de a tempo.",
+            "La **Puerta** con sidechain se abre cuando suena la otra pista.",
+            "Si la pista que manda se quita, el efecto vuelve a escuchar su propia señal."
+          ],
+          "see": ["pump", "add-fx", "comp-presets"]
         },
         {
           "id": "eq",
@@ -646,13 +714,14 @@
           "id": "automation",
           "icon": "E9D9",
           "title": "Automatizar volumen y efectos",
-          "keywords": "curva mover solo fade envolvente parametro sampler corte resonancia",
+          "keywords": "curva forma tension escalones pulsos onda mantener mover solo fade envolvente parametro sampler corte resonancia",
           "intro": "Hace que un control cambie solo a lo largo del tema.",
           "steps": [
             "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista → **Automatización**. En un plugin: tocá **Automatizar** en la barra de su ventana y mové el parámetro.",
             "Aparece un carril debajo de la pista.",
             "Clic agrega un punto, arrastrar lo mueve y doble clic lo borra. Shift+arrastrar dibuja.",
-            "Arrastrá el círculo en medio de un tramo para curvarlo.",
+            "Arrastrá el círculo en medio de un tramo para darle tensión: curvarlo, o cambiar cuántos escalones, pulsos u ondas tiene. Doble clic la vuelve a cero.",
+            "Clic derecho sobre un punto o un tramo → su forma: **Curva**, **Curva doble**, **Mantener**, **Escalones**, **Escalones suaves**, **Pulsos** u **Onda**. La de un punto es la del tramo que llega a él.",
             "Arrastrá la esquina de arriba a la derecha de un bloque para repetirlo en bucle."
           ],
           "notes": [
@@ -711,24 +780,24 @@
       "id": "master",
       "icon": "E767",
       "title": "Masterizar",
-      "hint": "Volumen final, Looks, Sugerir y limitador.",
+      "hint": "Cadena del master, volumen final y limitador.",
       "topics": [
         {
           "id": "mastering",
           "icon": "EB95",
           "title": "Masterizar en pocos pasos",
-          "keywords": "master final sonar fuerte terminar pulir look sugerencia",
+          "keywords": "master final sonar fuerte terminar pulir cadena limitador lufs",
           "intro": "El último paso antes de exportar. Abrí la vista **Mastering** en el transporte.",
           "steps": [
             "Reproducí la parte más fuerte del tema.",
-            "Elegí un **Look** (Natural, Pegadito, Brillante, Cálido, Al frente) y ajustá **Cuánto**.",
-            "O tocá **Sugerir**: analiza la mezcla y propone ajustes.",
-            "Elegí el **Destino** según dónde lo vas a publicar.",
-            "Mirá que **Pico real** no pase del **Techo**."
+            "Arriba, elegí el **Destino** según dónde lo vas a publicar.",
+            "Agregá efectos con **+ Efecto**, arriba (o **Cadena completa**). Hacé clic en una ficha de la cadena para editarla abajo.",
+            "Mirá a la derecha que **Pico real** no pase del **Techo** y cómo se mueven los LUFS en el gráfico."
           ],
           "notes": [
-            "Sin efectos en la lista, el master no procesa nada. **+ Efecto → Cadena completa** agrega las etapas.",
-            "Cada efecto de la lista es un módulo: arrastralo para cambiar el orden."
+            "El botón de encendido junto a **Master** prende o apaga toda la cadena, **Salida** incluida (Soft clip y Limitador). Apagado, la mezcla pasa sin tocar; el Destino sigue ajustando el volumen.",
+            "Arrastrá una ficha por su manija para cambiar el orden. Clic derecho: sus opciones.",
+            "Soft clip y Limitador van siempre al final."
           ],
           "see": ["loudness", "export-audio"]
         },
@@ -739,7 +808,7 @@
           "keywords": "lufs spotify youtube instagram tiktok apple music normalizacion bajo fuerte destino limitador",
           "intro": "Cada plataforma normaliza a su nivel. **Destino** lleva la mezcla a ese nivel.",
           "steps": [
-            "En **Mastering**, caja **Salida**, elegí el **Destino**: YouTube, Instagram, TikTok, Spotify o Apple Music.",
+            "En **Mastering**, arriba a la derecha, elegí el **Destino**: YouTube, Instagram, TikTok, Spotify o Apple Music.",
             "La app mide la mezcla y ajusta la ganancia sola.",
             "Escuchás y exportás a ese volumen."
           ],
@@ -925,7 +994,7 @@
           "keywords": "piano roll notas bateria base componer dibujar",
           "intro": "Una pista MIDI guarda notas y las toca con un instrumento.",
           "steps": [
-            "**Nueva pista → Pista MIDI**.",
+            "**Nueva pista → Pista MIDI**. O **Pista MIDI con instrumento** y elegí uno: la pista ya suena con él.",
             "Doble clic en un lugar vacío de la pista: crea un clip y abre el **Piano roll**.",
             "Clic en la grilla escribe una nota. Arrastrala para moverla; su borde derecho la alarga.",
             "Clic derecho borra.",
@@ -948,7 +1017,7 @@
             "En el **Piano roll**, o en el teclado virtual, tocá **Escala** y elegí la tónica y la escala.",
             "Las filas de la escala se resaltan, y las notas que escribís o movés van solas a la escala.",
             "Prendé **Acordes** ({key:chordTool}) y hacé clic en una nota: escribe el acorde que le corresponde en la escala.",
-            "Sobre el acorde aparece el selector: **F** es la posición fundamental y **1**, **2** y **3**, las inversiones. También con las teclas 1 a 4.",
+            "Sobre el acorde aparece el selector: **F** es la posición fundamental y **1**, **2** y **3**, las inversiones. También con las teclas 1 a 4, o con {wheel:wheelHeight} sobre el acorde (o sobre el que vas a escribir). Cada inversión queda cerca de donde estaba: el acorde no se va para arriba.",
             "Arrastrá el acorde para moverlo: arriba y abajo sigue la escala, así que cambia de acorde sin salirse de tono."
           ],
           "notes": [
@@ -963,14 +1032,14 @@
           "icon": "E7F5",
           "title": "Elegir un instrumento",
           "keywords": "plugin sonido piano sintetizador kontakt sampler sin sonido tono de prueba",
-          "intro": "Sin instrumento, la pista suena con un tono de prueba. Elegí el **Sampler** o un plugin.",
+          "intro": "Sin instrumento, la pista suena con un tono de prueba. Elegí el **Sampler**, el **Granular** o un plugin.",
           "steps": [
             "Elegí la pista MIDI.",
             "En el canal, abrí el desplegable **Instrumento**, o clic derecho en la pista → **Instrumento**.",
             "Elegí uno de la lista. La primera vez se buscan los plugins instalados.",
             "**Abrir la ventana** muestra el plugin."
           ],
-          "see": ["sampler", "plugins", "plugin-fail"]
+          "see": ["sampler", "granular", "plugins", "plugin-fail"]
         },
         {
           "id": "sampler",
@@ -979,13 +1048,13 @@
           "keywords": "sampler sample wav loop one shot adsr envolvente filtro lfo bateria drum instrumento nativo raiz afinar afinacion detector nota desafinado cents slide paneo automatizar corte resonancia",
           "intro": "Tocá cualquier sonido en todo el teclado.",
           "steps": [
-            "Arrastrá un archivo de audio a una pista MIDI. O elegí **Sampler** en **Instrumento** y soltalo en su ventana.",
+            "Arrastrá un archivo de audio a una pista MIDI. O elegí **Sampler** en **Instrumento** y soltalo en su ventana. El archivo queda vinculado donde está, sin preguntar.",
             "**Detectado** muestra en qué nota está el sonido y cuántos cents se desvía. **Afinar** lo lleva a esa nota. También podés ajustarlo a mano con **Tono** y **Fino**.",
             "La **Raíz** es la tecla en la que suena como es. Para cambiarla, hacé clic derecho en una tecla.",
             "Arrastrá las banderas **S** y **E** para elegir qué parte suena.",
             "En **Modo**: **Nota** suena mientras dura la nota; **One shot** suena entero, para golpes de batería.",
             "Elegí un **Loop** para que siga sonando mientras dura la nota, y movés su tramo con las banderas **L**.",
-            "Para que el loop no haga clic, dejá prendido **Imán al cero**: las banderas caen donde la onda cruza el cero. Alt las deja libres.",
+            "La costura del loop siempre se funde (al menos 5 ms; **Crossfade** la alarga). **Imán al cero** deja las banderas donde la onda cruza el cero, para que el fundido sea todavía más limpio. Alt las deja libres.",
             "La ruedita acerca la onda hasta ver cada muestra. **Inicio del loop** y **Fin del loop** van directo a cada bandera; doble clic vuelve a verla entera.",
             "Arrastrá los puntos de la envolvente, y probá el **Filtro** y el **LFO**."
           ],
@@ -999,16 +1068,39 @@
           "see": ["instrument", "midi-track", "midi-keyboard", "automation"]
         },
         {
+          "id": "granular",
+          "icon": "EC4F",
+          "title": "Estirar y texturizar con el Granular",
+          "keywords": "granular granos grano estirar time stretch recorrer scrub textura pad ambiente densidad tamaño jitter spray ancho posicion velocidad sync instrumento nativo",
+          "intro": "Toca un sample en granos cortos: estira el tiempo sin cambiar el tono, o lo congela en un punto.",
+          "steps": [
+            "Elegí **Granular** en **Instrumento** y soltá un archivo de audio en su ventana (queda vinculado donde está). Desde la Biblioteca: clic derecho → **Abrir en el granular**.",
+            "Arrastrá las banderas **S** y **E** para elegir la parte que recorre el cabezal.",
+            "En **Cabezal**: **Estirar** recorre el sample a su **Velocidad** (100% es la original; más lento lo alarga sin bajar el tono). **Recorrer** deja el cabezal en la **Posición**.",
+            "**Sync** hace que la velocidad siga al tempo del proyecto: poné en **BPM** el tempo del sample.",
+            "En **Grano**: **Densidad** son los granos por segundo (o una figura, con **Sync**), **Tamaño** lo que dura cada uno, y **Forma** y **Sesgo** su envolvente.",
+            "**Jitter** desordena el ritmo de los granos, **Spray** los aleja del cabezal y **Ancho** los reparte en el estéreo.",
+            "Cada nota toca a su altura desde la **Raíz**; clic derecho en una tecla para cambiarla."
+          ],
+          "notes": [
+            "Clic derecho en **Posición**, **Velocidad**, **Densidad**, **Tamaño**, **Jitter**, **Spray**, **Ancho**, **Volumen** o **Paneo**: **Automatizar…**. Un carril en **Posición** con **Recorrer** mueve el cabezal por el sample.",
+            "Con la posición quieta y sin Jitter ni Spray, los granos se repiten parejo y el sonido zumba a la densidad: subí un poco el Jitter o el Spray para suavizarlo.",
+            "El sample queda en el proyecto, como cualquier importación."
+          ],
+          "see": ["instrument", "sampler", "automation"]
+        },
+        {
           "id": "plugins",
           "icon": "E950",
           "title": "Instalar y administrar plugins",
-          "keywords": "vst vst2 vst3 32 bits carpeta buscar no aparece escanear ocultar miniatura imagen",
+          "keywords": "vst vst2 vst3 32 bits carpeta buscar no aparece escanear ocultar miniatura imagen categoria marca fabricante agrupar ordenar lista",
           "intro": "XTreme usa plugins VST3 y VST2, de 64 y 32 bits, cada uno en su propio proceso: si uno se cuelga, la grabación sigue.",
           "steps": [
             "Instalá el plugin como siempre.",
             "Tocá **Buscar nuevos**.",
             "Si está en otra carpeta, sumala con **+**.",
             "Destildá los que no quieras ver en los menús.",
+            "En **Mostrar en los menús** elegí **Por marca**, **Por categoría** o **Lista**; también desde cualquier menú de plugins, en su entrada **Mostrar en los menús** (con clic derecho el menú queda abierto). El chip de cada plugin cambia su categoría o crea una nueva; **Automática** vuelve a la que detecta la app.",
             "Cada plugin toma su miniatura la primera vez que abrís su ventana. Para rehacerla, tocá **Miniatura** en la barra de la ventana."
           ],
           "settings": "plugins",
@@ -1254,14 +1346,31 @@
           "id": "look",
           "icon": "E771",
           "title": "Cambiar el color y el diseño",
-          "keywords": "tema acento apariencia vertical paneles ocultar pantalla completa",
-          "intro": "Todo está en la barra de título.",
+          "keywords": "tema acento apariencia vertical paneles ocultar pantalla completa perillas knobs estilo neumorfico",
+          "intro": "Casi todo está en la barra de título.",
           "steps": [
             "El selector de tema elige el color de acento y el fondo.",
             "El botón de diseño {icon:E80A} cambia entre **Clásico** y **Vertical**.",
             "Los dos botones de panel ocultan los costados.",
-            "{key:fullScreen} pasa a pantalla completa."
-          ]
+            "{key:fullScreen} pasa a pantalla completa.",
+            "El estilo de las perillas se elige en **Configuración → Apariencia**."
+          ],
+          "settings": "view"
+        },
+        {
+          "id": "panel-windows",
+          "icon": "E8A7",
+          "title": "Sacar un panel a su propia ventana",
+          "keywords": "desacoplar acoplar ventana aparte flotante otro monitor segundo monitor separar paneles",
+          "intro": "Cualquier panel puede ir a una ventana aparte, por ejemplo en otro monitor.",
+          "steps": [
+            "Tocá {icon:E8A7}, arriba a la derecha de cada panel. También desde **Ver → Paneles en ventana**.",
+            "Lo que queda en la ventana principal ocupa el lugar libre. Con el video afuera, el timeline sube y el mixer va debajo.",
+            "Mixer, piano roll y mastering salen cada uno a su ventana, así podés tener los tres a la vista. Con el mixer afuera, el piano roll y mastering que no salieron solos se muestran en su ventana.",
+            "{key:maximize} dentro de una de estas ventanas la agranda; otra vez, vuelve a su tamaño.",
+            "{icon:E944} o la X de la ventana lo devuelven a la ventana principal. La ventana recuerda su lugar y su tamaño, y lo que quedó afuera vuelve a salir al abrir XTreme."
+          ],
+          "see": ["window", "look"]
         },
         {
           "id": "language",
@@ -1338,7 +1447,7 @@
           "steps": [
             "Calibrá en **Configuración → Sincronización**.",
             "Grabá de nuevo: se compensa solo.",
-            "En un canal viejo, usá **Offset de audio** o movelo con **Alt** para que quede libre de la grilla."
+            "En un canal viejo, usá **Corrimiento del audio** o movelo con **Alt** para que quede libre de la grilla."
           ],
           "settings": "sync",
           "see": ["latency"]

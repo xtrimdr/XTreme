@@ -56,6 +56,41 @@ static class VstCommands
                 Console.WriteLine(sub == "ocultar" ? $"{plugin.Name} ya no sale en las listas." : $"{plugin.Name} vuelve a salir en las listas.");
                 return 0;
             }
+            case "categoria":
+            {
+                string name = a.Positional.Skip(1).FirstOrDefault() ?? throw new ArgumentException("vst categoria \"nombre\" [--poner X | --auto]");
+                var all = PluginCatalog.Plugins(PluginCatalog.Load());
+                var plugin = PluginCatalog.Find(all, name)
+                    ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con vst escanear.");
+                if (a.Get("poner") is { } put) PluginCatalog.SetCategory(plugin, put, all);
+                else if (a.Flag("auto")) PluginCatalog.SetCategory(plugin, null, all);
+                string auto = PluginCatalog.AutoCategory(plugin, all), now = PluginCatalog.Category(plugin, all: all);
+                Console.WriteLine($"{plugin.Name}: {(now.Length > 0 ? now : "sin categoría")}{(now == auto ? " (automática)" : $" (propia; la automática es {(auto.Length > 0 ? auto : "ninguna")})")}");
+                return 0;
+            }
+            case "agrupar":
+            {
+                if (a.Positional.Skip(1).FirstOrDefault() is { } how)
+                    PluginCatalog.Grouping = how.ToLowerInvariant() switch
+                    {
+                        "marca" => PluginCatalog.ByVendor,
+                        "categoria" => PluginCatalog.ByCategory,
+                        "lista" => PluginCatalog.AsList,
+                        _ => throw new ArgumentException("vst agrupar [marca | categoria | lista]"),
+                    };
+                string grouping = PluginCatalog.Grouping;
+                Console.WriteLine($"Los menús agrupan: {grouping switch { PluginCatalog.ByCategory => "por categoría", PluginCatalog.AsList => "en una lista", _ => "por marca" }}");
+                var custom = PluginCatalog.CustomCategories();
+                var hidden = PluginCatalog.Hidden();
+                var plugins = PluginCatalog.Plugins(PluginCatalog.Load());
+                foreach (var g in plugins.Where(p => !hidden.Contains(PluginCatalog.Key(p)))
+                    .GroupBy(p => PluginCatalog.GroupOf(p, grouping, custom, plugins) ?? "").OrderBy(g => g.Key.Length == 0).ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    if (grouping != PluginCatalog.AsList) Console.WriteLine($"  {(g.Key.Length > 0 ? g.Key : grouping == PluginCatalog.ByCategory ? "(sin categoría)" : "(sin marca)")}");
+                    foreach (var p in g) Console.WriteLine($"    {(p.IsInstrument ? "instrumento" : "efecto     ")}  {p.Name}");
+                }
+                return 0;
+            }
             case "probar":
                 return Try(a);
             case "efecto":
@@ -71,7 +106,7 @@ static class VstCommands
             case "miniatura":
                 return Thumbnail(a);
             default:
-                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | bucle \"nombre\" [--bloque 256] [--vueltas 4] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--tarde] [--salida x.wav] [--apagado] | parametros \"nombre\" [--mover \"parámetro\"] [--segundos 2] | estado \"nombre\" | miniatura \"nombre\" [--salida x.png] [--ya]");
+                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | categoria \"nombre\" [--poner X | --auto] | agrupar [marca | categoria | lista] | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | bucle \"nombre\" [--bloque 256] [--vueltas 4] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--tarde] [--salida x.wav] [--apagado] | parametros \"nombre\" [--mover \"parámetro\"] [--segundos 2] | estado \"nombre\" | miniatura \"nombre\" [--salida x.png] [--ya]");
         }
     }
 
@@ -136,7 +171,7 @@ static class VstCommands
         var hidden = PluginCatalog.Hidden();
         if (plugins.Count == 0) Console.WriteLine("Sin plugins (probá con vst escanear).");
         foreach (var p in plugins)
-            Console.WriteLine($"{(p.IsInstrument ? "instrumento" : "efecto     ")}  {p.Name} · {p.FormatText} · {p.Vendor} · {p.Version} · {p.Categories}{(p.KnowsBuses ? $" · entradas: {p.AudioIns} de audio, {p.EventIns} de notas" : "")}{(hidden.Contains(PluginCatalog.Key(p)) ? "  (oculto)" : "")}");
+            Console.WriteLine($"{(p.IsInstrument ? "instrumento" : "efecto     ")}  {p.Name} · {p.FormatText} · {p.Vendor} · {p.Version} · {p.Categories} · categoría: {PluginCatalog.Category(p, all: plugins)}{(p.KnowsBuses ? $" · entradas: {p.AudioIns} de audio, {p.EventIns} de notas" : "")}{(hidden.Contains(PluginCatalog.Key(p)) ? "  (oculto)" : "")}");
         foreach (var e in entries.Where(e => e.Error != null))
             Console.WriteLine($"no abrió     {Path.GetFileName(e.Path)}: {e.Error}");
     }

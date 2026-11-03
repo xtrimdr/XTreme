@@ -40,6 +40,8 @@
     <SolidColorBrush x:Key="InTune" Color="#22c55e" />
     <!-- mute on, and the meters' -6..0 dB zone (Palette.Mute) -->
     <SolidColorBrush x:Key="Mute" Color="#f59e0b" />
+    <!-- what dims the window behind a dialog -->
+    <SolidColorBrush x:Key="Scrim" Color="#B3000000" />
 
     <!-- Fluent controls (sliders, switches) take the accent from these -->
     <Color x:Key="SystemAccentColor">#22d3ee</Color>
@@ -502,6 +504,22 @@
       <Setter Property="BorderBrush" Value="{StaticResource Accent70}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
+    <!-- a multi-line note inside a Raised card (Para probar): darker inside and a visible edge, so it reads as a box; it grows with the text -->
+    <Style Selector="TextBox.field.note">
+      <Setter Property="Height" Value="NaN" />
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="Background" Value="{StaticResource App}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Faint}" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+    <Style Selector="TextBox.field.note:pointerover /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{StaticResource App}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Dim}" />
+    </Style>
+    <Style Selector="TextBox.field.note:focus /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{StaticResource App}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent70}" />
+    </Style>
     <!-- the take name in the inspector: reads as a title, shows a Raised box on hover and while editing (TakeInspector.tsx input) -->
     <Style Selector="TextBox.title">
       <Setter Property="MinHeight" Value="30" />
@@ -622,6 +640,71 @@
       <Setter Property="Opacity" Value="0.3" />
     </Style>
 
+    <!-- a dialog's close button, top right: bigger and fainter than a row's -->
+    <Style Selector="Button.act.close">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Foreground" Value="{StaticResource Faint}" />
+    </Style>
+
+    <!-- text links (breadcrumbs, "Ver en la ayuda", "Restablecer"); .accent for the one to follow -->
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Foreground" Value="{StaticResource Faint}" />
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.link.accent">
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.link.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource AccentHover}" />
+    </Style>
+
+    <!-- dialogs: the card over the Scrim, its title, and the one way to show a problem in it (an error, a file that
+         exists, a missing permission): a Raised box with the warning icon, never red (red is recording and clip) -->
+    <Style Selector="Border.dialog">
+      <Setter Property="Background" Value="{StaticResource Panel}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.dialog-title">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.notice">
+      <Setter Property="Background" Value="{StaticResource Raised}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12,10" />
+    </Style>
+    <Style Selector="TextBlock.notice">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.icon.notice">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+      <Setter Property="Margin" Value="0,1,8,0" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+
     <!-- a button that paints its own colors from code (lit M / S, arm, power, C / LIM, track color swatches) carries
          the class lit while lit: the hover / press styles above set the template's presenter, which would cover the
          button's own Background with Hover grey, so here they keep its colors (the glow is the hover) -->
@@ -642,6 +725,10 @@
     <!-- text never glows: on transparent buttons (whole rows, links, check boxes) the glow would trace the letters.
          Rows answer with their own hover; a check box glows only its box -->
     <Style Selector="Button.swatch:pointerover, Button.rowmain:pointerover, Button.tplmain:pointerover, Button.link:pointerover, ToggleButton.flat:pointerover, CheckBox:pointerover, RadioButton:pointerover">
+      <Setter Property="Effect" Value="{x:Null}" />
+    </Style>
+    <!-- an option of a segmented control (seg, mode) that is off is only text: the glow would ring its letters -->
+    <Style Selector="ToggleButton.seg:not(.pick):not(:checked):pointerover, Button.seg:not(.on):pointerover, ToggleButton.mode:not(:checked):pointerover">
       <Setter Property="Effect" Value="{x:Null}" />
     </Style>
     <Style Selector="CheckBox:pointerover /template/ Border#NormalRectangle">

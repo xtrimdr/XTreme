@@ -23,7 +23,19 @@ public sealed class Compressor
     /// <summary>Deepest reduction (dB, &lt;= 0) since the last <see cref="TakeMeter"/>.</summary>
     public double MinGr { get; private set; }
 
+    /// <summary>Where it leaves what its graph shows; null = nobody draws it (the master's bands).</summary>
+    public CompScope? Scope { get; init; }
+
     public Compressor(double sampleRate) => fs = sampleRate;
+
+    /// <summary>The static curve at its settings: the output (dBFS, with make-up and the limiter's ceiling) for a steady peak.</summary>
+    public double CurveOutDb(double inDb)
+    {
+        double over = inDb - Threshold, w = Math.Max(0, Knee), slope = 1 / Math.Max(1, Ratio) - 1;
+        double gr = 2 * over <= -w ? 0 : w > 0 && 2 * Math.Abs(over) < w ? slope * (over + w / 2) * (over + w / 2) / (2 * w) : slope * over;
+        double y = inDb + gr + Makeup;
+        return Limit ? Math.Min(y, Ceiling) : y;
+    }
 
     public void Reset()
     {
@@ -41,8 +53,15 @@ public sealed class Compressor
         return m;
     }
 
-    public void Process(Span<float> left, Span<float> right)
+    public void Process(Span<float> left, Span<float> right) => Process(left, right, default, default);
+
+    /// <summary>
+    /// With a key (<paramref name="keyL"/> as long as the block: a sidechain) the reduction follows the key's level instead
+    /// of the input's; the limiter still watches the input, which is what it keeps under the ceiling.
+    /// </summary>
+    public void Process(Span<float> left, Span<float> right, ReadOnlySpan<float> keyL, ReadOnlySpan<float> keyR)
     {
+        bool keyed = keyL.Length >= left.Length && keyR.Length >= left.Length;
         if (Bypass)
         {
             gr = 0;
@@ -63,12 +82,14 @@ public sealed class Compressor
         double g1 = lg;
         double y = gr;
         double minGr = MinGr;
+        var scope = Scope;
         for (int i = 0; i < left.Length; i++)
         {
             double l = left[i];
             double r = right[i];
             double x = Math.Max(Math.Abs(l), Math.Abs(r));
-            double xdb = x > 1e-6 ? 20 * Math.Log10(x) : -120;
+            double k = keyed ? Math.Max(Math.Abs(keyL[i]), Math.Abs(keyR[i])) : x;
+            double xdb = k > 1e-6 ? 20 * Math.Log10(k) : -120;
             double over = xdb - T;
             double target;
             if (2 * over <= -W) target = 0;
@@ -87,6 +108,7 @@ public sealed class Compressor
             }
             left[i] = (float)(l * g);
             right[i] = (float)(r * g);
+            scope?.Add(x, Math.Max(Math.Abs(left[i]), Math.Abs(right[i])), red);
             if (red < minGr) minGr = red;
         }
         gr = y;

@@ -57,11 +57,11 @@ static class ClipChecks
         Check(stuck is { } s && Near(s, 4.05) && loose2 == null, "informa contra qué borde se pegó (para la guía), y nada si no se pegó");
         Check(Near(Magnet(3.12, 0.5, ClipEnvelope.Window(3, 3.97)).AtSec, 3.97) && Near(Magnet(3.12, 0.5, null).AtSec, 3.92),
             "con grilla, el borde corrige el paso cuando el clip ubicado queda a menos de 8 px");
-        Check(Near(ClipEditing.Window(Drag(original, ClipEditMode.Move, -100, true), media).End, 0.1), "siempre quedan 0,1 segundos visibles al cruzar cero");
+        Check(Near(ClipEditing.Window(Drag(original, ClipEditMode.Move, -100, true), media).End, ClipEnvelope.MinClipSec), "al cruzar cero siempre queda visible el largo mínimo de un clip");
         var cut = new Clip { MediaId = media.Id, AtSec = -2, TrimStartSec = 0.5 };
         Check(Near(Drag(cut, ClipEditMode.TrimStart, 0.2, true).TrimStartSec, 2.2), "recorte positivo incorpora la parte cortada por cero");
         Check(Near(Drag(cut, ClipEditMode.TrimStart, -0.2, true).TrimStartSec, 0.3), "recorte negativo recupera el original");
-        Check(Near(Drag(original, ClipEditMode.TrimEnd, -100, true).TrimEndSec, 9.9), "recortar mantiene la duración mínima");
+        Check(Near(Drag(original, ClipEditMode.TrimEnd, -100, true).TrimEndSec, 10 - ClipEnvelope.MinClipSec), "recortar mantiene la duración mínima");
         var faded = new Clip { MediaId = media.Id, FadeInSec = 2, FadeOutSec = 3 };
         Check(Near(Drag(faded, ClipEditMode.FadeIn, 100, true).FadeInSec, 7), "fade in no pisa el fade out");
         Check(Near(Drag(faded, ClipEditMode.FadeOut, -100, true).FadeOutSec, 8), "fade out no pisa el fade in");
@@ -138,7 +138,7 @@ static class ClipChecks
         var loadedWindow = ClipEditing.Window(loaded, incomplete, 10.000020833333);
         Check(Near(loadedWindow.End, 10.000020833333), "la edición usa el largo decodificado aun con metadatos sin duración");
         var trimmed = ClipEditing.Drag(loaded, incomplete, ClipEditMode.TrimEnd, -100, 0, true, 10);
-        Check(Near(trimmed.TrimEndSec, 9.9) && Near(ClipEditing.Window(trimmed, incomplete, 10).End, .1),
+        Check(Near(trimmed.TrimEndSec, 10 - ClipEnvelope.MinClipSec) && Near(ClipEditing.Window(trimmed, incomplete, 10).End, ClipEnvelope.MinClipSec),
             "el recorte usa la misma duración cargada que reproducción");
         var roundTrip = System.Text.Json.JsonSerializer.Deserialize<Clip>(System.Text.Json.JsonSerializer.Serialize(overrideClip, ProjectStore.Json), ProjectStore.Json)!;
         Check(roundTrip.SyncMs == -30 && roundTrip.VideoOffsetMs == -25 && roundTrip.AtSec == overrideClip.AtSec,
@@ -168,7 +168,7 @@ static class ClipChecks
         Check(whole.FadeInSec == 0.3 && whole.FadeOutSec == 0 && piece.FadeInSec == 0 && piece.FadeOutSec == 0.4 && piece.GainDb == -2,
             "la izquierda conserva el fade in y la derecha el fade out");
         bool refused = false;
-        try { ClipEditing.Split(sp, whole.Id, wl.Start + 0.05); } catch (ArgumentException) { refused = true; }
+        try { ClipEditing.Split(sp, whole.Id, wl.Start + ClipEnvelope.MinClipSec / 2); } catch (ArgumentException) { refused = true; }
         Check(refused, "no divide pegado al borde");
         string copyId = ClipEditing.Duplicate(sp, piece.Id);
         var wc = ClipEditing.Window(ClipEditing.Find(sp, copyId).Clip, media);
@@ -196,6 +196,11 @@ static class ClipChecks
         ba.GainDb = -6;
         Check(board.Items[0].Clip.GainDb == 0 && board.Paste(bp, null, 0).Count == 2 && bp.Tracks[0].Clips.Count == 3,
             "lo copiado no cambia si se edita el original, y sin pista vuelve a la suya");
+        // with the magnet on, the 7 s block goes 8 s later (four 2 s steps), and a block of exactly 4 steps goes 4 steps
+        var stepped = ClipEditing.DuplicateMany(bp, [ba.Id, bb.Id], step: 2);
+        var sa = ClipEditing.Window(ClipEditing.Find(bp, stepped[0]).Clip, media); var sb = ClipEditing.Window(ClipEditing.Find(bp, stepped[1]).Clip, media);
+        Check(Near(sa.Start, 10) && Near(sb.Start, 11) && ClipEditing.DuplicateShift(8, 2) == 8 && ClipEditing.DuplicateShift(8 + 1e-9, 2) == 8,
+            "con el imán, duplicar corre el bloque un número entero de pasos");
         bool foreign = false;
         try { board.Paste(new Project { Media = [media], Tracks = [new Track(), new Track()] }, null, 0); } catch (ArgumentException) { foreign = true; }
         Check(foreign, "no pega en otro proyecto");
@@ -217,8 +222,8 @@ static class ClipChecks
         Check(ClipEditing.DeleteRange(rp, rp.Tracks[0].Id, 24, 27) == 1 && rp.Tracks[0].Clips.Count == 2
             && Near(ClipEditing.Window(rp.Tracks[0].Clips[1], media).Start, 27) && Near(ClipEditing.Window(rp.Tracks[0].Clips[1], media).End, 30),
             "un rango que pisa el principio de un clip lo deja sin ese pedazo");
-        Check(ClipEditing.DeleteRange(rp, rp.Tracks[0].Id, 21, 29.95) == 2 && rp.Tracks[0].Clips.Count == 1
-            && Near(ClipEditing.Window(rp.Tracks[0].Clips[0], media).End, 21), "lo que sobra con menos de 0,1 s se va, y el final se recorta");
+        Check(ClipEditing.DeleteRange(rp, rp.Tracks[0].Id, 21, 30 - ClipEnvelope.MinClipSec / 2) == 2 && rp.Tracks[0].Clips.Count == 1
+            && Near(ClipEditing.Window(rp.Tracks[0].Clips[0], media).End, 21), "lo que sobra con menos del largo mínimo se va, y el final se recorta");
         Check(ClipEditing.DeleteRange(rp, rp.Tracks[0].Id, 0, 100) == 1 && rp.Tracks[0].Clips.Count == 0, "un rango que cubre todo quita los clips");
         var rq = new Project { Media = [media], Tracks = [new Track { Name = "Q" }] };
         rq.Tracks[0].Clips.Add(new Clip { MediaId = media.Id, AtSec = 0, TrimStartSec = 2, FadeInSec = 1 });

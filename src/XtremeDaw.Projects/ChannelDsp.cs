@@ -69,17 +69,19 @@ public static class ChannelDsp
     }
 
     /// <summary>A track as the export renders it, with its clips and the level its Vida is measured against.</summary>
-    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb, SamplerRig? sampler = null)
+    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb, SamplerRig? sampler = null, GranularRig? granular = null)
     {
         var ch = t.Channel;
         var automator = InsertAutomator.Create(t, rmsDb, p.Settings.Bpm);
         return new MixTrackSpec
         {
             Name = t.Name,
+            Id = t.Id,
             Clips = clips,
             Notes = Notes(t, p.Settings.Bpm, MidiSampleRate),
             Instrument = t.Instrument is { } i ? Instance(i) : null,
             Sampler = sampler,
+            Granular = granular,
             Tempo = p.Settings.Bpm,
             Volume = ch.Volume,
             Pan = ch.Pan,
@@ -165,7 +167,7 @@ public static class ChannelDsp
         {
             if (!s.Known) continue;
             s.Normalize();
-            var spec = new InsertSpec(s.Id, s.Type) { Wet = s.Wet, Dry = s.Dry, OutputDb = s.OutputDb };
+            var spec = new InsertSpec(s.Id, s.Type) { Wet = s.Wet, Dry = s.Dry, OutputDb = s.OutputDb, Key = s.Sidechain };
             list.Add(s.Type switch
             {
                 InsertSlot.SatKind => spec with { Sat = Sat(s.Sat!, rmsDb, bypass) },
@@ -175,7 +177,9 @@ public static class ChannelDsp
                 InsertSlot.GateKind => spec with { Gate = Gate(s.Gate!, bypass) },
                 InsertSlot.VstKind => spec with { Vst = Vst(s.Vst!, live == null ? null : live(s), live == null, bypass), Bpm = bpm },
                 InsertSlot.EqKind => spec with { EqOn = s.Eq!.On && !bypass, EqBands = EqBands(s.Eq) },
+                TrackInserts.Pump => spec with { Pump = FxDefs.ToPump(s), Bpm = bpm, StageOn = s.On && !bypass },
                 _ when TrackInserts.IsMod(s.Type) => spec with { Mod = FxDefs.ToMod(s), StageOn = s.On && !bypass },
+                _ when TrackInserts.IsModel(s.Type) => spec with { Model = FxDefs.ToCompModel(s), StageOn = s.On && !bypass },
                 _ => spec with { Stage = FxDefs.ToMaster(s), StageOn = s.On && !bypass },
             });
         }

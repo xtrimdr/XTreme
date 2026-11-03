@@ -76,6 +76,11 @@ public partial class MainWindow
     const double MixerChromeGuess = 92;
     /// <summary>The share of the window the mixer's minimum never goes past, so a small window can still show the timeline.</summary>
     const double MixerMinShare = 0.7;
+    /// <summary>
+    /// Stacked, the share of the place it splits with the timeline: there the header wraps beside the video's column and
+    /// the window's share left the splitter no room to move.
+    /// </summary>
+    const double MixerStackedShare = 0.5;
     double mixerChromeH = MixerChromeGuess;
     /// <summary>What a strip takes besides its fader (px): card margin and border, the grid's margin, head, controls, the fader's margin and the foot.</summary>
     double StripFixedH => StripGap * 2 + 2 + 14 + StripHeadH + StripTopH + 6 + StripFootH;
@@ -90,21 +95,20 @@ public partial class MainWindow
         {
             if (masteringView || pianoView) return ViewMinH;
             double min = Math.Ceiling(mixerChromeH + StripFixedH + FaderRoomH);
-            if (Root.Bounds.Height > 0) min = Math.Min(min, Root.Bounds.Height * MixerMinShare);
+            if (stackedViews && AudioArea.Bounds.Height > 0) min = Math.Min(min, AudioArea.Bounds.Height * MixerStackedShare);
+            else if (Root.Bounds.Height > 0) min = Math.Min(min, Root.Bounds.Height * MixerMinShare);
             return Math.Max(ViewMinH, min);
         }
     }
 
-    /// <summary>Applies <see cref="MixerMinH"/> to the row the mixer is in, growing it when it is shorter (after the lists change, or back from another view).</summary>
+    /// <summary>
+    /// Applies <see cref="MixerMinH"/> to the row the mixer is in (after the lists change, or back from another view). The
+    /// row grows to it, but the height the user chose stays: a minimum that shrinks again gives it back.
+    /// </summary>
     void ApplyMixerMinHeight()
     {
-        if (!MixerShown || maxPanel == MaxPanel.Views) return;
-        double min = MixerMinH;
-        var row = stackedViews ? AudioArea.RowDefinitions[2] : Root.RowDefinitions[3];
-        if (stackedViews && !AudioSplitter.IsVisible) return;
-        row.MinHeight = min;
-        if (row.Height.IsAbsolute && row.Height.Value < min) row.Height = new GridLength(min);
-        mixerH = Math.Max(mixerH, min);
+        if (!MixerShown || maxPanel == MaxPanel.Views || MixerOut || (stackedViews && !AudioSplitter.IsVisible)) return;
+        (stackedViews ? AudioArea.RowDefinitions[2] : Root.RowDefinitions[3]).MinHeight = MixerMinH;
     }
 
     /// <summary>The strips with what the window updates on them (and an effect's window, <see cref="ShowSlotWindow"/>, its own).</summary>
@@ -143,6 +147,8 @@ public partial class MainWindow
     /// <summary>The layout being filled: the mixer's, or an effect's window while it is built.</summary>
     MixerLayout mx = null!;
     readonly Panel mixerStrips = new();
+    /// <summary>The views that share the mixer's place and their pinned columns; the piano roll and Mastering leave them for their own windows.</summary>
+    readonly Panel mixerViews = new(), mixerPins = new();
     readonly ScrollViewer mixerScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly MiniTimeline miniTimeline = new();
     /// <summary>The mini timeline's own ruler switch (asked by the user), the same mode as the timeline's (<see cref="SetRulerMode"/>).</summary>
@@ -203,6 +209,8 @@ public partial class MainWindow
         mixerScroll.AddHandler(PointerWheelChangedEvent, OnMixerWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         if (double.TryParse(AppConfig.Get("mixerHeight"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double h))
             mixerH = Math.Max(MixerMinH, h);
+        if (double.TryParse(AppConfig.Get("masteringHeight"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double mh) && mh > 0)
+            masteringH = Math.Max(MasteringMinH, mh);
         if (double.TryParse(AppConfig.Get("timelineHeight"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double th))
             timelineH = Math.Max(TimelineMinH, th);
         var bottom = Root.RowDefinitions[3];
@@ -212,13 +220,25 @@ public partial class MainWindow
         BottomSplitter.DragCompleted += (_, _) => SaveBottomHeight();
         AudioSplitter.DragCompleted += (_, _) =>
         {
-            mixerH = AudioArea.RowDefinitions[2].ActualHeight;
+            double h = AudioArea.RowDefinitions[2].ActualHeight;
+            if (masteringView) { KeepMasteringHeight(h); return; }
+            mixerH = h;
             SaveViewPref("mixerHeight", mixerH.ToString(System.Globalization.CultureInfo.InvariantCulture));
         };
-        AudioSplitter.DoubleTapped += (_, _) => { mixerH = MixerDefaultH; ApplyAudioMixerRows(); SaveViewPref("mixerHeight", mixerH.ToString(System.Globalization.CultureInfo.InvariantCulture)); };
+        // stacked, the minimum is a share of this place
+        AudioArea.SizeChanged += (_, e) => { if (e.HeightChanged) ApplyMixerMinHeight(); };
+        AudioSplitter.DoubleTapped += (_, _) =>
+        {
+            if (masteringView) { KeepMasteringHeight(double.NaN); return; }
+            mixerH = MixerDefaultH;
+            ApplyAudioMixerRows();
+            SaveViewPref("mixerHeight", mixerH.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        };
         BottomSplitter.DoubleTapped += (_, _) =>
         {
-            bottom.Height = new GridLength(mixerView ? MixerDefaultH : TimelineDefaultH);
+            // the Mastering view goes back to fitting its content
+            if (MixerHere && masteringView) { KeepMasteringHeight(double.NaN); return; }
+            bottom.Height = new GridLength(MixerHere ? MixerDefaultH : TimelineDefaultH);
             Dispatcher.UIThread.Post(SaveBottomHeight, DispatcherPriority.Background);
         };
 
@@ -232,8 +252,10 @@ public partial class MainWindow
         mixerScroll.SizeChanged += (_, _) =>
         {
             mixerStrips.MinWidth = mixerScroll.Viewport.Width;
-            // what the place takes besides the strips, as laid out now (the mini timeline comes and goes with the layout)
-            if (MixerShown && mixerScroll.Viewport.Height > 0)
+            // what the place takes besides the strips, as laid out now (the mini timeline comes and goes with the layout).
+            // Not while maximized: there the mini timeline shows and the header fits in one row, and that minimum would
+            // bring the mixer back taller and stuck at it when the panel is restored. Nor in its own window, with its mini timeline
+            if (MixerShown && maxPanel == MaxPanel.None && !MixerOut && mixerScroll.Viewport.Height > 0)
             {
                 double chrome = MixerHost.Bounds.Height + MixerHost.Margin.Top + MixerHost.Margin.Bottom - mixerScroll.Viewport.Height;
                 if (chrome > 0 && Math.Abs(chrome - mixerChromeH) > 0.5) { mixerChromeH = chrome; ApplyMixerMinHeight(); }
@@ -262,8 +284,13 @@ public partial class MainWindow
         // the DockPanel fills only its last child: the mixer and the Mastering view share it, so both fill the place;
         // each keeps the master's output pinned at its right, outside what scrolls
         var area = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        area.Children.Add(new Panel { Children = { mixerScroll, masteringScroll, pianoHost } });
-        var pins = new Panel { Children = { masterPin, masteringPin } };
+        area.Children.Add(mixerViews);
+        mixerViews.Children.Add(mixerScroll);
+        mixerViews.Children.Add(masteringScroll);
+        mixerViews.Children.Add(pianoHost);
+        var pins = mixerPins;
+        pins.Children.Add(masterPin);
+        pins.Children.Add(masteringPin);
         Grid.SetColumn(pins, 1);
         area.Children.Add(pins);
         MixerDock.Children.Add(area);
@@ -281,6 +308,12 @@ public partial class MainWindow
     /// <summary>The mixer itself is on screen, not the Mastering or the Piano roll that share its place.</summary>
     bool MixerShown => mixerView && !masteringView && !pianoView;
 
+    /// <summary>The mixer's place is on screen in the main window (not in its own, MainWindow.PanelWindows.cs).</summary>
+    bool MixerHere => mixerView && !MixerOut;
+
+    /// <summary>The bottom row has nothing to hold: the timeline is in its own window and the mixer's place is closed or out too.</summary>
+    bool BottomEmpty => TimelineOut && !MixerHere;
+
     /// <summary>The Mixer button and shortcut: like Piano roll and Mastering, pressing the view on screen goes back to the timeline (asked by the user).</summary>
     void ToggleMixer()
     {
@@ -288,37 +321,70 @@ public partial class MainWindow
         else ShowBottomView(mastering: false);
     }
 
+    /// <summary>
+    /// The view buttons: the timeline or the mixer's place in the bottom row. A view in its own window comes to the front
+    /// instead; with the mixer's place out it always shows something, so "back to the timeline" only brings the timeline up.
+    /// </summary>
     void SetMixerView(bool mixer)
     {
         UncoverViews();
-        if (mixer == mixerView) return;
-        var row = Root.RowDefinitions[3];
-        // stacked (solo audio, Vertical layout) both views fill the place beside the inspector and the bottom row stays closed
-        if (!stackedViews)
+        if (MixerOut && !mixer)
         {
-            // the Mastering view's fitted height is not the mixer's
-            if (mixerView) { if (!masteringView) mixerH = row.ActualHeight; } else timelineH = row.ActualHeight;
-            row.MinHeight = mixer ? MixerMinH : TimelineMinH;
-            row.Height = new GridLength(mixer ? mixerH : timelineH);
+            if (!ActivatePanel(FloatTimeline)) Activate();
+            return;
         }
+        if (MixerOut) ActivatePanel(FloatMixer);
+        else if (!mixer && TimelineOut)
+        {
+            // nothing left in the place: a maximized one goes back first
+            if (maxPanel == MaxPanel.Views) SetMaxPanel(MaxPanel.None);
+            ActivatePanel(FloatTimeline);
+        }
+        if (mixer == mixerView) return;
+        // stacked (solo audio, Vertical layout) both views fill the place beside the inspector and the bottom row stays closed
+        if (!stackedViews) KeepBottomRow();
         mixerView = mixer;
+        if (!stackedViews) ApplyBottomRow();
         MixerHost.IsVisible = mixer;
         ApplyViewHosts();
-        ToolTip.SetTip(BottomSplitter, Loc.T(mixer ? "splitter.mixer" : "splitter.timeline"));
+        ToolTip.SetTip(BottomSplitter, Loc.T(MixerHere ? "splitter.mixer" : "splitter.timeline"));
         TimelineViewButton.Classes.Set("on", !mixer);
         MixerViewButton.Classes.Set("on", mixer);
         SaveViewPref(mixer ? "timelineHeight" : "mixerHeight", (mixer ? timelineH : mixerH).ToString(System.Globalization.CultureInfo.InvariantCulture));
         RefreshMixer();
         ApplyMasteringView();
+        // with the timeline out, the place opening or closing may give the video its column back or take it
+        if (TimelineOut) ApplyLayout();
     }
 
     /// <summary>Remembers the height of the view on screen (gc.timelineHeight / gc.mixerHeight in the web).</summary>
     void SaveBottomHeight()
     {
-        if (stackedViews || (mixerView && masteringView)) return;
+        if (stackedViews || BottomEmpty) return;
         double h = Root.RowDefinitions[3].ActualHeight;
-        if (mixerView) mixerH = h; else timelineH = h;
-        SaveViewPref(mixerView ? "mixerHeight" : "timelineHeight", h.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (MixerHere && masteringView)
+        {
+            KeepMasteringHeight(h);
+            return;
+        }
+        if (MixerHere) mixerH = h; else timelineH = h;
+        SaveViewPref(MixerHere ? "mixerHeight" : "timelineHeight", h.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>Before the bottom row changes what it holds: the height of what it holds now (the Mastering view's fitted height is not the mixer's).</summary>
+    void KeepBottomRow()
+    {
+        double h = Root.RowDefinitions[3].ActualHeight;
+        if (h <= 0 || BottomEmpty) return;
+        if (MixerHere) { if (!masteringView) mixerH = h; } else timelineH = h;
+    }
+
+    /// <summary>The bottom row with the height of what it holds now, closed when it holds nothing.</summary>
+    void ApplyBottomRow()
+    {
+        var row = Root.RowDefinitions[3];
+        row.MinHeight = BottomEmpty ? 0 : MixerHere ? MixerMinH : TimelineMinH;
+        row.Height = new GridLength(BottomEmpty ? 0 : MixerHere ? mixerH : timelineH);
     }
 
     Control BuildMixerHeader()
@@ -336,8 +402,12 @@ public partial class MainWindow
         row.Children.Add(SectionSwitch(FxIcon.Reverb, "mixer.sends", () => mixerSends, v => mixerSends = v, "mixer.sends"));
 
         // the strips' width, like the timeline's zoom bar (the header's own refreshers survive strip rebuilds)
-        var zoom = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0),
+        var zoom = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
             Children = { mixerZoomIcon, mixerZoomSlider } };
+        // the mixer's place to its own window and back (MainWindow.PanelWindows.cs)
+        var floatButton = FloatButton(FloatMixer, chip: true);
+        floatButton.Margin = new Thickness(12, 0, 0, 0);
+        zoom.Children.Add(floatButton);
         headerRefresh.Add(() =>
         {
             mixerZoomSyncing = true;
@@ -346,7 +416,7 @@ public partial class MainWindow
         });
 
         // Cubase's "deactivate all mute / solo states" (native only), lit while any track has one
-        var clear = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
+        var clear = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         clear.Children.Add(FxBypassButton());
         foreach (bool solo in new[] { false, true })
         {
@@ -367,19 +437,18 @@ public partial class MainWindow
             clear.Children.Add(b);
         }
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), Margin = new Thickness(12, 0) };
-        grid.Children.Add(new ScrollViewer { Content = row, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled });
-        Grid.SetColumn(clear, 1); grid.Children.Add(clear);
+        // what doesn't fit beside the title goes down a row instead of under it (ToolbarPanel)
+        var bar = new ToolbarPanel { Margin = new Thickness(12, 6), VerticalAlignment = VerticalAlignment.Center };
+        bar.Children.Add(row);
+        bar.Children.Add(clear);
         // the mix's A | B (MainWindow.MixCompare.cs)
-        var compare = BuildMixCompare();
-        Grid.SetColumn(compare, 2); grid.Children.Add(compare);
-        Grid.SetColumn(zoom, 3); grid.Children.Add(zoom);
-        return new Border { Height = 40, Background = Palette.Panel, BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = grid };
+        bar.Children.Add(BuildMixCompare());
+        bar.Children.Add(zoom);
+        return new Border { MinHeight = 40, Background = Palette.Panel, BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = bar };
     }
 
     readonly List<Action> headerRefresh = [];
 
-    static readonly IBrush BypassAmber = Palette.Brush("#f59e0b");
 
     /// <summary>
     /// The mixer's FX switch (asked by the user): every effect of every track and bus in bypass, or back, to hear the mix
@@ -396,8 +465,8 @@ public partial class MainWindow
         {
             bool off = Audio.PlaybackEngine.FxBypass;
             b.Classes.Set("lit", off);
-            b.Background = off ? BypassAmber : Brushes.Transparent;
-            b.BorderBrush = off ? BypassAmber : Palette.Line;
+            b.Background = off ? Palette.Mute : Brushes.Transparent;
+            b.BorderBrush = off ? Palette.Mute : Palette.Line;
             text.Foreground = off ? Palette.App : Palette.Faint;
             ToolTip.SetTip(b, Loc.T(off ? "mixer.fxBypass.on.tip" : "mixer.fxBypass.off.tip"));
         });
@@ -508,16 +577,16 @@ public partial class MainWindow
 
     void RefreshMixer()
     {
-        if (!mixerView) return;
+        if (!mixerView && !MasteringOut) return;
         miniTimeline.SetTracks(tracks);
-        if (masteringView)
+        if (masteringView || MasteringOut)
         {
             // an effect's window over the Mastering view follows its slot
             bool quiet = syncing;
             syncing = true;
             try { if (slotWindowRefresh is { } open) foreach (var r in open) r(); }
             finally { syncing = quiet; }
-            return;
+            if (masteringView || !mixerView) return;
         }
         // tracks and buses take the zoom's width (folder strips, separators and the master keep their own)
         double stripW = mixerStripW;
@@ -619,17 +688,15 @@ public partial class MainWindow
         double lim = masterLimDb = engine.Limiter.TakeReductionDb();
         masterOutPeak = Math.Max(masterOutPeak, engine.TruePeak.TakeMax());
         TakeMixerRms();
-        if (!mixerView) return;
+        if (!mixerView && !MasteringOut) return;
         // the mini timeline sits over the Mastering view too
         miniTimeline.Bpm = Timeline.Bpm;
         miniTimeline.SetPlayhead(pos, TracksEndSec(), RecordingBusy);
         masterShowL = Math.Max(outL, masterShowL * 0.82f); masterShowR = Math.Max(outR, masterShowR * 0.82f);
         double rmsL = Math.Sqrt(engine.OutRms.MeanSqL), rmsR = Math.Sqrt(engine.OutRms.MeanSqR);
-        if (masteringView)
-        {
-            masteringMeter?.Set(masterShowL, masterShowR, rmsL, rmsR);
-            return;
-        }
+        // Mastering in its own window keeps its meter going beside the mixer
+        masteringMeter?.Set(masterShowL, masterShowR, rmsL, rmsR);
+        if (masteringView || !mixerView) return;
         foreach (var t in tracks)
             if (mx.Meters.TryGetValue(t.Track.Id, out var m))
             {
@@ -879,7 +946,7 @@ public partial class MainWindow
 
         bool empty = !t.Track.HasContent;
         bool Silent() => empty || t.Silenced || (tracks.Any(x => x.Track.HasContent && x.Soloed) && !t.Soloed);
-        var name = new TextBlock { Text = t.Track.Name, FontSize = 11.5, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent };
+        var name = new TextBlock { Text = t.Track.Name, FontSize = 11, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent };
         mx.Refresh.Add(() => { name.Text = t.Track.Name; name.Foreground = Silent() ? Palette.Faint : Palette.Fg; ToolTip.SetTip(name, Loc.T("mix.name.tip", t.Track.Name)); });
         RenameOnDoubleClick(name, () => RenameTrackIn(t, name));
         box.PointerReleased += (_, e) =>
@@ -932,8 +999,8 @@ public partial class MainWindow
         var head = StripHead(badge, name, under);
         // like a console's strip (asked by the user): its effects and its sends as lists, the pan as a bar, then M S ●
         var (controls, gr) = CompactChain(SlotsOf(t), RouterOf(t), () => t.Channel.Pan, v => EditTrack(t, x => x.Channel.Pan = v, "pan"),
-            StripToggle("M", Shortcuts.Tip("Mute", "mute"), 26, () => t.Channel.Muted, true, () => EditTrack(t, x => x.Channel.Muted = !x.Channel.Muted, "mute")),
-            StripToggle("S", Shortcuts.Tip("Solo", "solo"), 26, () => t.Channel.Solo, false, () => EditTrack(t, x => x.Channel.Solo = !x.Channel.Solo, "solo")),
+            StripToggle("M", Shortcuts.Tip(Loc.T("track.mute"), "mute"), 26, () => t.Channel.Muted, true, () => EditTrack(t, x => x.Channel.Muted = !x.Channel.Muted, "mute")),
+            StripToggle("S", Shortcuts.Tip(Loc.T("track.solo"), "solo"), 26, () => t.Channel.Solo, false, () => EditTrack(t, x => x.Channel.Solo = !x.Channel.Solo, "solo")),
             ArmToggle(t, 26));
         mx.Meters[t.Track.Id] = (meter, gr);
         var content = new Grid();
@@ -1027,7 +1094,7 @@ public partial class MainWindow
     void RenameTrackIn(LiveTrack t, Control anchor)
     {
         if (store?.ReadOnly != false || restoring) return;
-        AskName(anchor, null, Loc.T("menu.renameTrack"), t.Track.Name, Loc.T("folder.rename.ok"), n =>
+        AskName(anchor, null, Loc.T("menu.renameTrack"), t.Track.Name, Loc.T("common.ok"), n =>
         {
             if (n.Trim() is { Length: > 0 } name && name != t.Track.Name) EditTrack(t, x => x.Track.Name = name, "name");
         });
@@ -1341,7 +1408,8 @@ public partial class MainWindow
         TrackInserts.Width => Loc.T("master.stage.width"),
         TrackInserts.Clip => Loc.T("master.stage.clip"),
         TrackInserts.Limit => Loc.T("master.stage.lim"),
-        TrackInserts.Chorus or TrackInserts.Flanger or TrackInserts.Phaser or TrackInserts.Tremolo => Loc.T("fx." + type),
+        TrackInserts.Chorus or TrackInserts.Flanger or TrackInserts.Phaser or TrackInserts.Tremolo or TrackInserts.Pump => Loc.T("fx." + type),
+        _ when TrackInserts.IsModel(type) => Loc.T("fx." + type),
         _ => "EQ",
     };
 
@@ -1396,7 +1464,7 @@ public partial class MainWindow
         Grid.SetColumn(icon, 1); g.Children.Add(icon);
         Grid.SetColumn(text, 2); g.Children.Add(text);
         Grid.SetColumn(detail, 3); g.Children.Add(detail);
-        var row = new Border { Height = CompactRowH, CornerRadius = new CornerRadius(3), Padding = new Thickness(1, 0, 3, 0), Child = g, Background = Palette.Raised, ClipToBounds = true };
+        var row = new Border { Height = CompactRowH, CornerRadius = new CornerRadius(4), Padding = new Thickness(1, 0, 3, 0), Child = g, Background = Palette.Raised, ClipToBounds = true };
         row.PointerEntered += (_, _) => row.Background = Palette.Hover;
         row.PointerExited += (_, _) => row.Background = Palette.Raised;
         row.SizeChanged += (_, e) =>
@@ -1613,7 +1681,8 @@ public partial class MainWindow
     /// <summary>The built-in effects by what they do, in the order "+ Efecto" lists them: a new one goes in its group.</summary>
     static readonly (string Name, string Icon, string[] Kinds)[] FxGroups =
     [
-        ("fx.group.dynamics", FxIcon.Comp, [InsertSlot.CompKind, InsertSlot.GateKind, TrackInserts.Bands, TrackInserts.Clip, TrackInserts.Limit]),
+        ("fx.group.dynamics", FxIcon.Comp, [InsertSlot.CompKind, InsertSlot.GateKind, TrackInserts.Pump, TrackInserts.Bands, TrackInserts.Clip, TrackInserts.Limit]),
+        ("fx.group.models", FxIcon.Comp, [TrackInserts.Fet, TrackInserts.Opto, TrackInserts.VariMu, TrackInserts.BusComp, TrackInserts.Vca]),
         ("fx.group.eq", FxIcon.Eq, [InsertSlot.EqKind, TrackInserts.Clean, TrackInserts.Color]),
         ("fx.group.sat", FxIcon.Sat, [InsertSlot.SatKind, TrackInserts.Tape]),
         ("fx.group.mod", FxIcon.Chorus, [TrackInserts.Chorus, TrackInserts.Flanger, TrackInserts.Phaser, TrackInserts.Tremolo]),
@@ -1765,10 +1834,16 @@ public partial class MainWindow
         syncing = true;
         try { foreach (var r in own.Refresh) r(); }
         finally { syncing = was; }
-        var card = new Border { Padding = new Thickness(10), Background = Palette.Raised, BorderBrush = Palette.Line, BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8), Child = host };
+        // A panel that changes height (an EQ band that shows other rows) would move the popup, which the screen's edge
+        // usually slides up from under the mixer: what was being dragged jumped with it. So the card keeps the size it
+        // opened with (its width leaves room for the scroll bar) and anything that grows later scrolls inside it.
+        host.HorizontalAlignment = HorizontalAlignment.Left;
+        var card = new Border { Padding = new Thickness(10, 10, 2, 10), Background = Palette.Raised, BorderBrush = Palette.Line, BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8), Width = SlotWindowW + 2 + 10 + 2 + SlotScrollRoom,
+            Child = new ScrollViewer { Content = host, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
         slotWindow?.Hide();
         var flyout = slotWindow = new Flyout { Content = card, FlyoutPresenterClasses = { "bare" }, Placement = PlacementMode.LeftEdgeAlignedTop, ShowMode = FlyoutShowMode.Standard };
+        flyout.Opened += (_, _) => Dispatcher.UIThread.Post(() => { if (card.Bounds.Height > 0) card.Height = card.Bounds.Height; }, DispatcherPriority.Background);
         slotWindowRefresh = own.Refresh;
         flyout.Closed += (_, _) =>
         {
@@ -1781,6 +1856,8 @@ public partial class MainWindow
 
     /// <summary>An effect's window: as wide as four knobs at their full size.</summary>
     const double SlotWindowW = 340;
+    /// <summary>Room on its right for the scroll bar (App.axaml: ScrollBarSize, 8), so the window never changes width.</summary>
+    const double SlotScrollRoom = 8;
 
     static SelectButton StripSelect(string[] items)
     {
@@ -1838,8 +1915,8 @@ public partial class MainWindow
         var text = new TextBlock { Classes = { "mono" }, FontSize = 9, Foreground = Palette.Fg, VerticalAlignment = VerticalAlignment.Center };
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3 };
         row.Children.Add(text);
-        row.Children.Add(new TextBlock { Classes = { "icon" }, Text = "", FontSize = 7, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center });
-        var chip = new Border { Child = row, Height = 14, Padding = new Thickness(4, 0), CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1),
+        row.Children.Add(new TextBlock { Classes = { "icon" }, Text = "", FontSize = 8, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center });
+        var chip = new Border { Child = row, Height = 14, Padding = new Thickness(4, 0), CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1),
             Background = Palette.Hover, BorderBrush = Palette.Alpha(Palette.RecColor, 0.45), VerticalAlignment = VerticalAlignment.Center,
             Cursor = new Cursor(StandardCursorType.Hand), IsVisible = false };
         ToolTip.SetTip(chip, Loc.T("tl.tip.input"));
@@ -1870,7 +1947,7 @@ public partial class MainWindow
             RefreshMixer();
         });
         mono.Width = 32;
-        mono.CornerRadius = new CornerRadius(3);
+        mono.CornerRadius = new CornerRadius(4);
         ((TextBlock)mono.Content!).FontSize = 8;
         head.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, HorizontalAlignment = HorizontalAlignment.Center,
             Children = { mx.Lim, mono } });
@@ -1882,7 +1959,7 @@ public partial class MainWindow
         var lufs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Height = 12, HorizontalAlignment = HorizontalAlignment.Center, Background = Brushes.Transparent,
             Children = { mx.Lufs, new TextBlock { Text = "LUFS", FontSize = 9, LetterSpacing = 0.8, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center } } };
         ToolTip.SetTip(lufs, Loc.T("mix.master.lufs.tip"));
-        mx.Cor = new TextBlock { Text = "—", Classes = { "mono" }, FontSize = 8.5, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center };
+        mx.Cor = new TextBlock { Text = "—", Classes = { "mono" }, FontSize = 9, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center };
         mx.CorHundredths = int.MaxValue;
         var cor = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Height = 10, HorizontalAlignment = HorizontalAlignment.Center, Background = Brushes.Transparent,
             Children = { mx.Cor, new TextBlock { Text = "COR", FontSize = 8, LetterSpacing = 0.8, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center } } };

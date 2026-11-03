@@ -38,6 +38,8 @@ public partial class MainWindow
 
     /// <summary>Px kept between the strip and its neighbors when the window is too narrow to center it.</summary>
     const double ToolGap = 12;
+    /// <summary>The project's name in its chip: this wide at most (as in the XAML), and down to this when the row is short.</summary>
+    const double NameMax = 180, NameMin = 48;
 
     readonly Dictionary<TimelineTool, ToggleButton> toolButtons = [];
     ToggleButton rangeStripButton = null!, markerStripButton = null!, chordStripButton = null!;
@@ -144,6 +146,10 @@ public partial class MainWindow
         double w = ToolBox.Bounds.Width;
         if (w <= 0) return;
         double left = EditButtons.Bounds.Right, right = ExportButton.Bounds.Left;
+        // too narrow: the project's name trims (down to NameMin) before the tools reach Exportar; with room it grows back
+        double over = left + ToolGap + w + ToolGap - right;
+        double name = over > 0 ? Math.Max(NameMin, Math.Min(SessionName.MaxWidth, SessionName.Bounds.Width) - over) : Math.Min(NameMax, SessionName.MaxWidth - over);
+        if (Math.Abs(name - SessionName.MaxWidth) >= 1) SessionName.MaxWidth = name;
         double x = Math.Clamp(ProjectRow.Bounds.Width / 2 - w / 2, left + ToolGap, Math.Max(left + ToolGap, right - ToolGap - w));
         var margin = new Thickness(Math.Round(x - left), 0, 0, 0);
         if (ToolBox.Margin != margin) ToolBox.Margin = margin;

@@ -14,8 +14,9 @@ namespace XtremeDaw.App.Dialogs;
 /// "Plugins" (native only): the VST3 plugins of this computer, through <see cref="PluginScan"/> (the same list the
 /// MIDI track's menu uses). The folders to look in (Windows' two, plus the ones the user adds), looking for new or
 /// changed plugins or opening them all again (cancellable, never while recording), the list of what was found with a
-/// filter and a search, where a plugin can be hidden from the menus, and the files that didn't open, with why and a
-/// retry. Everything but the search box is rebuilt on <see cref="PluginScan.Changed"/>, only while the page is shown.
+/// filter and a search, where a plugin can be hidden from the menus or given a category of the user's, how the menus
+/// group them (by maker, by category or one list, and the list here groups the same way), and the files that didn't
+/// open, with why and a retry. Everything but the search box is rebuilt on <see cref="PluginScan.Changed"/>, only while the page is shown.
 /// </summary>
 public sealed partial class SettingsDialog
 {
@@ -30,6 +31,7 @@ public sealed partial class SettingsDialog
     readonly TextBox pluginSearch = new() { Classes = { "field" }, Height = 32, FontSize = 12, Watermark = Loc.T("set.vst.search"), VerticalContentAlignment = VerticalAlignment.Center };
     /// <summary>"all", "instruments" or "effects".</summary>
     string pluginFilter = "all";
+    readonly List<ToggleButton> pluginGroupingButtons = [];
 
     void BuildPlugins()
     {
@@ -44,6 +46,21 @@ public sealed partial class SettingsDialog
         pluginsPage.Children.Add(Card(scan));
 
         var list = Section(Loc.T("set.vst.list"), pluginCount);
+        var groupings = new UniformGrid { Columns = 3 };
+        foreach (var (id, text, tip) in new[]
+        {
+            (PluginCatalog.ByVendor, Loc.T("set.vst.group.vendor"), Loc.T("set.vst.group.vendor.tip")),
+            (PluginCatalog.ByCategory, Loc.T("set.vst.group.category"), Loc.T("set.vst.group.category.tip")),
+            (PluginCatalog.AsList, Loc.T("set.vst.group.list"), Loc.T("set.vst.group.list.tip")),
+        })
+        {
+            var b = new ToggleButton { Content = text, Tag = id, Classes = { "seg" }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            ToolTip.SetTip(b, tip);
+            b.Click += (_, _) => PluginScan.SetGrouping(id);
+            pluginGroupingButtons.Add(b);
+            groupings.Children.Add(b);
+        }
+        list.Children.Add(Field(Loc.T("set.vst.group"), new Border { Classes = { "seg" }, Child = groupings }));
         var filters = new UniformGrid { Columns = 3 };
         foreach (var (id, text) in new[] { ("all", Loc.T("set.vst.filter.all")), ("instruments", Loc.T("set.vst.filter.instruments")), ("effects", Loc.T("set.vst.filter.effects")) })
         {
@@ -140,7 +157,7 @@ public sealed partial class SettingsDialog
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         if (PluginScan.Running)
         {
-            var cancel = new Button { Classes = { "btn", "sm", "outline" }, Content = Loc.T("transport.count.cancel") };
+            var cancel = new Button { Classes = { "btn", "sm", "outline" }, Content = Loc.T("common.cancel") };
             ToolTip.SetTip(cancel, Loc.T("set.vst.cancel.tip"));
             cancel.Click += (_, _) => PluginScan.Cancel();
             buttons.Children.Add(cancel);
@@ -165,12 +182,16 @@ public sealed partial class SettingsDialog
     void FillPluginRows()
     {
         foreach (var b in pluginFilterButtons) b.IsChecked = (string)b.Tag! == pluginFilter;
+        string grouping = PluginCatalog.Grouping;
+        foreach (var b in pluginGroupingButtons) b.IsChecked = (string)b.Tag! == grouping;
         pluginRows.Children.Clear();
         var all = PluginCatalog.Plugins(PluginScan.Entries);
         var hidden = PluginCatalog.Hidden();
+        var custom = PluginCatalog.CustomCategories();
         string q = pluginSearch.Text?.Trim() ?? "";
         var shown = all.Where(p => pluginFilter switch { "instruments" => p.IsInstrument, "effects" => !p.IsInstrument, _ => true })
-            .Where(p => q.Length == 0 || p.Name.Contains(q, StringComparison.CurrentCultureIgnoreCase) || p.Vendor.Contains(q, StringComparison.CurrentCultureIgnoreCase))
+            .Where(p => q.Length == 0 || p.Name.Contains(q, StringComparison.CurrentCultureIgnoreCase) || p.Vendor.Contains(q, StringComparison.CurrentCultureIgnoreCase)
+                || PluginScan.CategoryName(PluginCatalog.Category(p, custom, all)).Contains(q, StringComparison.CurrentCultureIgnoreCase))
             .ToList();
         pluginCount.Text = shown.Count == all.Count ? $"{all.Count}" : $"{shown.Count} / {all.Count}";
         if (shown.Count == 0)
@@ -178,12 +199,101 @@ public sealed partial class SettingsDialog
             pluginRows.Children.Add(Help(Loc.T(all.Count == 0 ? "set.vst.empty" : "set.vst.noMatch")));
             return;
         }
-        foreach (var p in shown) pluginRows.Children.Add(PluginRow(p, !hidden.Contains(PluginCatalog.Key(p))));
+        // the list as the menus show it: under each maker or category, or one list
+        var choices = CategoryChoices(all, custom);
+        if (grouping == PluginCatalog.AsList)
+        {
+            foreach (var p in shown) pluginRows.Children.Add(PluginRow(p, !hidden.Contains(PluginCatalog.Key(p)), custom, choices, all));
+            return;
+        }
+        foreach (var group in shown.GroupBy(p => PluginCatalog.GroupOf(p, grouping, custom, all) ?? "")
+            .OrderBy(g => g.Key.Length == 0).ThenBy(g => PluginScan.GroupName(g.Key, grouping), StringComparer.CurrentCultureIgnoreCase))
+        {
+            pluginRows.Children.Add(new TextBlock
+            {
+                Text = $"{PluginScan.GroupName(group.Key, grouping).ToUpperInvariant()} ({group.Count()})", Classes = { "label" },
+                Margin = new Thickness(0, pluginRows.Children.Count == 0 ? 4 : 14, 0, 4),
+            });
+            foreach (var p in group) pluginRows.Children.Add(PluginRow(p, !hidden.Contains(PluginCatalog.Key(p)), custom, choices, all));
+        }
     }
 
-    Control PluginRow(VstPluginInfo p, bool visible)
+    /// <summary>The categories a plugin can go in: the automatic ones and the ones the user made, by name as shown.</summary>
+    static List<string> CategoryChoices(List<VstPluginInfo> all, Dictionary<string, string> custom) =>
+    [
+        .. PluginCatalog.AutoCategories.Concat(custom.Values).Concat(all.Select(p => PluginCatalog.AutoCategory(p, all)))
+            .Where(c => c.Length > 0).Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(PluginScan.CategoryName, StringComparer.CurrentCultureIgnoreCase),
+    ];
+
+    /// <summary>
+    /// A plugin's category chip: the one it has (the user's, or the automatic one in faint), and on click every category
+    /// to move it to, back to the automatic one, or a new one written right there.
+    /// </summary>
+    Button CategoryChip(VstPluginInfo p, Dictionary<string, string> custom, List<string> choices, List<VstPluginInfo> all)
     {
-        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 10, MinHeight = 40, Opacity = visible ? 1 : 0.5 };
+        bool mine = custom.TryGetValue(PluginCatalog.Key(p), out var own);
+        string auto = PluginCatalog.AutoCategory(p, all), now = mine ? own! : auto;
+        var chip = new Button
+        {
+            Classes = { "chip" }, Height = 26, MinHeight = 26, Width = 132, Padding = new Thickness(8, 0), VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+        var label = new TextBlock
+        {
+            Text = now.Length > 0 ? PluginScan.CategoryName(now) : Loc.T("vst.cat.none"), FontSize = 11,
+            Foreground = mine ? Palette.Fg : Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+        };
+        var chevron = new TextBlock { Classes = { "icon" }, Text = "\uE70D", FontSize = 8, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+        Grid.SetColumn(chevron, 1);
+        chip.Content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { label, chevron } };
+        ToolTip.SetTip(chip, Loc.T(mine ? "set.vst.cat.mine.tip" : "set.vst.cat.auto.tip"));
+        chip.Click += (_, _) =>
+        {
+            var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+            MenuItem Item(string text, bool on, Action pick)
+            {
+                var item = new MenuItem { Header = text, FontSize = 12, FontWeight = on ? FontWeight.SemiBold : FontWeight.Normal };
+                item.Click += (_, _) => pick();
+                return item;
+            }
+            menu.Items.Add(Item(Loc.T("set.vst.cat.auto", auto.Length > 0 ? PluginScan.CategoryName(auto) : Loc.T("vst.cat.none")), !mine,
+                () => PluginScan.SetCategory(p, null)));
+            menu.Items.Add(new Separator());
+            foreach (var c in choices)
+                menu.Items.Add(Item(PluginScan.CategoryName(c), mine && c.Equals(own, StringComparison.CurrentCultureIgnoreCase), () => PluginScan.SetCategory(p, c)));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item(Loc.T("set.vst.cat.new"), false, () => AskCategory(chip, p)));
+            menu.ShowAt(chip);
+        };
+        return chip;
+    }
+
+    /// <summary>A new category, written in a box under the chip: Enter gives it to the plugin, Esc leaves it as it was.</summary>
+    void AskCategory(Control under, VstPluginInfo p)
+    {
+        var box = new TextBox { Classes = { "field" }, Width = 200, Height = 32, FontSize = 12, Watermark = Loc.T("set.vst.cat.name"), VerticalContentAlignment = VerticalAlignment.Center };
+        var ok = new Button { Classes = { "btn", "sm", "primary" }, Content = Loc.T("common.ok") };
+        var fly = new Flyout { Placement = PlacementMode.BottomEdgeAlignedRight, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { box, ok } } };
+        void Apply()
+        {
+            string name = box.Text?.Trim() ?? "";
+            fly.Hide();
+            if (name.Length > 0) PluginScan.SetCategory(p, name);
+        }
+        ok.Click += (_, _) => Apply();
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Avalonia.Input.Key.Enter) { e.Handled = true; Apply(); }
+            else if (e.Key == Avalonia.Input.Key.Escape) { e.Handled = true; fly.Hide(); }
+        };
+        fly.Opened += (_, _) => box.Focus();
+        fly.ShowAt(under);
+    }
+
+    Control PluginRow(VstPluginInfo p, bool visible, Dictionary<string, string> custom, List<string> choices, List<VstPluginInfo> all)
+    {
+        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto"), ColumnSpacing = 10, MinHeight = 40, Opacity = visible ? 1 : 0.5 };
         var icon = new TextBlock { Classes = { "icon" }, Text = p.IsInstrument ? "" : "", FontSize = 14, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(icon, Loc.T(p.IsInstrument ? "set.vst.kind.instrument" : "set.vst.kind.effect"));
         g.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { icon, PluginThumbView.Row(p) } });
@@ -194,8 +304,11 @@ public sealed partial class SettingsDialog
         ToolTip.SetTip(text, p.Path);
         Grid.SetColumn(text, 1);
         g.Children.Add(text);
+        var chip = CategoryChip(p, custom, choices, all);
+        Grid.SetColumn(chip, 2);
+        g.Children.Add(chip);
         var where = Act("", Loc.T("set.vst.showFile"), () => Explorer.Select(p.Path));
-        Grid.SetColumn(where, 2);
+        Grid.SetColumn(where, 3);
         g.Children.Add(where);
         var box = new CheckBox { IsChecked = visible, VerticalAlignment = VerticalAlignment.Center, MinWidth = 0 };
         ToolTip.SetTip(box, Loc.T("set.vst.visible.tip"));
@@ -204,7 +317,7 @@ public sealed partial class SettingsDialog
             g.Opacity = box.IsChecked == true ? 1 : 0.5;
             PluginScan.SetHidden(p, box.IsChecked != true);
         };
-        Grid.SetColumn(box, 3);
+        Grid.SetColumn(box, 4);
         g.Children.Add(box);
         return g;
     }

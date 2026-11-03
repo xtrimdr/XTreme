@@ -31,8 +31,7 @@ public sealed class StereoMeter : Control
         get => showScale;
         set { showScale = value; Height = value ? ScaledBarsH + ScaleH : 14; InvalidateVisual(); }
     }
-    const string ClipTip = "Saturación: se prende si la entrada llega al máximo (bajá la ganancia). Click para apagarlo.";
-    const string OpenTip = "Configurar entradas y salidas";
+    readonly string clipTip = Loc.T("meter.clip.tip"), openTip = Loc.T("meter.open.tip");
     static readonly Avalonia.Input.Cursor Hand = new(Avalonia.Input.StandardCursorType.Hand);
 
     Action? openRequested;
@@ -59,7 +58,7 @@ public sealed class StereoMeter : Control
     {
         bool open = openRequested != null;
         Cursor = overLight || open ? Hand : null;
-        ToolTip.SetTip(this, overLight ? ClipTip : open ? OpenTip : null);
+        ToolTip.SetTip(this, overLight ? clipTip : open ? openTip : null);
     }
 
     protected override void OnPointerMoved(Avalonia.Input.PointerEventArgs e)
@@ -121,7 +120,7 @@ public sealed class StereoMeter : Control
             {
                 double split = (-6 - MinDb) / -MinDb;
                 ctx.DrawRectangle(Palette.Accent, null, new Rect(0, r.Y, w * Math.Min(k, split), h), 2, 2);
-                if (k > split) ctx.FillRectangle(Palette.Brush("#f59e0b"), new Rect(w * split, r.Y, w * (k - split), h));
+                if (k > split) ctx.FillRectangle(Palette.Mute, new Rect(w * split, r.Y, w * (k - split), h));
             }
             double hk = (hold[c] - MinDb) / -MinDb;
             if (hk > 0) ctx.FillRectangle(hold[c] > -1 ? Palette.Rec : Palette.Fg, new Rect(w * hk - 1.5, r.Y, 1.5, h));

@@ -37,7 +37,7 @@ public sealed class TempoControl : Border
         var top = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
         top.Children.Add(new TextBlock { Text = "♩ =", FontSize = 14, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
         value.Children.Add(top);
-        value.Children.Add(new TextBlock { Text = "Tempo", FontSize = 10, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
+        value.Children.Add(new TextBlock { Text = Loc.T("transport.tempo"), FontSize = 10, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
         readout.Width = 44;
         readout.Children.Add(integer);
         readout.Children.Add(new TextBlock { Text = ".", Foreground = Palette.Faint, Classes = { "mono" }, FontSize = 14 });

@@ -141,7 +141,7 @@ public partial class MainWindow
     void BuildClickMenu()
     {
         var body = new StackPanel { Spacing = 8 };
-        body.Children.Add(new TextBlock { Text = "SONIDO DEL CLICK", Classes = { "label" }, Margin = new Thickness(4, 0) });
+        body.Children.Add(new TextBlock { Text = Loc.T("transport.clickSound"), Classes = { "label" }, Margin = new Thickness(4, 0) });
         var sounds = new StackPanel();
         for (int i = 0; i < ClickLabels.Length; i++)
         {
@@ -333,7 +333,7 @@ public partial class MainWindow
         // nothing armed, nothing to record into: armed tracks are the only way to say where a take goes
         RecButton.IsEnabled = targets.Count > 0;
         string recordTip = Shortcuts.Tip(targets.Count == 0 ? Loc.T("transport.rec.none")
-            : targets.Count > 1 ? Loc.T("transport.rec.many", targets.Count, string.Join(", ", targets.Select(t => $"\"{t.Name}\"")))
+            : targets.Count > 1 ? Loc.T("transport.rec.many", targets.Count, string.Join(", ", targets.Select(t => Loc.T("common.quoted", t.Name))))
             : targets[0].Clips.Count > 0 ? Loc.T("transport.rec.replace", targets[0].Name) : Loc.T("transport.rec.one", targets[0].Name), "record");
         if (recordTip != recTip) { recTip = recordTip; ToolTip.SetTip(RecButton, recordTip); }
     }

@@ -208,10 +208,13 @@ public sealed class ReverbSettings
 /// <summary>
 /// The master (native only): one EQ (low cut and mud go before the multiband, the rest after it) and a three-band
 /// compressor where each band only asks how much (it sets its threshold from its own level as it plays), and the
-/// limiter with its own ON.
+/// limiter with its own ON. <see cref="On"/> is the whole chain's (asked by the user: one button for all of it): off,
+/// nothing processes, Salida included (the Empuje, the soft clip and the limiter); only the Destino's gain stays, so the
+/// export still lands where it was going.
 /// </summary>
 public sealed class MasterSettings
 {
+    /// <summary>Off by default, as in a file from before it existed; a new project turns it on (<see cref="ProjectLibrary.Create"/>).</summary>
     public bool On { get; set; }
     /// <summary>The cleanup before the multiband: low cut and mud.</summary>
     public bool EqOn { get; set; } = true;
@@ -230,7 +233,7 @@ public sealed class MasterSettings
     public double HighXHz { get; set; } = Dsp.MasterBands.DefaultHighXHz;
     /// <summary>Always three: lows, mids, highs.</summary>
     public List<MasterBand> Bands { get; set; } = Defaults();
-    /// <summary>The limiter, apart from the master's ON: its own ON, Empuje into it (dB), Techo (dBFS) and Release (ms).</summary>
+    /// <summary>The limiter, under the master's ON: its own ON, Empuje into it (dB), Techo (dBFS) and Release (ms).</summary>
     public bool LimOn { get; set; } = true;
     /// <summary>Cinta: tape saturation before the limiter, 0 to 1 (0 = nothing).</summary>
     public bool TapeOn { get; set; } = true;
@@ -296,7 +299,8 @@ public sealed class MasterSettings
     public Dsp.MasterParams ToParams()
     {
         Dsp.MasterBandParams B(int i) => new(Bands[i].Amount);
-        return new(On, EqOn, LowCutHz, MudDb, LowsDb, PresenceDb, AirDb, TiltDb, BandsOn, LowXHz, HighXHz, B(0), B(1), B(2), ColorOn, LimDriveDb, LimCeilingDb, LimReleaseMs, LimOn,
+        // the master's ON reaches the limiter too (the soft clip reads it already)
+        return new(On, EqOn, LowCutHz, MudDb, LowsDb, PresenceDb, AirDb, TiltDb, BandsOn, LowXHz, HighXHz, B(0), B(1), B(2), ColorOn, LimDriveDb, LimCeilingDb, LimReleaseMs, On && LimOn,
             TapeOn, TapeAmount, WidthOn, Width, MonoBassHz, ClipOn, ClipDb, Dsp.MasterLoudness.Get(Target).Lufs, TargetGainDb, PickAmount, ChainInSlots);
     }
 
@@ -548,6 +552,8 @@ public sealed class Track
     public PluginRef? Instrument { get; set; }
     /// <summary>The native sampler a MIDI track plays with (<see cref="SamplerSettings"/>), never along with <see cref="Instrument"/>; null = none. Native only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SamplerSettings? Sampler { get; set; }
+    /// <summary>The native granular a MIDI track plays with (<see cref="GranularSettings"/>), never along with <see cref="Instrument"/> or <see cref="Sampler"/>; null = none. Native only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public GranularSettings? Granular { get; set; }
     /// <summary>
     /// The MIDI input a MIDI track plays and records from: a device's key from Configuración → MIDI; null = all of
     /// them. Native only.
@@ -583,7 +589,9 @@ public sealed class Track
             foreach (var c in MidiClips) c.Normalize();
             if (Instrument != null && !Instrument.Normalize()) Instrument = null;
             Sampler?.Normalized();
+            Granular?.Normalized();
             if (Instrument != null) Sampler = null;
+            if (Instrument != null || Sampler != null) Granular = null;
             MidiInput = string.IsNullOrWhiteSpace(MidiInput) ? null : MidiInput.Trim();
             MidiChannel = Math.Clamp(MidiChannel, 0, 16);
             Arp?.Normalize();
@@ -595,6 +603,7 @@ public sealed class Track
             MidiClips = null;
             Instrument = null;
             Sampler = null;
+            Granular = null;
             MidiInput = null;
             MidiChannel = 0;
             Arp = null;
@@ -964,6 +973,12 @@ public sealed class InsertSlot
     /// <summary>Its output, dB.</summary>
     public double OutputDb { get; set; }
     /// <summary>
+    /// The track it listens to instead of its own input (a sidechain: a compressor ducked by the kick), by its id; null = its
+    /// own. Only the kinds that take one (<see cref="Dsp.TrackInserts.TakesKey"/>). A track that no longer exists leaves it
+    /// listening to its own input, and the id stays so undoing the removal brings it back.
+    /// </summary>
+    public string? Sidechain { get; set; }
+    /// <summary>
     /// Folded in the mixer (asked by the user): only its title row, with a summary, so a long chain fits. A view choice
     /// kept with the project, like a folder's fold; it changes nothing in the sound.
     /// </summary>
@@ -1019,6 +1034,7 @@ public sealed class InsertSlot
     internal void Normalize()
     {
         if (string.IsNullOrEmpty(Id)) Id = Ids.New("fx");
+        if (string.IsNullOrWhiteSpace(Sidechain) || !Dsp.TrackInserts.TakesKey(Type)) Sidechain = null;
         // a slot saved with the single Mix knob they replaced: the same balance on the two
         if (Extra?.Remove("mix", out var mix) == true && mix.TryGetDouble(out double m) && double.IsFinite(m))
         {
@@ -1028,7 +1044,7 @@ public sealed class InsertSlot
         Wet = double.IsFinite(Wet) ? Math.Clamp(Wet, 0, 1) : 1;
         Dry = double.IsFinite(Dry) ? Math.Clamp(Dry, 0, 1) : 0;
         OutputDb = double.IsFinite(OutputDb) ? Math.Clamp(OutputDb, FxDefs.Output.Min, FxDefs.Output.Max) : 0;
-        if (Dsp.TrackInserts.IsStage(Type) || Dsp.TrackInserts.IsMod(Type))
+        if (Dsp.TrackInserts.IsStage(Type) || Dsp.TrackInserts.IsMod(Type) || Dsp.TrackInserts.IsModel(Type))
         {
             Stage ??= new();
             Stage.Normalize(Type);
@@ -1065,7 +1081,7 @@ public sealed class StageSettings
         {
             double v = Get(p.Id, p.Default);
             bool off = p.OffAtZero && v <= 0;
-            Values[p.Id] = off ? 0 : double.IsFinite(v) ? Math.Clamp(v, p.Min, p.Max) : p.Default;
+            Values[p.Id] = off ? 0 : double.IsFinite(v) ? p.Snap(Math.Clamp(v, p.Min, p.Max)) : p.Default;
         }
     }
 }

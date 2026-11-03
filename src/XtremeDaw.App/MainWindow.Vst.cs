@@ -1,3 +1,4 @@
+using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using XtremeDaw.App.Audio;
@@ -59,6 +60,9 @@ public partial class MainWindow
         if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Sampler != null)
             return !samplers.TryGetValue(trackId, out var sampler) || sampler.Loading ? TimelineView.InstrumentState.Loading
                 : sampler.Missing ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Ready;
+        if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Granular != null)
+            return !granulars.TryGetValue(trackId, out var grains) || grains.Loading ? TimelineView.InstrumentState.Loading
+                : grains.Missing ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Ready;
         var plugin = tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Instrument;
         if (plugin == null) return TimelineView.InstrumentState.TestTone;
         return instrumentFailed.Contains(FailKey(trackId, plugin)) ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Loading;
@@ -254,6 +258,7 @@ public partial class MainWindow
             if (p.Tracks.Find(t => t.Id == id) is not { } t) return null;
             t.Instrument = plugin == null ? null : PluginCatalog.Ref(plugin);
             t.Sampler = null;
+            t.Granular = null;
             return id;
         }, "instrument-set");
     }
@@ -261,6 +266,7 @@ public partial class MainWindow
     void OpenInstrumentWindow(LiveTrack track)
     {
         if (track.Track.Sampler != null) OpenSamplerWindow(track.Track.Id);
+        else if (track.Track.Granular != null) OpenGranularWindow(track.Track.Id);
         else if (instruments.TryGetValue(track.Track.Id, out var loaded))
         {
             DressPluginWindow(loaded.Bridge, loaded.Plugin.Name);
@@ -320,22 +326,18 @@ public partial class MainWindow
         IsHitTestVisible = false, Focusable = false, MinHeight = 0, Padding = new Avalonia.Thickness(12, 6, 12, 2),
     };
 
-    /// <summary>From this many VST3 instruments on, the menu groups them by maker (a submenu each), so it never gets
-    /// taller than the window.</summary>
-    const int ByVendorFrom = 12;
-
     /// <summary>
     /// The "Instrumento" entries of a MIDI track's menu, in two groups (asked by the user): the native ones (today the
-    /// test tone) and the VST3 ones found, by maker when there are many (<see cref="ByVendorFrom"/>); then look again,
+    /// test tone) and the VST3 ones found, grouped as Configuración → Plugins says (<see cref="AddPluginItems"/>); then look again,
     /// manage the plugins (Configuración → Plugins), open its window. <paramref name="enabled"/> false (read only) locks the choice.
     /// </summary>
-    List<object> InstrumentItems(LiveTrack track, bool enabled)
+    AvaloniaList<object> InstrumentItems(LiveTrack track, bool enabled)
     {
         var refresh = new List<Action>();
         var current = track.Track.Instrument;
         MenuItem Pick(VstPluginInfo? p, string label, string? tip = null)
         {
-            var item = MenuCheck(label, () => p == null ? track.Track.Instrument == null && track.Track.Sampler == null : SamePlugin(track.Track.Instrument, p), () => _ = SetInstrument(track, p), refresh, tip: tip);
+            var item = MenuCheck(label, () => p == null ? track.Track.Instrument == null && track.Track.Sampler == null && track.Track.Granular == null : SamePlugin(track.Track.Instrument, p), () => _ = SetInstrument(track, p), refresh, tip: tip);
             item.IsEnabled = enabled;
             if (p != null) PluginThumbView.AddTip(item, p);
             return item;
@@ -346,35 +348,136 @@ public partial class MainWindow
             item.IsEnabled = enabled;
             return item;
         }
-        var items = new List<object>
+        MenuItem Grains()
+        {
+            var item = MenuCheck(Loc.T("granular.name"), () => track.Track.Granular != null, () => _ = SetGranular(track), refresh, tip: Loc.T("granular.tip"));
+            item.IsEnabled = enabled;
+            return item;
+        }
+        var items = new AvaloniaList<object>
         {
             MenuGroup(Loc.T("vst.group.native")),
             Pick(null, Loc.T("vst.testTone"), Loc.T("vst.testTone.tip")),
             Native(),
+            Grains(),
             new Separator(),
             MenuGroup(Loc.T("vst.group.vst")),
         };
         var found = InstrumentChoices(current);
-        if (found.Count == 0) items.Add(new MenuItem { IsEnabled = false, Header = new TextBlock { Text = Loc.T("vst.group.none"), FontSize = 11 } });
-        else if (found.Count < ByVendorFrom)
-            foreach (var p in found) items.Add(Pick(p, MenuName(p, p.Vendor.Length > 0 ? $"{p.Name} · {p.Vendor}" : p.Name)));
-        else
-            foreach (var maker in found.GroupBy(p => p.Vendor.Length > 0 ? p.Vendor : Loc.T("vst.group.noVendor")).OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
-            {
-                // the maker of the one in use carries the check, so it is found without opening every submenu
-                string Check() => maker.Any(p => SamePlugin(track.Track.Instrument, p)) ? "" : " ";
-                var lead = new TextBlock { Classes = { "icon" }, Text = Check(), FontSize = 12, Width = 12, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-                refresh.Add(() => lead.Text = Check());
-                items.Add(new MenuItem { Header = MenuHeader($"{maker.Key} ({maker.Count()})", lead), ItemsSource = maker.Select(p => Pick(p, MenuName(p, p.Name))).ToList() });
-            }
+        // the maker of the one in use carries the check, so it is found without opening every submenu
+        AddPluginItems(items, found, (p, label) => Pick(p, label), maker => maker.Any(p => SamePlugin(track.Track.Instrument, p)), refresh);
         items.Add(new Separator());
         items.Add(MenuAction(Loc.T(found.Count == 0 ? "vst.scan.first" : "vst.scan"), ScanPlugins,
             enabled: !PluginScan.Running, tip: Loc.T("vst.scan.tip")));
         items.Add(MenuAction(Loc.T("vst.manage.menu"), () => { Settings.Show("plugins"); return Task.CompletedTask; }, tip: Loc.T("vst.manage.tip")));
-        if (current != null || track.Track.Sampler != null)
+        if (current != null || track.Track.Sampler != null || track.Track.Granular != null)
             items.Add(MenuAction(Loc.T("vst.open", InstrumentName(track.Track)), () => { OpenInstrumentWindow(track); return Task.CompletedTask; },
-                enabled: track.Track.Sampler != null || instruments.ContainsKey(track.Track.Id), icon: ""));
+                enabled: track.Track.Sampler != null || track.Track.Granular != null || instruments.ContainsKey(track.Track.Id), icon: ""));
         return items;
+    }
+
+    /// <summary>
+    /// The plugins of a menu (instruments or effects) as Configuración → Plugins says (<see cref="PluginCatalog.Grouping"/>):
+    /// by maker or by category, a submenu each, or one list. <paramref name="holds"/> marks the group of the one in use.
+    /// First, "Mostrar en los menús" changes that grouping right there (asked by the user): the plugins regroup in the
+    /// open menu, so <paramref name="items"/> is an <see cref="AvaloniaList{T}"/> the menu watches.
+    /// </summary>
+    static void AddPluginItems(AvaloniaList<object> items, List<VstPluginInfo> found, Func<VstPluginInfo, string, MenuItem> pick,
+        Func<IEnumerable<VstPluginInfo>, bool>? holds = null, List<Action>? refresh = null, string none = "vst.group.none")
+    {
+        if (found.Count == 0)
+        {
+            items.Add(new MenuItem { IsEnabled = false, Header = new TextBlock { Text = Loc.T(none), FontSize = 11 } });
+            return;
+        }
+        var checks = new List<Action>();
+        int start = items.Count + 1, count = 0;
+        void Fill()
+        {
+            items.RemoveRange(start, count);
+            var built = new List<object>();
+            AddPluginGroups(built, found, pick, holds, refresh);
+            items.InsertRange(start, built);
+            count = built.Count;
+        }
+        MenuItem Way(string id, string key) => MenuCheck(Loc.T(key), () => PluginCatalog.Grouping == id,
+            () => { PluginScan.SetGrouping(id); Fill(); }, checks, tip: Loc.T(key + ".tip"));
+        var ways = new MenuItem
+        {
+            Header = MenuHeader(Loc.T("set.vst.group"), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12, Width = 12, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center }),
+            ItemsSource = new List<object>
+            {
+                Way(PluginCatalog.ByVendor, "set.vst.group.vendor"),
+                Way(PluginCatalog.ByCategory, "set.vst.group.category"),
+                Way(PluginCatalog.AsList, "set.vst.group.list"),
+            },
+        };
+        items.Add(ways);
+        Fill();
+    }
+
+    /// <summary>The plugins themselves, grouped as <see cref="PluginCatalog.Grouping"/> says now (<see cref="AddPluginItems"/>).</summary>
+    static void AddPluginGroups(List<object> items, List<VstPluginInfo> found, Func<VstPluginInfo, string, MenuItem> pick,
+        Func<IEnumerable<VstPluginInfo>, bool>? holds, List<Action>? refresh)
+    {
+        string grouping = PluginCatalog.Grouping;
+        var custom = PluginCatalog.CustomCategories();
+        var all = PluginCatalog.Plugins(PluginScan.Entries);
+        string WithVendor(VstPluginInfo p) => MenuName(p, p.Vendor.Length > 0 ? $"{p.Name} · {p.Vendor}" : p.Name);
+        var groups = found.GroupBy(p => PluginCatalog.GroupOf(p, grouping, custom, all) ?? "").ToList();
+        // one list, or everything in a single group: no submenu to open for nothing
+        if (grouping == PluginCatalog.AsList || groups.Count == 1)
+        {
+            foreach (var p in found) items.Add(pick(p, WithVendor(p)));
+            return;
+        }
+        foreach (var group in groups.OrderBy(g => g.Key.Length == 0).ThenBy(g => PluginScan.GroupName(g.Key, grouping), StringComparer.CurrentCultureIgnoreCase))
+        {
+            var entries = group.Select(p => pick(p, grouping == PluginCatalog.ByCategory ? WithVendor(p) : MenuName(p, p.Name))).ToList();
+            string title = $"{PluginScan.GroupName(group.Key, grouping)} ({group.Count()})";
+            if (holds == null)
+            {
+                items.Add(new MenuItem { Header = new TextBlock { Text = title, FontSize = 12 }, ItemsSource = entries });
+                continue;
+            }
+            string Check() => holds(group) ? "" : " ";
+            var lead = new TextBlock { Classes = { "icon" }, Text = Check(), FontSize = 12, Width = 12, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+            refresh?.Add(() => lead.Text = Check());
+            items.Add(new MenuItem { Header = MenuHeader(title, lead), ItemsSource = entries });
+        }
+    }
+
+    /// <summary>
+    /// The new track menu's "Pista MIDI con instrumento" (asked by the user): the instruments of a track's menu, native
+    /// and plugins, and picking one makes the track already playing with it (<see cref="NewInstrumentTrack"/>).
+    /// </summary>
+    MenuItem NewInstrumentTrackMenu(bool enabled)
+    {
+        EnsurePlugins();
+        MenuItem Native(string name, string tip, Action<Track> setup) =>
+            MenuAction(name, () => NewInstrumentTrack(name, setup), enabled: enabled, tip: tip);
+        var items = new AvaloniaList<object>
+        {
+            MenuGroup(Loc.T("vst.group.native")),
+            Native(Loc.T("sampler.name"), Loc.T("sampler.tip"), t => t.Sampler = new SamplerSettings()),
+            Native(Loc.T("granular.name"), Loc.T("granular.tip"), t => t.Granular = new GranularSettings()),
+            new Separator(),
+            MenuGroup(Loc.T("vst.group.vst")),
+        };
+        AddPluginItems(items, InstrumentChoices(null), (p, label) =>
+        {
+            var item = MenuAction(label, () => NewInstrumentTrack(p.Name, t => t.Instrument = PluginCatalog.Ref(p)), enabled: enabled);
+            PluginThumbView.AddTip(item, p);
+            return item;
+        });
+        items.Add(new Separator());
+        items.Add(MenuAction(Loc.T(PluginScan.Visible.Any(p => p.IsInstrument) ? "vst.scan" : "vst.scan.first"), ScanPlugins,
+            enabled: !PluginScan.Running, tip: Loc.T("vst.scan.tip")));
+        items.Add(MenuAction(Loc.T("vst.manage.menu"), () => { Settings.Show("plugins"); return Task.CompletedTask; }, tip: Loc.T("vst.manage.tip")));
+        var menu = new MenuItem { Header = MenuHeader(Loc.T("menu.trackInstrument"), new TextBlock { Text = "", Classes = { "icon" }, FontSize = 12 }), ItemsSource = items };
+        ToolTip.SetTip(menu, Loc.T("menu.trackInstrument.hint"));
+        ToolTip.SetShowDelay(menu, (int)MenuTipDelay.TotalMilliseconds);
+        return menu;
     }
 }
 
@@ -396,8 +499,6 @@ public partial class MainWindow
         HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
     };
     readonly Button midiOpen = new() { Classes = { "chip" }, Height = 30, Padding = new Avalonia.Thickness(12, 0), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
-    /// <summary>Where the output and sends tray goes while a MIDI track is shown.</summary>
-    readonly StackPanel midiSends = new() { Margin = new Avalonia.Thickness(0, 6, 0, 0) };
 
     void InitMidiInspector()
     {
@@ -429,8 +530,9 @@ public partial class MainWindow
         };
         ToolTip.SetTip(midiOpen, Loc.T("vst.openWindow.tip"));
         midiOpen.Click += (_, _) => { if (sel is { Track.IsMidi: true } t) OpenInstrumentWindow(t); };
-        midiPanel.Children.Add(midiSends);
-        Inspector.Children.Add(midiPanel);
+        // the instrument first, then the channel's sections, as for any track (decisión del usuario, 2026-11-03)
+        int at = Inspector.Children.IndexOf(takeSections);
+        Inspector.Children.Insert(at >= 0 ? at : Inspector.Children.Count, midiPanel);
     }
 
     /// <summary>Fills the panel for the selected MIDI track: what it plays with (and whether it is native or VST3) and how that is going.</summary>
@@ -457,13 +559,20 @@ public partial class MainWindow
                 TimelineView.InstrumentState.Loading => Loc.T("sampler.reading"),
                 _ => SamplerMedia.Of(store.Project, t.Track)?.Name ?? Loc.T("sampler.none"),
             };
+        if (t.Track.Granular != null && store != null)
+            midiNowInfo.Text = state switch
+            {
+                TimelineView.InstrumentState.Failed => Loc.T("sampler.missing"),
+                TimelineView.InstrumentState.Loading => Loc.T("sampler.reading"),
+                _ => GranularMedia.Of(store.Project, t.Track)?.Name ?? Loc.T("sampler.none"),
+            };
         midiPick.IsEnabled = store is { ReadOnly: false };
-        midiOpen.IsVisible = plugin != null || t.Track.Sampler != null;
+        midiOpen.IsVisible = plugin != null || t.Track.Sampler != null || t.Track.Granular != null;
         midiOpen.IsEnabled = state == TimelineView.InstrumentState.Ready;
     }
 
-    /// <summary>Puts the output and sends tray in <paramref name="host"/>: the Canal tab's place for an audio track
-    /// (right after its effects), <see cref="midiSends"/> for a MIDI one. One set of sections, moved, not two.</summary>
+    /// <summary>Puts the output and sends tray in <paramref name="host"/>: the Canal tab's place, right after the
+    /// effects, or a group's. One set of sections, moved, not two.</summary>
     void PlaceInspectorSends(Panel host)
     {
         if (sendsTray.Parent == host) return;

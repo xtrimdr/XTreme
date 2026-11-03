@@ -83,7 +83,7 @@ public partial class MainWindow
         }
         stemClock.Start();
         Timeline.InvalidateVisual();
-        var closeToast = Toasts.Show(Loc.T("stems.working", name), sticky: true, action: (Loc.T("transport.count.cancel"), () => CancelStems(job)));
+        var closeToast = Toasts.Show(Loc.T("stems.working", name), sticky: true, action: (Loc.T("common.cancel"), () => CancelStems(job)));
         List<StemSeparator.Stem> stems;
         try
         {

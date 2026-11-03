@@ -2158,7 +2158,7 @@ public sealed partial class TimelineView : Control
         sel = sel && (SelectedClipId == null || c.Clip.Id == SelectedClipId) || boxed.Contains(c.Clip.Id);
         if (x1 < HeaderW || x0 > W) return;
         // while its loop is dragged the repeats are the ghost's (DrawLoopGhost)
-        if (loopSource != null && moved && c.Clip.LoopOf == loopSource) return;
+        if (LoopDragged(c.Clip.LoopOf)) return;
         var clip = new Rect(x0, y + 5, Math.Max(2, x1 - x0), lh - 10);
         // a track with a color tints its clips with it (native only); without one they stay as in the web
         var tint = TrackIcons.ColorOf(t.Track);
@@ -2705,6 +2705,15 @@ public sealed partial class TimelineView : Control
     Rect MuteRect(int i) => Compact ? CompactBtn(i, 1) : new(HeaderRight - 94, LaneY(i) + 8, 24, 24);
     Rect SoloRect(int i) => Compact ? CompactBtn(i, 2) : new(HeaderRight - 66, LaneY(i) + 8, 24, 24);
     Rect RemoveRect(int i) => Compact ? NoRect : new(HeaderRight - 38, LaneY(i) + 8, 24, 24);
+
+    /// <summary>Where the "¿Quitar?" of a track opens when it wasn't its trash can that asked (Supr, a menu): under the can.</summary>
+    public Point RemoveAskPoint(string trackId)
+    {
+        int i = -1;
+        for (int k = 0; k < tracks.Count && i < 0; k++) if (tracks[k].Track.Id == trackId) i = k;
+        if (i < 0) return new Point(8, RulerH + 8);
+        return Compact ? new Point(8, LaneY(i) + 24) : RemoveRect(i).BottomLeft + new Point(0, 4);
+    }
     /// <summary>Room for the name: an armed track shows its input left of the ●, so the name gets shorter.</summary>
     double NameW(int i) => Compact ? CompactNameW(i) : Math.Max(0, (i >= 0 && i < tracks.Count && tracks[i].Track.IsMidi && InstrumentRect(i).Width > 0 ? InstrumentRect(i).X - 62
         : armed.Contains(i) && !Recording && InputLabel != null ? InputRect(i).X - 62 : HeaderRight - 186) - Indent(i) - NameShift(i));
@@ -2886,7 +2895,7 @@ public sealed partial class TimelineView : Control
         string value = Hundreds[Math.Clamp((int)Math.Round(amount * 100), 0, 100)];
         if (inside)
         {
-            var vt = Palette.Text(value, kd >= 50 ? 12 : 10.5, on ? Palette.Fg : Palette.Dim, Palette.Mono);
+            var vt = Palette.Text(value, kd >= 50 ? 12 : 10.5, KnobLooks.LightCap ? Palette.App : on ? Palette.Fg : Palette.Dim, Palette.Mono);
             ctx.DrawText(vt, new Point(kr.Center.X - vt.Width / 2, kr.Center.Y - vt.Height / 2));
         }
         if (!inside && hot)
@@ -3255,18 +3264,20 @@ public sealed partial class TimelineView : Control
             }
             // with Ctrl, a click (released without moving) adds the clip to the selection or takes it out
             toggleBase = (modifiers & KeyModifiers.Control) != 0 && e.ClickCount == 1 ? SelectionSeed() : null;
-            // a boxed clip grabbed by its body carries the other boxed ones; its edges trim it alone
-            if (boxed.Count > 1 && boxed.Contains(clip.Clip.Id) && dragMode == ClipEditMode.Move)
+            // a boxed clip grabbed by its body carries the other boxed ones; by an edge, a fade or its loop, it edits them all
+            bool group = GroupEdits(clip.Clip.Id);
+            if (group)
             {
                 SelectedClipId = clip.Clip.Id;
                 SelectOne(i);
-                StartCarry(clip);
+                if (dragMode == ClipEditMode.Move) StartCarry(clip);
             }
             else SelectClip(i, clip.Clip.Id);
             dragged = clip;
             original = ClipEditing.Copy(clip.Clip);
             preview = ClipEditing.Copy(clip.Clip);
             if (dragMode == ClipEditMode.Loop) StartLoop(i, clip);
+            if (group && dragMode != ClipEditMode.Move) StartGroup(dragMode, i, clip, null);
             StartGesture("clip", e);
             return;
         }
@@ -3593,6 +3604,20 @@ public sealed partial class TimelineView : Control
                     slide.Start();
                 }
             }
+            else if (dragged != null && original != null && groupMode != null)
+            {
+                // the grabbed clip's edge, fade or loop follows the pointer (with the grid), the other boxed ones go with it
+                overIndex = fromIndex;
+                stuckTo = null;
+                if (dragMode == ClipEditMode.Loop) DragLoop(dxPx / pps);
+                else
+                {
+                    preview = ClipEditing.Drag(original, dragged.Media, dragMode, dxPx / pps, Grid, (modifiers & KeyModifiers.Alt) != 0, dragged.LengthSec,
+                        SnapToClips != SnapEdges.None ? tracks.SelectMany(t => t.Clips).Where(c => !boxed.Contains(c.Clip.Id)).Select(c => Window(c)) : null, SnapToClips, pps);
+                    stretchText = dragMode is ClipEditMode.StretchStart or ClipEditMode.StretchEnd ? $"×{1 / preview.Stretch:0.00}" : null;
+                }
+                DragGroup();
+            }
             else if (dragged != null && original != null && carriedAlong.Count > 0)
             {
                 // the boxed clips move in time together, each on its own track (no swapping, no landing elsewhere)
@@ -3652,13 +3677,14 @@ public sealed partial class TimelineView : Control
         List<string> erased = [.. erasing];
         int paintedLane = pencilLane;
         var painted = kind == "pencil" ? TakePencil() : null;
+        var group = TakeGroup();
         bool midiCarry = kind == "midi" && midiCarrying;
-        List<Clip>? together = kind == "clip" && (carriedAlong.Count > 0 || midiCarried.Count > 0) && value != null ? [value, .. carriedPreview.Values]
+        List<Clip>? together = group == null && kind == "clip" && (carriedAlong.Count > 0 || midiCarried.Count > 0) && value != null ? [value, .. carriedPreview.Values]
             : midiCarry ? [.. carriedPreview.Values] : null;
         var midiMoves = together != null ? MidiMoves() : [];
         string? grabbedId = kind == "midi" ? midiHeld?.Id : dragged?.Clip.Id;
-        var midi = kind == "midi" && !midiCarry ? MidiResult() : null;
-        var loop = kind == "clip" ? TakeLoop() : null;
+        var midi = kind == "midi" && !midiCarry && group == null ? MidiResult() : null;
+        var loop = kind == "clip" && group == null ? TakeLoop() : null;
         bool stayed = kind == "clip" ? value?.AtSec == original?.AtSec && target == null : midiCarry ? carryShift == 0 : midi == null;
         clones = cloning && changed && !stayed && extractTo.Clip == null ? CloneIds(kind) : [];
         var toggle = toggleBase;
@@ -3679,6 +3705,13 @@ public sealed partial class TimelineView : Control
         if (kind == "box" && changed) EndBox();
         // Ctrl+click on a take adds it or takes it out (with Ctrl held, a drag still swaps it with another track's clip)
         if (toggle != null && !changed && grabbedId != null) ToggleBoxed(grabbedId, toggle);
+        else if (group is { } g)
+        {
+            // a click on an edge without moving it leaves just that clip selected, like one on its body
+            if (!changed && kind == "midi") SelectMidiClip(from, grabbedId);
+            else if (!changed) SelectClip(from, grabbedId);
+            else RaiseClipsEdited(g.Takes, g.Loops, g.Midi);
+        }
         // a click on a boxed clip without moving it leaves just that one selected
         else if (together != null && !changed)
         {
@@ -3718,7 +3751,8 @@ public sealed partial class TimelineView : Control
     {
         if (gesture == "listen") ListenEnded?.Invoke();
         stretchText = null;
-        loopSource = null;
+        loopRuns.Clear();
+        ClearGroup();
         if (erasing.Count > 0) erasing.Clear();
         rightMenu = null;
         if (gesture == "pencil") TakePencil();

@@ -31,7 +31,7 @@ public sealed class SectionHeader : Border
         FxIcon.SetColor(Icon, Palette.Accent);
         Icon.VerticalAlignment = VerticalAlignment.Center;
         Icon.Margin = new Thickness(0, 0, 8, 0);
-        label = new TextBlock { Text = title.ToUpperInvariant(), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center };
+        label = new TextBlock { Text = title.ToUpperInvariant(), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         Background = Brushes.Transparent;
         Padding = new Thickness(16, 14);
         MinHeight = 52;
@@ -69,7 +69,7 @@ public sealed class SectionHeader : Border
         this.collapsed = collapsed;
         summary.IsVisible = collapsed && summary.Text is { Length: > 0 };
         chevron.Text = collapsed ? "" : "";
-        ToolTip.SetTip(this, collapsed ? "Mostrar" : "Ocultar");
+        ToolTip.SetTip(this, Loc.T(collapsed ? "section.show" : "section.hide"));
     }
 
     void Paint()

@@ -43,11 +43,15 @@ public sealed class SatInsert(int sampleRate) : ITrackInsert
     public double TakeGrDb() => 0;
 }
 
-/// <summary>The compressor with the small EQ its presets bring (before and after it) as one slot.</summary>
-public sealed class CompInsert(int sampleRate) : ITrackInsert
+/// <summary>The compressor with the small EQ its presets bring (before and after it) as one slot; it can listen to another track (<see cref="Key"/>).</summary>
+public sealed class CompInsert(int sampleRate) : ITrackInsert, IKeyed, ICompGraph
 {
+    public KeyTap Key { get; } = new();
     public CompEqFilter Eq { get; } = new(sampleRate);
-    public Compressor Comp { get; } = new(sampleRate);
+    public Compressor Comp { get; } = new(sampleRate) { Scope = new() };
+    public CompScope Scope => Comp.Scope!;
+
+    public double CurveOutDb(double inDb) => Comp.CurveOutDb(inDb);
     public string Kind => TrackInserts.Comp;
     public int LatencySamples => 0;
 
@@ -67,7 +71,11 @@ public sealed class CompInsert(int sampleRate) : ITrackInsert
         Comp.Ceiling = F(CompPresets.TrackLimitCeilingDb);
     }
 
-    public void Process(Span<float> left, Span<float> right) => Eq.ProcessWith(Comp, left, right);
+    public void Process(Span<float> left, Span<float> right)
+    {
+        if (Key.Take(left.Length, out var kl, out var kr)) Eq.ProcessWith(Comp, left, right, kl, kr);
+        else Eq.ProcessWith(Comp, left, right);
+    }
 
     public void Reset()
     {
@@ -91,15 +99,20 @@ public sealed class EqInsert(int sampleRate) : ITrackInsert
     public double TakeGrDb() => 0;
 }
 
-/// <summary>The noise gate as a slot: its reduction feeds the strip's meter like the compressor's.</summary>
-public sealed class GateInsert(int sampleRate) : ITrackInsert
+/// <summary>The noise gate as a slot: its reduction feeds the strip's meter like the compressor's. It can open by another track (<see cref="Key"/>).</summary>
+public sealed class GateInsert(int sampleRate) : ITrackInsert, IKeyed
 {
+    public KeyTap Key { get; } = new();
     public NoiseGate Gate { get; } = new(sampleRate);
     public string Kind => TrackInserts.Gate;
     public int LatencySamples => 0;
 
     public void Set(GateParams p) => Gate.Set(p);
-    public void Process(Span<float> left, Span<float> right) => Gate.Process(left, right);
+    public void Process(Span<float> left, Span<float> right)
+    {
+        if (Key.Take(left.Length, out var kl, out var kr)) Gate.Process(left, right, kl, kr);
+        else Gate.Process(left, right);
+    }
     public void Reset() => Gate.Reset();
     public double TakeGrDb() => Gate.TakeGrDb();
 }
@@ -190,10 +203,16 @@ public sealed record InsertSpec(string Id, string Kind)
     public bool StageOn { get; init; }
     /// <summary>A modulation effect's values (<see cref="TrackInserts.IsMod"/>); its ON is <see cref="StageOn"/>.</summary>
     public ModParams Mod { get; init; } = ModParams.Defaults;
+    /// <summary>A compressor model's values (<see cref="TrackInserts.IsModel"/>); its ON is <see cref="StageOn"/>.</summary>
+    public CompModelParams Model { get; init; } = CompModelParams.Defaults;
+    /// <summary>A pump's values (<see cref="TrackInserts.Pump"/>), locked to <see cref="Bpm"/>; its ON is <see cref="StageOn"/>.</summary>
+    public PumpParams Pump { get; init; } = PumpParams.Defaults;
     /// <summary>The effect's level, the dry signal's (each 0 to 1) and the output (dB): every native effect's (<see cref="FxShell"/>).</summary>
     public double Wet { get; init; } = 1;
     public double Dry { get; init; }
     public double OutputDb { get; init; }
+    /// <summary>The track a slot listens to instead of its own input (a sidechain, <see cref="IKeyed"/>); null = its own.</summary>
+    public string? Key { get; init; }
     /// <summary>An export's change on the way: what would be built in the background is built before going on.</summary>
     public bool Wait { get; init; }
 
@@ -252,10 +271,35 @@ public static class TrackInserts
 
     /// <summary>The modulation effects, kept like the stages: an ON and a list of values.</summary>
     public const string Chorus = "chorus", Flanger = "flanger", Phaser = "phaser", Tremolo = "tremolo";
+    /// <summary>The pump (<see cref="PumpInsert"/>): a level curve on the beat, kept like the modulation effects.</summary>
+    public const string Pump = "pump";
 
-    public static bool IsMod(string? kind) => kind is Chorus or Flanger or Phaser or Tremolo;
+    public static bool IsMod(string? kind) => kind is Chorus or Flanger or Phaser or Tremolo or Pump;
 
-    public static bool IsKind(string? kind) => kind is Sat or Comp or Eq or Reverb or Delay or Gate or Vst || IsStage(kind) || IsMod(kind);
+    /// <summary>The compressor models (<see cref="CompModelParams"/>), kept like the stages: an ON and a list of values.</summary>
+    public const string Fet = "fet", Opto = "opto", BusComp = "buscomp", Vca = "vca", VariMu = "varimu";
+
+    public static bool IsModel(string? kind) => kind is Fet or Opto or BusComp or Vca or VariMu;
+
+    /// <summary>The kinds that can listen to another track (a sidechain, <see cref="IKeyed"/>).</summary>
+    /// <summary>Whether the kind draws a compressor's graph (<see cref="ICompGraph"/>).</summary>
+    public static bool HasCompGraph(string? kind) => kind == Comp || IsModel(kind);
+
+    /// <summary>
+    /// A compressor with <paramref name="spec"/>'s settings outside the engine, for its graph's curve while the slot isn't
+    /// running: <paramref name="reuse"/> takes them when it is of the same kind, so an edit makes nothing new. UI thread.
+    /// </summary>
+    public static ICompGraph? CurveOf(InsertSpec spec, ICompGraph? reuse, int sampleRate)
+    {
+        if (!HasCompGraph(spec.Kind)) return null;
+        var insert = reuse is ITrackInsert r && r.Kind == spec.Kind ? r : Native(spec.Kind, sampleRate);
+        ApplyNative(insert, spec.Running);
+        return insert as ICompGraph;
+    }
+
+    public static bool TakesKey(string? kind) => kind is Comp or Gate or Pump || IsModel(kind);
+
+    public static bool IsKind(string? kind) => kind is Sat or Comp or Eq or Reverb or Delay or Gate or Vst || IsStage(kind) || IsMod(kind) || IsModel(kind);
 
     public static ITrackInsert Create(string kind, int sampleRate) => kind switch
     {
@@ -282,6 +326,12 @@ public static class TrackInserts
         Flanger => new FlangerInsert(sampleRate),
         Phaser => new PhaserInsert(sampleRate),
         Tremolo => new TremoloInsert(sampleRate),
+        Fet => new FetCompInsert(sampleRate),
+        Opto => new OptoCompInsert(sampleRate),
+        BusComp => new BusCompInsert(sampleRate),
+        Vca => new VcaCompInsert(sampleRate),
+        VariMu => new VariMuInsert(sampleRate),
+        Pump => new PumpInsert(sampleRate),
         _ => throw new ArgumentException($"unknown insert kind '{kind}'", nameof(kind)),
     };
 
@@ -317,6 +367,12 @@ public static class TrackInserts
             case FlangerInsert f: f.Set(spec.Mod); break;
             case PhaserInsert p: p.Set(spec.Mod); break;
             case TremoloInsert t: t.Set(spec.Mod); break;
+            case FetCompInsert f: f.Set(spec.Model); break;
+            case OptoCompInsert o: o.Set(spec.Model); break;
+            case BusCompInsert b: b.Set(spec.Model); break;
+            case VcaCompInsert v: v.Set(spec.Model); break;
+            case VariMuInsert m: m.Set(spec.Model); break;
+            case PumpInsert p: p.Set(spec.Pump, spec.Bpm); break;
         }
     }
 

@@ -409,7 +409,7 @@ public sealed class LiveTrack
         this.sampleRate = sampleRate;
         Track = track;
         Clips = clips;
-        Chain = new TrackDspChain(sampleRate);
+        Chain = new TrackDspChain(sampleRate) { Keys = LiveKeys.For };
         Keys = new LiveNotes(sampleRate) { Transpose = track.Transpose };
         Preview = new NotePreview(sampleRate);
         ApplyAll();
@@ -470,25 +470,47 @@ public sealed class LiveTrack
             player.Notes = notes;
             player.Tempo = tempo;
         }
-        if (sampler is { } native) native.Notes = notes;
+        if (native is { } own) own.Notes = notes;
     }
 
-    volatile Sampler? sampler;
     /// <summary>
-    /// The native sampler that plays the notes instead of the test tone, set by the UI as soon as the track has one
-    /// (it stays silent until its sample is read). A track never has it along with a plugin. Read once per block.
+    /// The native instrument that plays the notes instead of the test tone (<see cref="Sampler"/> or <see cref="Granular"/>),
+    /// set by the UI as soon as the track has one (it stays silent until its sample is read). A track never has it along
+    /// with a plugin. Read once per block.
     /// </summary>
+    volatile NoteInstrument? native;
+
+    public NoteInstrument? Native => native;
+
+    /// <summary>The native sampler, if that is the track's instrument. Setting null takes away only a sampler.</summary>
     public Sampler? Sampler
     {
-        get => sampler;
+        get => native as Sampler;
         set
         {
             if (value != null)
             {
                 value.Notes = notes;
                 value.Curves = Automations.SamplerCurves(Track);
+                native = value;
             }
-            sampler = value;
+            else if (native is Sampler) native = null;
+        }
+    }
+
+    /// <summary>The native granular, if that is the track's instrument. Setting null takes away only a granular.</summary>
+    public Granular? Granular
+    {
+        get => native as Granular;
+        set
+        {
+            if (value != null)
+            {
+                value.Notes = notes;
+                value.Curves = Automations.GranularCurves(Track);
+                native = value;
+            }
+            else if (native is Granular) native = null;
         }
     }
 
@@ -626,7 +648,8 @@ public sealed class LiveTrack
     {
         Chain.Automation = Automations.Compile(Track);
         if (instrument is { } player) player.Curves = Automations.InstrumentCurves(Track);
-        if (sampler is { } native) native.Curves = Automations.SamplerCurves(Track);
+        if (native is Sampler sampler) sampler.Curves = Automations.SamplerCurves(Track);
+        else if (native is Granular granular) granular.Curves = Automations.GranularCurves(Track);
     }
 
     /// <summary>
@@ -721,12 +744,12 @@ public sealed class LiveTrack
         Chain.Frame = posFrame;
         var seq = notes;
         var inst = instrument;
-        var native = sampler;
+        var own = native;
         if (fromFrame == NoSecondRead)
         {
             AddClips(posFrame, n, bl, br, default);
             if (inst != null) inst.Play(posFrame, n, bl, br, Keys, turnTo, loopEnd);
-            else if (native != null) native.Play(posFrame, n, bl, br, Keys);
+            else if (own != null) own.Play(posFrame, n, bl, br, Keys);
             else if (seq != null) NoteSynth.Render(seq, posFrame, n, sampleRate, bl, br);
         }
         else
@@ -737,7 +760,7 @@ public sealed class LiveTrack
             // one; a loop's turn it already played, ahead of the playhead
             if (inst != null) inst.Play(posFrame, n, bl, br, Keys, turnTo, loopEnd);
             // the sampler lets its old notes go and picks up the new ones; a loop tells it the exact frame
-            else if (native != null) native.Play(posFrame, n, bl, br, Keys, turnAt, turnTo);
+            else if (own != null) own.Play(posFrame, n, bl, br, Keys, turnAt, turnTo);
             else if (seq != null)
             {
                 NoteSynth.Render(seq, fromFrame, n, sampleRate, bl, br, wOut);
@@ -745,7 +768,7 @@ public sealed class LiveTrack
             }
         }
         // the keyboard: through the plugin above, or the test tone here
-        if (inst != null || native != null) Keys.Skip(n);
+        if (inst != null || own != null) Keys.Skip(n);
         else Keys.Render(n, bl, br);
         Preview.Mix(n, bl, br);
         Output(n, anySolo, masterL, masterR, sendOffset);
@@ -765,9 +788,9 @@ public sealed class LiveTrack
             Keys.Skip(n);
             return;
         }
-        if (sampler is { } native)
+        if (native is { } own)
         {
-            if (native.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys, Chain.Frame)) Output(n, anySolo, masterL, masterR, 0);
+            if (own.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys, Chain.Frame)) Output(n, anySolo, masterL, masterR, 0);
             Keys.Skip(n);
             return;
         }
@@ -782,12 +805,13 @@ public sealed class LiveTrack
     }
 
     /// <summary>The engine runs <see cref="MixIdle"/> for it: an instrument, or the keyboard or the piano roll still sounding.</summary>
-    public bool RunsIdle => instrument != null || sampler != null || Keys.Active || Preview.Active;
+    public bool RunsIdle => instrument != null || native != null || Keys.Active || Preview.Active;
 
     /// <summary>The chain over what the block filled in, into its output (its folder, a bus or the master) and its sends.</summary>
     void Output(int n, bool anySolo, Span<float> masterL, Span<float> masterR, int sendOffset)
     {
         var to = Out;
+        Chain.KeyOffset = sendOffset;
         if (to != null) RunChain(n, anySolo, to.BufferL(sendOffset + n).Slice(sendOffset), to.BufferR(sendOffset + n).Slice(sendOffset));
         else RunChain(n, anySolo, masterL, masterR);
         var sends = Chain.BlockSends;

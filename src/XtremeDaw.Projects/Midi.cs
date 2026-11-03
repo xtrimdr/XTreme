@@ -272,13 +272,24 @@ public sealed class MidiNote
 /// </summary>
 public static class MidiEditing
 {
-    /// <summary>A new MIDI track at the end ("MIDI 1", "MIDI 2"…, with the piano icon); returns its id.</summary>
-    public static string AddTrack(Project p)
+    /// <summary>A new MIDI track at the end with the piano icon: "MIDI 1", "MIDI 2"…, or <paramref name="name"/> (its
+    /// instrument's), numbered if taken; returns its id.</summary>
+    public static string AddTrack(Project p, string? name = null)
     {
         var used = p.Tracks.Select(t => t.Name).ToHashSet();
-        int n = 1;
-        while (used.Contains($"MIDI {n}")) n++;
-        var track = new Track { Name = $"MIDI {n}", Kind = TrackKinds.Midi, Video = false, Icon = "piano" };
+        string label;
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            label = name.Trim();
+            for (int k = 2; used.Contains(label); k++) label = $"{name.Trim()} {k}";
+        }
+        else
+        {
+            int n = 1;
+            while (used.Contains($"MIDI {n}")) n++;
+            label = $"MIDI {n}";
+        }
+        var track = new Track { Name = label, Kind = TrackKinds.Midi, Video = false, Icon = "piano" };
         p.Tracks.Add(track);
         return track.Id;
     }
@@ -414,9 +425,10 @@ public static class MidiEditing
     /// <summary>
     /// Duplicates takes' clips and MIDI clips together: every copy goes the same time later, right after the block they
     /// all make, each on its own track. A pattern's clip brings the other instruments that start with it. Returns the
-    /// copies' ids in the order of <paramref name="ids"/>, those instruments' after them.
+    /// copies' ids in the order of <paramref name="ids"/>, those instruments' after them. With the magnet on
+    /// (<paramref name="step"/>), the copies go a whole number of its steps later (<see cref="ClipEditing.DuplicateShift"/>).
     /// </summary>
-    public static List<string> DuplicateMany(Project p, IReadOnlyList<string> ids, Func<Clip, double?>? lengthOf = null)
+    public static List<string> DuplicateMany(Project p, IReadOnlyList<string> ids, Func<Clip, double?>? lengthOf = null, double step = 0)
     {
         var unique = ids.Distinct().ToList();
         foreach (string id in ids)
@@ -434,7 +446,7 @@ public static class MidiEditing
             end = Math.Max(end, c.EndSec(p.Settings.Bpm));
         }
         if (start > end) return [];
-        double shift = end - start;
+        double shift = ClipEditing.DuplicateShift(end - start, step);
         var copies = new Dictionary<string, string>();
         var takeCopies = takes.Count > 0 ? ClipEditing.DuplicateMany(p, takes, lengthOf, shift) : [];
         for (int i = 0; i < takes.Count; i++) copies[takes[i]] = takeCopies[i];
@@ -588,12 +600,13 @@ public static class MidiEditing
         return changed;
     }
 
-    /// <summary>A copy right after the clip, on the same track; returns the copy's id.</summary>
-    public static string Duplicate(Project p, string clipId)
+    /// <summary>A copy right after the clip (or a whole number of the magnet's steps later, <see cref="ClipEditing.DuplicateShift"/>),
+    /// on the same track; returns the copy's id.</summary>
+    public static string Duplicate(Project p, string clipId, double step = 0)
     {
         var (t, c) = Find(p, clipId);
         var copy = c.Copy();
-        copy.AtSec = ClipEditing.ToSample(c.EndSec(p.Settings.Bpm));
+        copy.AtSec = ClipEditing.ToSample(c.AtSec + ClipEditing.DuplicateShift(c.EndSec(p.Settings.Bpm) - c.AtSec, step));
         (t.MidiClips ??= []).Add(copy);
         return copy.Id;
     }

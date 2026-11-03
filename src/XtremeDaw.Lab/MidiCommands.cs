@@ -23,7 +23,7 @@ static class MidiCommands
         if (sub == "teclas") return RawKeyList(a.Double("segundos", 10));
         string? dir = a.Positional.Skip(1).FirstOrDefault();
         if (sub == "cortar" && dir != null) return MidiTakeChecks.Die(Path.GetFullPath(dir));
-        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|acorde|escala|ajustar-escala|cuantizar|velocidad|humanizar|quitar|herramienta|instrumento|sampler|patron|patron-insertar|patron-instrumento|patron-unico|patron-disolver|patron-borrar|exportar-mid|importar-mid|partitura <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
+        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|acorde|escala|ajustar-escala|cuantizar|velocidad|humanizar|quitar|herramienta|instrumento|sampler|granular|patron|patron-insertar|patron-instrumento|patron-unico|patron-disolver|patron-borrar|exportar-mid|importar-mid|partitura <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
         using var store = ProjectStore.Open(Path.GetFullPath(dir));
         var p = store.Project;
         if (sub == "exportar-mid") return MidiFileChecks.Export(a, p);
@@ -102,7 +102,7 @@ static class MidiCommands
                 string kind = a.Get("tipo", Chords.InScale);
                 if (!Chords.Kinds.Any(k => k.Id == kind)) throw new ArgumentException($"--tipo: {string.Join(", ", Chords.Kinds.Select(k => k.Id))}.");
                 var scale = MusicScale.Find(p.Settings.ScaleRoot, p.Settings.Scale);
-                foreach (int pitch in Chords.Invert(Chords.Build(kind, root, scale), a.Int("inversion", 0)))
+                foreach (int pitch in Chords.Voice(Chords.Build(kind, root, scale), a.Int("inversion", 0)))
                     MidiEditing.AddNote(p, clip, pitch, a.Double("pulso", 0), a.Double("largo", 1), a.Int("vel", MidiNote.DefaultVelocity));
                 break;
             }
@@ -197,6 +197,19 @@ static class MidiCommands
                     string file = a.Get("sample") ?? throw new ArgumentException("Falta --sample archivo (o --quitar).");
                     var audio = AudioImport.Read(file, 48000);
                     SamplerMedia.Set(p, t, AudioImport.CopyIn(store.Dir, file, audio), audio.Left, audio.Right, 48000);
+                }
+                break;
+            }
+            case "granular":
+            {
+                var t = TrackOf(p, a.Get("pista")) ?? throw new ArgumentException("Falta --pista (número o id de una pista MIDI).");
+                if (!t.IsMidi) throw new ArgumentException("Esa pista no es MIDI.");
+                if (a.Flag("quitar")) t.Granular = null;
+                else
+                {
+                    string file = a.Get("sample") ?? throw new ArgumentException("Falta --sample archivo (o --quitar).");
+                    var audio = AudioImport.Read(file, 48000);
+                    GranularMedia.Set(p, t, AudioImport.CopyIn(store.Dir, file, audio), audio.Left, audio.Right, 48000);
                 }
                 break;
             }
@@ -869,6 +882,12 @@ static class MidiCommands
             && Enumerable.Range(0, 4).All(i => Chords.Read(Chords.Invert(cMaj7, i)) is { } c && c.Inversion == i && c.Root.SequenceEqual(cMaj7) && c.Kind.Id == "maj7")
             && Chords.Read([60, 61, 62]) == null && Chords.Read([60, 76, 79]) == null;
         Show("Acordes: de la escala e inversiones", chordOk ? "bien" : "mal", "bien", chordOk);
+        // turning a chord keeps it where it was: the inversion an octave down when that is nearer, read back the same
+        int[] cMajor = Chords.Build("maj", 60, null);
+        bool voiceOk = Chords.Voice(cMajor, 1).SequenceEqual([64, 67, 72]) && Chords.Voice(cMajor, 2).SequenceEqual([55, 60, 64])
+            && Enumerable.Range(0, 4).All(i => Chords.Voice(cMaj7, i) is var v && Chords.Read(v) is { } c && c.Inversion == i
+                && Chords.RootOf(v, c.Root, i).SequenceEqual(cMaj7));
+        Show("Acordes: las inversiones no suben", voiceOk ? "bien" : "mal", "bien", voiceOk);
 
         // scale fit: only what is out of it, only the notes asked for
         var fit = new List<MidiNote> { new() { Pitch = 61 }, new() { Pitch = 62 }, new() { Pitch = 66 } };

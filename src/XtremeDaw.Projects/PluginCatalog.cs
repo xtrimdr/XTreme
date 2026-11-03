@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using XtremeDaw.Audio.Vst;
 
 namespace XtremeDaw.Projects;
@@ -9,7 +10,8 @@ namespace XtremeDaw.Projects;
 /// %APPDATA%\XTreme\plugins.json with each file's date, so a new scan only opens new or changed files (some
 /// plugins take seconds to load). Files that failed are remembered too, with why, so they are not retried every time.
 /// What the user manages in Configuración → Plugins lives in config.json: the folders added to the standard ones
-/// ("vst.folders") and the plugins hidden from the lists ("vst.hidden", by <see cref="Key"/>).
+/// ("vst.folders"), the plugins hidden from the lists ("vst.hidden", by <see cref="Key"/>), how the menus group them
+/// ("vst.grouping") and the categories the user gave them ("vst.categories"), over the automatic ones.
 /// </summary>
 public static class PluginCatalog
 {
@@ -30,7 +32,7 @@ public static class PluginCatalog
     public const int CurrentFormat = 2;
 
     static string FilePath => System.IO.Path.Combine(AppConfig.Dir, "plugins.json");
-    const string FoldersKey = "vst.folders", HiddenKey = "vst.hidden";
+    const string FoldersKey = "vst.folders", HiddenKey = "vst.hidden", GroupingKey = "vst.grouping", CategoriesKey = "vst.categories";
     /// <summary>One scan (or retry) at a time: they read and write the same plugins.json.</summary>
     static readonly object scanGate = new();
 
@@ -170,6 +172,106 @@ public static class PluginCatalog
         if (hidden ? !set.Add(Key(p)) : !set.Remove(Key(p))) return;
         WriteList(HiddenKey, [.. set.Order(StringComparer.Ordinal)]);
     }
+
+    // --- how the menus group them
+
+    /// <summary>How the plugin menus are laid out (Configuración → Plugins, "vst.grouping"): by maker, by category or one list.</summary>
+    public const string ByVendor = "vendor", ByCategory = "category", AsList = "list";
+
+    public static string Grouping
+    {
+        get => AppConfig.Get(GroupingKey) switch { ByCategory => ByCategory, AsList => AsList, _ => ByVendor };
+        set => AppConfig.Set(GroupingKey, value is ByCategory or AsList ? value : ByVendor);
+    }
+
+    /// <summary>
+    /// The VST3 sub-categories that name a kind of plugin, in the words of the SDK (the window translates them,
+    /// "vst.cat.&lt;word&gt;"). "Fx", "Instrument" and the channel layouts say nothing about what it does.
+    /// </summary>
+    public static readonly string[] AutoCategories =
+    [
+        "Analyzer", "Delay", "Distortion", "Drum", "Dynamics", "EQ", "Filter", "Generator", "Mastering", "Modulation",
+        "Piano", "Pitch Shift", "Restoration", "Reverb", "Sampler", "Spatial", "Synth", "Tools", "Vocals",
+    ];
+
+    /// <summary>Words in a plugin's name that tell its kind when it says no sub-category (VST2 never does).</summary>
+    static readonly (Regex Words, string Category)[] NameHints =
+    [
+        (new(@"reverb|verb\b|\bhall\b|\broom\b|plate", RegexOptions.IgnoreCase), "Reverb"),
+        (new(@"delay|echo", RegexOptions.IgnoreCase), "Delay"),
+        (new(@"comp|limit|gate|dynamic|expander|de-?ess", RegexOptions.IgnoreCase), "Dynamics"),
+        (new(@"\beq\b|equali[sz]", RegexOptions.IgnoreCase), "EQ"),
+        (new(@"distort|satur|drive|fuzz|\bamp\b|clip", RegexOptions.IgnoreCase), "Distortion"),
+        (new(@"chorus|flang|phas|trem|vibrato|rotary|ensemble", RegexOptions.IgnoreCase), "Modulation"),
+        (new(@"filter", RegexOptions.IgnoreCase), "Filter"),
+        (new(@"pitch|tune|harmoni", RegexOptions.IgnoreCase), "Pitch Shift"),
+        (new(@"analy[sz]|meter|scope|spectrum", RegexOptions.IgnoreCase), "Analyzer"),
+        (new(@"synth", RegexOptions.IgnoreCase), "Synth"),
+        (new(@"drum|kit|beat", RegexOptions.IgnoreCase), "Drum"),
+        (new(@"piano|keys", RegexOptions.IgnoreCase), "Piano"),
+        (new(@"sampler", RegexOptions.IgnoreCase), "Sampler"),
+    ];
+
+    /// <summary>The same plugin in another format or bits (a VST2 next to its VST3): same name and maker.</summary>
+    static bool Twin(VstPluginInfo a, VstPluginInfo b) =>
+        a.Name.Equals(b.Name, StringComparison.OrdinalIgnoreCase) && a.Vendor.Equals(b.Vendor, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Its first sub-category that names a kind, or "".</summary>
+    static string Declared(VstPluginInfo p)
+    {
+        foreach (var c in p.Categories.Split('|'))
+            if (AutoCategories.FirstOrDefault(a => a.Equals(c.Trim(), StringComparison.OrdinalIgnoreCase)) is { } known) return known;
+        return "";
+    }
+
+    /// <summary>
+    /// What the plugin says it is, else what a twin of it in <paramref name="all"/> says (VST2 has no sub-categories),
+    /// else what its name suggests; "" when none tells.
+    /// </summary>
+    public static string AutoCategory(VstPluginInfo p, IEnumerable<VstPluginInfo>? all = null)
+    {
+        if (Declared(p) is { Length: > 0 } own) return own;
+        if (all?.Where(o => Twin(o, p)).Select(Declared).FirstOrDefault(c => c.Length > 0) is { } twin) return twin;
+        foreach (var (words, category) in NameHints)
+            if (words.IsMatch(p.Name)) return category;
+        return "";
+    }
+
+    /// <summary>The categories the user gave plugins (by <see cref="Key"/>), over the automatic ones.</summary>
+    public static Dictionary<string, string> CustomCategories()
+    {
+        try
+        {
+            return AppConfig.Get(CategoriesKey) is { } s ? JsonSerializer.Deserialize<Dictionary<string, string>>(s) ?? [] : [];
+        }
+        catch (JsonException) { return []; }
+    }
+
+    /// <summary>The plugin's category: the user's, or the automatic one ("" = none).</summary>
+    public static string Category(VstPluginInfo p, Dictionary<string, string>? custom = null, IEnumerable<VstPluginInfo>? all = null) =>
+        (custom ?? CustomCategories()).TryGetValue(Key(p), out var c) ? c : AutoCategory(p, all);
+
+    /// <summary>Gives a plugin, and its twins in <paramref name="all"/>, a category of the user's, or back to the
+    /// automatic one (null or blank).</summary>
+    public static void SetCategory(VstPluginInfo p, string? category, IEnumerable<VstPluginInfo>? all = null)
+    {
+        var map = CustomCategories();
+        foreach (var key in (all ?? []).Where(o => Twin(o, p)).Select(Key).Append(Key(p)).Distinct())
+        {
+            if (string.IsNullOrWhiteSpace(category)) map.Remove(key);
+            else map[key] = category.Trim();
+        }
+        AppConfig.Set(CategoriesKey, JsonSerializer.Serialize(new SortedDictionary<string, string>(map, StringComparer.Ordinal)));
+    }
+
+    /// <summary>The group a plugin goes in for <paramref name="grouping"/>: its maker or its category ("" = without
+    /// one), or null as one list.</summary>
+    public static string? GroupOf(VstPluginInfo p, string grouping, Dictionary<string, string>? custom = null, IEnumerable<VstPluginInfo>? all = null) => grouping switch
+    {
+        ByCategory => Category(p, custom, all),
+        AsList => null,
+        _ => p.Vendor,
+    };
 
     static List<string> ReadList(string key)
     {

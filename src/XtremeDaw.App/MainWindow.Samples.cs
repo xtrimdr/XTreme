@@ -468,7 +468,18 @@ public partial class MainWindow
     /// <summary>A video brings its picture unless the user turned that off or the project is audio only.</summary>
     bool BringsPicture(string path) => MediaDecoder.IsVideo(path) && samplePicture.IsChecked == true && !AudioOnly;
 
-    void DragSample(SampleFile f, PointerEventArgs e) => CarryToTimeline(SampleDrag, f.Path, e);
+    /// <summary>
+    /// Carries the file as a plain Windows file drop too, so a plugin's window (a sampler, a drum machine) takes it like
+    /// one dragged from the Explorer; the timeline and the native sampler read <see cref="SampleDrag"/> first.
+    /// </summary>
+    async void DragSample(SampleFile f, PointerEventArgs e)
+    {
+        var item = DataTransferItem.Create(SampleDrag, f.Path);
+        if (await StorageProvider.TryGetFileFromPathAsync(new Uri(f.Path)) is { } file) item.SetFile(file);
+        var data = new DataTransfer();
+        data.Add(item);
+        await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy);
+    }
 
     /// <summary>Starts a drag; MainWindow.Import.cs receives it.</summary>
     static async void CarryToTimeline(DataFormat<string> format, string value, PointerEventArgs e)
@@ -496,6 +507,7 @@ public partial class MainWindow
                 items.Add(MenuAction(Loc.T("smp.menu.insertAudio"), () => ImportAudio([f.Path], engine.PositionSec, sel?.Track.Id, false)));
             }
             items.Add(MenuAction(Loc.T("smp.menu.sampler"), () => SampleToSampler(f.Path)));
+            items.Add(MenuAction(Loc.T("smp.menu.granular"), () => SampleToGranular(f.Path)));
             items.Add(MenuAction(Loc.T(samples.IsFavorite(f) ? "smp.menu.unfavorite" : "smp.menu.favorite"), () => { ToggleSampleFavorite(f); return Task.CompletedTask; }, icon: ""));
             items.Add(new Separator());
             items.Add(MenuAction(Loc.T("hist.reveal"), () => { RevealInExplorer(null, f.Path); return Task.CompletedTask; }, icon: ""));

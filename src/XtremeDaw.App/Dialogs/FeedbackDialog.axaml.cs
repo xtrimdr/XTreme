@@ -40,7 +40,7 @@ public sealed partial class FeedbackDialog : UserControl
     {
         facts = system;
         FactsText.Text = string.Join('\n', system);
-        ProblemText.IsVisible = false;
+        ProblemBox.IsVisible = false;
         IsVisible = true;
         TitleBox.Focus();
     }
@@ -83,7 +83,7 @@ public sealed partial class FeedbackDialog : UserControl
     void Problem(string key)
     {
         ProblemText.Text = Loc.T(key);
-        ProblemText.IsVisible = true;
+        ProblemBox.IsVisible = true;
     }
 
     public void HideDialog()

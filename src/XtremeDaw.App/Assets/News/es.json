@@ -4,6 +4,106 @@
       "version": "0.9.14",
       "items": [
         {
+          "icon": "ECC8",
+          "title": "Bombeo renovado",
+          "text": "El **Bombeo** tiene un panel nuevo: la curva grande sobre el sonido, formas a un clic y la división arriba. Con **Sidechain**, sus perillas son las de un compresor: Umbral, Ataque, Hold y Release.",
+          "topic": "pump"
+        },
+        {
+          "icon": "E790",
+          "title": "Estilos de perilla",
+          "text": "Diez estilos para las perillas, de Neumórfico a Bakelita, en **Configuración → Apariencia** (antes Vista).",
+          "topic": "look"
+        },
+        {
+          "icon": "E713",
+          "title": "El engranaje vuelve",
+          "text": "Configuración se abre otra vez desde el engranaje de la barra de título. También sigue en **Archivo**."
+        },
+        {
+          "icon": "E8FD",
+          "title": "Plugins por marca, categoría o lista",
+          "text": "En **Configuración → Plugins**, **Mostrar en los menús** agrupa los instrumentos y efectos por marca, por categoría o en una sola lista. La categoría se detecta sola y cada plugin puede ir a otra o a una nueva.",
+          "topic": "plugins"
+        },
+        {
+          "icon": "E8D6",
+          "title": "Pista MIDI con instrumento",
+          "text": "**Nueva pista → Pista MIDI con instrumento** lista los instrumentos nativos y los VST: la pista nueva ya suena con el elegido y lleva su nombre.",
+          "topic": "midi-track"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Gráfico de compresión",
+          "text": "Cada compresor muestra en su panel la curva, dónde está la señal y los últimos segundos de entrada, salida y reducción.",
+          "topic": "comp-models"
+        },
+        {
+          "icon": "EC4F",
+          "title": "Granular",
+          "text": "Un instrumento nuevo en **Instrumento**: toca un sample en granos. **Estirar** cambia el largo sin cambiar el tono; **Recorrer** lo congela en un punto que podés automatizar.",
+          "topic": "granular"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Efectos VST al tempo",
+          "text": "Los efectos VST que siguen el tempo, como un ducker de sidechain, ahora caen en el beat: antes no sabían en qué lugar de la canción estaban."
+        },
+        {
+          "icon": "ECC8",
+          "title": "Sidechain",
+          "text": "El compresor, la puerta y el Bombeo pueden reaccionar a otra pista: elegila en **Sidechain**, por ejemplo el bombo para que el bajo se agache.",
+          "topic": "sidechain"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Formas de automatización",
+          "text": "Clic derecho sobre un punto o un tramo de un carril elige su forma: curva, curva doble, mantener, escalones, escalones suaves, pulsos u onda, cada una con su tensión. Las curvas ahora son más parejas.",
+          "topic": "automation"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Compresores clásicos",
+          "text": "Cinco compresores nuevos en **+ Efecto** → **Compresores clásicos**: FET, Óptico, VCA de bus, VCA clásico y Vari-Mu, cada uno con su carácter.",
+          "topic": "comp-models"
+        },
+        {
+          "icon": "ECC8",
+          "title": "Bombeo",
+          "text": "Un efecto nuevo en **Dinámica**: baja el volumen en cada tiempo, como un sidechain al bombo, atado al tempo.",
+          "topic": "pump"
+        },
+        {
+          "icon": "E896",
+          "title": "Samples a los plugins",
+          "text": "Arrastrá un sample de la Biblioteca a la ventana de un plugin (un sampler, una caja de ritmos) y lo carga como desde el Explorador.",
+          "topic": "import"
+        },
+        {
+          "icon": "E8A7",
+          "title": "Paneles en su propia ventana",
+          "text": "Canal, video, timeline, mixer, piano roll, mastering y Proyecto pueden ir cada uno a una ventana aparte, con su botón en la barra de tareas, por ejemplo en otro monitor, y volver sin perder nada. También desde Ver → Paneles en ventana.",
+          "topic": "panel-windows"
+        },
+        {
+          "icon": "E767",
+          "title": "Mastering nuevo",
+          "text": "La cadena del master va en fichas, en el orden en que suena; el efecto que tocás se edita abajo, más grande. El Destino está arriba, y a la derecha los LUFS de los últimos 30 s. El encendido del master apaga toda la cadena, Soft clip y Limitador incluidos. Los Looks y Sugerir ya no están.",
+          "topic": "mastering"
+        },
+        {
+          "icon": "E8C8",
+          "title": "Duplicar sigue al imán",
+          "text": "Con el imán prendido, {key:duplicate} pone la copia en el próximo paso entero del imán, así las repeticiones quedan en la grilla.",
+          "topic": "split-copy"
+        },
+        {
+          "icon": "E8B3",
+          "title": "Editar varios clips a la vez",
+          "text": "Con varios clips marcados, arrastrar un borde, un fade o el bucle de uno cambia todos igual.",
+          "topic": "select-many"
+        },
+        {
           "icon": "E8F4",
           "title": "Arrancar en un proyecto vacío",
           "text": "Apagá **Mostrar al arrancar** en Proyectos y XTreme abre directo en un proyecto nuevo. **Guardar** pregunta dónde va. También en Configuración → Guardado y exportación.",
@@ -24,6 +124,55 @@
           "title": "Descartar pide confirmación",
           "text": "Mientras grabás, Descartar está separado de Detener y pide un segundo clic antes de tirar lo grabado.",
           "topic": "record"
+        },
+        {
+          "icon": "E765",
+          "title": "Las teclas que elegiste, en todos lados",
+          "text": "Los menús, la ayuda del piano roll y la pista vacía muestran las teclas de Configuración → Atajos de teclado, no las de fábrica."
+        },
+        {
+          "icon": "E8FD",
+          "title": "Menús más parejos",
+          "text": "En el video, Bloquear, cada envío y **Activa** del carril llevan tilde: con clic derecho se cambian sin cerrar el menú. Las pistas MIDI suman Bloquear y Aplicar plantilla, las de audio **Entrada…** y las carpetas **Envíos**. Quitar una pista pregunta antes, también desde el menú y con Supr."
+        },
+        {
+          "icon": "E8A7",
+          "title": "Diálogos parejos",
+          "text": "Cancelar va siempre a la derecha, al lado del botón principal, y los avisos (un error, un archivo que ya existe) se ven igual en todos los diálogos."
+        },
+        {
+          "icon": "E9A6",
+          "title": "Nada se pisa en ventanas chicas",
+          "text": "El transporte, el encabezado del mixer y la barra de formato bajan un grupo a otra fila cuando no entran, y las herramientas recortan el nombre del proyecto antes de tapar Exportar."
+        },
+        {
+          "icon": "E790",
+          "title": "Mute que no se confunde con el acento",
+          "text": "Con un acento cálido (Fuego, Naranja, Ámbar, Oro) el mute se pinta de azul, y con uno verde (Lima, Verde, Esmeralda) el afinador marca «afinado» en cyan."
+        },
+        {
+          "icon": "E71B",
+          "title": "Los vinculados no se borran",
+          "text": "Quitar un canal vinculado de la Biblioteca lo saca del proyecto sin preguntar y sin tocar tu archivo; **Borrar no usados** solo manda a la Papelera lo que está dentro del proyecto.",
+          "topic": "import"
+        },
+        {
+          "icon": "E8EE",
+          "title": "Loops del sampler sin clics",
+          "text": "La costura siempre se funde, aunque el **Crossfade** esté en 0 o el loop empiece al principio del sample, y el nivel no cae ni sube al dar la vuelta. En ida y vuelta, el giro también es suave.",
+          "topic": "sampler"
+        },
+        {
+          "icon": "EA37",
+          "title": "Acordes más fáciles",
+          "text": "Las inversiones ya no suben el acorde: cada una queda cerca de donde estaba. {wheel:wheelHeight} sobre un acorde, o sobre el que vas a escribir, cambia la inversión. La barra del piano roll agrupa sus botones en **Editar**, **Armonía**, **Grilla** y **Ver**, con **Atajos** a mano.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E9E9",
+          "title": "Mezcla y efectos de una pista MIDI",
+          "text": "El inspector de una pista MIDI muestra, debajo del instrumento, su **Mezcla**, sus efectos y sus envíos, como cualquier pista.",
+          "topic": "instrument"
         }
       ]
     },

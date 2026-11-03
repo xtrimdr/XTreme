@@ -631,17 +631,11 @@ public sealed partial class ExportDialog : UserControl
         WarningBanner.IsVisible = hasError || hasCollision;
         if (hasError)
         {
-            WarningBanner.BorderBrush = new SolidColorBrush(Color.Parse("#66ef4444"));
-            WarningBanner.Background = Res("RecSoft");
-            WarningIcon.Foreground = Res("Rec");
             WarningText.Text = checkError ?? Loc.T("exp.folderGone");
             UseSuggestedButton.IsVisible = false;
         }
         else if (hasCollision && check != null)
         {
-            WarningBanner.BorderBrush = Res("Line");
-            WarningBanner.Background = Res("Raised");
-            WarningIcon.Foreground = Res("Accent");
             WarningText.Text = Loc.T("exp.exists", check.FileName, Ext);
             UseSuggestedText.Text = Loc.T("exp.useSuggested", check.Suggested);
             UseSuggestedButton.IsVisible = true;
@@ -1308,7 +1302,8 @@ public sealed partial class ExportDialog : UserControl
                 });
             }
 
-            mixTracks.Add(ChannelDsp.Track(p, nodes, trk, mixClips, firstRmsDb ?? -24.0, SamplerMedia.Rig(store, trk, p.Settings.Bpm, sampleRate)));
+            mixTracks.Add(ChannelDsp.Track(p, nodes, trk, mixClips, firstRmsDb ?? -24.0, SamplerMedia.Rig(store, trk, p.Settings.Bpm, sampleRate),
+                GranularMedia.Rig(store, trk, p.Settings.Bpm, sampleRate)));
         }
 
         var mixBus = ChannelDsp.Bus(p);

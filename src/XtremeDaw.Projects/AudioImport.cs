@@ -43,7 +43,7 @@ public static class AudioImport
     {
         if (!File.Exists(source)) throw new FileNotFoundException("No encuentro ese archivo.");
         if (!IsSupported(source))
-            throw new InvalidDataException(Texts.T("err.import.format", "Formato no compatible: \"{0}\".", Path.GetFileName(source)));
+            throw new InvalidDataException(Texts.T("err.import.format", "Formato no compatible: «{0}».", Path.GetFileName(source)));
         AudioLoader.LoadedAudio audio;
         try { audio = MediaDecoder.Load(source, sampleRate, progress); }
         catch (Exception e) when (e is not OperationCanceledException)

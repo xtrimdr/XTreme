@@ -1,5 +1,6 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -226,7 +227,7 @@ public sealed partial class SettingsDialog : UserControl
             e.Handled = true;
             await cam.ConnectIp();
         };
-        var connect = new Button { Content = Loc.T("set.connect"), Classes = { "accent" }, Height = 36, FontSize = 14 };
+        var connect = new Button { Content = Loc.T("set.connect"), Classes = { "btn", "primary" } };
         connect.Click += async (_, _) => { if (cam != null) await cam.ConnectIp(); };
         var ipRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
         ipRow.Children.Add(ipBox);
@@ -550,7 +551,7 @@ public sealed partial class SettingsDialog : UserControl
                 Background = Palette.Raised, CornerRadius = new CornerRadius(6), Padding = new Thickness(12, 6),
                 Child = new TextBlock { Text = status, FontSize = 14, Classes = { "mono" }, Foreground = progress is { CountIn: true } ? Palette.Accent : Palette.Fg },
             });
-            var cancel = new Button { Content = Loc.T("transport.count.cancel"), Classes = { "chip" } };
+            var cancel = new Button { Content = Loc.T("common.cancel"), Classes = { "chip" } };
             cancel.Click += (_, _) => calibration?.Cancel();
             Grid.SetColumn(cancel, 1);
             row.Children.Add(cancel);
@@ -765,10 +766,35 @@ public sealed partial class SettingsDialog : UserControl
             : Loc.T("set.encoder.none");
     }
 
-    /// <summary>"Vista" (native only): which effect knobs the timeline's track headers show (<see cref="TrackKnobs"/>);
-    /// all by default, applied at once.</summary>
+    /// <summary>"Apariencia" (native only): the knobs' look, each shown as a sample (<see cref="KnobLooks"/>), and which
+    /// effect knobs the timeline's track headers show (<see cref="TrackKnobs"/>); all applied at once.</summary>
     void BuildView()
     {
+        var looks = Section(Loc.T("set.look.knobs"));
+        looks.Children.Add(Help(Loc.T("set.look.knobs.help")));
+        var grid = new UniformGrid { Columns = 5 };
+        var lookButtons = new List<ToggleButton>();
+        foreach (string id in KnobLooks.All)
+        {
+            var sample = new Knob(40) { Look = id, Min = 0, Max = 1, Value = 0.62, IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Center };
+            var b = new ToggleButton
+            {
+                Classes = { "chip" }, Tag = id, Margin = new Thickness(3), Padding = new Thickness(6, 12, 6, 8), IsChecked = id == KnobLooks.Current,
+                HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
+                Content = new StackPanel { Spacing = 8, Children = { sample, new TextBlock { Text = Loc.T("set.look.knob." + id), FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center } } },
+            };
+            AutomationProperties.SetName(b, Loc.T("set.look.knob." + id));
+            b.Click += (_, _) =>
+            {
+                KnobLooks.Set(id);
+                foreach (var o in lookButtons) o.IsChecked = (string)o.Tag! == KnobLooks.Current;
+            };
+            lookButtons.Add(b);
+            grid.Children.Add(b);
+        }
+        looks.Children.Add(grid);
+        viewPage.Children.Add(Card(looks));
+
         var s = Section(Loc.T("set.view.knobs"));
         s.Children.Add(Help(Loc.T("set.view.knobs.help")));
         var list = new StackPanel { Spacing = 6 };

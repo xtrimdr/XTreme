@@ -5,9 +5,6 @@ namespace XtremeDaw.Audio.Dsp;
 public enum SamplerFilter { Off, Low12, Low24, High12, High24, Band, Notch }
 public enum SamplerLfoShape { Sine, Triangle, Saw, Square, Random }
 
-/// <summary>An envelope: attack, decay and release in seconds, the sustain as a level 0..1.</summary>
-public readonly record struct SamplerEnvelope(double Attack, double Decay, double Sustain, double Release);
-
 /// <summary>
 /// What a sampler plays with, all of it but the sample (<see cref="SamplerSound"/>). Immutable: every edit swaps a new
 /// one in whole and the voices read it again at their next control step, so a knob moves what is already sounding.
@@ -143,16 +140,12 @@ public sealed record SamplerRig(SamplerPatch Patch, SamplerSound? Sound)
 /// <see cref="NoteBend"/>) and a pan are that voice's, not the channel's. Nothing here waits: unlike a plugin it has no
 /// lateness, so a note starts on its exact sample.
 /// <para>
-/// A jump lets the old notes go in 5 ms and picks up the notes the playhead landed in, from where they would be. A loop
-/// is told where it turns (<see cref="Play"/>), so the notes at its start come in on their exact sample, whole.
-/// </para>
-/// <para>
-/// Audio thread only, except what says otherwise: every voice exists from the start and nothing allocates. <see
-/// cref="Set"/>, <see cref="Sound"/> and <see cref="Notes"/> swap immutable objects from the UI thread, and the window's
-/// keyboard goes through a lock-free ring.
+/// What it does with the notes (jumps, loops, the keyboards) is <see cref="NoteInstrument"/>'s, shared with <see
+/// cref="Granular"/>. Audio thread only, except what says otherwise: every voice exists from the start and nothing
+/// allocates. <see cref="Set"/>, <see cref="Sound"/> and <see cref="NoteInstrument.Notes"/> swap immutable objects from the UI thread.
 /// </para>
 /// </summary>
-public sealed class Sampler
+public sealed class Sampler : NoteInstrument
 {
     /// <summary>The most notes at once, what Voces can ask for.</summary>
     public const int MaxVoices = 32;
@@ -160,53 +153,14 @@ public sealed class Sampler
     const int Pool = 2 * MaxVoices;
     /// <summary>A voice recomputes pitch, filter and LFO every this many frames (0.33 ms at 48 kHz); its level moves every frame.</summary>
     const int ControlFrames = 16;
-    /// <summary>A voice taken away, or the notes of the song after a jump, fade over 5 ms.</summary>
-    const int FadeFrames = 240;
     /// <summary>The soft edge of a cut in the middle of the sound, in place of a click.</summary>
     const int EdgeFrames = 64;
-    /// <summary>A note picked up in its middle comes in over 5 ms.</summary>
-    const int ChaseFrames = 240;
-    /// <summary>Below this (-80 dB) an envelope is over.</summary>
-    const float Silent = 1e-4f;
-    /// <summary>How long a track keeps running stopped after its last voice: a reverb slot's tail rings out.</summary>
-    const int TailSec = 3;
     /// <summary>The cutoff stays this far from Nyquist, where the filter's frequency warp runs away.</summary>
     const double TopCutoff = 0.45, LowCutoff = 16;
     /// <summary>The filter's damping at full resonance: +20 dB at the cutoff, loud but never a runaway.</summary>
     const double MinDamping = 0.1;
     /// <summary>The second stage of the 24 dB types: only the first one resonates, or their peaks would multiply.</summary>
     const float SecondDamping = 1.2f;
-
-    enum Stage : byte { Attack, Decay, Sustain, Release, Done }
-
-    /// <summary>An envelope's numbers for one rate: per frame for the level, per control step for the filter.</summary>
-    readonly struct Rates
-    {
-        public readonly float AttackStep, DecayCoef, Sustain, ReleaseCoef;
-        public readonly double AttackFrames, DecayFrames, ReleaseFrames;
-
-        public Rates(SamplerEnvelope e, double framesPerSec)
-        {
-            AttackFrames = e.Attack * framesPerSec;
-            DecayFrames = Math.Max(1, e.Decay * framesPerSec);
-            ReleaseFrames = Math.Max(1, e.Release * framesPerSec);
-            AttackStep = AttackFrames < 1 ? 1 : (float)(1 / AttackFrames);
-            DecayCoef = (float)Math.Exp(-SixtyDb / DecayFrames);
-            ReleaseCoef = (float)Math.Exp(-SixtyDb / ReleaseFrames);
-            Sustain = (float)e.Sustain;
-        }
-
-        /// <summary>The level a held note has after <paramref name="t"/> steps, and its stage.</summary>
-        public (float Level, Stage Stage) At(double t)
-        {
-            if (t < AttackFrames) return ((float)(t / AttackFrames), Stage.Attack);
-            float level = (float)(Sustain + (1 - Sustain) * Math.Exp(-SixtyDb * (t - AttackFrames) / DecayFrames));
-            return (level, Math.Abs(level - Sustain) < Silent ? Stage.Sustain : Stage.Decay);
-        }
-    }
-
-    /// <summary>ln(1000): an exponential "over" in T takes T / this as its time constant.</summary>
-    const double SixtyDb = 6.907755;
 
     /// <summary>A patch worked out for the audio thread, so that thread only reads numbers.</summary>
     sealed class Compiled
@@ -240,8 +194,6 @@ public sealed class Sampler
     static float MakeupOf(double drive) => (float)(1 / (1 + 1.5 * drive));
     static float DampingOf(double resonance) => (float)Math.Max(MinDamping, 2 * (1 - resonance));
 
-    /// <summary>What a voice belongs to: the song's notes go when the song stops or jumps, the others stay.</summary>
-    const byte FromSong = 0, FromKeys = 1, FromWindow = 2;
 
     /// <summary>One note. A class so that a voice can be handed around by reference; all of them exist from the start.</summary>
     sealed class Voice
@@ -281,38 +233,20 @@ public sealed class Sampler
         public float S1L, S2L, S3L, S4L, S1R, S2R, S3R, S4R;
     }
 
-    readonly int rate;
     readonly Voice[] voices = new Voice[Pool];
-    readonly int tailFrames;
     volatile Compiled compiled;
     volatile SamplerSound? sound;
-    volatile NoteSequence? notes;
     volatile SamplerCurves? curves;
+    /// <summary><see cref="compiled"/> for this block.</summary>
+    Compiled block;
     /// <summary><see cref="curves"/> for this block.</summary>
     SamplerCurves? lanes;
-    /// <summary>The frame of the song where the next voices start and <see cref="Render"/> goes on from.</summary>
-    long now;
-    NoteSequence? lastNotes;
-    /// <summary>The next note of the song to start; -1 = it has to be looked for.</summary>
-    int next = -1;
-    long expected = -1;
-    bool playing;
     long order;
     double lastNote = double.NaN;
-    int ring;
-    int panic;
 
-    // the window's keyboard and the piano roll's keys: a lock-free ring from the UI thread
-    readonly (int Pitch, int Velocity, int Frames)[] inbox = new (int, int, int)[64];
-    int inHead, inTail;
-    /// <summary>A key held until <see cref="Lift"/>, in <see cref="inbox"/>; a lift has velocity 0.</summary>
-    const int Held = -1;
-
-    public Sampler(int sampleRate)
+    public Sampler(int sampleRate) : base(sampleRate)
     {
-        rate = sampleRate;
-        tailFrames = TailSec * sampleRate;
-        compiled = new Compiled(new SamplerPatch(), sampleRate);
+        block = compiled = new Compiled(new SamplerPatch(), sampleRate);
         for (int i = 0; i < Pool; i++) voices[i] = new Voice();
     }
 
@@ -322,30 +256,10 @@ public sealed class Sampler
     /// <summary>The sound new notes play; the ones sounding finish with the one they began with. Null = silence.</summary>
     public SamplerSound? Sound { get => sound; set => sound = value; }
 
-    /// <summary>The track's notes in frames, swapped whole by the UI.</summary>
-    public NoteSequence? Notes { get => notes; set => notes = value; }
 
     /// <summary>The lanes on its knobs, swapped whole by the UI. Null = none.</summary>
     public SamplerCurves? Curves { get => curves; set => curves = value; }
 
-    /// <summary>Every note goes in 5 ms, whoever played it. Any thread.</summary>
-    public void Panic() => Volatile.Write(ref panic, 1);
-
-    /// <summary>A key on its own for <paramref name="frames"/> (the piano roll). UI thread.</summary>
-    public void Audition(int pitch, int velocity, int frames) => Post(pitch, velocity, Math.Max(1, frames));
-
-    /// <summary>A key held until <see cref="Lift"/> (the window's keyboard). UI thread.</summary>
-    public void Press(int pitch, int velocity) => Post(pitch, velocity, Held);
-
-    public void Lift(int pitch) => Post(pitch, 0, Held);
-
-    void Post(int pitch, int velocity, int frames)
-    {
-        int head = inHead, after = (head + 1) % inbox.Length;
-        if (after == Volatile.Read(ref inTail)) return; // full: dropped
-        inbox[head] = (Math.Clamp(pitch, 0, 127), Math.Clamp(velocity, 0, 127), frames);
-        Volatile.Write(ref inHead, after);
-    }
 
     /// <summary>Where the voices are now, 0..1 of the sound, for the window to draw; returns how many. Any thread: a stale value only moves a line.</summary>
     public int Heads(Span<float> into)
@@ -361,179 +275,36 @@ public sealed class Sampler
         return k;
     }
 
-    /// <summary>
-    /// While playing: adds frames <c>[pos .. pos + n)</c> to <paramref name="l"/> / <paramref name="r"/>. A loop that
-    /// turns inside the block says where: <paramref name="turnAt"/> frames in, the song goes on from <paramref name="turnTo"/>.
-    /// </summary>
-    public void Play(long pos, int n, Span<float> l, Span<float> r, LiveNotes? keys = null, int turnAt = -1, long turnTo = 0)
+    protected override void Prepare()
     {
-        var seq = notes;
-        if (seq != lastNotes)
-        {
-            lastNotes = seq;
-            next = -1;
-        }
-        var c = compiled;
+        block = compiled;
         lanes = curves;
-        now = pos;
-        if (Interlocked.Exchange(ref panic, 0) != 0) FadeAll(true);
-        if (pos != expected || !playing)
-        {
-            FadeAll(false);
-            next = Find(seq, pos);
-            Chase(c, seq, pos);
-        }
-        else if (next < 0) next = Find(seq, pos);
-        playing = true;
-        Inputs(c, keys);
-        int done = 0;
-        if (turnAt >= 0 && turnAt <= n)
-        {
-            Run(c, seq, pos, 0, turnAt, l, r);
-            FadeAll(false);
-            next = Find(seq, turnTo);
-            // what sounds at the loop's start began before it: a long chord would stay silent from the second lap on
-            now = turnTo;
-            Chase(c, seq, turnTo);
-            pos = turnTo - turnAt;
-            done = turnAt;
-        }
-        Run(c, seq, pos, done, n, l, r);
-        expected = pos + n;
-        ring = tailFrames;
     }
 
-    /// <summary>
-    /// While stopped: the keyboard and the piano roll's keys. The song's notes fade at the stop (the transport already
-    /// faded it out). False when there is nothing to hear and no tail to let ring. <paramref name="frame"/> is where the
-    /// playhead rests, what the lanes read.
-    /// </summary>
-    public bool Idle(int n, Span<float> l, Span<float> r, LiveNotes? keys = null, long frame = 0)
+    protected override bool CanPlay => sound != null;
+
+    protected override bool Lasts => block.P.OneShot;
+
+    protected override bool Sounding
     {
-        var c = compiled;
-        lanes = curves;
-        now = frame;
-        if (Interlocked.Exchange(ref panic, 0) != 0) FadeAll(true);
-        if (playing)
+        get
         {
-            playing = false;
-            expected = -1;
-            FadeAll(false);
+            for (int i = 0; i < Pool; i++)
+                if (voices[i].Active) return true;
+            return false;
         }
-        Inputs(c, keys);
-        l.Clear();
-        r.Clear();
-        bool any = false;
-        for (int i = 0; i < Pool; i++) any |= voices[i].Active;
-        if (any)
-        {
-            RenderVoices(c, 0, n, l, r);
-            ring = tailFrames;
-            return true;
-        }
-        ring = Math.Max(0, ring - n);
-        return ring > 0;
     }
 
-    /// <summary>
-    /// The transport finished its fade-out: what the song was playing is already silent, and no gain is left to keep it
-    /// so, so its voices and the track's tail must not come back at full level in <see cref="Idle"/>. Audio thread.
-    /// </summary>
-    public void FadedOut()
+    protected override void DropSong()
     {
         for (int i = 0; i < Pool; i++)
         {
             var v = voices[i];
             if (v.Active && v.Source == FromSong) v.Active = v.Fading = false;
         }
-        ring = 0;
     }
 
-    /// <summary>The first note at or after <paramref name="pos"/>.</summary>
-    static int Find(NoteSequence? seq, long pos)
-    {
-        if (seq == null) return 0;
-        var all = seq.Notes;
-        int lo = 0, hi = all.Length;
-        while (lo < hi)
-        {
-            int mid = (lo + hi) >> 1;
-            if (all[mid].Start < pos) lo = mid + 1; else hi = mid;
-        }
-        return lo;
-    }
-
-    /// <summary>Starts the notes the playhead landed in the middle of, from where they would be by now.</summary>
-    void Chase(Compiled c, NoteSequence? seq, long pos)
-    {
-        if (seq == null || sound is not { } s) return;
-        var all = seq.Notes;
-        for (int k = 0; k < all.Length && all[k].Start < pos; k++)
-        {
-            ref readonly var e = ref all[k];
-            long t = pos - e.Start, left = e.Length - t;
-            if (left <= 0 && !c.P.OneShot) continue;
-            Begin(c, s, FromSong, e.Pitch, PitchOf(e.Hz), e.Velocity, left > 0 ? left : -1, t, e.Bend, e.Pan);
-        }
-    }
-
-    static double PitchOf(double hz) => 69 + 12 * Math.Log2(hz / 440);
-
-    /// <summary>Renders <c>[from .. to)</c> of the block, stopping at each note so that it starts on its exact frame.</summary>
-    void Run(Compiled c, NoteSequence? seq, long pos, int from, int to, Span<float> l, Span<float> r)
-    {
-        int i = from;
-        while (i < to)
-        {
-            int stop = to;
-            if (seq != null)
-            {
-                var all = seq.Notes;
-                var s = sound;
-                now = pos + i;
-                while (next < all.Length && all[next].Start <= pos + i)
-                {
-                    ref readonly var e = ref all[next];
-                    if (s != null) Begin(c, s, FromSong, e.Pitch, PitchOf(e.Hz), e.Velocity, e.Length, 0, e.Bend, e.Pan);
-                    next++;
-                }
-                if (next < all.Length) stop = (int)Math.Min(to, all[next].Start - pos);
-            }
-            now = pos + i;
-            RenderVoices(c, i, stop - i, l, r);
-            i = stop;
-        }
-    }
-
-    /// <summary>The keys of a MIDI keyboard and what the UI asked for, at the start of the block.</summary>
-    void Inputs(Compiled c, LiveNotes? keys)
-    {
-        var s = sound;
-        if (keys != null)
-        {
-            double cents = keys.Transpose - Math.Round(keys.Transpose);
-            foreach (ref readonly var e in keys.Events)
-            {
-                if (e.On) { if (s != null) Begin(c, s, FromKeys, e.Sounds, e.Sounds + cents, e.Velocity, -1, 0); }
-                else End(FromKeys, e.Sounds);
-            }
-        }
-        int tail = inTail;
-        while (tail != Volatile.Read(ref inHead))
-        {
-            var (pitch, velocity, frames) = inbox[tail];
-            if (velocity == 0) End(FromWindow, pitch);
-            else if (s != null)
-            {
-                End(FromWindow, pitch);
-                Begin(c, s, FromWindow, pitch, pitch, velocity, frames == Held ? -1 : frames, 0);
-            }
-            tail = (tail + 1) % inbox.Length;
-        }
-        Volatile.Write(ref inTail, tail);
-    }
-
-    void End(byte source, int key)
+    protected override void End(byte source, int key)
     {
         for (int i = 0; i < Pool; i++)
         {
@@ -550,8 +321,7 @@ public sealed class Sampler
         if (v.FilterStage != Stage.Done) v.FilterStage = Stage.Release;
     }
 
-    /// <summary>The song's notes, or everyone's, go in 5 ms.</summary>
-    void FadeAll(bool everyone)
+    protected override void FadeAll(bool everyone)
     {
         for (int i = 0; i < Pool; i++)
         {
@@ -561,15 +331,10 @@ public sealed class Sampler
     }
 
     /// <summary>A note starts: on a free voice, over the oldest one if there are too many, or as a bend of the one playing (Legato).</summary>
-    /// <param name="key">What ends it from the keyboard.</param>
-    /// <param name="note">The pitch it sounds at; fractions are the Transponer's cents.</param>
-    /// <param name="off">Frames until it ends, -1 = until told.</param>
-    /// <param name="t">Frames it would have been sounding by now.</param>
-    /// <param name="bend">Its slides and porta.</param>
-    /// <param name="pan">Its own pan.</param>
-    void Begin(Compiled c, SamplerSound s, byte source, int key, double note, int velocity, long off, long t, NoteBend? bend = null, float pan = 0)
+    protected override void Begin(byte source, int key, double note, int velocity, long off, long t, NoteBend? bend = null, float pan = 0)
     {
-        if (s.Frames == 0) return;
+        var c = block;
+        if (sound is not { Frames: > 0 } s) return;
         var p = c.P;
         double from = double.NaN;
         if (c.Mono)
@@ -711,7 +476,8 @@ public sealed class Sampler
         if (v.Loop != SamplerLoop.Off && pos >= v.Sound.LoopEnd)
         {
             double len = v.Sound.LoopEnd - v.Sound.LoopStart, past = pos - v.Sound.LoopStart;
-            if (v.Loop == SamplerLoop.Forward) pos = v.Sound.LoopStart + past % len;
+            // a forward loop's later laps run from LoopBack: its seam may have faded into the loop's first frames
+            if (v.Loop == SamplerLoop.Forward) pos = v.Sound.LoopBack + (pos - v.Sound.LoopEnd) % (v.Sound.LoopEnd - v.Sound.LoopBack);
             else
             {
                 double fold = past % (2 * len);
@@ -816,45 +582,10 @@ public sealed class Sampler
         if (Math.Abs(v.S1L) + Math.Abs(v.S2L) + Math.Abs(v.S1R) + Math.Abs(v.S2R) < 1e-20f) v.S1L = v.S2L = v.S1R = v.S2R = 0;
     }
 
-    /// <summary>One step of an envelope. A one shot never releases: its note has no end, so its sustain stays until the sound does.</summary>
-    static float Next(ref Stage stage, float level, in Rates e, bool oneShot)
-    {
-        switch (stage)
-        {
-            case Stage.Attack:
-                level += e.AttackStep;
-                if (level >= 1)
-                {
-                    level = 1;
-                    stage = Stage.Decay;
-                }
-                break;
-            case Stage.Decay:
-                level = e.Sustain + (level - e.Sustain) * e.DecayCoef;
-                if (Math.Abs(level - e.Sustain) < Silent)
-                {
-                    level = e.Sustain;
-                    stage = Stage.Sustain;
-                }
-                break;
-            case Stage.Sustain:
-                level = e.Sustain;
-                if (oneShot && level < Silent) stage = Stage.Done;
-                break;
-            case Stage.Release:
-                level *= e.ReleaseCoef;
-                if (level < Silent)
-                {
-                    level = 0;
-                    stage = Stage.Done;
-                }
-                break;
-        }
-        return level;
-    }
 
-    void RenderVoices(Compiled c, int at, int n, Span<float> l, Span<float> r)
+    protected override void RenderVoices(int at, int n, Span<float> l, Span<float> r)
     {
+        var c = block;
         if (n <= 0) return;
         var ol = l.Slice(at, n);
         var or = r.Slice(at, n);
@@ -928,7 +659,7 @@ public sealed class Sampler
                     if (left < EdgeFrames) edge = (float)(left / EdgeFrames);
                     break;
                 case SamplerLoop.Forward:
-                    if (v.Pos >= s.LoopEnd) v.Pos -= s.LoopEnd - s.LoopStart;
+                    if (v.Pos >= s.LoopEnd) v.Pos -= s.LoopEnd - s.LoopBack;
                     break;
                 default:
                     if (v.Direction > 0 && v.Pos >= s.LoopEnd)

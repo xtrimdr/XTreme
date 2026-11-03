@@ -116,7 +116,7 @@ public partial class MainWindow
             buttons.Children.Add(b);
             return b;
         }
-        Choice(Loc.T("transport.count.cancel"), null, () => { patternDeleting = null; RefreshPatterns(); });
+        Choice(Loc.T("common.cancel"), null, () => { patternDeleting = null; RefreshPatterns(); });
         Choice(Loc.T(x.Clips == 1 ? "ptn.unique.one" : "ptn.unique"), Loc.T("ptn.unique.tip"),
             () => _ = EditPatterns(x.Id, p => MidiPatterns.Dissolve(p, x.Id), "midi-pattern-dissolved", EditSteps.PatternDissolved(x.Name)));
         Choice(Loc.T(x.Clips == 1 ? "ptn.remove.one" : "ptn.remove"), Loc.T("ptn.remove.tip"),
@@ -137,7 +137,7 @@ public partial class MainWindow
     }
 
     void RenamePattern(MidiPatterns.Info x, Control anchor) =>
-        AskName(anchor, null, Loc.T("midi.pattern.rename"), x.Name, Loc.T("folder.rename.ok"), name => _ = EditPatterns(x.Id,
+        AskName(anchor, null, Loc.T("midi.pattern.rename"), x.Name, Loc.T("common.ok"), name => _ = EditPatterns(x.Id,
             p => MidiPatterns.Rename(p, MidiPatterns.Clips(p, x.Id).First().Id, name), "midi-pattern-renamed", EditSteps.PatternRenamed(name)));
 
     /// <summary>The piano roll on the selected clip when it is one of the pattern's, else on its first.</summary>

@@ -441,7 +441,7 @@ public partial class MainWindow
             }, null, step: EditSteps.Recorded([.. kept.Select(k => k.Take.Journal.Name)],
                 [.. played.Where(x => x.Notes.Count > 0).Select(x => store?.Project.Tracks.Find(t => t.Id == x.TrackId)?.Name).OfType<string>()]));
             string? notesDone = noteCount == 0 ? null : Loc.T(grid > 0 ? "midi.rec.done.quantized" : "midi.rec.done", noteCount,
-                string.Join(", ", noteTracks.Select(n => $"\"{n}\"")), PianoSnapLabel());
+                string.Join(", ", noteTracks.Select(n => Loc.T("common.quoted", n))), PianoSnapLabel());
             if (kept.Count == 0)
             {
                 if (st == store)
@@ -471,7 +471,7 @@ public partial class MainWindow
             EndMidiJournals(st, played.Select(x => x.ClipId));
             Toast(problem ?? (kept.Count == 1
                 ? Loc.T("rec.saved.one", kept[0].Take.Journal.Name, $"{kept[0].Res.DurationSec:0.0}")
-                : Loc.T("rec.saved.many", kept.Count, string.Join(", ", kept.Select(k => $"\"{k.Take.Journal.Name}\"")), $"{kept[0].Res.DurationSec:0.0}")));
+                : Loc.T("rec.saved.many", kept.Count, string.Join(", ", kept.Select(k => Loc.T("common.quoted", k.Take.Journal.Name))), $"{kept[0].Res.DurationSec:0.0}")));
         }
         catch (IOException e)
         {

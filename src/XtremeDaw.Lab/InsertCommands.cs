@@ -69,7 +69,8 @@ static class InsertCommands
             "duplicar" => ChannelInserts.Duplicate(slots, Id(v1)) != null,
             "prender" or "apagar" => Toggle(slots.Find(s => s.Id == Id(v1))!, op == "prender"),
             "plegar" => Fold(slots.Find(s => s.Id == Id(v1))!),
-            _ => throw new ArgumentException("insertos: agregar vida|comp|eq|puerta|reverb|delay|limpieza|multibanda|color|cinta|ancho|softclip|limitador | agregar vst --plugin \"nombre\" | cadena (con --master) | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n"),
+            "sidechain" => Sidechain(p, slots.Find(s => s.Id == Id(v1))!, v2),
+            _ => throw new ArgumentException("insertos: agregar vida|comp|eq|puerta|reverb|delay|limpieza|multibanda|color|cinta|ancho|softclip|limitador|bombeo | agregar vst --plugin \"nombre\" | cadena (con --master) | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n | sidechain n pista|propia"),
         };
         if (changed)
         {
@@ -89,6 +90,19 @@ static class InsertCommands
             ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con xtlab vst escanear.");
         if (found.IsInstrument) Console.WriteLine($"Ojo: {found.Name} figura como instrumento; lo pongo como efecto igual.");
         return PluginCatalog.Ref(found);
+    }
+
+    /// <summary>What a compressor, a gate or the pump listens to: a track (its id or its number) or <c>propia</c>.</summary>
+    static bool Sidechain(Project p, InsertSlot s, string source)
+    {
+        if (!TrackInserts.TakesKey(s.Type)) throw new ArgumentException("insertos: solo el compresor, la puerta y el bombeo escuchan otra pista.");
+        string? id = source is "" or "propia" ? null
+            : p.Tracks.Find(t => t.Id == source)?.Id
+              ?? (int.TryParse(source, out int n) && n >= 1 && n <= p.Tracks.Count ? p.Tracks[n - 1].Id : null)
+              ?? throw new ArgumentException("insertos: no encontré esa pista para el sidechain.");
+        if (s.Sidechain == id) return false;
+        s.Sidechain = id;
+        return true;
     }
 
     static bool Toggle(InsertSlot s, bool on)
@@ -118,7 +132,13 @@ static class InsertCommands
         "flanger" => TrackInserts.Flanger,
         "phaser" => TrackInserts.Phaser,
         "tremolo" => TrackInserts.Tremolo,
-        _ => throw new ArgumentException($"No conozco el efecto «{name}»: vida, comp, eq, puerta, reverb, delay, limpieza, multibanda, color, cinta, ancho, softclip, limitador, chorus, flanger, phaser o tremolo."),
+        "bombeo" => TrackInserts.Pump,
+        "fet" => TrackInserts.Fet,
+        "optico" or "opto" => TrackInserts.Opto,
+        "vca-bus" or "buscomp" => TrackInserts.BusComp,
+        "vca" => TrackInserts.Vca,
+        "varimu" or "vari-mu" => TrackInserts.VariMu,
+        _ => throw new ArgumentException($"No conozco el efecto «{name}»: vida, comp, eq, puerta, reverb, delay, limpieza, multibanda, color, cinta, ancho, softclip, limitador, chorus, flanger, phaser, tremolo, bombeo, fet, optico, vca-bus, vca o varimu."),
     };
 
     /// <summary>The kind to add to a chain: every native effect goes in any of them.</summary>
@@ -146,10 +166,10 @@ static class InsertCommands
             InsertSlot.ReverbKind => $"{on} Reverb {ReverbPreset(s.Reverb!)}{s.Reverb!.Decay:0.0} s",
             InsertSlot.GateKind => $"{on} Puerta {(s.Gate!.Mode switch { "soft" => "suave", "hard" => "firme", _ => "normal" })} {s.Gate.Threshold:0.#} dB",
             InsertSlot.DelayKind => $"{on} Delay {(s.Delay!.Sync ? s.Delay.Division : $"{s.Delay.TimeMs:0} ms")} · repite {s.Delay.Feedback * 100:0}%",
-            _ when TrackInserts.IsStage(s.Type) || TrackInserts.IsMod(s.Type) => $"{on} {s.Type} " + string.Join(" · ", FxDefs.Params(s.Type).Select(p => $"{p.Id} {p.Get(s):0.##}")),
+            _ when TrackInserts.IsStage(s.Type) || TrackInserts.IsMod(s.Type) || TrackInserts.IsModel(s.Type) => $"{on} {s.Type} " + string.Join(" · ", FxDefs.Params(s.Type).Select(p => $"{p.Id} {p.Get(s):0.##}")),
             InsertSlot.VstKind when s.Known => $"{on} VST3 {s.Vst!.Plugin.Name}{(s.Vst.Plugin.Vendor.Length > 0 ? $" · {s.Vst.Plugin.Vendor}" : "")}{(s.Vst.Plugin.State != null ? " (con su ajuste guardado)" : "")}",
             _ => $"--- {s.Type} (desconocido: se guarda tal cual y no suena)",
-        } + $"  [{s.Id}]";
+        } + (s.Sidechain != null ? $" · sidechain {s.Sidechain}" : "") + $"  [{s.Id}]";
     }
 
     /// <summary>
@@ -165,7 +185,7 @@ static class InsertCommands
             TrackInserts.Comp => new InsertSpec($"s{i}", TrackInserts.Comp) { Comp = comp },
             TrackInserts.Gate => new InsertSpec($"s{i}", TrackInserts.Gate) { Gate = GateParams.Defaults with { On = true } },
             TrackInserts.Eq => new InsertSpec($"s{i}", TrackInserts.Eq) { EqOn = eqOn, EqBands = eqBands },
-            var other => new InsertSpec($"s{i}", other) { Stage = FxDefs.ToMaster(InsertSlot.New(other)), Mod = FxDefs.ToMod(InsertSlot.New(other)), Wet = FxDefs.StartLevels(other).Wet, Dry = FxDefs.StartLevels(other).Dry, StageOn = true },
+            var other => new InsertSpec($"s{i}", other) { Stage = FxDefs.ToMaster(InsertSlot.New(other)), Mod = FxDefs.ToMod(InsertSlot.New(other)), Model = FxDefs.ToCompModel(InsertSlot.New(other)), Wet = FxDefs.StartLevels(other).Wet, Dry = FxDefs.StartLevels(other).Dry, StageOn = true },
         }).ToArray();
     }
 

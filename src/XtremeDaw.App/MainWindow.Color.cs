@@ -33,7 +33,11 @@ public partial class MainWindow
     readonly StackPanel projectBarCollapsed = new() { Spacing = 4, Margin = new Thickness(0, 8), HorizontalAlignment = HorizontalAlignment.Center };
     readonly List<(string Key, Button Tab, Button Rail)> projectTabs = [];
     readonly List<(Button Tab, string Label, TextBlock Icon, double Width)> projectTabFaces = [];
-    readonly Grid projectBarHeader = new() { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*"), Height = 44, Margin = new Thickness(6, 0, 8, 0) };
+    readonly Grid projectBarHeader = new() { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*,Auto"), Height = 44, Margin = new Thickness(6, 0, 8, 0) };
+    /// <summary>Its hide button and the one that moves it to its own window, at the ends of its header.</summary>
+    Button? projectBarHide, projectBarFloat;
+    /// <summary>Folded to its column of icons (in its own window it is always open, and folds again when it comes back).</summary>
+    bool projectBarFolded;
     string projectTab = "history";
     List<VideoTemplate> videoTemplates = [];
     readonly StackPanel templateRows = new() { Spacing = 4 };
@@ -74,7 +78,7 @@ public partial class MainWindow
         bool collapsed = AppConfig.Get("projectBarCollapsed") == "1";
 
         var header = projectBarHeader;
-        var hide = RailButton("", Loc.T("insp.hide"), () => SetProjectBarCollapsed(true));
+        var hide = projectBarHide = RailButton("", Loc.T("insp.hide"), () => SetProjectBarCollapsed(true));
         shortcutTips.Add((hide, Loc.T("insp.hide"), "rightPanel"));
         hide.Margin = new Thickness(0, 0, 12, 0);
         header.Children.Add(hide);
@@ -93,6 +97,9 @@ public partial class MainWindow
             projectTabs.Add((key, tab, icon));
             projectTabFaces.Add((tab, label, new TextBlock { Classes = { "icon" }, Text = glyph, FontSize = 14 }, Palette.Text(label, ProjectTabFontSize, Palette.Fg, Palette.UiBold).Width));
         }
+        projectBarFloat = FloatButton(FloatProject, chip: false);
+        Grid.SetColumn(projectBarFloat, col);
+        header.Children.Add(projectBarFloat);
         header.SizeChanged += (_, _) => FitProjectTabs();
         var top = new Border { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = header };
         DockPanel.SetDock(top, Dock.Top);
@@ -121,19 +128,28 @@ public partial class MainWindow
 
     void SetProjectBarCollapsed(bool collapsed, bool save = true)
     {
-        ProjectBar.Width = collapsed ? ProjectBarCollapsedWidth : projectBarWidth;
-        if (projectBarGrip != null) projectBarGrip.IsVisible = !collapsed;
-        projectBarExpanded.IsVisible = !collapsed;
-        projectBarCollapsed.IsVisible = collapsed;
+        projectBarFolded = collapsed;
+        ShowProjectBarFold();
         if (save) SaveViewPref("projectBarCollapsed", collapsed ? "1" : "2");
-        if (!collapsed) RefreshHistory(); // the lists don't follow the project while they are out of sight
+    }
+
+    void ShowProjectBarFold()
+    {
+        bool outside = ProjectBarOut, folded = projectBarFolded && !outside;
+        ProjectBar.Width = folded ? ProjectBarCollapsedWidth : projectBarWidth;
+        if (projectBarGrip != null) projectBarGrip.IsVisible = !folded && !outside;
+        if (projectBarHide != null) projectBarHide.IsVisible = !outside;
+        projectBarExpanded.IsVisible = !folded;
+        projectBarCollapsed.IsVisible = folded;
+        FitProjectTabs();
+        if (!folded) RefreshHistory(); // the lists don't follow the project while they are out of sight
     }
 
     /// <summary>The tabs share the header: they close up as the bar narrows and, when the names no longer fit, show their icons.</summary>
     void FitProjectTabs()
     {
         var shown = projectTabFaces.Where(f => f.Tab.IsVisible).ToList();
-        double room = projectBarHeader.Bounds.Width - ProjectBarHideWidth, names = shown.Sum(f => f.Width);
+        double room = projectBarHeader.Bounds.Width - (projectBarHide?.IsVisible == false ? 0 : ProjectBarHideWidth) - (projectBarFloat?.Width ?? 0), names = shown.Sum(f => f.Width);
         int gaps = Math.Max(1, shown.Count - 1);
         double gap = Math.Clamp((room - names) / gaps, ProjectTabGapMin, ProjectTabGap);
         bool icons = names + gaps * gap > room;

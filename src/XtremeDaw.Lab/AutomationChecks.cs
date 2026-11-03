@@ -58,14 +58,45 @@ static class AutomationChecks
         for (int i = 1; i < fader.L.Length; i++) jump = Math.Max(jump, Math.Abs(fader.L[i] - fader.L[i - 1]));
         Say("el volumen no da saltos", jump < 1e-3, $"{jump:0.00000}");
 
-        // bent by 1 the stretch goes as t⁴: halfway the position is 1 - 0.5⁴ down from 1 to 0, so 0.9375, a gain of 1.318
+        // a full tension goes as (e^(10t) - 1) / (e^10 - 1): halfway it is 1 / (e^5 + 1) of the way down from 1 to 0
         var bentLane = Lane(AutoTarget.Volume, (0, 1), (2, 0));
-        bentLane.Blocks[0].Points[0].Curve = 1;
+        bentLane.Blocks[0].Points[0].Tension = 1;
         bentLane.Touch();
+        double mid = 1 - 1 / (Math.Exp(5) + 1);
         var bent = Mix(With(new Track { Automation = [bentLane] }));
-        Say("una curva cambia el tramo", Near(bent.L[At(1)], 0.5 * 1.5 * 0.9375 * 0.9375), $"{bent.L[At(1)]:0.0000}");
-        Say("la curva se ve como suena", Near(Automations.PositionAt(bentLane, false, 1), 0.9375, 1e-6));
-        Say("la curva se guarda", ProjectLibrary.Clone(bentLane).Blocks[0].Points[0].Curve == 1);
+        Say("una curva cambia el tramo", Near(bent.L[At(1)], 0.5 * 1.5 * mid * mid), $"{bent.L[At(1)]:0.0000}");
+        Say("la curva se ve como suena", Near(Automations.PositionAt(bentLane, false, 1), mid, 1e-6));
+        Say("la curva se guarda", ProjectLibrary.Clone(bentLane).Blocks[0].Points[0].Tension == 1);
+        Say("la tensión pasa por donde se la lleva", Near(AutoShapes.Exp(0.5, AutoShapes.TensionThrough(0.2)), 0.2, 1e-9));
+
+        // each shape keeps its ends, is saved by its name, and a block cut anywhere sounds the same
+        foreach (var shape in Enum.GetValues<AutoShape>())
+        {
+            var lane = Lane(AutoTarget.Pan, (0, 0.1), (2, 0.9));
+            lane.Blocks[0].Points[0].Shape = shape;
+            lane.Blocks[0].Points[0].Tension = shape == AutoShape.Curve || shape == AutoShape.Double ? 0.6 : -0.5;
+            lane.Touch();
+            var json = System.Text.Json.JsonSerializer.Serialize(lane, ProjectStore.Json);
+            var back = System.Text.Json.JsonSerializer.Deserialize<AutomationLane>(json, ProjectStore.Json)!;
+            bool ends = Near(AutoShapes.Along(shape, 0, 0.3), 0, 1e-9) && (shape == AutoShape.Hold || Near(AutoShapes.Along(shape, 0.99999, 0.3), 1, 1e-3));
+            Say($"forma {shape}: empieza y llega a sus puntos, se guarda", ends && back.Blocks[0].Points[0].Shape == shape && back.Blocks[0].Points[0].Tension == lane.Blocks[0].Points[0].Tension, json.Contains("\"shape\"") || shape == AutoShape.Curve ? "" : "sin nombre");
+            double worst = 0;
+            var cuts = ProjectLibrary.Clone(lane);
+            Automations.Split(cuts, cuts.Blocks[0].Id, 0.7, false);
+            Automations.Split(cuts, cuts.Blocks[^1].Id, 1.31, false);
+            for (double t = 0; t <= 2; t += 0.0037)
+                worst = Math.Max(worst, Math.Abs(Automations.PositionAt(cuts, false, t) - Automations.PositionAt(lane, false, t)));
+            // the wave and the smooth stairs are written as short lines; the rest stays exact
+            bool lines = shape is AutoShape.Wave or AutoShape.SmoothStairs;
+            Say($"forma {shape}: dividir no cambia el sonido", worst < (lines ? 0.02 : 1e-6), $"{worst:0.000000}");
+        }
+
+        // the first bends were powers: an old project's curve becomes the one through the same middle
+        var bentOld = System.Text.Json.JsonSerializer.Deserialize<AutomationLane>("{\"target\":\"pan\",\"blocks\":[{\"lengthSec\":3,\"points\":[{\"sec\":0,\"value\":0,\"curve\":1},{\"sec\":2,\"value\":1}]}]}", ProjectStore.Json)!;
+        var oldBent = new Project { Tracks = [new Track { Automation = [bentOld] }] };
+        oldBent.Normalize();
+        Say("una curva vieja pasa por el mismo medio", Near(Automations.PositionAt(bentOld, false, 1), 0.0625, 1e-4)
+            && !System.Text.Json.JsonSerializer.Serialize(bentOld, ProjectStore.Json).Contains("\"curve\""), $"{Automations.PositionAt(bentOld, false, 1):0.0000}");
 
         // hard left at the end: the left side takes both, the right one goes silent
         var pan = Mix(With(new Track { Automation = [Lane(AutoTarget.Pan, (0, 0.5), (1, 0))] }));
@@ -115,11 +146,11 @@ static class AutomationChecks
         Say("entre bloques mantiene el valor", Near(Automations.PositionAt(gap, false, 1.9), 0.2) && Near(Automations.PositionAt(gap, false, 2.01), 0.8));
 
         var split = Lane(AutoTarget.Volume, (0, 0), (2, 1));
-        split.Blocks[0].Points[0].Curve = 1;
+        split.Blocks[0].Points[0].Tension = 1;
         split.Touch();
         double before = Automations.PositionAt(split, false, 1.5);
         Automations.Split(split, split.Blocks[0].Id, 1, false);
-        Say("dividir un bloque no cambia el sonido", split.Blocks.Count == 2 && Near(Automations.PositionAt(split, false, 1.5), before, 0.01), $"{before:0.000} / {Automations.PositionAt(split, false, 1.5):0.000}");
+        Say("dividir un bloque no cambia el sonido", split.Blocks.Count == 2 && Near(Automations.PositionAt(split, false, 1.5), before, 1e-6), $"{before:0.000} / {Automations.PositionAt(split, false, 1.5):0.000}");
 
         var old = System.Text.Json.JsonSerializer.Deserialize<AutomationLane>("{\"target\":\"pan\",\"points\":[{\"sec\":1,\"value\":0.25}]}", ProjectStore.Json)!;
         var oldTrack = new Track { Automation = [old] };

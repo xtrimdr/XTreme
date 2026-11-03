@@ -32,7 +32,7 @@ public sealed class InspectorSlider : StackPanel
         row.Children.Add(name);
         value = new TextBlock { Classes = { "mono" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(value, 1);
-        ToolTip.SetTip(value, "Doble click para resetear");
+        ToolTip.SetTip(value, Loc.T("slider.reset.tip"));
         value.PointerPressed += (_, e) => { if (e.ClickCount == 2) change(ResetValue); };
         row.Children.Add(value);
         Children.Add(row);

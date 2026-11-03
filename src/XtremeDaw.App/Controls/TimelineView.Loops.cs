@@ -23,9 +23,26 @@ public sealed partial class TimelineView
     /// <summary>How far down from a clip's top its loop corner reaches, for a clip <paramref name="h"/> px high.</summary>
     static double LoopBand(double h) => Math.Clamp(h / 4, 6, 12);
 
-    // the loop gesture: its source, where one pass starts and how long it is, where the loop ended when grabbed and now
-    string? loopSource;
-    double loopStart, loopPass, loopFrom, loopEnd;
+    /// <summary>One take's loop in a loop gesture: its source, where one pass starts and how long it is, where the loop
+    /// ended when grabbed and now.</summary>
+    sealed class LoopRun
+    {
+        public string Source = "";
+        public double Start, Pass, From, End;
+    }
+
+    /// <summary>The loops a loop gesture drags: the grabbed take's first, then those of the other boxed takes (<see cref="StartGroup"/>).</summary>
+    readonly List<LoopRun> loopRuns = [];
+    string? loopSource => loopRuns.Count > 0 ? loopRuns[0].Source : null;
+
+    /// <summary>Whether a loop being dragged has <paramref name="source"/> as its source: its repeats are drawn as the ghost's.</summary>
+    bool LoopDragged(string? source)
+    {
+        if (source == null || !moved) return false;
+        for (int k = 0; k < loopRuns.Count; k++)
+            if (loopRuns[k].Source == source) return true;
+        return false;
+    }
 
     /// <summary>Whether <paramref name="p"/> is on the loop corner of <paramref name="clip"/> (its lane's clip rect).</summary>
     bool OnLoopCorner(LiveClip clip, Point p, double right)
@@ -39,35 +56,53 @@ public sealed partial class TimelineView
     /// <summary>Notes the loop a press on <paramref name="clip"/>'s corner works on (its source's, for a repeat).</summary>
     void StartLoop(int i, LiveClip clip)
     {
-        var source = clip.Clip.LoopOf is { } id ? tracks[i].Clips.FirstOrDefault(c => c.Clip.Id == id) ?? clip : clip;
-        var w = Window(source);
-        loopSource = source.Clip.Id;
-        loopStart = w.Origin + w.TrimStart;
-        loopPass = w.End - loopStart;
-        loopFrom = w.End;
-        foreach (var c in tracks[i].Clips)
-            if (c.Clip.LoopOf == loopSource) loopFrom = Math.Max(loopFrom, Window(c).End);
-        loopEnd = loopFrom;
+        loopRuns.Clear();
+        loopRuns.Add(LoopRunOf(i, clip));
     }
+
+    /// <summary>The loop of <paramref name="clip"/> on lane <paramref name="i"/> as it is now (its source's, for a repeat).</summary>
+    LoopRun LoopRunOf(int i, LiveClip clip)
+    {
+        var source = LoopSourceOf(i, clip);
+        var w = Window(source);
+        var run = new LoopRun { Source = source.Clip.Id, Start = w.Origin + w.TrimStart };
+        run.Pass = w.End - run.Start;
+        run.From = w.End;
+        foreach (var c in tracks[i].Clips)
+            if (c.Clip.LoopOf == run.Source) run.From = Math.Max(run.From, Window(c).End);
+        run.End = run.From;
+        return run;
+    }
+
+    LiveClip LoopSourceOf(int i, LiveClip clip) =>
+        clip.Clip.LoopOf is { } id ? tracks[i].Clips.FirstOrDefault(c => c.Clip.Id == id) ?? clip : clip;
 
     void DragLoop(double dx)
     {
+        if (loopRuns.Count == 0) return;
         bool free = (modifiers & Avalonia.Input.KeyModifiers.Alt) != 0;
-        loopEnd = Math.Max(loopStart + ClipEnvelope.MinClipSec, ClipEditing.Snap(loopFrom + dx, Grid, free));
+        var run = loopRuns[0];
+        run.End = Math.Max(run.Start + ClipEnvelope.MinClipSec, ClipEditing.Snap(run.From + dx, Grid, free));
     }
 
     /// <summary>The repeats a loop drag would make, over lane <paramref name="i"/>: outlined, each with the loop icon.</summary>
     void DrawLoopGhost(DrawingContext ctx, int i, double y, double W)
     {
-        if (loopSource == null || !moved || loopPass < ClipEnvelope.MinClipSec || !tracks[i].Clips.Any(c => c.Clip.Id == loopSource)) return;
+        if (!moved || loopRuns.Count == 0) return;
+        foreach (var run in loopRuns)
+            if (run.Pass >= ClipEnvelope.MinClipSec && tracks[i].Clips.Any(c => c.Clip.Id == run.Source)) DrawLoopGhost(ctx, i, y, W, run);
+    }
+
+    void DrawLoopGhost(DrawingContext ctx, int i, double y, double W, LoopRun run)
+    {
         var color = TrackIcons.ColorOf(tracks[i].Track) ?? Palette.AccentColor;
         double lh = RowH(tracks[i].Track);
         var pen = Palette.Pen(Palette.Alpha(color, 0.9));
         for (int k = 1; k <= ClipLoops.MaxRepeats; k++)
         {
-            double from = loopStart + k * loopPass;
-            if (loopEnd - from < ClipEnvelope.MinClipSec) break;
-            double x0 = X(from), x1 = X(Math.Min(from + loopPass, loopEnd));
+            double from = run.Start + k * run.Pass;
+            if (run.End - from < ClipEnvelope.MinClipSec) break;
+            double x0 = X(from), x1 = X(Math.Min(from + run.Pass, run.End));
             if (x0 > W) break;
             if (x1 < HeaderW) continue;
             var r = new Rect(x0, y + 5, Math.Max(2, x1 - x0), lh - 10);
@@ -87,8 +122,9 @@ public sealed partial class TimelineView
     /// <summary>What the loop gesture ends in, taken before the gesture is cleared: null when it wasn't one.</summary>
     (string Source, double End, bool Changed)? TakeLoop()
     {
-        if (loopSource is not { } source) return null;
-        loopSource = null;
-        return (source, loopEnd, moved && Math.Abs(loopEnd - loopFrom) > 1e-6);
+        if (loopRuns.Count == 0) return null;
+        var run = loopRuns[0];
+        loopRuns.Clear();
+        return (run.Source, run.End, moved && Math.Abs(run.End - run.From) > 1e-6);
     }
 }

@@ -34,7 +34,8 @@ public partial class MainWindow
     string? pianoClipId;
 
     /// <summary>The piano roll is on screen.</summary>
-    bool PianoShown => pianoView && mixerView;
+    /// <summary>The piano roll is on screen: in the mixer's place or in its own window.</summary>
+    bool PianoShown => PianoOut || (pianoView && mixerView);
 
     void InitPiano()
     {
@@ -87,7 +88,8 @@ public partial class MainWindow
         pianoRoll.VelocityHeightChanged += h => SaveViewPref("pianoVelHeight", h.ToString(System.Globalization.CultureInfo.InvariantCulture));
         PianoViewButton.Click += (_, _) =>
         {
-            if (PianoShown && !ViewsCovered) SetMixerView(false);
+            if (PianoOut) ShowPiano();
+            else if (PianoShown && !ViewsCovered) SetMixerView(false);
             else ShowPiano();
         };
 
@@ -192,18 +194,35 @@ public partial class MainWindow
         pianoGridButton.Click += (_, _) => ShowPianoGridMenu(pianoGridButton);
         ToolTip.SetTip(pianoGridButton, Loc.T("piano.grid.tip"));
         ShowPianoGrid();
-        snapRow.Children.Add(new Border { Width = 1, Height = 20, Background = Palette.Line, Margin = new Thickness(4, 0) });
         snapRow.Children.Add(pianoGridButton);
-        var help = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 14, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
-        ToolTip.SetTip(help, Loc.T("piano.help"));
-        snapRow.Children.Add(help);
-        // groups that don't fit next to the title go down a row instead of drawing over it
+        // the keys and gestures, in a button that says so (asked by the user: a lone icon was nothing to find); its
+        // tooltip is read on hover, the keys can change in Settings, and a click opens the help
+        var help = new Button { Classes = { "chip" }, Content = IconText("", Loc.T("piano.keys")), Height = 28, MinHeight = 28, Padding = new Thickness(10, 0),
+            FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        help.PointerEntered += (_, _) => ToolTip.SetTip(help, Loc.T("piano.help", Shortcuts.First("copy"), Shortcuts.First("cut"), Shortcuts.First("paste"),
+            Shortcuts.First("duplicate"), Shortcuts.First("quantize"), Shortcuts.WheelLabel("wheelHeight")));
+        help.Click += (_, _) => HelpPanel.Show("scales-chords", canOpenSettings: !Projects.IsVisible);
+        var view = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        // groups that don't fit next to the title go down a row instead of drawing over it; each with its name over it
+        // (asked by the user: the bare buttons were hard to find)
         row.Children.Add(title);
-        row.Children.Add(BuildPianoToolbar());
-        row.Children.Add(BuildPianoScaleTools());
-        row.Children.Add(snapRow);
+        row.Children.Add(PianoGroup("piano.group.edit", BuildPianoToolbar()));
+        row.Children.Add(PianoGroup("piano.group.harmony", BuildPianoScaleTools()));
+        row.Children.Add(PianoGroup("piano.group.grid", snapRow));
+        view.Children.Add(pianoViewButton);
+        view.Children.Add(help);
+        // to its own window and back (MainWindow.PanelWindows.cs)
+        view.Children.Add(FloatButton(FloatPiano, chip: true));
+        row.Children.Add(PianoGroup("piano.group.view", view));
         return row;
     }
+
+    /// <summary>A group of the piano roll's bar, with its name in small capitals over it.</summary>
+    static Control PianoGroup(string key, Control content) => new StackPanel
+    {
+        Spacing = 3, VerticalAlignment = VerticalAlignment.Center,
+        Children = { new TextBlock { Text = Loc.T(key), Classes = { "label" }, Margin = new Thickness(2, 0, 0, 0) }, content },
+    };
 
     /// <summary>The velocity lane's step choices (0 = free) in its menu; any other comes from "Otro…".</summary>
     static readonly int[] VelSteps = [0, 4, 8, 10, 16, 32];
@@ -256,7 +275,7 @@ public partial class MainWindow
             var list = new List<object>();
             foreach (int v in VelSteps)
                 list.Add(MenuCheck(v == 0 ? Loc.T("piano.snap.off") : v.ToString(), () => pianoRoll.VelocityStep == v || v == 0 && pianoRoll.VelocityStep <= 1, () => SetStep(v), refresh));
-            list.Add(MenuAction(Loc.T("piano.length.other") + "\u2026", () =>
+            list.Add(MenuAction(Loc.T("piano.length.other.more"), () =>
             {
                 Avalonia.Threading.Dispatcher.UIThread.Post(AskStep);
                 return Task.CompletedTask;
@@ -296,7 +315,12 @@ public partial class MainWindow
         row.Children.Add(adjust);
         showLane += on => adjust.IsEnabled = on;
         adjust.IsEnabled = pianoRoll.VelocityShown;
-        return row;
+        // the lane and its tool on the left, its values on the right; what doesn't fit goes down a row (ToolbarPanel)
+        row.Children.Clear();
+        var bar = new ToolbarPanel { VerticalAlignment = VerticalAlignment.Center };
+        bar.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { show, toolSeg } });
+        bar.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { stepChip, adjust } });
+        return bar;
     }
 
     /// <summary>
@@ -463,6 +487,14 @@ public partial class MainWindow
 
     void OpenPianoView(PianoRollView.Frame frame)
     {
+        if (PianoOut)
+        {
+            ActivatePanel(FloatPiano);
+            pianoRoll.SetPlayhead(engine.PositionSec);
+            RefreshPiano(frame);
+            pianoRoll.Focus();
+            return;
+        }
         pianoView = true;
         masteringView = false;
         SetMixerView(true);
@@ -564,7 +596,7 @@ public partial class MainWindow
         var plugin = t.Track.Instrument;
         string name = plugin != null && instrumentLoads.ContainsKey(t.Track.Id) ? Loc.T("vst.loading", plugin.Name) : InstrumentName(t.Track);
         pianoInstrumentButton.Content = name + "  ▾";
-        pianoOpenButton.IsEnabled = t.Track.Sampler != null || instruments.ContainsKey(t.Track.Id);
+        pianoOpenButton.IsEnabled = t.Track.Sampler != null || t.Track.Granular != null || instruments.ContainsKey(t.Track.Id);
     }
 
     int TrackIndex(string? trackId) => tracks.FindIndex(t => t.Track.Id == trackId);
@@ -572,7 +604,24 @@ public partial class MainWindow
     Task NewMidiTrack()
     {
         if (store == null || store.ReadOnly) return Task.CompletedTask;
-        return EditTimeline(MidiEditing.AddTrack, "track-added");
+        return EditTimeline(p => MidiEditing.AddTrack(p), "track-added");
+    }
+
+    /// <summary>A new MIDI track that already plays with an instrument, named after it: one undo step. A native one
+    /// opens its window, where its sample is loaded; a plugin loads right after.</summary>
+    async Task NewInstrumentTrack(string name, Action<XtremeDaw.Projects.Track> setup)
+    {
+        if (store == null || store.ReadOnly) return;
+        string? id = null;
+        await EditTimeline(p =>
+        {
+            id = MidiEditing.AddTrack(p, name);
+            setup(p.Tracks.Find(t => t.Id == id)!);
+            return id;
+        }, "track-added");
+        if (store.Project.Tracks.Find(t => t.Id == id) is not { } made) return;
+        if (made.Sampler != null) OpenSamplerWindow(made.Id);
+        else if (made.Granular != null) OpenGranularWindow(made.Id);
     }
 
     async Task DuplicateMidiClip(string clipId)
@@ -585,7 +634,7 @@ public partial class MainWindow
         }
         string trackId = MidiEditing.Find(store.Project, clipId).Track.Id;
         string? copy = null;
-        await EditTimeline(p => { copy = MidiEditing.Duplicate(p, clipId); return trackId; }, "midi-clip-duplicated");
+        await EditTimeline(p => { copy = MidiEditing.Duplicate(p, clipId, Timeline.SnapSec); return trackId; }, "midi-clip-duplicated");
         if (copy != null) Timeline.SelectMidiClip(TrackIndex(trackId), copy);
     }
 
@@ -622,7 +671,7 @@ public partial class MainWindow
         foreach (int bars in MidiPatterns.Bars)
             items.Add(MenuCheck(BarsLabel(bars), () => store != null && MidiEditing.TryFind(store.Project, clipId)?.CellBeats == bars * 4,
                 () => _ = SetPatternBeats(clipId, bars * 4), refresh));
-        if (withOther) items.Add(MenuAction(Loc.T("piano.length.other") + "…", () =>
+        if (withOther) items.Add(MenuAction(Loc.T("piano.length.other.more"), () =>
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() => AskPatternBars(clipId));
             return Task.CompletedTask;
@@ -649,9 +698,9 @@ public partial class MainWindow
         var lengths = PatternLengthItems(clipId, withOther: false);
         return
         [
-            MenuAction(Loc.T("midi.pattern.rename") + "…", () =>
+            MenuAction(Loc.T("midi.pattern.rename.more"), () =>
             {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => AskName(Timeline, point, Loc.T("midi.pattern.rename"), clip.PatternName!, Loc.T("folder.rename.ok"),
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => AskName(Timeline, point, Loc.T("midi.pattern.rename"), clip.PatternName!, Loc.T("common.ok"),
                     name => _ = EditPattern(clipId, p => MidiPatterns.Rename(p, clipId, name), "midi-pattern-renamed")));
                 return Task.CompletedTask;
             }, enabled: enabled),
@@ -685,10 +734,13 @@ public partial class MainWindow
         list.AddRange(
         [
             MenuAction(Loc.T("midi.menu.open"), () => { OpenInPiano(clipId); return Task.CompletedTask; }, icon: ""),
-            MenuAction(Loc.T("menu.duplicate"), () => boxed.Count > 1 ? DuplicateClips(boxed) : DuplicateMidiClip(clipId), Shortcuts.Label("duplicate"), enabled),
+            new Separator(),
+            // the same groups and order as an audio clip's menu: edit, place, then its own tools
+            MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled && !track.Track.Locked),
             MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")),
-            MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled),
-            MenuAction(Loc.T("menu.split"), () => SplitMidi(track, clipId, at), "Alt+X", enabled && under && !track.Track.Locked),
+            MenuAction(Loc.T("menu.duplicate"), () => boxed.Count > 1 ? DuplicateClips(boxed) : DuplicateMidiClip(clipId), Shortcuts.Label("duplicate"), enabled),
+            MenuAction(Loc.T("menu.split"), () => SplitMidi(track, clipId, at), Shortcuts.First("split"), enabled && under && !track.Track.Locked),
+            new Separator(),
             MenuAction(Loc.T("midi.quantize.menu", PianoSnapLabel()), () => Quantize(boxed.Count > 1 ? boxed : [clipId]), Shortcuts.Label("quantize"),
                 enabled && pianoRoll.QuantizeBeats > 0, tip: pianoRoll.QuantizeBeats > 0 ? null : Loc.T("midi.quantize.free")),
             new Separator(),
@@ -696,7 +748,7 @@ public partial class MainWindow
         list.AddRange(PatternItems(clipId, enabled, point));
         list.Add(new Separator());
         list.Add(MenuAction(boxed.Count > 1 ? Loc.T("menu.removeClips", boxed.Count) : Loc.T("menu.removeClip"),
-            () => boxed.Count > 1 ? DeleteTimelineSelection() : RemoveMidiClip(clipId), "Supr", enabled, danger: true));
+            () => boxed.Count > 1 ? DeleteTimelineSelection() : RemoveMidiClip(clipId), Shortcuts.First("delete"), enabled, danger: true));
         OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
     }
 }

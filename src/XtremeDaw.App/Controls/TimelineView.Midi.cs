@@ -71,7 +71,7 @@ public sealed partial class TimelineView
     }
 
     InstrumentState StateOf(LiveTrack t) =>
-        InstrumentStateOf?.Invoke(t.Track.Id) ?? (t.Track.Instrument == null && t.Track.Sampler == null ? InstrumentState.TestTone : InstrumentState.Loading);
+        InstrumentStateOf?.Invoke(t.Track.Id) ?? (t.Track.Instrument == null && t.Track.Sampler == null && t.Track.Granular == null ? InstrumentState.TestTone : InstrumentState.Loading);
 
     /// <summary>The chip: the plugin's name (accent once it plays, dim while it loads, amber when it couldn't open) or "Tono de prueba", and its arrow.</summary>
     void DrawInstrumentChip(DrawingContext ctx, int i)
@@ -93,7 +93,7 @@ public sealed partial class TimelineView
             InstrumentState.Ready => Palette.Accent, InstrumentState.Loading => Palette.Dim,
             InstrumentState.Failed => Palette.Mute, _ => Palette.Faint,
         };
-        string name = t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Instrument?.Name ?? Loc.T("vst.testTone");
+        string name = t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Granular != null ? Loc.T("granular.name") : t.Track.Instrument?.Name ?? Loc.T("vst.testTone");
         ctx.DrawText(name, 11, brush, new Point(r.X + 8, r.Y + 5), ready ? Palette.UiBold : Palette.Ui, Math.Max(0, r.Width - ChipArrowW - 10));
         double ax = r.Right - ChipArrowW;
         ctx.DrawLine(Palette.Pen(ready ? Palette.Alpha(Palette.AccentColor, 0.3) : Palette.Line), new Point(ax + 0.5, r.Y + 5), new Point(ax + 0.5, r.Bottom - 5));
@@ -285,6 +285,7 @@ public sealed partial class TimelineView
     /// <summary>A clip's start and end as drawn: a carried or held one where the gesture has it.</summary>
     (double Start, double End) MidiSpan(MidiClip c)
     {
+        if (moved && midiGroup.TryGetValue(c, out var g)) return (g.AtSec, g.AtSec + g.Beats * BeatSec);
         if (moved && midiCarried.TryGetValue(c, out double from)) return (from + carryShift, from + carryShift + c.LengthBeats * BeatSec);
         if (moved && midiAlong.Contains(c)) return (c.AtSec, c.AtSec + midiBeats * BeatSec);
         return c == midiHeld && moved ? (midiAtSec, midiAtSec + midiBeats * BeatSec) : (c.AtSec, c.EndSec(Bpm));
@@ -363,7 +364,8 @@ public sealed partial class TimelineView
             var fill = Palette.Alpha(color, sel ? 1 : 0.85);
             double beatPx = BeatSec * pps;
             // as the gesture has it: a pattern's or a looped clip dragged longer shows its repeats while it moves
-            double length = (end - start) / BeatSec, cell = c.Repeats ? c.CellBeats : held && midiLoop ? midiFromBeats : length;
+            double length = (end - start) / BeatSec, cell = c.Repeats ? c.CellBeats : held && midiLoop ? midiFromBeats
+            : groupMode == ClipEditMode.Loop && moved && midiGroup.TryGetValue(c, out var g) ? g.FromBeats : length;
             var seam = Palette.Pen(Palette.Alpha(color, 0.45));
             for (int pass = Math.Max(0, (int)Math.Floor((HeaderW - x0) / (cell * beatPx))); pass * cell < length - 1e-9; pass++)
             {
@@ -426,13 +428,15 @@ public sealed partial class TimelineView
         cloning = (modifiers & KeyModifiers.Shift) != 0 && !edge;
         if (midiEdge && (modifiers & KeyModifiers.Shift) == 0)
             midiAlong.UnionWith(UseOf(c).Where(o => Math.Abs(o.LengthBeats - c.LengthBeats) < 1e-9));
-        // a boxed clip grabbed by its body carries the other boxed ones; its edge resizes or trims it alone
-        midiCarrying = boxed.Count > 1 && boxed.Contains(c.Id) && !edge;
+        // a boxed clip grabbed by its body carries the other boxed ones; by its edge or its loop, it edits them all
+        bool group = GroupEdits(c.Id);
+        midiCarrying = group && !edge;
         SelectedMidiId = c.Id;
-        if (midiCarrying)
+        if (group)
         {
             SelectOne(i);
-            StartCarry(null);
+            if (midiCarrying) StartCarry(null);
+            else StartGroup(midiLoop ? ClipEditMode.Loop : midiTrimStart ? ClipEditMode.TrimStart : ClipEditMode.TrimEnd, i, null, c);
         }
         else Select(i);
         midiHeld = c;
@@ -506,6 +510,7 @@ public sealed partial class TimelineView
             int over = HitTrack(lastPointer.Y);
             if (over >= 0 && over < tracks.Count && tracks[over].Track.IsMidi) midiOver = over;
         }
+        DragGroup();
     }
 
     /// <summary>The cursor over a MIDI lane: the edge resizes, a clip moves.</summary>

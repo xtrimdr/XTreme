@@ -18,6 +18,10 @@ public sealed class FxIcon : Control
     public const string Clean = "clean", Bands = "bands", Color = "color", Tape = "tape", WidthFx = "width", ClipFx = "softclip", Limit = "limiter";
     /// <summary>The modulation effects, by their slot kinds.</summary>
     public const string Chorus = "chorus", Flanger = "flanger", Phaser = "phaser", Tremolo = "tremolo";
+    /// <summary>The pump, by its slot kind.</summary>
+    public const string Pump = "pump";
+    /// <summary>The compressor models, by their slot kinds: each a compressor, so the compressor's gauge.</summary>
+    public const string Fet = "fet", Opto = "opto", BusComp = "buscomp", Vca = "vca", VariMu = "varimu";
     /// <summary>Not an effect: the timeline's Mano tool (its button and pointer), because Segoe has no open hand.</summary>
     public const string Hand = "hand";
     /// <summary>Not an effect: a bus, whatever its slots hold, and the badge of one without an icon of its own.</summary>
@@ -47,6 +51,13 @@ public sealed class FxIcon : Control
         [Flanger] = Geometry.Parse("M2 12q2.5-9 5 0t5 0 5 0 5 0"),
         [Phaser] = Geometry.Parse("M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20 M12 2v20 M2 12h20"),
         [Tremolo] = Geometry.Parse("M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"),
+        // drawn for this grid: the level falling on each beat and coming back up
+        [Pump] = Geometry.Parse("M2 5v14q5 0 7-14v14q5 0 7-14v14q4 0 6-9"),
+        [Fet] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),
+        [Opto] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),
+        [BusComp] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),
+        [Vca] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),
+        [VariMu] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),
         // lucide "plug": a VST3 effect, whatever it does
         [Vst] = Geometry.Parse("M12 22v-5 M9 8V2 M15 8V2 M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"),
         // lucide "music": a note for the track's pitch (Transponer)

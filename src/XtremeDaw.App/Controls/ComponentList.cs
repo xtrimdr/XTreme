@@ -64,7 +64,7 @@ public sealed class ComponentList : StackPanel
         }
         if (active)
         {
-            var stop = new Button { Classes = { "btn" }, Content = Loc.T("transport.count.cancel") };
+            var stop = new Button { Classes = { "btn" }, Content = Loc.T("common.cancel") };
             stop.Click += (_, _) => ComponentInstall.Cancel();
             buttons.Children.Add(stop);
         }

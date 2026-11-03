@@ -14,7 +14,7 @@ namespace XtremeDaw.App.Controls;
 public sealed partial class TimelineView
 {
     /// <summary>The amber of the mute and the meters' −6 to 0 dB: "careful", not the red of recording.</summary>
-    static readonly Color Over = Color.Parse("#f59e0b");
+    static Color Over => Palette.MuteColor;
     static readonly ImmutableDashStyle MarkDash = new([4, 3], 0);
     IPen? markPen, overPen;
     Color markPenColor;
@@ -73,7 +73,7 @@ public sealed partial class TimelineView
                 if (x > W) break;
                 ctx.DrawLine(over ? overPen! : markPen!, new Point(x, RulerH), new Point(x, Bounds.Height));
                 // the name sits left of the line, over what fits; with close pieces, without the networks, or left out
-                var brush = over ? Palette.Brush("#f59e0b") : Palette.Dim;
+                var brush = over ? Palette.Mute : Palette.Dim;
                 var label = Palette.Text(SocialLabel(s, s.Repeats ? 2 * (k - 1) : over ? 1 : 0), 11, brush, Palette.Ui);
                 if (s.Repeats && s.Sec * pps < label.Width + 18)
                     label = Palette.Text(SocialLabel(s, 2 * (k - 1) + 1), 11, brush, Palette.Ui);

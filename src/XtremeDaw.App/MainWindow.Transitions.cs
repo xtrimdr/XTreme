@@ -157,7 +157,7 @@ public partial class MainWindow
             var outgoing = track.Clips.FirstOrDefault(x => x.Clip == from);
             if (incoming == null || outgoing == null || incoming.Offline || outgoing.Offline || !track.OffersTransition(outgoing, incoming, !AudioOnly)) continue;
             string kind = join is { Kind: TransitionKind.Crossfade } ? Loc.T("trans.crossfade") : join != null ? Loc.T("trans.dip") : Loc.T("trans.cut");
-            yield return MenuAction(Loc.T(to == clip.Clip ? "menu.transitionIn" : "menu.transitionOut") + "…",
+            yield return MenuAction(Loc.T(to == clip.Clip ? "menu.transitionIn" : "menu.transitionOut"),
                 () => { ShowTransitionMenu(track, incoming, point); return Task.CompletedTask; }, kind, !store.ReadOnly);
         }
     }

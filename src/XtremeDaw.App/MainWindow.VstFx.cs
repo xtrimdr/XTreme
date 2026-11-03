@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -354,7 +355,7 @@ public partial class MainWindow
 
     /// <summary>
     /// The VST3 side of "+ Efecto": one entry that opens as the pointer goes over it, with the effects not hidden in
-    /// Configuración → Plugins (by maker when there are many, each maker opening the same way); then look again and
+    /// Configuración → Plugins, grouped as it says there (<see cref="AddPluginItems"/>); then look again and
     /// manage them.
     /// </summary>
     List<object> VstEffectItems(SlotOwner o)
@@ -375,14 +376,9 @@ public partial class MainWindow
             item.Click += (_, _) => SlotsEdit(o, x => ChannelInserts.AddVst(x, plugin), "add");
             return item;
         }
-        var plugins = new List<object>();
+        var plugins = new AvaloniaList<object>();
         var found = PluginScan.Visible.Where(p => !p.IsInstrument).ToList();
-        if (found.Count == 0) plugins.Add(new MenuItem { IsEnabled = false, Header = new TextBlock { Text = Loc.T("vst.fx.none"), FontSize = 11 } });
-        else if (found.Count < ByVendorFrom)
-            foreach (var p in found) plugins.Add(Pick(p, MenuName(p, p.Vendor.Length > 0 ? $"{p.Name} · {p.Vendor}" : p.Name)));
-        else
-            foreach (var maker in found.GroupBy(p => p.Vendor.Length > 0 ? p.Vendor : Loc.T("vst.group.noVendor")).OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
-                plugins.Add(new MenuItem { Header = new TextBlock { Text = $"{maker.Key} ({maker.Count()})", FontSize = 12 }, ItemsSource = maker.Select(p => Pick(p, MenuName(p, p.Name))).ToList() });
+        AddPluginItems(plugins, found, Pick, none: "vst.fx.none");
         var items = new List<object> { AddSlotGroup(found.Count > 0 ? $"{Loc.T("vst.group.vst")} ({found.Count})" : Loc.T("vst.group.vst"), FxIcon.Vst, plugins) };
         items.Add(new Separator());
         items.Add(MenuAction(Loc.T(found.Count == 0 ? "vst.scan.first" : "vst.scan"), ScanPlugins, enabled: !PluginScan.Running, tip: Loc.T("vst.scan.tip")));
@@ -391,7 +387,7 @@ public partial class MainWindow
     }
 
     /// <summary>A group of "+ Efecto" (Nativos, VST3): its icon and name, and its effects in a submenu that opens on hover.</summary>
-    static MenuItem AddSlotGroup(string name, string icon, List<object> items)
+    static MenuItem AddSlotGroup(string name, string icon, IEnumerable<object> items)
     {
         var lead = FxIcon.Create(icon, 12);
         lead.VerticalAlignment = VerticalAlignment.Center;

@@ -55,6 +55,7 @@ public partial class MainWindow
             Timeline.UpdateTracks(tracks, store!.Project.Folders);
         };
         Timeline.AutomationContextRequested += ShowLaneMenu;
+        Timeline.AutomationShapeRequested += ShowShapeMenu;
         Timeline.AutomationAsked += (t, target, point) =>
         {
             var list = new List<object> { AutomateItem(t, target) };
@@ -94,10 +95,13 @@ public partial class MainWindow
             return slots.Find(s => s.Id == v.Slot) is { } slot ? $"{slot.Vst?.Plugin.Name} · {l.Name}" : Loc.T("auto.gone");
         if (AutoTarget.InstrumentOf(target) != null) return $"{t.Track.Instrument?.Name ?? Loc.T("auto.gone")} · {l.Name}";
         if (AutoTarget.SamplerOf(target) is { } knob) return t.Track.Sampler != null ? $"{Loc.T("sampler.name")} · {SamplerKnobName(knob)}" : Loc.T("auto.gone");
+        if (AutoTarget.GranularOf(target) is { } grain) return t.Track.Granular != null ? $"{Loc.T("granular.name")} · {GranularKnobName(grain)}" : Loc.T("auto.gone");
         return Automations.FxParamOf(slots, target) is { } f ? $"{SlotName(slots, f.Slot)} · {ParamName(f.Param)}" : Loc.T("auto.gone");
     }
 
     static string SamplerKnobName(SamplerKnob knob) => Loc.T("auto.sampler." + SamplerKnobs.Ids[(int)knob]);
+
+    static string GranularKnobName(GranularKnob knob) => Loc.T("auto.granular." + GranularKnobs.Ids[(int)knob]);
 
     static string ParamName(FxParam p) =>
         p.Id is ['b', var b, '.', ..] ? Loc.T("auto.eq.band", b - '0' + 1) + " " + Loc.T(p.Label) : Loc.T(p.Label);
@@ -120,6 +124,7 @@ public partial class MainWindow
         if (l.Target == AutoTarget.Pan) return ValueFormat.PanShort(k * 2 - 1);
         if (l.Target == AutoTarget.Mute) return Loc.T(k >= 0.5 ? "auto.mute.on" : "auto.mute.off");
         if (AutoTarget.SamplerOf(l.Target) is { } knob) return SamplerWindow.KnobText(knob, SamplerKnobs.Value(knob, k));
+        if (AutoTarget.GranularOf(l.Target) is { } grain) return GranularWindow.KnobText(grain, GranularKnobs.Value(grain, k));
         if (Automations.FxParamOf(t.Channel.Slots, l.Target) is { } f)
             return f.Param.Toggle ? Loc.T(k >= 0.5 ? "auto.fx.onValue" : "auto.fx.offValue") : FxText(f.Param, f.Param.FromKnob(k));
         return $"{k * 100:0}%";
@@ -169,6 +174,11 @@ public partial class MainWindow
             items.Add(new Separator());
             items.Add(new MenuItem { Header = Loc.T("sampler.name"), ItemsSource = Enum.GetValues<SamplerKnob>().Select(k => (object)AutomateItem(t, AutoTarget.Sampler(k), SamplerKnobName(k))).ToList() });
         }
+        if (t.Track.Granular != null)
+        {
+            items.Add(new Separator());
+            items.Add(new MenuItem { Header = Loc.T("granular.name"), ItemsSource = Enum.GetValues<GranularKnob>().Select(k => (object)AutomateItem(t, AutoTarget.Granular(k), GranularKnobName(k))).ToList() });
+        }
         return items;
     }
 
@@ -180,7 +190,7 @@ public partial class MainWindow
         var items = new List<object>();
         if (bridge.Touched is { } id && pluginParams.TryGetValue(bridge, out var known) && known.FirstOrDefault(p => p.Id == id) is { } touched)
             items.Add(MenuAction(Loc.T("auto.plugin.touched", touched.Title), () => Automate(t, target(id), touched.Title, touched.Value)));
-        items.Add(MenuAction(Loc.T("auto.plugin.pick") + "…", () =>
+        items.Add(MenuAction(Loc.T("auto.plugin.pick"), () =>
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = PickPluginParam(t, bridge, target));
             return Task.CompletedTask;
@@ -252,7 +262,7 @@ public partial class MainWindow
             foreach (int n in new[] { 2, 3, 4, 8, 16 })
                 repeats.Add(MenuAction(Loc.T("auto.block.times", n), () => LaneEdit(t, id, l => Automations.Repeat(l, blockId, n)), enabled: enabled));
             repeats.Add(new Separator());
-            repeats.Add(MenuAction(Loc.T("auto.block.timesOther") + "…", () =>
+            repeats.Add(MenuAction(Loc.T("auto.block.timesOther"), () =>
             {
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => AskRepeat(t, id, blockId));
                 return Task.CompletedTask;
@@ -264,20 +274,27 @@ public partial class MainWindow
             {
                 if (Automations.BlockById(l, blockId) is { } b) b.Points = [new AutomationPoint { Sec = 0, Value = b.PositionAt(sec - b.AtSec, stepped) }];
             }), enabled: enabled, tip: Loc.T("auto.flat.tip")));
-            list.Add(MenuAction(Loc.T("auto.block.remove"), () => LaneEdit(t, id, l => l.Blocks.RemoveAll(b => b.Id == blockId)), "Supr", enabled, danger: true));
         }
         else list.Add(MenuAction(Loc.T("auto.block.new"), () => LaneEdit(t, id, l => Automations.AddBlock(l, sec, BarSec, Automations.PositionAt(l, stepped, sec))), enabled: enabled, tip: Loc.T("auto.block.new.tip")));
         list.Add(MenuAction(Loc.T("auto.block.paste"), () => PasteBlock(t, id, sec), Shortcuts.Label("paste"), enabled && blockClipboard != null));
         list.Add(new Separator());
-        list.Add(MenuAction(Loc.T(lane.On ? "auto.off" : "auto.on"), () => LaneEdit(t, id, l => l.On = !l.On), enabled: enabled));
+        // looked up by id at each click: a right click keeps the menu open while the lane changes
+        string trackId = t.Track.Id;
+        bool LaneOn() => store?.Project.Tracks.Find(x => x.Id == trackId) is { } tr && Automations.ById(tr, id)?.On == true;
+        list.Add(MenuCheck(Loc.T("auto.active"), LaneOn, () => _ = LaneEdit(t, id, l => l.On = !l.On), [], tip: Loc.T("auto.active.tip"), enabled: enabled));
         list.Add(MenuAction(Loc.T("auto.hide"), () => LaneEdit(t, id, l => l.Hidden = true), enabled: enabled, tip: Loc.T("auto.hide.tip")));
-        if (lane.Blocks.Exists(b => b.Points.Exists(p => p.Curve != 0)))
+        if (lane.Blocks.Exists(b => b.Points.Exists(p => p.Shape != AutoShape.Curve || p.Tension != 0)))
             list.Add(MenuAction(Loc.T("auto.straight"), () => LaneEdit(t, id, l =>
             {
                 foreach (var b in l.Blocks)
-                    foreach (var p in b.Points) p.Curve = 0;
+                    foreach (var p in b.Points) (p.Shape, p.Tension) = (AutoShape.Curve, 0);
             }), enabled: enabled, tip: Loc.T("auto.straight.tip")));
         list.Add(new Separator());
+        if (block != null)
+        {
+            string blockId = block.Id;
+            list.Add(MenuAction(Loc.T("auto.block.remove"), () => LaneEdit(t, id, l => l.Blocks.RemoveAll(b => b.Id == blockId)), Shortcuts.First("delete"), enabled, danger: true));
+        }
         list.Add(MenuAction(Loc.T("auto.remove"), () => EditTimeline(p =>
         {
             if (p.Tracks.Find(x => x.Id == t.Track.Id) is { } x2) Automations.Remove(x2, id);
@@ -285,6 +302,85 @@ public partial class MainWindow
         }, null), enabled: enabled, danger: true));
         OpenTimelineMenu(Popup(list, 240), at, MenuHeight(list));
     }
+
+    /// <summary>
+    /// A stretch's menu, from a right click on a point or on the stretch: only its shape (asked by the user, like FL
+    /// Studio), each with how it looks; a right click on a shape tries it and leaves the menu open. Picking another shape
+    /// starts it at tension 0 (the steps and cycles of one are not the bend of another).
+    /// </summary>
+    void ShowShapeMenu(LiveTrack t, AutomationLane lane, AutomationBlock block, int stretch, bool onPoint, Point at)
+    {
+        if (store == null || restoring) return;
+        bool enabled = !store.ReadOnly;
+        string trackId = t.Track.Id, id = lane.Id, blockId = block.Id;
+        // looked up at each click: the menu can stay open while the stretch changes
+        AutomationPoint? Now() => store?.Project.Tracks.Find(x => x.Id == trackId) is { } tr && Automations.ById(tr, id) is { } l
+            && Automations.BlockById(l, blockId) is { } b && stretch + 1 < b.Points.Count ? b.Points[stretch] : null;
+        Task Edit(Action<AutomationBlock, AutomationPoint> change) => LaneEdit(t, id, l =>
+        {
+            if (Automations.BlockById(l, blockId) is { } b && stretch + 1 < b.Points.Count) change(b, b.Points[stretch]);
+        });
+        var list = new List<object> { new MenuItem { Header = Loc.T(onPoint ? "auto.shape.point" : "auto.shape.stretch"), IsEnabled = false, FontSize = 11 } };
+        var refresh = new List<Action>();
+        foreach (var shape in Enum.GetValues<AutoShape>())
+            list.Add(ShapeItem(shape, () => Now()?.Shape == shape, () => _ = Edit((_, p) =>
+            {
+                if (p.Shape != shape) (p.Shape, p.Tension) = (shape, 0);
+            }), refresh, enabled));
+        list.Add(new Separator());
+        list.Add(MenuAction(Loc.T("auto.tension.reset"), () => Edit((_, p) => p.Tension = 0),
+            enabled: enabled && block.Points[stretch].Tension != 0, tip: Loc.T("auto.tension.reset.tip")));
+        list.Add(MenuAction(Loc.T("auto.shape.block"), () => Edit((b, p) =>
+        {
+            foreach (var x in b.Points) (x.Shape, x.Tension) = (p.Shape, p.Tension);
+        }), enabled: enabled && block.Points.Count > 2, tip: Loc.T("auto.shape.block.tip")));
+        OpenTimelineMenu(Popup(list, 220), at, MenuHeight(list));
+    }
+
+    /// <summary>A shape's entry: its check, a drawing of how it goes up, and its name.</summary>
+    static MenuItem ShapeItem(AutoShape shape, Func<bool> isOn, Action apply, List<Action> refresh, bool enabled)
+    {
+        var item = MenuCheck(Loc.T(ShapeKey(shape)), isOn, apply, refresh, enabled: enabled);
+        // MenuAction puts the check and the label in the header's first row: the drawing goes between them
+        var row = (Grid)((Grid)item.Header!).Children[0];
+        row.ColumnDefinitions = new ColumnDefinitions("20,28,*");
+        Grid.SetColumn(row.Children[1], 2);
+        var line = new Avalonia.Controls.Shapes.Polyline
+        {
+            Stroke = Palette.Accent, StrokeThickness = 1.3, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            StrokeJoin = Avalonia.Media.PenLineJoin.Round, Points = ShapeDrawing(shape),
+        };
+        Grid.SetColumn(line, 1);
+        row.Children.Add(line);
+        return item;
+    }
+
+    /// <summary>The menu's drawing of a shape, rising over its box, at a tension that shows it (few steps, a soft bend).</summary>
+    static Avalonia.Collections.AvaloniaList<Point> ShapeDrawing(AutoShape shape)
+    {
+        const double W = 18, H = 11;
+        const int Samples = 72;
+        double tension = shape is AutoShape.Curve or AutoShape.Double ? 0.45 : shape == AutoShape.Stairs ? -0.5 : -1;
+        var pts = new Avalonia.Collections.AvaloniaList<Point>();
+        for (int i = 0; i <= Samples; i++)
+        {
+            double u = i / (double)Samples;
+            pts.Add(new Point(W * u, H * (1 - AutoShapes.Along(shape, Math.Min(u, 0.9999), tension))));
+        }
+        if (shape == AutoShape.Hold) pts.Add(new Point(W, 0));
+        return pts;
+    }
+
+    static string ShapeKey(AutoShape shape) => shape switch
+    {
+        AutoShape.Double => "auto.shape.double",
+        AutoShape.Hold => "auto.shape.hold",
+        AutoShape.Stairs => "auto.shape.stairs",
+        AutoShape.SmoothStairs => "auto.shape.smoothStairs",
+        AutoShape.Pulse => "auto.shape.pulse",
+        AutoShape.Wave => "auto.shape.wave",
+        _ => "auto.shape.curve",
+    };
 
     /// <summary>A copied block: it pastes on any lane, as positions of that lane's control.</summary>
     AutomationBlock? blockClipboard;

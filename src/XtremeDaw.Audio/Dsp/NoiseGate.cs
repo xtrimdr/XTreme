@@ -70,8 +70,12 @@ public sealed class NoiseGate
 
     static double Db(double db) => Math.Pow(10, db / 20);
 
-    public void Process(Span<float> left, Span<float> right)
+    public void Process(Span<float> left, Span<float> right) => Process(left, right, default, default);
+
+    /// <summary>With a key as long as the block (a sidechain) it opens and closes by the key's level instead of the input's.</summary>
+    public void Process(Span<float> left, Span<float> right, ReadOnlySpan<float> keyL, ReadOnlySpan<float> keyR)
     {
+        bool keyed = keyL.Length >= left.Length && keyR.Length >= right.Length;
         var k = c;
         if (!k.On)
         {
@@ -85,7 +89,7 @@ public sealed class NoiseGate
         int n = Math.Min(left.Length, right.Length);
         for (int i = 0; i < n; i++)
         {
-            float x = Math.Max(Math.Abs(left[i]), Math.Abs(right[i]));
+            float x = keyed ? Math.Max(Math.Abs(keyL[i]), Math.Abs(keyR[i])) : Math.Max(Math.Abs(left[i]), Math.Abs(right[i]));
             e = x > e ? x : e * k.Fall;
             if (e >= k.OpenLin)
             {

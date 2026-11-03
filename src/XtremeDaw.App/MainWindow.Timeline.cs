@@ -220,9 +220,10 @@ public partial class MainWindow
             if (volume is { } v) t.Channel.Volume = v;
             if (pan is { } p) t.Channel.Pan = p;
         }, volume != null ? "volume" : "pan");
-        // the header's knobs are the user's pick (Configuración → Vista)
+        // the header's knobs are the user's pick (Configuración → Apariencia)
         Timeline.SetKnobs(TrackKnobs.Visible);
         TrackKnobs.Changed += () => Timeline.SetKnobs(TrackKnobs.Visible);
+        KnobLooks.Changed += Timeline.InvalidateVisual;
         // a knob per send the track shows (the buses it has, ProjectBuses.Shown)
         Timeline.SendKnobs = SendKnobsOf;
         Timeline.SendState = (t, busId) =>
@@ -303,6 +304,27 @@ public partial class MainWindow
             // the moved clips stay selected together
             Timeline.BoxClips(ids);
         };
+        Timeline.ClipsEdited += async (clips, loops, midi) =>
+        {
+            var ids = Timeline.BoxedClipIds.ToList();
+            var lengths = LiveLengths();
+            await EditTimeline(p =>
+            {
+                foreach (var c in clips) ClipEditing.Replace(p, c);
+                foreach (var (source, end) in loops) ClipLoops.LoopTo(p, source, end, lengths(ClipEditing.Find(p, source).Clip));
+                foreach (var m in midi)
+                {
+                    if (m.Kind == TimelineView.MidiEditKind.Trim) MidiEditing.TrimStart(p, m.Id, m.AtSec);
+                    else if (m.Kind == TimelineView.MidiEditKind.Loop) MidiEditing.Loop(p, m.Id, m.Beats);
+                    else MidiEditing.Place(p, m.Id, m.AtSec, m.Beats);
+                }
+                if (clips.Count > 0) return ClipEditing.Find(p, clips[0].Id).Track.Id;
+                if (loops.Count > 0) return ClipEditing.Find(p, loops[0].Source).Track.Id;
+                return MidiEditing.Find(p, midi[0].Id).Track.Id;
+            }, "clips-edited", clips.Count > 0 ? clips[0].Id : loops.Count > 0 ? loops[0].Source : null);
+            // the edited clips stay selected together
+            Timeline.BoxClips(ids);
+        };
         Timeline.TrackMoveRequested += async (ids, at, folder) =>
         {
             string keep = sel != null && ids.Contains(sel.Track.Id) ? sel.Track.Id : ids[0];
@@ -316,7 +338,7 @@ public partial class MainWindow
         };
         InitFolders();
         InitAutomation();
-        Timeline.RemoveTrackRequested += AskRemoveTrack;
+        Timeline.RemoveTrackRequested += (id, at) => AskRemoveTrack(id, at);
         Timeline.NewTrackRequested += ShowNewTrackMenu;
         Timeline.ClipContextRequested += ShowTimelineMenu;
     }
@@ -481,7 +503,11 @@ public partial class MainWindow
                 return trackId;
             }, "clips-removed");
         }
-        if (Timeline.PickedTrackIds is { Count: > 1 } many) return RemoveTracks([.. many]);
+        if (Timeline.PickedTrackIds is { Count: > 1 } many)
+        {
+            AskRemoveTrack(many[0], Timeline.RemoveAskPoint(many[0]));
+            return Task.CompletedTask;
+        }
         if (Timeline.SelectedMidiId is { } midi) return RemoveMidiClip(midi);
         string? clipId = Timeline.SelectedClipId ?? sel.Clips.FirstOrDefault()?.Clip.Id;
         if (clipId != null ? ClipEditing.IsLocked(store.Project, clipId) : ClipEditing.HasLock(sel.Track))
@@ -489,12 +515,12 @@ public partial class MainWindow
             ToastLocked(sel.Track, clipId);
             return Task.CompletedTask;
         }
-        return EditTimeline(p =>
+        if (clipId == null)
         {
-            if (clipId != null) { ClipEditing.RemoveClip(p, clipId); return trackId; }
-            ClipEditing.RemoveTrack(p, trackId);
-            return null;
-        }, clipId != null ? "clip-removed" : "track-removed");
+            AskRemoveTrack(trackId, Timeline.RemoveAskPoint(trackId));
+            return Task.CompletedTask;
+        }
+        return EditTimeline(p => { ClipEditing.RemoveClip(p, clipId); return trackId; }, "clip-removed");
     }
 
     /// <summary>The clip of the selected track under the playhead: the selected one if the playhead is on it, else the one on top.</summary>
@@ -531,7 +557,8 @@ public partial class MainWindow
     }
 
     /// <summary>D, like Studio One: copies the selected clip right after its end and selects the copy. Boxed clips,
-    /// even on several tracks, go as one block after the block's end (<see cref="ClipEditing.DuplicateMany"/>).</summary>
+    /// even on several tracks, go as one block after the block's end (<see cref="ClipEditing.DuplicateMany"/>). With the
+    /// magnet on, the copy goes at the next whole step of it (<see cref="ClipEditing.DuplicateShift"/>).</summary>
     Task DuplicateSelection()
     {
         if (Timeline.BoxedClipIds.Count <= 1 && Timeline.SelectedMidiId is { } midi) return DuplicateMidiClip(midi);
@@ -547,7 +574,7 @@ public partial class MainWindow
         int keep = ids.IndexOf(Timeline.SelectedMidiId ?? Timeline.SelectedClipId ?? "");
         var lengths = LiveLengths();
         List<string> copies = [];
-        await EditTimeline(p => { copies = MidiEditing.DuplicateMany(p, ids, lengths); return trackId; },
+        await EditTimeline(p => { copies = MidiEditing.DuplicateMany(p, ids, lengths, Timeline.SnapSec); return trackId; },
             ids.Count > 1 ? "clips-duplicated" : "clip-duplicated");
         if (copies.Count == 0) return;
         string? kept = keep >= 0 && keep < copies.Count ? copies[keep] : null;
@@ -707,16 +734,19 @@ public partial class MainWindow
 
     void OpenTimelineMenu(ContextMenu menu, Point point, double height)
     {
-        // Keep menus inside the app viewport, as Timeline.tsx does even near the bottom edge.
-        var origin = Timeline.TranslatePoint(default, this) ?? default;
+        // Keep menus inside the app viewport, as Timeline.tsx does even near the bottom edge: the timeline's window,
+        // which may be its own (MainWindow.PanelWindows.cs).
+        Visual window = TopLevel.GetTopLevel(Timeline) ?? this;
+        var origin = Timeline.TranslatePoint(default, window) ?? default;
+        var room = window.Bounds;
         // No height cap: the menu is as tall as its entries (the user didn't want a scrolling menu); it only scrolls
         // if the window itself is shorter.
-        menu.MaxHeight = Bounds.Height - 16;
+        menu.MaxHeight = room.Height - 16;
         menu.Placement = PlacementMode.AnchorAndGravity;
         menu.PlacementAnchor = PopupAnchor.TopLeft;
         menu.PlacementGravity = PopupGravity.BottomRight;
-        menu.HorizontalOffset = Math.Clamp(point.X, 8 - origin.X, Math.Max(8 - origin.X, Bounds.Width - origin.X - menu.Width - 8));
-        menu.VerticalOffset = Math.Clamp(point.Y, 8 - origin.Y, Math.Max(8 - origin.Y, Bounds.Height - origin.Y - Math.Min(menu.MaxHeight, height) - 8));
+        menu.HorizontalOffset = Math.Clamp(point.X, 8 - origin.X, Math.Max(8 - origin.X, room.Width - origin.X - menu.Width - 8));
+        menu.VerticalOffset = Math.Clamp(point.Y, 8 - origin.Y, Math.Max(8 - origin.Y, room.Height - origin.Y - Math.Min(menu.MaxHeight, height) - 8));
         timelineMenu?.Close();
         timelineMenu = menu;
         menuAnchor = null;
@@ -779,6 +809,7 @@ public partial class MainWindow
             list.Add(MenuAction(Loc.T("menu.trackAudio"), () => EditTimeline(p => ClipEditing.AddEmpty(p, false), "track-added"), enabled: enabled, icon: "empty", tip: tip));
         }
         list.Add(MenuAction(Loc.T("menu.trackMidi"), NewMidiTrack, enabled: enabled, icon: "", tip: Loc.T("menu.trackMidi.hint")));
+        list.Add(NewInstrumentTrackMenu(enabled));
         list.Add(MenuAction(Loc.T("menu.folder"), () => NewFolder(), enabled: enabled, icon: "", tip: Loc.T("menu.folder.hint")));
         var presets = PresetSubmenu(enabled);
         ToolTip.SetTip(presets, Loc.T("preset.menu.hint"));
@@ -789,18 +820,21 @@ public partial class MainWindow
         return list;
     }
 
-    /// <summary>The trash can of a track's header asks first, right there: one click took the track with its clips away.</summary>
-    void AskRemoveTrack(string id, Point at)
+    /// <summary>
+    /// Removing a track asks first, right there: from its trash can, its menu and Supr alike (asked by the user). In the
+    /// timeline at <paramref name="at"/>; from the mixer, under <paramref name="anchor"/>.
+    /// </summary>
+    void AskRemoveTrack(string id, Point? at, Control? anchor = null)
     {
         if (store == null || restoring || store.ReadOnly || tracks.FirstOrDefault(t => t.Track.Id == id) is not { } track) return;
         if (TrackGroup(track) is { } group)
         {
-            OpenTimelineMenu(Popup(
+            OpenAsk(Popup(
             [
                 new MenuItem { Header = Loc.T("track.remove.askMany", group.Count), IsEnabled = false, FontSize = 11 },
                 MenuAction(Loc.T("track.remove.yes"), () => RemoveTracks(group), danger: true, tip: Loc.T("track.remove.yes.tip")),
-                MenuAction(Loc.T("track.remove.no"), () => Task.CompletedTask),
-            ], 240), at, 110);
+                MenuAction(Loc.T("common.cancel"), () => Task.CompletedTask),
+            ], 240), at, anchor);
             return;
         }
         if (ClipEditing.HasLock(track.Track))
@@ -813,9 +847,15 @@ public partial class MainWindow
             new MenuItem { Header = Loc.T("track.remove.ask", track.Track.Name), IsEnabled = false, FontSize = 11 },
             MenuAction(Loc.T("track.remove.yes"), () => EditTimeline(p => { ClipEditing.RemoveTrack(p, id); return null; }, "track-removed"),
                 danger: true, tip: Loc.T("track.remove.yes.tip")),
-            MenuAction(Loc.T("track.remove.no"), () => Task.CompletedTask),
+            MenuAction(Loc.T("common.cancel"), () => Task.CompletedTask),
         };
-        OpenTimelineMenu(Popup(list, 240), at, 110);
+        OpenAsk(Popup(list, 240), at, anchor);
+    }
+
+    void OpenAsk(ContextMenu menu, Point? at, Control? anchor)
+    {
+        if (at is { } p || anchor == null) OpenTimelineMenu(menu, at ?? default, 110);
+        else OpenAnchoredMenu(menu, anchor);
     }
 
     /// <summary>The tracks picked together with this one, in order, or null when it is on its own: what acts on a track then acts on them all.</summary>
@@ -852,26 +892,35 @@ public partial class MainWindow
             foreach (var t in those)
                 if (p.Tracks.Find(x => x.Id == t.Track.Id) is { } found) set(found);
         }
+        // looked up by id at each click: a right click keeps the menu open while the tracks change under it
+        var audioIds = audio.Select(t => t.Track.Id).ToList();
+        bool All(IEnumerable<string> ids, Func<Track, bool> state) => store != null && ids.All(id => store.Project.Tracks.Find(x => x.Id == id) is { } x && state(x));
+        async Task SetVideo(bool on)
+        {
+            await EditGroup(p => Each(p, audio, t => t.Video = on), "track-video");
+            await OpenMissingVideos(store!);
+        }
+        var refresh = new List<Action>();
         if (!AudioOnly && audio.Count > 0)
-        {
-            bool shown = audio.All(t => t.Track.Video);
-            list.Add(MenuAction(Loc.T(shown ? "menu.hideVideo.many" : "menu.showVideo.many", audio.Count), async () =>
+            list.Add(MenuCheck(Loc.T("menu.inVideo.many", audio.Count), () => All(audioIds, t => t.Video), () =>
             {
-                await EditGroup(p => Each(p, audio, t => t.Video = !shown), "track-video");
-                await OpenMissingVideos(store!);
-            }, enabled: enabled, icon: ""));
-        }
-        if (audio.Count > 0)
+                bool shown = All(audioIds, t => t.Video);
+                _ = SetVideo(!shown);
+            }, refresh, tip: Loc.T("insp.inVideo.tip"), enabled: enabled));
+        list.Add(MenuCheck(Loc.T("lock.tracks.on", picked.Count), () => All(group, t => t.Locked), () =>
         {
-            bool locked = audio.All(t => t.Track.Locked);
-            list.Add(MenuAction(Loc.T(locked ? "lock.tracks.off" : "lock.tracks.on", audio.Count), () => EditGroup(p => Each(p, audio, t => t.Locked = !locked), locked ? "track-unlocked" : "track-locked"),
-                enabled: enabled, icon: locked ? "" : "", tip: Loc.T("lock.track.tip")));
-            list.Add(new Separator());
-        }
+            bool locked = All(group, t => t.Locked);
+            _ = EditGroup(p => Each(p, picked, t => t.Locked = !locked), locked ? "track-unlocked" : "track-locked");
+        }, refresh, tip: Loc.T("lock.track.tip"), enabled: enabled));
+        list.Add(new Separator());
         list.AddRange(FolderItems(track, enabled));
         list.Add(new Separator());
         int free = picked.Count(t => !ClipEditing.HasLock(t.Track));
-        list.Add(MenuAction(Loc.T("menu.removeTracks", free), () => RemoveTracks(group), "Supr", enabled && free > 0, danger: true,
+        list.Add(MenuAction(Loc.T("menu.removeTracks", free), () =>
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => AskRemoveTrack(track.Track.Id, Timeline.RemoveAskPoint(track.Track.Id)));
+            return Task.CompletedTask;
+        }, Shortcuts.First("delete"), enabled && free > 0, danger: true,
             tip: free < group.Count ? Loc.T("lock.removeMany.tip") : null));
         return list;
     }
@@ -930,7 +979,7 @@ public partial class MainWindow
                 string? right = null;
                 await EditTimeline(p => { right = ClipEditing.Split(p, id, at, clip.LengthSec); return track.Track.Id; }, "clip-split");
                 if (right != null) Timeline.SelectClip(Timeline.Selected, right);
-            }, "Alt+X", enabled && under && free));
+            }, Shortcuts.First("split"), enabled && under && free));
             list.Add(new Separator());
             list.Add(MenuAction(Loc.T("menu.toStart"), () => Command(p => ClipEditing.ToStart(p, id, clip.LengthSec), "clip-moved"), enabled: enabled && free));
             // where clips overlap the last one shows: this is on only when one over it covers part of it
@@ -960,7 +1009,7 @@ public partial class MainWindow
             list.Add(StemsItem(track, clip, enabled));
             list.Add(new Separator());
             list.Add(MenuAction(boxed.Count > 1 ? Loc.T("menu.removeClips", boxed.Count) : Loc.T("menu.removeClip"),
-                () => boxed.Count > 1 ? DeleteTimelineSelection() : Command(p => ClipEditing.RemoveClip(p, id), "clip-removed"), "Supr", enabled && (free || boxed.Count > 1), danger: true));
+                () => boxed.Count > 1 ? DeleteTimelineSelection() : Command(p => ClipEditing.RemoveClip(p, id), "clip-removed"), Shortcuts.First("delete"), enabled && (free || boxed.Count > 1), danger: true));
             list.Add(new MenuItem { IsEnabled = false, Header = new TextBlock
             {
                 Text = Loc.T(track.Clips.Count > 1 ? "menu.clipKept.many" : "menu.clipKept.last"), FontSize = 10.5,
@@ -1026,20 +1075,31 @@ public partial class MainWindow
         list.Add(MenuAction(Loc.T("menu.paste"), PasteClips, Shortcuts.Label("paste"), enabled && clipboard != null, icon: "", tip: Loc.T("menu.paste.tip")));
         if (track.Track.IsMidi) list.Add(InsertPatternItem(track, enabled));
         list.Add(new Separator());
-        list.Add(MenuAction(Loc.T("menu.renameTrack") + "…", () => { rename(); return Task.CompletedTask; }, enabled: enabled, icon: ""));
+        list.Add(MenuAction(Loc.T("menu.renameTrack.more"), () => { rename(); return Task.CompletedTask; }, enabled: enabled, icon: ""));
         if (look) list.Add(MenuAction(Loc.T("look.bus.menu"), () => { ShowTrackLook(track, anchor); return Task.CompletedTask; }, enabled: enabled, icon: "\ue790"));
+        var refresh = new List<Action>();
+        string trackId = track.Track.Id;
+        // looked up by id at each click: a right click keeps the menu open while the track changes under it
+        LiveTrack? Now() => tracks.Find(t => t.Track.Id == trackId);
         if (!AudioOnly && !track.Track.IsMidi)
-            list.Add(MenuAction(track.Track.Video ? Loc.T("menu.hideVideo") : Loc.T("menu.showVideo"), () => SetInVideo(track, !track.Track.Video),
-                enabled: enabled, icon: ""));
-        if (!track.Track.IsMidi) list.Add(TrackLockItem(track, enabled));
+            list.Add(MenuCheck(Loc.T("insp.inVideo"), () => Now()?.Track.Video == true,
+                () => { if (Now() is { } x) _ = SetInVideo(x, !x.Track.Video); }, refresh, tip: Loc.T("insp.inVideo.tip"), enabled: enabled));
+        list.Add(TrackLockItem(trackId, enabled, refresh));
         list.Add(new Separator());
+        if (!track.Track.IsMidi)
+            // its own menu, opened where this one was (it stays open to try one input after the other)
+            list.Add(MenuAction(Loc.T("rec.input.menu", InputLabel(track.Track)), () =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowInputMenu(track, anchor, point));
+                return Task.CompletedTask;
+            }, enabled: enabled && !RecordingBusy, icon: ""));
         if (track.Track.IsMidi)
             list.Add(new MenuItem { Header = MenuHeader(Loc.T("vst.menu", InstrumentName(track.Track)), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }),
                 ItemsSource = InstrumentItems(track, enabled) });
         if (track.Track.IsMidi)
         {
             // its own menu, opened where this one was (it stays open to try one input after the other)
-            list.Add(MenuAction(Loc.T("midi.in.menu", MidiInputLabel(track.Track)) + "…", () =>
+            list.Add(MenuAction(Loc.T("midi.in.menu", MidiInputLabel(track.Track)), () =>
             {
                 Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowMidiInputMenu(track, anchor, point));
                 return Task.CompletedTask;
@@ -1056,11 +1116,17 @@ public partial class MainWindow
         list.AddRange(FolderItems(track, enabled));
         list.Add(MenuAction(Loc.T("separator.addAbove"), () => NewSeparatorAbove(track), enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")));
         list.Add(new Separator());
-        list.Add(MenuAction(Loc.T("preset.save") + "…", () => { SavePreset(track, anchor, point); return Task.CompletedTask; }, enabled: true, icon: "", tip: Loc.T("preset.save.tip")));
-        if (!track.Track.IsMidi) list.Add(ApplyPresetSubmenu(track, enabled));
+        list.Add(MenuAction(Loc.T("preset.save.more"), () => { SavePreset(track, anchor, point); return Task.CompletedTask; }, enabled: true, icon: "", tip: Loc.T("preset.save.tip")));
+        list.Add(ApplyPresetSubmenu(track, enabled));
         list.Add(new Separator());
-        list.Add(MenuAction(Loc.T("menu.removeTrack"), () => EditTimeline(p => { ClipEditing.RemoveTrack(p, track.Track.Id); return null; }, "track-removed"),
-            "Supr", enabled && !ClipEditing.HasLock(track.Track), danger: true, tip: ClipEditing.HasLock(track.Track) ? Loc.T("lock.remove.tip") : null));
+        string removeId = track.Track.Id;
+        list.Add(MenuAction(Loc.T("menu.removeTrack"), () =>
+        {
+            // the menu closes first: the question opens in its place
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => AskRemoveTrack(removeId, point, point == null ? anchor : null));
+            return Task.CompletedTask;
+        },
+            Shortcuts.First("delete"), enabled && !ClipEditing.HasLock(track.Track), danger: true, tip: ClipEditing.HasLock(track.Track) ? Loc.T("lock.remove.tip") : null));
         return list;
     }
 
@@ -1089,7 +1155,7 @@ public partial class MainWindow
             }));
         }
         if (items.Count > 0) items.Add(new Separator());
-        items.Add(MenuAction(Loc.T("mix.slot.add") + "…", () =>
+        items.Add(MenuAction(Loc.T("mix.slot.add.more"), () =>
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowAddSlotMenu(o, anchor));
             return Task.CompletedTask;

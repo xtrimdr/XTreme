@@ -37,7 +37,9 @@ public sealed class PlaybackEngine : IDisposable
     /// <summary>The buses the nodes were last built from, so a tempo change can update their delays.</summary>
     IReadOnlyList<Bus>? busList;
     readonly float[] rampGain = new float[TrackDspChain.MaxBlockSize];
-    readonly MixGraphBus buses = new(SampleRate);
+    readonly MixGraphBus buses = new(SampleRate) { Slots = { Keys = LiveKeys.For } };
+    /// <summary>The order the tracks run in each block: a sidechain's source before the tracks that listen to it (empty = the list's).</summary>
+    volatile int[] trackOrder = [];
     readonly InputProcessor inputProcessor = new();
     readonly float[] inProcL = new float[TrackDspChain.MaxBlockSize];
     readonly float[] inProcR = new float[TrackDspChain.MaxBlockSize];
@@ -66,6 +68,8 @@ public sealed class PlaybackEngine : IDisposable
     long midiLatencyFrames;
     /// <summary>How late the whole mix is heard because of the VST3 effects (<see cref="UpdateLatency"/>), in frames.</summary>
     volatile int pdcFrames;
+    /// <summary>How late the mix reaches the master's slots (the PDC before them), for a slot on the beat.</summary>
+    volatile int masterArrive;
     /// <summary>The PDC the take was placed with: the take is moved back by it, and the mix stays that late until it ends (<see cref="VstInsert.Steady"/>).</summary>
     int recPdcFrames;
     /// <summary>What the master is putting out now, after the PDC (<see cref="HeardSec"/>).</summary>
@@ -419,7 +423,7 @@ public sealed class PlaybackEngine : IDisposable
         for (int i = 0; i < next.Length; i++)
         {
             known[i] = nodeById.TryGetValue(ids[i], out var node);
-            node ??= new BusDspChain(SampleRate);
+            node ??= new BusDspChain(SampleRate) { Keys = LiveKeys.For };
             // a new node isn't on the audio thread yet: it starts with its slots, no fade
             if (p.Settings.Buses.Find(b => b.Id == ids[i]) is { } bus)
             {
@@ -496,6 +500,7 @@ public sealed class PlaybackEngine : IDisposable
         foreach (var t in list)
         {
             h.Add(t.Chain.LatencySamples);
+            h.Add(t.Chain.KeyIds);
             h.Add(t.Out);
             h.Add(t.Chain.Sends);
         }
@@ -512,6 +517,8 @@ public sealed class PlaybackEngine : IDisposable
         int key = h.ToHashCode();
         if (key == latencyKey) return;
         latencyKey = key;
+        var ids = list.Select(t => t.Track.Id).ToList();
+        trackOrder = [.. Sidechains.Levels(list.Length, k => list[k].Chain.KeyIds.Select(id => ids.IndexOf(id))).SelectMany(g => g)];
         int Index(BusDspChain? b) => b == null ? -1 : Array.IndexOf(ns, b);
         var plan = MixLatency.Compute(
             [.. list.Select(t => new MixLatency.Source(t.Chain.LatencySamples, Index(t.Out), [.. t.Chain.Sends.Select(s => Index(s.To))]))],
@@ -525,9 +532,11 @@ public sealed class PlaybackEngine : IDisposable
         for (int j = 0; j < ns.Length; j++)
         {
             ns[j].OutDelay.Set(plan.NodeOut[j]);
+            ns[j].InputLatency = plan.NodeArrive[j];
             var sends = ns[j].Sends;
             for (int i = 0; i < sends.Length; i++) sends[i].Delay.Set(plan.NodeSends[j][i]);
         }
+        masterArrive = plan.Master;
         pdcFrames = plan.Master + buses.Slots.LatencySamples;
     }
 
@@ -544,7 +553,9 @@ public sealed class PlaybackEngine : IDisposable
     {
         playing = false;
         var arr = list.ToArray();
+        trackOrder = [];
         tracks = arr;
+        LiveKeys.Attach(arr);
         if (settings != null) SetSettings(settings, glideDelay: false);
         Interlocked.Exchange(ref pendingTrackReset, 1);
         double maxEnd = 0;
@@ -1038,6 +1049,10 @@ public sealed class PlaybackEngine : IDisposable
         ml.Clear();
         mr.Clear();
         for (int i = 0; i < curNodes.Length; i++) curNodes[i].Begin(n);
+        // a source that doesn't play this block leaves silence in its key, never the last block
+        var keyList = LiveKeys.All;
+        for (int i = 0; i < keyList.Length; i++) keyList[i].Begin(0, n);
+        var order = trackOrder;
 
         var preview = Interlocked.Exchange(ref previewClick, null);
         if (preview != null)
@@ -1106,8 +1121,8 @@ public sealed class PlaybackEngine : IDisposable
                 bool splice = !xf && !isRec && loop && LoopSplice.Weights(trackPos, playCount, lapStart, lapEnd, xfIn, xfOut);
                 long second = xf ? xfFrom : splice ? trackPos - (lapEnd - lapStart) : LiveTrack.NoSecondRead;
                 int turnAt = splice && trackPos + playCount >= lapEnd ? (int)(lapEnd - trackPos) : -1;
-                for (int i = 0; i < list.Length; i++)
-                    list[i].MixInto(trackPos, playCount, anySolo, subMl, subMr, playOffset, second, xfIn.AsSpan(0, playCount), xfOut.AsSpan(0, playCount), turnAt, lapStart, loop && !isRec ? lapEnd : 0);
+                for (int j = 0; j < list.Length; j++)
+                    list[order.Length == list.Length ? order[j] : j].MixInto(trackPos, playCount, anySolo, subMl, subMr, playOffset, second, xfIn.AsSpan(0, playCount), xfOut.AsSpan(0, playCount), turnAt, lapStart, loop && !isRec ? lapEnd : 0);
                 if (xf)
                 {
                     xfFrom += playCount;
@@ -1132,13 +1147,22 @@ public sealed class PlaybackEngine : IDisposable
                 var list = tracks;
                 bool anySolo = false;
                 for (int i = 0; i < list.Length; i++) if (list[i].Soloed) { anySolo = true; break; }
-                for (int i = 0; i < list.Length; i++) if (list[i].RunsIdle) list[i].MixIdle(n, anySolo, ml, mr);
+                for (int j = 0; j < list.Length; j++)
+                {
+                    var t = list[order.Length == list.Length ? order[j] : j];
+                    if (t.RunsIdle) t.MixIdle(n, anySolo, ml, mr);
+                }
             }
             tracksDone = Stopwatch.GetTimestamp();
 
             if (fadeMode != 0) TransportRamp(ref fadeLevel, fadeMode > 0, rampStep, n, rampGain, ml, mr, curNodes);
             // the folders and buses in order, each into the next node or the master (the export runs the same order)
-            for (int i = 0; i < curNodes.Length; i++) curNodes[i].End(n, ml, mr);
+            for (int i = 0; i < curNodes.Length; i++)
+            {
+                curNodes[i].Frame = pos - curNodes[i].InputLatency;
+                curNodes[i].End(n, ml, mr);
+            }
+            buses.Slots.Frame = pos - masterArrive;
             buses.Process(ml, mr);
             Loudness.Process(ml, mr);
             TruePeak.Process(ml, mr);
@@ -1199,7 +1223,7 @@ public sealed class PlaybackEngine : IDisposable
                     heard.Start(stopAt);
                     Interlocked.Exchange(ref position, stopAt);
                     var faded = tracks;
-                    for (int i = 0; i < faded.Length; i++) faded[i].Sampler?.FadedOut();
+                    for (int i = 0; i < faded.Length; i++) faded[i].Native?.FadedOut();
                     fadeMode = 0;
                     stopping = false;
                     playing = false;
@@ -1258,7 +1282,11 @@ public sealed class PlaybackEngine : IDisposable
             var idle = tracks;
             bool idleSolo = false;
             for (int i = 0; i < idle.Length; i++) if (idle[i].Soloed) { idleSolo = true; break; }
-            for (int i = 0; i < idle.Length; i++) if (idle[i].RunsIdle) idle[i].MixIdle(n, idleSolo, ml, mr);
+            for (int j = 0; j < idle.Length; j++)
+            {
+                var t = idle[order.Length == idle.Length ? order[j] : j];
+                if (t.RunsIdle) t.MixIdle(n, idleSolo, ml, mr);
+            }
             tracksDone = Stopwatch.GetTimestamp();
             // Transport stopped: keep processing the buses with silent input so reverb and delay tails decay
             // naturally in real time (matching MixBus in the web app).

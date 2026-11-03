@@ -31,7 +31,7 @@ public partial class MainWindow
     DispatcherTimer? tempoClock;
 
     MenuItem DetectTempoItem(LiveClip clip, Point point, bool enabled) =>
-        MenuAction(Loc.T("tempo.detect") + "…", () => DetectTempo(clip, point), enabled: enabled && clip.Audio != null && !RecordingBusy && tempoJob == null,
+        MenuAction(Loc.T("tempo.detect.more"), () => DetectTempo(clip, point), enabled: enabled && clip.Audio != null && !RecordingBusy && tempoJob == null,
             icon: Controls.TimelineView.TempoGlyph,
             tip: Loc.T(clip.Audio == null ? "tempo.detect.offline" : tempoJob != null ? "tempo.detect.busy" : "tempo.detect.tip"));
 

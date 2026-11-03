@@ -49,10 +49,10 @@ public sealed class SystemMeter : StackPanel
         // the number right after its name, a fixed width so the bar doesn't jump between 9% and 10%
         var value = new TextBlock { Classes = { "mono" }, FontSize = 10.5, Width = 26, TextAlignment = TextAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(value);
-        var fill = new Border { CornerRadius = new CornerRadius(3), HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
+        var fill = new Border { CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
         row.Children.Add(new Border
         {
-            Width = BarW, Height = 5, CornerRadius = new CornerRadius(3), Background = Palette.Raised, ClipToBounds = true,
+            Width = BarW, Height = 5, CornerRadius = new CornerRadius(2), Background = Palette.Raised, ClipToBounds = true,
             VerticalAlignment = VerticalAlignment.Center, Child = fill,
         });
         Children.Add(row);
@@ -76,15 +76,15 @@ public sealed class SystemMeter : StackPanel
         if (!IsVisible || TopLevel.GetTopLevel(this) is Window { WindowState: WindowState.Minimized }) return;
         var s = stats.Read();
         double ramPct = s.RamTotal > 0 ? s.RamUsed * 100.0 / s.RamTotal : 0;
-        Show(cpu, s.Cpu, $"Procesador: {Math.Round(s.Cpu):0}% ({s.Cores} hilos)");
+        Show(cpu, s.Cpu, Loc.T("sys.cpu", Math.Round(s.Cpu), s.Cores));
         if (s.Gpu is { } g)
         {
-            string tip = $"{(g.Name.Length > 0 ? g.Name : "Placa de video")}: {Math.Round(g.Load):0}%";
-            if (g.VramTotal > 0) tip += $"\nMemoria de video: {Gb(g.VramUsed)} / {Gb(g.VramTotal)} GB ({Math.Round(g.VramUsed * 100.0 / g.VramTotal):0}%)";
+            string tip = Loc.T("sys.gpu", g.Name.Length > 0 ? g.Name : Loc.T("sys.gpu.name"), Math.Round(g.Load));
+            if (g.VramTotal > 0) tip += "\n" + Loc.T("sys.vram", Gb(g.VramUsed), Gb(g.VramTotal), Math.Round(g.VramUsed * 100.0 / g.VramTotal));
             Show(gpu, g.Load, tip);
         }
-        else Show(gpu, null, "Midiendo la placa de video…");
-        Show(ram, ramPct, $"Memoria: {Gb(s.RamUsed)} / {Gb(s.RamTotal)} GB ({Math.Round(ramPct):0}%)");
+        else Show(gpu, null, Loc.T("sys.gpu.measuring"));
+        Show(ram, ramPct, Loc.T("sys.ram", Gb(s.RamUsed), Gb(s.RamTotal), Math.Round(ramPct)));
         Opacity = 1;
     }
 }

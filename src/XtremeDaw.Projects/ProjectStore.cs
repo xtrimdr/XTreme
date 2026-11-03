@@ -695,7 +695,7 @@ public sealed class ProjectStore : IDisposable
             }
             track.Clips.Add(new Clip { MediaId = m.Id, AtSec = j.AtSec, Framing = new Framing { Mirror = j.Mirror && video != null } });
             Project.AddLog("recording-recovered", j.Name);
-            Notices.Add(Texts.T("store.recovered", "Grabación interrumpida recuperada: \"{0}\" ({1:0.0} s)", j.Name, info.DurationSec));
+            Notices.Add(Texts.T("store.recovered", "Grabación interrumpida recuperada: «{0}» ({1:0.0} s)", j.Name, info.DurationSec));
             done.Add(jf);
         }
         return done;
@@ -796,7 +796,7 @@ public sealed class ProjectStore : IDisposable
             }
             var clip = MidiEditing.AddRecorded(Project, track.Id, j.StartSec, endSec, played, j.GridBeats, id)!;
             Project.AddLog("recording-recovered", track.Name);
-            Notices.Add(Texts.T("store.recoveredMidi", "Grabación MIDI interrumpida recuperada: \"{0}\" ({1} notas)", track.Name, clip.Notes.Count));
+            Notices.Add(Texts.T("store.recoveredMidi", "Grabación MIDI interrumpida recuperada: «{0}» ({1} notas)", track.Name, clip.Notes.Count));
             done.Add(MidiNotesPath(id));
             done.Add(jf);
         }

@@ -3,14 +3,14 @@
              xmlns:loc="using:XtremeDaw.App"
              x:Class="XtremeDaw.App.Dialogs.StemsDialog"
              AutomationProperties.Name="{loc:T stems.title}"
-             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+             Background="{StaticResource Scrim}" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
 
   <!-- same frame as UnsavedDialog: how many stems and how good, before a job that can take minutes -->
   <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center"
           Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
     <StackPanel Margin="24,22,24,20" Spacing="14">
       <StackPanel Spacing="2">
-        <TextBlock Text="{loc:T stems.title}" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock Classes="dialog-title" Text="{loc:T stems.title}" />
         <TextBlock x:Name="ClipName" Classes="dim" TextTrimming="CharacterEllipsis" />
       </StackPanel>
       <StackPanel Spacing="6">
@@ -36,7 +36,7 @@
         <TextBlock x:Name="Estimate" Classes="dim mono" />
       </StackPanel>
       <Grid ColumnDefinitions="*,Auto,Auto">
-        <Button Grid.Column="1" x:Name="CancelButton" Classes="btn" Margin="8,0,0,0" Content="{loc:T transport.count.cancel}" />
+        <Button Grid.Column="1" x:Name="CancelButton" Classes="btn" Margin="8,0,0,0" Content="{loc:T common.cancel}" />
         <Button Grid.Column="2" x:Name="SeparateButton" Classes="btn primary" Margin="8,0,0,0" Padding="16,0" Content="{loc:T stems.go}" />
       </Grid>
     </StackPanel>

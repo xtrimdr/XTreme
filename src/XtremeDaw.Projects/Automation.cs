@@ -10,10 +10,46 @@ public sealed class AutomationPoint
 {
     public double Sec { get; set; }
     public double Value { get; set; }
-    /// <summary>The curve of the stretch from here to the next point, -1..1 (<see cref="AutoCurve.Shape"/>); 0 = straight.</summary>
+    /// <summary>How the stretch from here to the next point goes (<see cref="AutoShapes"/>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault), JsonConverter(typeof(AutoShapeJson))]
+    public AutoShape Shape { get; set; }
+    /// <summary>Its tension, -1..1: a curve's bend (0 = straight), or the steps and cycles of the others.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public double Curve { get; set; }
+    public double Tension { get; set; }
+    /// <summary>The first bends were powers, t^(4^curve): read only (never written), they become the curve through the same middle.</summary>
+    [JsonPropertyName("curve"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double OldCurve { get => 0; set => oldCurve = value; }
+    double oldCurve;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
+    /// <summary>The same point at another time (and value), with its stretch's shape.</summary>
+    public AutomationPoint At(double sec, double? value = null) => new() { Sec = sec, Value = value ?? Value, Shape = Shape, Tension = Tension, Extra = Extra };
+
+    internal void Normalize()
+    {
+        Sec = Math.Max(0, Sec);
+        Value = Math.Clamp(Value, 0, 1);
+        if (oldCurve != 0 && double.IsFinite(oldCurve) && Tension == 0)
+            Tension = AutoShapes.TensionThrough(Math.Pow(0.5, Math.Pow(4, Math.Clamp(oldCurve, -1, 1))));
+        oldCurve = 0;
+        Tension = double.IsFinite(Tension) ? Math.Round(Math.Clamp(Tension, -1, 1), 4) : 0;
+        if (!Enum.IsDefined(Shape)) Shape = AutoShape.Curve;
+    }
+}
+
+/// <summary>A shape by its name in the project ("curve", "double", "hold", "stairs", "smooth-stairs", "pulse", "wave"); one it doesn't know reads as a curve.</summary>
+sealed class AutoShapeJson : JsonConverter<AutoShape>
+{
+    static readonly string[] Names = ["curve", "double", "hold", "stairs", "smooth-stairs", "pulse", "wave"];
+
+    public override AutoShape Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+    {
+        int i = reader.TokenType == JsonTokenType.String ? Array.IndexOf(Names, reader.GetString()) : -1;
+        return i < 0 ? AutoShape.Curve : (AutoShape)i;
+    }
+
+    public override void Write(Utf8JsonWriter writer, AutoShape value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(Names[(int)value < Names.Length ? (int)value : 0]);
 }
 
 /// <summary>
@@ -48,12 +84,7 @@ public sealed class AutomationBlock
         LengthSec = double.IsFinite(LengthSec) ? Math.Max(MinSec, LengthSec) : MinSec;
         Points ??= [];
         Points.RemoveAll(p => p == null || !double.IsFinite(p.Sec) || !double.IsFinite(p.Value));
-        foreach (var p in Points)
-        {
-            p.Sec = Math.Max(0, p.Sec);
-            p.Value = Math.Clamp(p.Value, 0, 1);
-            p.Curve = double.IsFinite(p.Curve) ? Math.Clamp(p.Curve, -1, 1) : 0;
-        }
+        foreach (var p in Points) p.Normalize();
         Points.Sort((a, b) => a.Sec.CompareTo(b.Sec));
         // a loop no longer than the block is no loop
         LoopSec = LoopSec is { } loop && double.IsFinite(loop) && loop >= MinSec && loop < LengthSec - 1e-9 ? loop : null;
@@ -65,7 +96,7 @@ public sealed class AutomationBlock
         AtSec = Math.Max(0, atSec),
         LengthSec = LengthSec,
         LoopSec = LoopSec,
-        Points = [.. Points.Select(p => new AutomationPoint { Sec = p.Sec, Value = p.Value, Curve = p.Curve, Extra = p.Extra })],
+        Points = [.. Points.Select(p => p.At(p.Sec))],
     };
 
     /// <summary>A time inside the block (relative) as a time inside its pass.</summary>
@@ -90,42 +121,87 @@ public sealed class AutomationBlock
             bool last = at + pass >= LengthSec - 1e-9;
             double to = last ? LengthSec - at : pass - Automations.MinGapSec;
             foreach (var p in once.Cut(0, to, stepped).Points)
-                all.Points.Add(new() { Sec = at + p.Sec, Value = p.Value, Curve = p.Curve, Extra = p.Extra });
+                all.Points.Add(p.At(at + p.Sec));
         }
         return all;
     }
 
     /// <summary>
     /// The piece from <paramref name="from"/> to <paramref name="to"/> (relative) as a block of its own, sounding the same:
-    /// a point on each edge, and a bent stretch the edge cuts goes on as short straight lines.
+    /// a point on each edge, and a stretch an edge cuts goes on as the piece of it that is left (<see cref="Write"/>).
     /// </summary>
     public AutomationBlock Cut(double from, double to, bool stepped)
     {
         if (LoopSec != null) return WrittenOut(stepped).Cut(from, to, stepped);
         var piece = new AutomationBlock { AtSec = AtSec + from, LengthSec = Math.Max(MinSec, to - from) };
-        void Add(double sec, double curve = 0) => piece.Points.Add(new() { Sec = sec - from, Value = PositionAt(sec, stepped), Curve = curve });
-        void Between(double a, double b)
+        var into = piece.Points;
+        int first = Points.FindIndex(p => p.Sec > from), end = Points.FindIndex(p => p.Sec >= to);
+        if (first < 0) first = Points.Count;
+        if (end < 0) end = Points.Count;
+        // the stretch running at the start, up to the first point inside or the end
+        if (!stepped && first > 0 && first < Points.Count) Write(into, Points[first - 1], Points[first], from, Math.Min(Points[first].Sec, to), from);
+        else into.Add(new() { Sec = 0, Value = PositionAt(from, stepped) });
+        for (int i = first; i < end; i++)
         {
-            for (int k = 1; k < CutSteps; k++) Add(a + (b - a) * k / CutSteps);
+            var p = Points[i];
+            // the stretch the end cuts goes on as its piece; the others keep their shape
+            if (!stepped && i == end - 1 && end < Points.Count) Write(into, p, Points[end], p.Sec, to, from);
+            else into.Add(p.At(p.Sec - from));
         }
-        var inside = Points.Where(p => p.Sec > from && p.Sec < to).ToList();
-        double first = inside.Count > 0 ? inside[0].Sec : to;
-        Add(from);
-        if (!stepped && Points.FindLast(p => p.Sec <= from) is { Curve: not 0 }) Between(from, first);
-        for (int i = 0; i < inside.Count; i++)
-        {
-            var p = inside[i];
-            bool last = i == inside.Count - 1;
-            // the stretch the end cuts goes as lines; the others keep their curve
-            bool runsOver = last && !stepped && p.Curve != 0 && Points.Exists(x => x.Sec >= to);
-            piece.Points.Add(new() { Sec = p.Sec - from, Value = p.Value, Curve = runsOver ? 0 : p.Curve, Extra = p.Extra });
-            if (runsOver) Between(p.Sec, to);
-        }
-        Add(to);
+        if (into[^1].Sec < to - from - 1e-9) into.Add(new() { Sec = to - from, Value = PositionAt(to, stepped) });
         return piece;
     }
 
+    /// <summary>Lines per half cycle of a smooth shape that is cut (it has no shape of its own for a piece).</summary>
     const int CutSteps = 16;
+
+    /// <summary>
+    /// The stretch from <paramref name="a"/> to <paramref name="b"/> between <paramref name="s0"/> and <paramref name="s1"/>
+    /// (inside it) as points from <paramref name="s0"/> on, sounding the same with a point at <paramref name="s1"/> after
+    /// them: a curve with the tension its piece has, a double curve as its two halves, a stepped shape as holds, and the
+    /// smooth stairs and the wave as short lines. Times go relative to <paramref name="origin"/>.
+    /// </summary>
+    static void Write(List<AutomationPoint> into, AutomationPoint a, AutomationPoint b, double s0, double s1, double origin)
+    {
+        double span = b.Sec - a.Sec;
+        double u0 = span > 0 ? (s0 - a.Sec) / span : 0, u1 = span > 0 ? (s1 - a.Sec) / span : 0, rise = b.Value - a.Value, t = a.Tension;
+        void Put(double u, AutoShape shape, double tension, double along) =>
+            into.Add(new() { Sec = a.Sec + u * span - origin, Value = a.Value + rise * along, Shape = shape, Tension = Math.Clamp(tension, -1, 1) });
+        if (span <= 0 || u1 <= u0)
+        {
+            Put(Math.Max(0, u0), a.Shape, t, AutoShapes.Along(a.Shape, Math.Max(0, u0), t));
+            return;
+        }
+        switch (a.Shape)
+        {
+            case AutoShape.Curve:
+                Put(u0, AutoShape.Curve, t * (u1 - u0), AutoShapes.Exp(u0, t));
+                break;
+            case AutoShape.Double:
+                if (u0 < 0.5) Put(u0, AutoShape.Curve, t * 2 * (Math.Min(u1, 0.5) - u0), AutoShapes.Along(AutoShape.Double, u0, t));
+                if (u1 > 0.5) Put(Math.Max(u0, 0.5), AutoShape.Curve, -t * 2 * (u1 - Math.Max(u0, 0.5)), AutoShapes.Along(AutoShape.Double, Math.Max(u0, 0.5), t));
+                break;
+            case AutoShape.Hold or AutoShape.Stairs or AutoShape.Pulse:
+            {
+                int m = AutoShapes.Pieces(a.Shape, t);
+                Put(u0, AutoShape.Hold, 0, AutoShapes.Along(a.Shape, u0, t));
+                for (int j = (int)Math.Floor(u0 * m) + 1; j < m && j / (double)m < u1; j++)
+                    Put(j / (double)m, AutoShape.Hold, 0, AutoShapes.Along(a.Shape, (j + 0.5) / m, t));
+                break;
+            }
+            default:
+            {
+                int halves = a.Shape == AutoShape.Wave ? 2 * AutoShapes.Count(t) - 1 : AutoShapes.Count(t);
+                int n = Math.Max(1, (int)Math.Ceiling(halves * CutSteps * (u1 - u0)));
+                for (int k = 0; k < n; k++)
+                {
+                    double u = u0 + (u1 - u0) * k / n;
+                    Put(u, AutoShape.Curve, 0, AutoShapes.Along(a.Shape, u, t));
+                }
+                break;
+            }
+        }
+    }
 }
 
 /// <summary>
@@ -189,7 +265,7 @@ public sealed class AutomationLane
             if (flat.Count > 0 && b.AtSec > flat[^1].Sec + Automations.MinGapSec)
                 flat.Add(new() { Sec = b.AtSec - Automations.MinGapSec, Value = flat[^1].Value });
             foreach (var p in b.Cut(0, end - b.AtSec, stepped).Points)
-                flat.Add(new() { Sec = b.AtSec + p.Sec, Value = p.Value, Curve = p.Curve });
+                flat.Add(p.At(b.AtSec + p.Sec));
         }
         return flat;
     }
@@ -213,18 +289,19 @@ public sealed class AutomationLane
 /// The names of what a lane can drive, as saved in <see cref="AutomationLane.Target"/>: <c>volume</c>, <c>pan</c>,
 /// <c>mute</c>, <c>send:&lt;bus&gt;</c>, <c>fx:&lt;slot&gt;:&lt;param&gt;</c> (a native effect's <see cref="FxParam"/>, its
 /// ON or an EQ band's knob), <c>vst:&lt;slot&gt;:&lt;id&gt;</c> (a VST3 effect's parameter), <c>inst:&lt;id&gt;</c> (the
-/// MIDI track's instrument) and <c>sampler:&lt;knob&gt;</c> (<see cref="SamplerKnobs.Ids"/>). Ids in the project, so a slot moved or renamed keeps its lanes.
+/// MIDI track's instrument), <c>sampler:&lt;knob&gt;</c> (<see cref="SamplerKnobs.Ids"/>) and <c>granular:&lt;knob&gt;</c> (<see cref="GranularKnobs.Ids"/>). Ids in the project, so a slot moved or renamed keeps its lanes.
 /// </summary>
 public static class AutoTarget
 {
     public const string Volume = "volume", Pan = "pan", Mute = "mute";
-    const string SendPrefix = "send:", FxPrefix = "fx:", VstPrefix = "vst:", InstPrefix = "inst:", SamplerPrefix = "sampler:";
+    const string SendPrefix = "send:", FxPrefix = "fx:", VstPrefix = "vst:", InstPrefix = "inst:", SamplerPrefix = "sampler:", GranularPrefix = "granular:";
 
     public static string Send(string busId) => SendPrefix + busId;
     public static string Fx(string slotId, string paramId) => $"{FxPrefix}{slotId}:{paramId}";
     public static string Vst(string slotId, uint id) => $"{VstPrefix}{slotId}:{id}";
     public static string Instrument(uint id) => InstPrefix + id;
     public static string Sampler(SamplerKnob knob) => SamplerPrefix + SamplerKnobs.Ids[(int)knob];
+    public static string Granular(GranularKnob knob) => GranularPrefix + GranularKnobs.Ids[(int)knob];
 
     public static string? BusOf(string target) => target.StartsWith(SendPrefix, StringComparison.Ordinal) ? target[SendPrefix.Length..] : null;
 
@@ -243,6 +320,13 @@ public static class AutoTarget
         if (!target.StartsWith(SamplerPrefix, StringComparison.Ordinal)) return null;
         int at = Array.IndexOf(SamplerKnobs.Ids, target[SamplerPrefix.Length..]);
         return at < 0 ? null : (SamplerKnob)at;
+    }
+
+    public static GranularKnob? GranularOf(string target)
+    {
+        if (!target.StartsWith(GranularPrefix, StringComparison.Ordinal)) return null;
+        int at = Array.IndexOf(GranularKnobs.Ids, target[GranularPrefix.Length..]);
+        return at < 0 ? null : (GranularKnob)at;
     }
 
     static (string First, string Tail)? Split(string target, string prefix)
@@ -371,7 +455,7 @@ public static class Automations
         }
         if (stepped) return p[lo].Value;
         double span = p[hi].Sec - p[lo].Sec;
-        return span <= 0 ? p[hi].Value : p[lo].Value + (p[hi].Value - p[lo].Value) * AutoCurve.Shape((sec - p[lo].Sec) / span, p[lo].Curve);
+        return span <= 0 ? p[hi].Value : p[lo].Value + (p[hi].Value - p[lo].Value) * AutoShapes.Along(p[lo].Shape, (sec - p[lo].Sec) / span, p[lo].Tension);
     }
 
     /// <summary>A switch: it holds each point until the next one, and only 0 and 1 mean anything.</summary>
@@ -402,6 +486,7 @@ public static class Automations
         if (AutoTarget.VstOf(target) is { } v) return t.Channel.Slots.Exists(s => s.Id == v.Slot && s.Type == InsertSlot.VstKind);
         if (AutoTarget.InstrumentOf(target) != null) return t.Instrument != null;
         if (AutoTarget.SamplerOf(target) != null) return t.Sampler != null;
+        if (AutoTarget.GranularOf(target) != null) return t.Granular != null;
         return FxParamOf(t.Channel.Slots, target) != null;
     }
 
@@ -414,6 +499,7 @@ public static class Automations
         if (target == AutoTarget.Mute) return c.Muted ? 1 : 0;
         if (AutoTarget.BusOf(target) is { } bus) return SendOf(c, bus)?.Level ?? 0;
         if (AutoTarget.SamplerOf(target) is { } knob) return t.Sampler is { } s ? SamplerKnobs.Position(knob, s.Knob(knob)) : 0.5;
+        if (AutoTarget.GranularOf(target) is { } grain) return t.Granular is { } g ? GranularKnobs.Position(grain, g.Knob(grain)) : 0.5;
         return FxParamOf(c.Slots, target) is { } f ? f.Param.ToKnob(f.Param.Get(f.Slot)) : 0.5;
     }
 
@@ -425,14 +511,17 @@ public static class Automations
         if (p.Count == 0) return null;
         var sec = new double[p.Count];
         var pos = new float[p.Count];
-        float[]? bend = null;
+        AutoShape[]? shapes = null;
+        float[]? tension = null;
         for (int i = 0; i < p.Count; i++)
         {
             sec[i] = p[i].Sec;
             pos[i] = (float)p[i].Value;
-            if (p[i].Curve != 0) (bend ??= new float[p.Count])[i] = (float)p[i].Curve;
+            if (p[i].Shape == AutoShape.Curve && p[i].Tension == 0) continue;
+            (shapes ??= new AutoShape[p.Count])[i] = p[i].Shape;
+            (tension ??= new float[p.Count])[i] = (float)p[i].Tension;
         }
-        return new AutoCurve(sec, pos, stepped, law, bend);
+        return new AutoCurve(sec, pos, stepped, law, shapes, tension);
     }
 
     /// <summary>What the track's fader follows; null without a lane for it.</summary>
@@ -466,6 +555,21 @@ public static class Automations
                 any = true;
             }
         return any ? new SamplerCurves(byKnob) : null;
+    }
+
+    /// <summary>The native granular's lanes, or null. It reads them itself, at its grains and its voices' control steps.</summary>
+    public static GranularCurves? GranularCurves(Track t)
+    {
+        if (t.Granular == null || t.Automation == null) return null;
+        var byKnob = new AutoCurve?[GranularKnobs.Ids.Length];
+        bool any = false;
+        foreach (var l in t.Automation)
+            if (AutoTarget.GranularOf(l.Target) is { } knob && Curve(l) is { } c)
+            {
+                byKnob[(int)knob] = c;
+                any = true;
+            }
+        return any ? new GranularCurves(byKnob) : null;
     }
 
     static VstParamCurves? Plugin(Track t, Func<string, uint?> idOf)

@@ -546,24 +546,36 @@ public static class ClipEditing
     /// end, each copy on its original's track and at the same distance from the others, so a phrase played on several
     /// tracks repeats whole. With one clip it is <see cref="Duplicate"/>. Returns the copies' ids, in the given order.
     /// </summary>
-    /// <param name="shift">How far the copies go; null = right after the block the clips make.</param>
-    public static List<string> DuplicateMany(Project p, IReadOnlyList<string> ids, Func<Clip, double?>? lengthOf = null, double? shift = null)
+    /// <param name="shift">How far the copies go; null = right after the block the clips make (<see cref="DuplicateShift"/>).</param>
+    /// <param name="step">The magnet's step in seconds (0 = off).</param>
+    public static List<string> DuplicateMany(Project p, IReadOnlyList<string> ids, Func<Clip, double?>? lengthOf = null, double? shift = null, double step = 0)
     {
         var picked = ids.Distinct().Select(id => Find(p, id)).ToList();
         if (picked.Count == 0) return [];
         var (start, end) = Span(p, picked.Select(x => x.Clip), lengthOf);
+        shift ??= DuplicateShift(end - start, step);
         List<string> copies = [];
         foreach (var (track, clip) in picked)
         {
             var copy = Copy(clip);
             copy.Id = Ids.New("clp");
             copy.LoopOf = null;
-            copy.AtSec = ToSample(clip.AtSec + (shift ?? end - start));
+            copy.AtSec = ToSample(clip.AtSec + shift.Value);
             track.Clips.Insert(track.Clips.IndexOf(clip) + 1, copy);
             copies.Add(copy.Id);
         }
         return copies;
     }
+
+    /// <summary>
+    /// How far D moves a block <paramref name="length"/> long: with the magnet on, the next whole number of its steps
+    /// (asked by the user), so a copy keeps its place on the grid and the next ones go at that spacing; with it off, right
+    /// after the block.
+    /// </summary>
+    public static double DuplicateShift(double length, double step) =>
+        step > 0 ? Math.Max(1, Math.Ceiling(length / step - StepSlack)) * step : length;
+    /// <summary>In steps: a block that floating point left a hair over a whole number of steps still fits in it.</summary>
+    const double StepSlack = 1e-6;
 
     /// <summary>Where a group of clips starts and ends on the timeline, counting the part a cut at 0 hides.</summary>
     public static (double Start, double End) Span(Project p, IEnumerable<Clip> clips, Func<Clip, double?>? lengthOf = null)

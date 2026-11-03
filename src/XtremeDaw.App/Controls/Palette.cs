@@ -43,9 +43,11 @@ static class Palette
     public static readonly IBrush Rec = new ImmutableSolidColorBrush(RecColor);
     public static readonly IBrush RecSoft = Brush("#24ef4444");
     public static readonly IBrush Composition = Brush("#09090b");
-    /// <summary>Mute on (M lit, a muted track) and the meters' -6..0 dB zone (App.axaml Mute).</summary>
-    public static readonly Color MuteColor = Color.Parse("#f59e0b");
-    public static readonly IBrush Mute = new ImmutableSolidColorBrush(MuteColor);
+    /// <summary>Mute on (M lit, a muted track) and the meters' -6..0 dB zone (App.axaml Mute): amber, or blue with a
+    /// warm accent (<see cref="UiTheme.StateColors"/>).</summary>
+    public static Color MuteColor => mute.Color;
+    public static IBrush Mute => mute;
+    static readonly SolidColorBrush mute = new(Color.Parse("#f59e0b")), inTune = new(Color.Parse("#22c55e"));
     public static Color AppColor => app.Color;
     public static Color RaisedColor => raised.Color;
     public static Color HoverColor => hover.Color;
@@ -55,8 +57,10 @@ static class Palette
     public static Color FaintColor => faint.Color;
 
     /// <summary>Called by <see cref="UiTheme.Apply"/> only.</summary>
-    internal static void Set(UiTheme.Surface s, Color accentColor, Color onAccent)
+    internal static void Set(UiTheme.Surface s, Color accentColor, Color onAccent, Color muteColor, Color inTuneColor)
     {
+        mute.Color = muteColor;
+        inTune.Color = inTuneColor;
         app.Color = s.App; panel.Color = s.Panel; raised.Color = s.Raised; hover.Color = s.Hover; line.Color = s.Line;
         fg.Color = s.Fg; dim.Color = s.Dim; faint.Color = s.Faint;
         accent.Color = accentColor;
@@ -68,8 +72,9 @@ static class Palette
     public static readonly Color MeterGreen = Color.Parse("#22c55e");
     public static readonly Color MeterYellow = Color.Parse("#eab308");
     public static readonly Color MeterRed = Color.Parse("#ef4444");
-    /// <summary>"In tune" in the tuner: the meters' green, not a color of its own (App.axaml InTune).</summary>
-    public static readonly IBrush InTune = new ImmutableSolidColorBrush(MeterGreen);
+    /// <summary>"In tune" in the tuner: the meters' green, not a color of its own (App.axaml InTune), or cyan with a
+    /// green accent (<see cref="UiTheme.StateColors"/>).</summary>
+    public static IBrush InTune => inTune;
 
     public static readonly Typeface Ui = new("Segoe UI Variable Text, Segoe UI");
     public static readonly Typeface UiBold = new("Segoe UI Variable Text, Segoe UI", FontStyle.Normal, FontWeight.SemiBold);

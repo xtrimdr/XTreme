@@ -4,6 +4,106 @@
       "version": "0.9.14",
       "items": [
         {
+          "icon": "ECC8",
+          "title": "Pump redesigned",
+          "text": "**Pump** has a new panel: the big curve over the sound, one-click shapes and the division on top. With **Sidechain**, its knobs are a compressor's: Threshold, Attack, Hold and Release.",
+          "topic": "pump"
+        },
+        {
+          "icon": "E790",
+          "title": "Knob styles",
+          "text": "Ten styles for the knobs, from Soft to Bakelite, in **Settings → Appearance** (formerly View).",
+          "topic": "look"
+        },
+        {
+          "icon": "E713",
+          "title": "The gear is back",
+          "text": "Settings opens again from the gear in the title bar. It is still in **File** too."
+        },
+        {
+          "icon": "E8FD",
+          "title": "Plugins by maker, category or list",
+          "text": "In **Settings → Plugins**, **Show in menus** groups instruments and effects by maker, by category or in one list. The category is detected on its own and each plugin can move to another one or a new one.",
+          "topic": "plugins"
+        },
+        {
+          "icon": "E8D6",
+          "title": "MIDI track with instrument",
+          "text": "**New track → MIDI track with instrument** lists the native and VST instruments: the new track already plays with the one you pick and takes its name.",
+          "topic": "midi-track"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Compression graph",
+          "text": "Every compressor shows its curve in its panel, where the signal is, and the last seconds of input, output and reduction.",
+          "topic": "comp-models"
+        },
+        {
+          "icon": "EC4F",
+          "title": "Granular",
+          "text": "A new instrument under **Instrument**: it plays a sample in grains. **Stretch** changes the length without changing the pitch; **Scrub** freezes it at a point you can automate.",
+          "topic": "granular"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Tempo-synced VST effects",
+          "text": "VST effects that follow the tempo, such as a sidechain ducker, now land on the beat: they used to not know where in the song they were."
+        },
+        {
+          "icon": "ECC8",
+          "title": "Sidechain",
+          "text": "The compressor, the gate and Pump can react to another track: pick it in **Sidechain**, for example the kick so the bass ducks.",
+          "topic": "sidechain"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Automation shapes",
+          "text": "Right-click a point or a segment of a lane to pick its shape: curve, double curve, hold, stairs, smooth stairs, pulse or wave, each with its tension. Curves are now more even.",
+          "topic": "automation"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Classic compressors",
+          "text": "Five new compressors in **+ Effect** → **Classic compressors**: FET, Opto, Bus VCA, Classic VCA and Vari-Mu, each with its own character.",
+          "topic": "comp-models"
+        },
+        {
+          "icon": "ECC8",
+          "title": "Pump",
+          "text": "A new effect in **Dynamics**: ducks the volume on every beat, like a sidechain to the kick, locked to the tempo.",
+          "topic": "pump"
+        },
+        {
+          "icon": "E896",
+          "title": "Samples into plugins",
+          "text": "Drag a sample from the Library onto a plugin's window (a sampler, a drum machine) and it loads it as from the Explorer.",
+          "topic": "import"
+        },
+        {
+          "icon": "E8A7",
+          "title": "Panels in their own window",
+          "text": "Channel, video, timeline, mixer, piano roll, mastering and Project can each go to a window of their own, with its taskbar button, on another monitor for instance, and come back as they were. Also from View → Panels in windows.",
+          "topic": "panel-windows"
+        },
+        {
+          "icon": "E767",
+          "title": "New Mastering view",
+          "text": "The master chain is laid out as tiles, in the order it sounds; the effect you click is edited below, larger. The Target sits at the top, and on the right the LUFS of the last 30 s. The master's power button turns the whole chain off, Soft clip and Limiter included. Looks and Suggest are gone.",
+          "topic": "mastering"
+        },
+        {
+          "icon": "E8C8",
+          "title": "Duplicate follows the magnet",
+          "text": "With the magnet on, {key:duplicate} puts the copy on the magnet's next whole step, so repeats stay on the grid.",
+          "topic": "split-copy"
+        },
+        {
+          "icon": "E8B3",
+          "title": "Edit several clips at once",
+          "text": "With several clips marked, dragging an edge, a fade or the loop of one changes them all the same way.",
+          "topic": "select-many"
+        },
+        {
           "icon": "E8F4",
           "title": "Start in an empty project",
           "text": "Turn off **Show at startup** in Projects and XTreme opens straight in a new project. **Save** asks where it goes. Also in Settings → Saving and export.",
@@ -24,6 +124,55 @@
           "title": "Discard asks first",
           "text": "While recording, Discard sits apart from Stop and asks for a second click before throwing the recording away.",
           "topic": "record"
+        },
+        {
+          "icon": "E765",
+          "title": "Your keys, everywhere",
+          "text": "Menus, the piano roll help and the empty track show the keys from Settings → Keyboard shortcuts, not the default ones."
+        },
+        {
+          "icon": "E8FD",
+          "title": "More consistent menus",
+          "text": "In the video, Lock, each send and the lane's **Active** have a check: right-click changes them without closing the menu. MIDI tracks get Lock and Apply template, audio tracks **Input…** and folders **Sends**. Removing a track asks first, also from the menu and with Delete."
+        },
+        {
+          "icon": "E8A7",
+          "title": "Consistent dialogs",
+          "text": "Cancel always sits on the right, next to the main button, and notices (an error, a file that already exists) look the same in every dialog."
+        },
+        {
+          "icon": "E9A6",
+          "title": "Nothing overlaps in small windows",
+          "text": "The transport, the mixer header and the format bar move a group down a row when they don't fit, and the tools trim the project name before covering Export."
+        },
+        {
+          "icon": "E790",
+          "title": "Mute that stands apart from the accent",
+          "text": "With a warm accent (Fire, Orange, Amber, Gold) mute turns blue, and with a green one (Lime, Green, Emerald) the tuner shows “in tune” in cyan."
+        },
+        {
+          "icon": "E71B",
+          "title": "Linked files are never deleted",
+          "text": "Removing a linked channel from the Library takes it out of the project without asking and without touching your file; **Delete unused** only sends what is inside the project to the Recycle Bin.",
+          "topic": "import"
+        },
+        {
+          "icon": "E8EE",
+          "title": "Sampler loops without clicks",
+          "text": "The seam always blends, even with **Crossfade** at 0 or a loop that starts at the beginning of the sample, and the level neither dips nor swells at the turn. Ping-pong turns are smooth too.",
+          "topic": "sampler"
+        },
+        {
+          "icon": "EA37",
+          "title": "Easier chords",
+          "text": "Inversions no longer push the chord up: each one stays close to where it was. {wheel:wheelHeight} over a chord, or over the one you are about to write, changes the inversion. The piano roll bar groups its buttons into **Edit**, **Harmony**, **Grid** and **View**, with **Shortcuts** at hand.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E9E9",
+          "title": "Mix and effects of a MIDI track",
+          "text": "A MIDI track's inspector shows, under its instrument, its **Mix**, its effects and its sends, like any track.",
+          "topic": "instrument"
         }
       ]
     },

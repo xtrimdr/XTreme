@@ -405,12 +405,15 @@ public sealed class CompEqFilter
         air.Process(left, right, cfg.Air);
     }
 
-    public void ProcessWith(Compressor comp, Span<float> left, Span<float> right)
+    public void ProcessWith(Compressor comp, Span<float> left, Span<float> right) => ProcessWith(comp, left, right, default, default);
+
+    /// <summary>The same with the compressor listening to a key (its sidechain), which these filters don't touch.</summary>
+    public void ProcessWith(Compressor comp, Span<float> left, Span<float> right, ReadOnlySpan<float> keyL, ReadOnlySpan<float> keyR)
     {
         var cfg = config;
         hpf.Process(left, right, cfg.Hpf);
         mud.Process(left, right, cfg.Mud);
-        comp.Process(left, right);
+        comp.Process(left, right, keyL, keyR);
         presence.Process(left, right, cfg.Presence);
         air.Process(left, right, cfg.Air);
     }

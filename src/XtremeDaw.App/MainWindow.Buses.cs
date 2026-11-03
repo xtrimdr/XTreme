@@ -206,19 +206,15 @@ public partial class MainWindow
     List<object> SendChoices(Router r)
     {
         var items = new List<object>();
-        var shown = SendTargets(r);
+        List<Action> refresh = [];
         foreach (var b in Targets(r))
         {
-            string id = b.Id;
-            bool on = shown.Contains(b);
-            var check = new TextBlock { Classes = { "icon" }, Text = "\ue73e", FontSize = 12, Foreground = Palette.Accent, Opacity = on ? 1 : 0, VerticalAlignment = VerticalAlignment.Center };
-            var icon = FxIcon.Create(FxIcon.Bus, 12);
-            icon.VerticalAlignment = VerticalAlignment.Center;
-            FxIcon.SetColor(icon, on ? Palette.Accent : Palette.Faint);
-            var item = new MenuItem { Header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
-                Children = { check, icon, new TextBlock { Text = b.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center } } } };
-            ToolTip.SetTip(item, Loc.T(on ? "send.hide.tip" : "send.show.tip", b.Name));
-            item.Click += (_, _) => r.Edit((p, x) => ProjectBuses.ShowSend(p, x, id, !on), $"send.{id}.shown");
+            string id = b.Id, name = b.Name;
+            // read again on each click: a right click leaves the menu open while the list changes
+            bool On() => SendTargets(r).Any(x => x.Id == id);
+            string Tip() => Loc.T(On() ? "send.hide.tip" : "send.show.tip", name);
+            var item = MenuCheck(name, On, () => { bool on = On(); r.Edit((p, x) => ProjectBuses.ShowSend(p, x, id, !on), $"send.{id}.shown"); }, refresh, tip: Tip());
+            refresh.Add(() => ToolTip.SetTip(item, Tip()));
             items.Add(item);
         }
         if (items.Count == 0) items.Add(new MenuItem { Header = Loc.T("send.none"), IsEnabled = false, FontSize = 11 });
@@ -353,7 +349,7 @@ public partial class MainWindow
             OpenAnchoredMenu(BusMenu(id, box), box);
         };
 
-        var name = new TextBlock { FontSize = 11.5, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent };
+        var name = new TextBlock { FontSize = 11, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent };
         RenameOnDoubleClick(name, () => RenameBus(id, name));
         mx.Refresh.Add(() =>
         {
@@ -406,7 +402,7 @@ public partial class MainWindow
     void RenameBus(string id, Control anchor)
     {
         if (BusById(id) is not { } b || store?.ReadOnly != false) return;
-        AskName(anchor, null, Loc.T("mix.bus.rename"), b.Name, Loc.T("folder.rename.ok"), n => BusEdit(id, x => x.Name = n.Trim(), "name"));
+        AskName(anchor, null, Loc.T("mix.bus.rename"), b.Name, Loc.T("common.ok"), n => BusEdit(id, x => x.Name = n.Trim(), "name"));
     }
 
     // --- the selected bus ------------------------------------------------------------------------------

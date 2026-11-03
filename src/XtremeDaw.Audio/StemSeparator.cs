@@ -135,7 +135,7 @@ public static class StemSeparator
         if (count <= 0) return [];
         var plan = Plan(settings.Layout, settings.Quality);
         if (!Available(settings.Layout, settings.Quality))
-            throw new InvalidOperationException(Texts.T("err.stems.noModel", "Faltan los modelos de separación (demucs\\*.onnx)."));
+            throw new InvalidOperationException(Texts.T("err.stems.noModel", "Faltan los modelos de separación: instalalos en Configuración → Componentes."));
 
         var (left, right) = AudioLoader.Resample(l.AsSpan(start, count), r.AsSpan(start, count), sampleRate, ModelRate);
         int n = left.Length;

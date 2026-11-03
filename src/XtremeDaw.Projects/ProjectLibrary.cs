@@ -274,7 +274,13 @@ public static partial class ProjectLibrary
         var p = new Project { Name = name };
         // an empty project starts without buses, so no track shows sends (asked by the user, 2026-10-29); a template
         // brings its own, or the default Reverb and Delay when it has none saved
-        if (template == null) p.Settings.Buses = [];
+        if (template == null)
+        {
+            p.Settings.Buses = [];
+            // the master on with an empty chain: Salida catches the peaks from the start, and the one ON turns it all off
+            p.Settings.Master.ChainInSlots = true;
+            p.Settings.Master.On = true;
+        }
         else template.ApplyTo(p);
         p.Settings.SetMode(mode);
         p.AddLog("session-created");

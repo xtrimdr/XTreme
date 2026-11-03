@@ -637,6 +637,9 @@ static class DspCommands
         allOk &= FxChecks.Check();
         allOk &= CompPresetChecks.Check();
         allOk &= ModChecks.Check();
+        allOk &= PumpChecks.Check();
+        allOk &= SidechainChecks.Check();
+        allOk &= CompModelChecks.Check();
         allOk &= PdcChecks.Check();
         allOk &= AutomationChecks.Check();
         allOk &= RangeChecks.Check();
@@ -649,6 +652,7 @@ static class DspCommands
         allOk &= StemChecks.Check();
         allOk &= SampleChecks.Check();
         allOk &= SamplerChecks.Check();
+        allOk &= GranularChecks.Check();
         try { Directory.Delete(tmp, true); } catch (IOException) { }
 
         Console.WriteLine();

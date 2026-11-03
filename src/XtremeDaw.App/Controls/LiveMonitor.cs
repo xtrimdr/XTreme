@@ -20,7 +20,7 @@ public sealed class LiveMonitor : UserControl
 {
     readonly Border root = new() { CornerRadius = new CornerRadius(8), Padding = new Thickness(8), Margin = new Thickness(-8) };
     readonly TextBlock title = new() { Text = Loc.T("live.title"), FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 0.9, VerticalAlignment = VerticalAlignment.Center };
-    readonly TextBlock ready = new() { Text = "Listo para grabar", FontSize = 11, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center };
+    readonly TextBlock ready = new() { Text = Loc.T("live.ready"), FontSize = 11, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock elapsed = new() { FontSize = 11, Foreground = Brushes.White, Classes = { "mono" }, VerticalAlignment = VerticalAlignment.Center };
     readonly Border recBadge, countBadge;
     readonly TextBlock countText = new() { FontSize = 11, FontWeight = FontWeight.SemiBold, Foreground = Palette.App, Classes = { "mono" } };
@@ -59,8 +59,8 @@ public sealed class LiveMonitor : UserControl
         Grid.SetColumn(right, 1);
         head.Children.Add(right);
 
-        placeholder.Children.Add(new TextBlock { Text = "Sin señal de cámara", FontSize = 12, Foreground = Palette.Dim, HorizontalAlignment = HorizontalAlignment.Center });
-        placeholder.Children.Add(new TextBlock { Text = "Elegila en Configuración", FontSize = 11, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
+        placeholder.Children.Add(new TextBlock { Text = Loc.T("live.noCamera"), FontSize = 12, Foreground = Palette.Dim, HorizontalAlignment = HorizontalAlignment.Center });
+        placeholder.Children.Add(new TextBlock { Text = Loc.T("live.noCamera.hint"), FontSize = 11, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
         recTag = new Border
         {
             Background = Palette.Rec, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 2), Margin = new Thickness(8),
@@ -97,7 +97,7 @@ public sealed class LiveMonitor : UserControl
             Children =
             {
                 head, frameBox, resolution, audio,
-                new TextBlock { Text = "Lo que entra ahora: cámara y audio. El canal pasa a la composición cuando la terminás.", FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = Loc.T("live.help"), FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap },
             },
         };
         Content = root;

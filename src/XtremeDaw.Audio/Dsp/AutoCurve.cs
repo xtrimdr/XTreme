@@ -6,19 +6,91 @@ namespace XtremeDaw.Audio.Dsp;
 public enum AutoLaw { Linear, Fader, Pan }
 
 /// <summary>
-/// One automation lane as the engine reads it: its points in seconds with their position (0..1) in straight lines, or
-/// held until the next point when <paramref name="stepped"/> (a switch). <paramref name="bend"/> gives each stretch its
-/// curve, by the point it starts at (<see cref="Shape"/>); null = all straight. Before the first point and after the last
-/// it holds their value. Immutable, so the audio thread can hold it; <see cref="At"/> never allocates.
+/// How a stretch goes from one point to the next (as in FL Studio, asked by the user), each with its tension (-1..1):
+/// a curve (0 = straight), a double curve (an S), a hold, stairs, smooth stairs, pulses and a wave; the last four take
+/// their number of steps or cycles from the tension (<see cref="AutoShapes.Count"/>). Saved by name in the project.
 /// </summary>
-public sealed class AutoCurve(double[] sec, float[] position, bool stepped = false, AutoLaw law = AutoLaw.Linear, float[]? bend = null)
+public enum AutoShape : byte { Curve, Double, Hold, Stairs, SmoothStairs, Pulse, Wave }
+
+/// <summary>
+/// The shapes' math, shared by the engine, the timeline and the project. A curve is an exponential,
+/// (e^(k·t) − 1) / (e^k − 1) with k = tension × <see cref="CurveK"/>: any piece of it is the same curve with a smaller k,
+/// so cutting a block keeps it exact, and a double curve is two of them (k, then −k). Never allocates.
+/// </summary>
+public static class AutoShapes
 {
-    /// <summary>A full bend's exponent: 1 goes through the stretch as t⁴, -1 as t^¼, 0 straight.</summary>
-    public const double BendBase = 4;
+    /// <summary>A full tension's exponent: at the middle of the stretch it is 0.7 % (or 99.3 %) of the way.</summary>
+    public const double CurveK = 10;
+    /// <summary>The steps or cycles at tension -1, 0 and 1: 2, 8 and 32.</summary>
+    const double CountAt0 = 3, CountSpan = 2;
 
-    /// <summary>How far along a stretch's height it is at <paramref name="t"/> (0..1) of its length, with its bend (-1..1).</summary>
-    public static double Shape(double t, double bend) => bend == 0 ? t : Math.Pow(t, Math.Pow(BendBase, bend));
+    public static int Count(double tension) => (int)Math.Round(Math.Pow(2, CountAt0 + CountSpan * Math.Clamp(tension, -1, 1)));
 
+    /// <summary>How far along the stretch's height it is at <paramref name="t"/> (0..1) of its length.</summary>
+    public static double Along(AutoShape shape, double t, double tension)
+    {
+        switch (shape)
+        {
+            case AutoShape.Hold:
+                return t >= 1 ? 1 : 0;
+            case AutoShape.Double:
+                return t < 0.5 ? 0.5 * Exp(2 * t, tension) : 1 - 0.5 * Exp(2 - 2 * t, tension);
+            case AutoShape.Stairs:
+            {
+                int n = Count(tension);
+                return Math.Min(Math.Floor(t * n), n - 1) / (n - 1);
+            }
+            case AutoShape.SmoothStairs:
+            {
+                int n = Count(tension);
+                double x = t * n, i = Math.Min(Math.Floor(x), n - 1);
+                return (i + (1 - Math.Cos(Math.PI * Math.Min(1, x - i))) / 2) / n;
+            }
+            case AutoShape.Pulse:
+            {
+                // n pulses: down, up, ... ending up, so it starts and ends on its points
+                int m = 2 * Count(tension);
+                return (int)Math.Min(Math.Floor(t * m), m - 1) % 2;
+            }
+            case AutoShape.Wave:
+                return (1 - Math.Cos(Math.PI * (2 * Count(tension) - 1) * t)) / 2;
+            default:
+                return Exp(t, tension);
+        }
+    }
+
+    /// <summary>The single curve; positive tension starts slow.</summary>
+    public static double Exp(double t, double tension)
+    {
+        double k = tension * CurveK;
+        return Math.Abs(k) < 1e-6 ? t : (Math.Exp(k * t) - 1) / (Math.Exp(k) - 1);
+    }
+
+    /// <summary>The curve's tension that goes through <paramref name="along"/> (0..1) at the middle of its stretch.</summary>
+    public static double TensionThrough(double along) =>
+        Math.Clamp(2 * Math.Log(1 / Math.Clamp(along, 1e-4, 1 - 1e-4) - 1) / CurveK, -1, 1);
+
+    /// <summary>The flat pieces a stepped shape is made of (its jumps go between them); 0 for the smooth ones.</summary>
+    public static int Pieces(AutoShape shape, double tension) => shape switch
+    {
+        AutoShape.Hold => 1,
+        AutoShape.Stairs => Count(tension),
+        AutoShape.Pulse => 2 * Count(tension),
+        _ => 0,
+    };
+
+    /// <summary>Whether its tension does something.</summary>
+    public static bool Tensed(AutoShape shape) => shape != AutoShape.Hold;
+}
+
+/// <summary>
+/// One automation lane as the engine reads it: its points in seconds with their position (0..1), each stretch with its
+/// shape and tension by the point it starts at (<see cref="AutoShapes"/>; null = all straight), or held until the next
+/// point when <paramref name="stepped"/> (a switch). Before the first point and after the last it holds their value.
+/// Immutable, so the audio thread can hold it; <see cref="At"/> never allocates.
+/// </summary>
+public sealed class AutoCurve(double[] sec, float[] position, bool stepped = false, AutoLaw law = AutoLaw.Linear, AutoShape[]? shapes = null, float[]? tension = null)
+{
     /// <summary>The fader's top: the same 1.5 as <c>Fader.VolMax</c>, with its square-root travel.</summary>
     const double FaderMax = 1.5;
 
@@ -42,7 +114,7 @@ public sealed class AutoCurve(double[] sec, float[] position, bool stepped = fal
         double span = sec[hi] - sec[lo];
         if (span <= 0) return position[hi];
         double along = (t - sec[lo]) / span;
-        return position[lo] + (position[hi] - position[lo]) * (bend == null ? along : Shape(along, bend[lo]));
+        return position[lo] + (position[hi] - position[lo]) * (shapes == null ? along : AutoShapes.Along(shapes[lo], along, tension![lo]));
     }
 
     /// <summary>The parameter's value at a time, through its law.</summary>

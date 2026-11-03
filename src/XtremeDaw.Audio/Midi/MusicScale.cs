@@ -158,6 +158,31 @@ public static class Chords
     public static int[] Invert(int[] rootPosition, int inversion) =>
         [.. rootPosition.Select((p, i) => i < inversion ? p + 12 : p).Order()];
 
+    /// <summary>
+    /// The inversion where it sounds closest to the root position: <see cref="Invert"/>, or all of it an octave down when
+    /// its middle is nearer there (asked by the user: turning a chord walked it up the keyboard, away from the pointer).
+    /// C-E-G gives E-G-C above and G-C-E below.
+    /// </summary>
+    public static int[] Voice(int[] rootPosition, int inversion)
+    {
+        var up = Invert(rootPosition, inversion);
+        if (inversion == 0 || up.Length == 0) return up;
+        double mid = rootPosition.Average();
+        int[] down = [.. up.Select(p => p - 12)];
+        return Math.Abs(down.Average() - mid) < Math.Abs(up.Average() - mid) ? down : up;
+    }
+
+    /// <summary>
+    /// The root position <see cref="Voice"/> makes <paramref name="voicing"/> from: <see cref="Read"/>'s, or an octave
+    /// above it when the voicing was taken down. So a chord turned and read again offers the same voicings.
+    /// </summary>
+    public static int[] RootOf(IReadOnlyList<int> voicing, int[] root, int inversion)
+    {
+        if (Voice(root, inversion).SequenceEqual(voicing)) return root;
+        int[] above = [.. root.Select(p => p + 12)];
+        return Voice(above, inversion).SequenceEqual(voicing) ? above : root;
+    }
+
     /// <summary>The pitches a chord can take up to: a voicing is only offered if all of it is in MIDI's range.</summary>
     public static bool InRange(int[] pitches) => pitches.All(p => p is >= 0 and <= 127);
 

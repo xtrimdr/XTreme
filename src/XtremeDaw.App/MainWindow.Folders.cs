@@ -130,7 +130,7 @@ public partial class MainWindow
     Task NewFolder(IReadOnlyCollection<string>? trackIds = null) => EditTimeline(p => TrackFolders.Add(p, null, trackIds), "folder-added");
 
     void RenameFolder(Folder f, Control anchor, Point? at) =>
-        AskName(anchor, at, Loc.T("folder.rename"), f.Name, Loc.T("folder.rename.ok"), name => FolderEdit(f, x => x.Name = name, "name"));
+        AskName(anchor, at, Loc.T("folder.rename"), f.Name, Loc.T("common.ok"), name => FolderEdit(f, x => x.Name = name, "name"));
 
     /// <summary>A small card with a name box: Enter or the button accepts, Esc or a click outside cancels.</summary>
     void AskName(Control anchor, Point? at, string title, string initial, string action, Action<string> done, string? note = null)
@@ -177,7 +177,7 @@ public partial class MainWindow
     /// <summary>A color square for menu headers (folder colors).</summary>
     static Control Swatch(string? hex) => new Border
     {
-        Width = 12, Height = 12, CornerRadius = new CornerRadius(3), VerticalAlignment = VerticalAlignment.Center,
+        Width = 12, Height = 12, CornerRadius = new CornerRadius(4), VerticalAlignment = VerticalAlignment.Center,
         Background = hex == null ? Palette.Dim : Palette.Brush(hex),
     };
 
@@ -194,18 +194,22 @@ public partial class MainWindow
         string id = f.Id;
         var refresh = new List<Action>();
         var list = new List<object> { new MenuItem { Header = f.Name, IsEnabled = false, FontSize = 11 } };
-        list.Add(MenuAction(Loc.T("folder.rename") + "…", () =>
+        list.Add(MenuAction(Loc.T("folder.rename.more"), () =>
         {
             if (point is { } at) RenameInPlace(f.Id, () => RenameFolder(f, anchor, at));
             else RenameFolder(f, anchor, null);
             return Task.CompletedTask;
         }, enabled: enabled, icon: ""));
-        var color = new MenuItem { Header = MenuHeader(Loc.T("look.color") + "…", Swatch(f.Color)), IsEnabled = enabled };
+        var color = new MenuItem { Header = MenuHeader(Loc.T("look.color.more"), Swatch(f.Color)), IsEnabled = enabled };
         color.Click += (_, _) => ShowFolderLook(f, anchor, point);
         list.Add(color);
         // looked up by id at each click: a right click keeps the menu open while the folder changes under it
         list.Add(MenuChoice(() => FolderById(id)?.Collapsed == true ? (Loc.T("folder.unfold"), "") : (Loc.T("folder.fold"), ""),
             () => { if (FolderById(id) is { } x) FolderEdit(x, y => y.Collapsed = !y.Collapsed, "fold", undoable: false); }, refresh, enabled: enabled));
+        list.Add(new Separator());
+        var sendsIcon = FxIcon.Create(FxIcon.Bus, 12);
+        sendsIcon.VerticalAlignment = VerticalAlignment.Center;
+        list.Add(new MenuItem { Header = MenuHeader(Loc.T("send.menu"), sendsIcon), ItemsSource = SendChoices(RouterOf(f)), IsEnabled = enabled });
         list.Add(new Separator());
         list.Add(MenuAction(Loc.T("folder.newTrack"), () => EditTimeline(p =>
         {
@@ -228,16 +232,16 @@ public partial class MainWindow
         string id = f.Id;
         var refresh = new List<Action>();
         var list = new List<object> { new MenuItem { Header = f.Name, IsEnabled = false, FontSize = 11 } };
-        list.Add(MenuAction(Loc.T("separator.rename") + "…", () =>
+        list.Add(MenuAction(Loc.T("separator.rename.more"), () =>
         {
             if (FolderById(id) is { } x)
             {
                 if (point is { } at) RenameInPlace(id, () => RenameFolder(x, anchor, at));
-                else AskName(anchor, null, Loc.T("separator.rename"), x.Name, Loc.T("folder.rename.ok"), n => FolderEdit(x, y => y.Name = n.Trim(), "name"));
+                else AskName(anchor, null, Loc.T("separator.rename"), x.Name, Loc.T("common.ok"), n => FolderEdit(x, y => y.Name = n.Trim(), "name"));
             }
             return Task.CompletedTask;
         }, enabled: enabled, icon: ""));
-        var color = new MenuItem { Header = MenuHeader(Loc.T("look.color") + "…", Swatch(f.Color)), IsEnabled = enabled };
+        var color = new MenuItem { Header = MenuHeader(Loc.T("look.color.more"), Swatch(f.Color)), IsEnabled = enabled };
         color.Click += (_, _) => { if (FolderById(id) is { } x) ShowFolderLook(x, anchor, point); };
         list.Add(color);
         list.Add(MenuChoice(() => FolderById(id)?.HiddenInTimeline == true ? (Loc.T("separator.show"), "") : (Loc.T("separator.hide"), ""),
@@ -340,7 +344,7 @@ public partial class MainWindow
         ToolTip.SetTip(fold, Loc.T(folder.MixerCollapsed ? "mixer.folder.unfold" : "mixer.folder.fold"));
         fold.Click += (_, _) => FolderEdit(F(), x => x.MixerCollapsed = !x.MixerCollapsed, "mixerFold", undoable: false);
         // name and count are one text so they trim together when the band is as narrow as a folded compact strip
-        var nameRun = new Run { FontSize = 11.5, FontWeight = FontWeight.SemiBold, Foreground = Palette.Fg };
+        var nameRun = new Run { FontSize = 11, FontWeight = FontWeight.SemiBold, Foreground = Palette.Fg };
         var count = new Run { FontSize = 10.5, Foreground = Palette.Faint };
         var name = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 260, Margin = new Thickness(6, 0, 0, 0) };
         name.Inlines!.AddRange([nameRun, new Run("  "), count]);

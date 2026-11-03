@@ -11,7 +11,9 @@ namespace XtremeDaw.App;
 /// mixer's place) and the same key brings everything back as it was. The title and transport bars stay, so the view
 /// buttons keep working: maximized, they swap what fills the place. It builds on the stacked arrangement
 /// (<see cref="MoveBottomView"/>) that solo audio already uses, so the remembered heights stay untouched. The sidebars
-/// can still be brought up (B, P) but that isn't saved. Not remembered between sessions.
+/// can still be brought up (B, P) but that isn't saved. Not remembered between sessions. With the keys in a panel's
+/// own window it maximizes that window instead (MainWindow.PanelWindows.cs), and in the main window it picks among what
+/// is still there.
 /// </summary>
 public partial class MainWindow
 {
@@ -44,22 +46,31 @@ public partial class MainWindow
 
     void ToggleMaxPanel()
     {
+        if (ActivePanelWindow() is { } own)
+        {
+            own.WindowState = own.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            return;
+        }
         // the panel under a gesture is about to move
         Timeline.CancelGesture();
         Preview.CancelGesture();
         if (maxPanel != MaxPanel.None)
         {
-            SetMaxPanel(MaxPanel.None);
-            if (!mixerView) reopenView?.Invoke();
-            reopenView = null;
+            RestoreMaxPanel();
             return;
         }
-        if (pressedPanel == StageArea && StageArea.IsVisible)
+        if (pressedPanel == StageArea && StageHere && StageArea.IsVisible)
         {
             SetMaxPanel(MaxPanel.Stage);
             return;
         }
-        if (stackedViews && mixerView && pressedPanel == TimelineHost)
+        // no view left in the main window: the stage is all there is to maximize
+        if (BottomEmpty)
+        {
+            if (StageHere) SetMaxPanel(MaxPanel.Stage);
+            return;
+        }
+        if (stackedViews && MixerHere && !TimelineOut && pressedPanel == TimelineHost)
         {
             bool piano = pianoView, mastering = masteringView;
             reopenView = piano ? ShowPiano : () => ShowBottomView(mastering);
@@ -68,10 +79,17 @@ public partial class MainWindow
         SetMaxPanel(MaxPanel.Views);
     }
 
+    void RestoreMaxPanel()
+    {
+        SetMaxPanel(MaxPanel.None);
+        if (!mixerView) reopenView?.Invoke();
+        reopenView = null;
+    }
+
     void SetMaxPanel(MaxPanel panel)
     {
         if (panel == maxPanel) return;
-        if (maxPanel == MaxPanel.None) (inspectorWasHidden, projectBarWasHidden) = (!InspectorBar.IsVisible, !ProjectBar.IsVisible);
+        if (maxPanel == MaxPanel.None) (inspectorWasHidden, projectBarWasHidden) = (inspectorHidden, projectBarHidden);
         maxPanel = panel;
         bool restored = panel == MaxPanel.None;
         SetInspectorHidden(!restored || inspectorWasHidden, save: false);

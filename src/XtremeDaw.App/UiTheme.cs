@@ -82,6 +82,22 @@ static class UiTheme
 
     static Color WithAlpha(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
 
+    /// <summary>The accent hues the state colors would be mistaken for (asked by the user: the states move, the accents stay).</summary>
+    const double WarmFrom = 10, WarmTo = 60, GreenFrom = 75, GreenTo = 165;
+
+    /// <summary>
+    /// Mute and "in tune" for this accent: amber and green, unless the accent is near them (Fuego, Naranja, Ámbar, Oro
+    /// turn mute blue; Lima, Verde, Esmeralda turn "in tune" cyan), so a lit M or a tuned note never reads as "selected".
+    /// Recording stays red whatever the accent.
+    /// </summary>
+    public static (Color Mute, Color InTune) StateColors(Color accent)
+    {
+        var hsv = accent.ToHsv();
+        bool colorful = hsv.S > 0.35;
+        bool warm = colorful && hsv.H >= WarmFrom && hsv.H <= WarmTo, green = colorful && hsv.H >= GreenFrom && hsv.H <= GreenTo;
+        return (Color.Parse(warm ? "#60a5fa" : "#f59e0b"), Color.Parse(green ? "#22d3ee" : "#22c55e"));
+    }
+
     /// <summary>Applies the theme everywhere; <paramref name="persist"/> also remembers it (in the background).</summary>
     public static void Apply(Settings theme, bool persist = true)
     {
@@ -89,7 +105,8 @@ static class UiTheme
         var accent = IsHex(theme.Accent) ? Color.Parse(theme.Accent) : Color.Parse(Default.Accent);
         var onAccent = Luminance(accent) > 0.3 ? Color.Parse("#0b0b0d") : Colors.White;
         Current = theme;
-        Palette.Set(surface, accent, onAccent);
+        var (mute, inTune) = StateColors(accent);
+        Palette.Set(surface, accent, onAccent, mute, inTune);
 
         if (Application.Current is { } app)
         {
@@ -108,6 +125,8 @@ static class UiTheme
                 Brush(key, c);
                 r[key + "Color"] = c;
             }
+            Brush("Mute", mute);
+            Brush("InTune", inTune);
             Brush("AccentSoft", WithAlpha(accent, 0x24));
             Brush("AccentFg", onAccent);
             Brush("AccentHover", Mix(accent, Colors.White, 0.2));

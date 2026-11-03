@@ -169,8 +169,8 @@
               <StackPanel Orientation="Horizontal" Spacing="5" Background="Transparent" ToolTip.Tip="{loc:T title.dsp.tip}">
                 <TextBlock Text="DSP" Foreground="{StaticResource Faint}" />
                 <TextBlock x:Name="DspText" Classes="mono" Foreground="{StaticResource Dim}" Width="26" Text="–" />
-                <Border Width="32" Height="5" CornerRadius="3" Background="{StaticResource Raised}" ClipToBounds="True" VerticalAlignment="Center">
-                  <Border x:Name="DspFill" CornerRadius="3" HorizontalAlignment="Left" Width="0" Background="{StaticResource Accent}" />
+                <Border Width="32" Height="5" CornerRadius="2" Background="{StaticResource Raised}" ClipToBounds="True" VerticalAlignment="Center">
+                  <Border x:Name="DspFill" CornerRadius="2" HorizontalAlignment="Left" Width="0" Background="{StaticResource Accent}" />
                 </Border>
               </StackPanel>
               <!-- FFmpeg only shows here when it is missing; its version is in "Acerca de" -->
@@ -203,6 +203,10 @@
               <TextBlock Classes="icon" Text="&#xE80A;" />
             </Button>
             <c:ThemePicker x:Name="ThemePick" VerticalAlignment="Center" />
+            <!-- Configuración, one click away (asked by the user; also in Archivo) -->
+            <Button x:Name="SettingsButton" Classes="ghost" ToolTip.Tip="{loc:T settings.title}" AutomationProperties.Name="{loc:T settings.title}">
+              <TextBlock Classes="icon" Text="&#xE713;" />
+            </Button>
           </StackPanel>
         </Grid>
 
@@ -282,9 +286,10 @@
 
       <!-- the stage and, beside it, the "En vivo" monitor (the web's aside next to SplitScreenCanvas) -->
       <Grid Grid.Column="1" x:Name="StageArea" ColumnDefinitions="*,Auto" RowDefinitions="Auto,*">
-        <!-- format: layout on the left, aspect ratio on the right (App.tsx, above SplitScreenCanvas) -->
-        <DockPanel Grid.ColumnSpan="2" Margin="16,12,16,0">
-          <Border Classes="seg" DockPanel.Dock="Left">
+        <!-- format: layout on the left, aspect ratio on the right (App.tsx, above SplitScreenCanvas), and the button that
+             moves the stage to its own window (MainWindow.PanelWindows.cs) -->
+        <c:ToolbarPanel Grid.ColumnSpan="2" x:Name="StageBar" Margin="16,12,16,0">
+          <Border Classes="seg">
             <StackPanel Orientation="Horizontal">
               <ToggleButton x:Name="LayoutSideButton" Classes="seg" ToolTip.Tip="{loc:T layout.side.tip}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
@@ -300,14 +305,14 @@
               </ToggleButton>
             </StackPanel>
           </Border>
-          <Border Classes="seg" HorizontalAlignment="Right">
+          <Border Classes="seg">
             <StackPanel Orientation="Horizontal">
-              <ToggleButton x:Name="Aspect169Button" Classes="seg" ToolTip.Tip="Horizontal (YouTube)"><TextBlock Classes="mono" Text="16:9" /></ToggleButton>
-              <ToggleButton x:Name="Aspect916Button" Classes="seg" ToolTip.Tip="Vertical (Reels / Shorts / TikTok)"><TextBlock Classes="mono" Text="9:16" /></ToggleButton>
-              <ToggleButton x:Name="Aspect11Button" Classes="seg" ToolTip.Tip="Cuadrado"><TextBlock Classes="mono" Text="1:1" /></ToggleButton>
+              <ToggleButton x:Name="Aspect169Button" Classes="seg" ToolTip.Tip="{loc:T aspect.169.tip}"><TextBlock Classes="mono" Text="16:9" /></ToggleButton>
+              <ToggleButton x:Name="Aspect916Button" Classes="seg" ToolTip.Tip="{loc:T aspect.916.tip}"><TextBlock Classes="mono" Text="9:16" /></ToggleButton>
+              <ToggleButton x:Name="Aspect11Button" Classes="seg" ToolTip.Tip="{loc:T aspect.11.tip}"><TextBlock Classes="mono" Text="1:1" /></ToggleButton>
             </StackPanel>
           </Border>
-        </DockPanel>
+        </c:ToolbarPanel>
         <c:PreviewView Grid.Row="1" x:Name="Preview" />
         <c:LiveMonitor Grid.Row="1" Grid.Column="1" x:Name="Live" Width="256" Margin="0,16,16,16" VerticalAlignment="Top" />
       </Grid>
@@ -420,12 +425,12 @@
     </Grid>
 
     <!-- transport bar, always at the bottom (Fender Studio Pro style, asked by the user). The clock, the
-         transport and the metronome share one dark box that stays centered on the window: the side columns
-         are equal stars, the audio status on the left trims its text before the box moves. -->
+         transport and the metronome share one dark box that stays centered on the window while the sides fit
+         beside it (TransportPanel: it slides, and with no room the sides go down a row). -->
     <Border Grid.Row="4" Grid.ColumnSpan="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="14,6">
-      <Grid ColumnDefinitions="*,Auto,*">
+      <c:TransportPanel>
         <!-- the input: its meter with the audio format under it, and software monitoring on / off, next to the transport -->
-        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,0,16,0" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <StackPanel x:Name="AudioCell" Classes="bar-cell" Background="Transparent">
             <!-- as wide as the line under it, with its dB scale -->
             <c:StereoMeter x:Name="InputMeter" ShowScale="True" Margin="0,1,0,2" />
@@ -458,7 +463,7 @@
           </Popup>
         </StackPanel>
 
-        <Border Grid.Column="1" Classes="metro">
+        <Border Classes="metro">
           <StackPanel Orientation="Horizontal">
             <Button x:Name="ClockButton" Classes="clock">
               <StackPanel>
@@ -531,7 +536,7 @@
           </StackPanel>
         </Border>
 
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="16,0,0,0">
+        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
           <!-- the master's integrated loudness while it plays (native only); a click starts it over -->
           <Button x:Name="LufsCell" Classes="cell" CornerRadius="6" MinWidth="56">
             <StackPanel>
@@ -557,7 +562,7 @@
             <TextBlock Classes="icon" Text="&#xE9A6;" FontSize="15" />
           </Button>
         </StackPanel>
-      </Grid>
+      </c:TransportPanel>
     </Border>
 
     <!-- the "Proyectos" manager covers the whole window, like in the web app -->

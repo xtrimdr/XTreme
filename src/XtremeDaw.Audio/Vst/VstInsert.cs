@@ -170,7 +170,7 @@ public sealed class VstInsert : ITrackInsert, IDisposable
 
     public VstInsert(int sampleRate) => this.sampleRate = sampleRate;
 
-    /// <summary>The timeline frame of the next block: where its parameter lanes are read.</summary>
+    /// <summary>The timeline frame of the next block: where its parameter lanes are read, and the position the plugin is told.</summary>
     public long Frame { get; set; }
 
     public string Kind => TrackInserts.Vst;
@@ -259,7 +259,8 @@ public sealed class VstInsert : ITrackInsert, IDisposable
             TakeFinished(b);
             if (sentCount > 0 && sentAt[0] < lag.Queue.ReadAt + m) Missed(block);
             curves?.Push(b, Frame);
-            long sent = sentCount < MaxSent ? b.TrySend(left[..m], right[..m], m, time, tempo, VstBridge.FlagPlaying | flags) : -1;
+            // the song position, not the queue's stream frame: tempo-synced effects (a sidechain ducker) draw their curve on it
+            long sent = sentCount < MaxSent ? b.TrySend(left[..m], right[..m], m, Frame, tempo, VstBridge.FlagPlaying | flags) : -1;
             if (sent > 0)
             {
                 sentBlock[sentCount] = sent;
@@ -358,8 +359,7 @@ public sealed class VstInsert : ITrackInsert, IDisposable
             var l = left.Slice(off, len);
             var r = right.Slice(off, len);
             curves?.Push(b, Frame + off);
-            b.Render([], len, time, tempo, VstBridge.FlagPlaying, l, r, l, r);
-            time += len;
+            b.Render([], len, Frame + off, tempo, VstBridge.FlagPlaying, l, r, l, r);
         }
     }
 

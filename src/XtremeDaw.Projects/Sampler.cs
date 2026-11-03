@@ -216,13 +216,23 @@ public static class SamplerMedia
     /// <summary>The media a track's sampler plays, if it has one.</summary>
     public static Media? Of(Project p, Track t) => t.Sampler?.MediaId is { } id ? p.FindMedia(id) : null;
 
-    /// <summary>The media the samplers keep in use, which isn't anyone's to delete.</summary>
-    public static IEnumerable<string> Used(Project p) => p.Tracks.Where(t => t.Sampler?.MediaId != null).Select(t => t.Sampler!.MediaId!);
+    /// <summary>The media the samplers and granulars keep in use, which isn't anyone's to delete.</summary>
+    public static IEnumerable<string> Used(Project p) => p.Tracks.Select(t => t.Sampler?.MediaId ?? t.Granular?.MediaId).OfType<string>();
 
     /// <summary>A file from <see cref="AudioImport"/> as the track's sample: a media like any import, the track's settings kept.</summary>
     public static void Set(Project p, Track t, AudioImport.Imported file, float[] left, float[] right, int sampleRate)
     {
         t.Instrument = null;
+        t.Granular = null;
+        var media = Add(p, file);
+        t.Sampler ??= new SamplerSettings();
+        t.Sampler.MediaId = media.Id;
+        t.Sampler.Adopt(file.Name, left, right, sampleRate);
+    }
+
+    /// <summary>A file from <see cref="AudioImport"/> as a media of the project, an import like any other.</summary>
+    public static Media Add(Project p, AudioImport.Imported file)
+    {
         var media = new Media
         {
             Name = file.Name,
@@ -236,9 +246,7 @@ public static class SamplerMedia
             VideoOffsetMs = 0,
         };
         p.Media.Add(media);
-        t.Sampler ??= new SamplerSettings();
-        t.Sampler.MediaId = media.Id;
-        t.Sampler.Adopt(file.Name, left, right, sampleRate);
+        return media;
     }
 
     /// <summary>The sampler of a track as the export plays it, read from disk; null without one. A file that is gone plays silence.</summary>

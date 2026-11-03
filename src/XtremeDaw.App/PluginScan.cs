@@ -78,6 +78,29 @@ public static class PluginScan
         Changed?.Invoke();
     }
 
+    /// <summary>A group's name in a menu or the list: the maker, or the category in the language of the window
+    /// (the SDK's words translated, the user's as written); "" is the group of the ones without.</summary>
+    public static string GroupName(string group, string grouping) => grouping == PluginCatalog.ByCategory
+        ? group.Length == 0 ? Loc.T("vst.cat.none") : CategoryName(group)
+        : group.Length == 0 ? Loc.T("vst.group.noVendor") : group;
+
+    /// <summary>A category as shown: an automatic one translated ("vst.cat.Reverb"), a custom one as the user wrote it.</summary>
+    public static string CategoryName(string category) => Loc.Or("vst.cat." + category.Replace(" ", ""), category);
+
+    public static void SetCategory(VstPluginInfo p, string? category)
+    {
+        try { PluginCatalog.SetCategory(p, category, PluginCatalog.Plugins(Entries)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; }
+        Changed?.Invoke();
+    }
+
+    public static void SetGrouping(string grouping)
+    {
+        try { PluginCatalog.Grouping = grouping; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return; }
+        Changed?.Invoke();
+    }
+
     /// <summary>The folders changed: nothing to reload until the next scan, but the page shows them again.</summary>
     public static void FoldersChanged() => Changed?.Invoke();
 

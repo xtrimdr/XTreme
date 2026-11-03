@@ -36,8 +36,8 @@ public partial class MainWindow
     readonly WrapPanel takeFacts = new() { Margin = new Thickness(34, 6, 0, 0) };
     readonly TextBlock takeLength = new(), takeFormat = new(), takeChannels = new();
     readonly TextBlock GrText = new() { Classes = { "dim", "mono" }, FontSize = 11 };
-    readonly Border GrBar = new() { Width = 0, HorizontalAlignment = HorizontalAlignment.Right, Background = Palette.Accent, CornerRadius = new CornerRadius(3) };
-    readonly Border GrTrack = new() { Height = 6, Background = Palette.App, CornerRadius = new CornerRadius(3) };
+    readonly Border GrBar = new() { Width = 0, HorizontalAlignment = HorizontalAlignment.Right, Background = Palette.Accent, CornerRadius = new CornerRadius(2) };
+    readonly Border GrTrack = new() { Height = 6, Background = Palette.App, CornerRadius = new CornerRadius(2) };
     string? inspectorTrack;
     readonly Dictionary<string, (StackPanel Body, Control? Action, SectionHeader Header)> inspectorSections = [];
     readonly HashSet<string> collapsedSections = [];
@@ -108,14 +108,16 @@ public partial class MainWindow
     {
         var scroll = (Control)InspectorBar.Child!;
         InspectorBar.Child = null;
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), Height = 44, Margin = new Thickness(16, 0, 6, 0) };
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto"), Height = 44, Margin = new Thickness(16, 0, 6, 0) };
         header.Children.Add(new TextBlock { Classes = { "icon" }, Text = "", FontSize = 14, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
         var title = new TextBlock { Text = Loc.T("insp.title"), FontSize = 13, FontWeight = FontWeight.Medium, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(title, 1); header.Children.Add(title);
-        var hide = RailButton("", Loc.T("insp.hide"), () => SetInspectorCollapsed(true));
+        var hide = inspectorHide = RailButton("", Loc.T("insp.hide"), () => SetInspectorCollapsed(true));
         shortcutTips.Add((hide, Loc.T("insp.hide"), "leftPanel"));
         hide.Foreground = Palette.Faint;
+        var floatButton = FloatButton(FloatInspector, chip: false);
         Grid.SetColumn(hide, 3); header.Children.Add(hide);
+        Grid.SetColumn(floatButton, 4); header.Children.Add(floatButton);
         var top = new Border { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = header };
         DockPanel.SetDock(top, Dock.Top);
         inspectorExpanded.Children.Add(top); inspectorExpanded.Children.Add(scroll);
@@ -132,13 +134,25 @@ public partial class MainWindow
         SetInspectorCollapsed(AppConfig.Get("sidebarCollapsed") == "1", save: false);
     }
 
+    /// <summary>Folded to its column of icons (in its own window it is always open, and folds again when it comes back).</summary>
+    bool inspectorFolded;
+    Button? inspectorHide;
+
     void SetInspectorCollapsed(bool collapsed, bool save = true)
     {
-        InspectorBar.Width = collapsed ? InspectorCollapsedWidth : inspectorWidth;
-        if (inspectorGrip != null) inspectorGrip.IsVisible = !collapsed;
-        inspectorExpanded.IsVisible = !collapsed;
-        inspectorCollapsed.IsVisible = collapsed;
+        inspectorFolded = collapsed;
+        ShowInspectorFold();
         if (save) SaveViewPref("sidebarCollapsed", collapsed ? "1" : "2");
+    }
+
+    void ShowInspectorFold()
+    {
+        bool outside = InspectorOut, folded = inspectorFolded && !outside;
+        InspectorBar.Width = folded ? InspectorCollapsedWidth : inspectorWidth;
+        if (inspectorGrip != null) inspectorGrip.IsVisible = !folded && !outside;
+        if (inspectorHide != null) inspectorHide.IsVisible = !outside;
+        inspectorExpanded.IsVisible = !folded;
+        inspectorCollapsed.IsVisible = folded;
     }
 
     /// <summary>EqEditor's draw loop fed from the selected track: the tap hangs on that track's chain only while its EQ
@@ -307,12 +321,12 @@ public partial class MainWindow
         InitGroupInspector();
         var recordHint = new TextBlock { FontSize = 12, Foreground = Palette.Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
         recordHint.Inlines!.Add(new Avalonia.Controls.Documents.Run(Loc.T("insp.empty.a")));
-        recordHint.Inlines.Add(new Avalonia.Controls.Documents.Run("R") { FontFamily = Palette.Mono.FontFamily, Foreground = Palette.Fg });
+        recordHint.Inlines.Add(new Avalonia.Controls.Documents.Run(Shortcuts.First("record")) { FontFamily = Palette.Mono.FontFamily, Foreground = Palette.Fg });
         recordHint.Inlines.Add(new Avalonia.Controls.Documents.Run(Loc.T("insp.empty.b")));
         emptySections.Children.Add(recordHint);
         emptySections.Children.Add(new TextBlock { Text = Loc.T("insp.empty.c"), FontSize = 12, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap });
         var removeEmpty = RemoveButton(Loc.T("insp.removeTrack")); removeEmpty.Margin = new Thickness(0, 12, 0, 0);
-        removeEmpty.Click += async (_, _) => await DeleteTimelineSelection(); emptySections.Children.Add(removeEmpty);
+        removeEmpty.Click += (_, _) => { if (sel != null) AskRemoveTrack(sel.Track.Id, null, removeEmpty); }; emptySections.Children.Add(removeEmpty);
         // an empty track shows its channel too, with how to fill it and its remove button below
         Inspector.Children.Add(takeSections); Inspector.Children.Add(clipSections); Inspector.Children.Add(emptySections);
         var mute = InspectorIcon("\uE74F", Loc.T("insp.mute.tip"), () => TogglePicked(false));
@@ -542,7 +556,13 @@ public partial class MainWindow
         actions.Children.Add(mirror); actions.Children.Add(InspectorIcon("\uE777", Loc.T("insp.frame.reset"), () => ClipEdit((c, _) => InspectorEditing.ResetFrame(c), "framing")));
         var frame = ClipSection("Encuadre", "\uE7A8", actions);
         videoOnly.Add((Control)frame.Parent!.Parent!); // the whole card
-        clipRefresh.Add(() => mirror.Foreground = C().Framing.Mirror ? Palette.Accent : Palette.Dim);
+        clipRefresh.Add(() =>
+        {
+            // lit while on: the hover would grey the accent out
+            bool on = C().Framing.Mirror;
+            mirror.Classes.Set("lit", on);
+            mirror.Foreground = on ? Palette.Accent : Palette.Dim;
+        });
         ClipSlider(frame, Loc.T("insp.frame.zoom"), 1, 2.5, .01, 1, () => C().Framing.Zoom, v => ClipEdit((c, _) => InspectorEditing.Frame(c, zoom: v), "framing"), v => $"{v:0.00}×");
         frame.Children.Add(Help(Loc.T("insp.frame.hint")));
         var remove = RemoveButton(Loc.T("insp.removeClip")); remove.Margin = new Thickness(0, 16, 0, 0);
@@ -605,18 +625,15 @@ public partial class MainWindow
             }
             emptySections.IsVisible = sel != null && c == null && !sel.Track.IsMidi && group == null;
             midiPanel.IsVisible = sel is { Track.IsMidi: true } && group == null;
-            if (sel is { Track.IsMidi: true } midi && group == null)
+            if (sel is { Track.IsMidi: true } && group == null)
             {
                 EnsurePlugins();
                 RefreshMidiInspector();
-                // a MIDI track's sends sit under its instrument (it has no clips, so the Canal tab's sections don't show)
-                PlaceInspectorSends(midiSends);
-                RebuildInspectorSends(midi);
-                foreach (var refresh in sendRefresh) refresh();
             }
             // an empty audio track is still a channel: its mix, effects and sends show (only the clip's sections wait)
-            // several tracks, of any kind: only what they all have (MainWindow.InspectorGroup.cs)
-            bool channel = sel is { Track.IsMidi: false } || group != null;
+            // a MIDI track too, under its instrument (decisión del usuario, 2026-11-03: alone it showed none of it, picked with
+            // others it did); several tracks, of any kind: only what they all have (MainWindow.InspectorGroup.cs)
+            bool channel = sel != null || group != null;
             takeSections.IsVisible = channel;
             takeSections.IsEnabled = group == null || group.Any(t => !t.Track.Locked);
             clipSections.IsVisible = channel && c != null && group == null;

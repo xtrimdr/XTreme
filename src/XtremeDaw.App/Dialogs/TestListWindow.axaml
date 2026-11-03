@@ -2,8 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:XtremeDaw.App"
         x:Class="XtremeDaw.App.Dialogs.TestListWindow"
-        Title="{loc:T test.list.title}" Width="420" Height="560" MinWidth="340" MinHeight="260"
-        ShowInTaskbar="False" ShowActivated="False" WindowStartupLocation="Manual"
+        Title="{loc:T test.list.title}" Width="480" Height="600" MinWidth="340" MinHeight="260"
+        ShowInTaskbar="True" ShowActivated="False" WindowStartupLocation="Manual"
         Background="{StaticResource App}" ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="36">
 
   <Grid RowDefinitions="36,Auto,*,Auto">
@@ -14,6 +14,7 @@
     <Border Grid.Row="1" Classes="seg" Margin="10,10,10,0" HorizontalAlignment="Left">
       <StackPanel Orientation="Horizontal">
         <ToggleButton x:Name="PendingTab" Classes="seg" />
+        <ToggleButton x:Name="NotedTab" Classes="seg" />
         <ToggleButton x:Name="FixTab" Classes="seg" />
         <ToggleButton x:Name="DoneTab" Classes="seg" />
       </StackPanel>
@@ -25,7 +26,7 @@
 
     <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,8">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock x:Name="ErrorText" Classes="dim" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,10,0" />
+        <TextBlock x:Name="ErrorText" Classes="notice" VerticalAlignment="Center" Margin="0,0,10,0" />
         <Button x:Name="ClearButton" Grid.Column="1" Classes="btn sm" Content="{loc:T test.list.clear}" />
       </Grid>
     </Border>

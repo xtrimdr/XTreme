@@ -379,9 +379,12 @@ static class Shortcuts
     }
 
     /// <summary>"Espacio", "Ctrl+Y o Ctrl+Shift+Z"; empty when the action has no key.</summary>
-    public static string Label(string id) => string.Join(" o ", Keys(id).Select(Label));
+    public static string Label(string id) => string.Join(Loc.T("sc.or"), Keys(id).Select(Label));
 
     public static string Label(KeyGesture g) => Label(g.KeyModifiers, KeyName(g.Key));
+
+    /// <summary>The first key alone, for the right side of a menu entry ("Alt+X"); empty when the action has none.</summary>
+    public static string First(string id) => Keys(id).FirstOrDefault() is { } g ? Label(g) : "";
 
     /// <summary>"Shift+rueda"; empty when the wheel action has no modifiers.</summary>
     public static string WheelLabel(string id) => WheelMods(id) is var m && m != KeyModifiers.None ? Label(m, Loc.T("sc.key.wheel")) : "";

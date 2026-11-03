@@ -59,7 +59,7 @@ public static class ComponentInstall
         using var source = cancel = new CancellationTokenSource();
         Changed?.Invoke();
         var bar = Toasts?.ShowProgress(Loc.T("component.installing", name));
-        bar?.Cancelable(Loc.T("transport.count.cancel"), Cancel);
+        bar?.Cancelable(Loc.T("common.cancel"), Cancel);
         string? message = null;
         try
         {

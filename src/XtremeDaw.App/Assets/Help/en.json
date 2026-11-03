@@ -90,7 +90,7 @@
             "**Bottom**: clock, play, record, tempo, click, tuner and the Timeline, Piano roll, Mixer and Mastering views. Pressing the active view again goes back to the timeline.",
             "**Maximize**: {key:maximize} or {icon:E740} gives the whole window to the panel you touched last (video, timeline, piano roll, mixer or mastering). Again, and everything goes back as it was."
           ],
-          "see": ["look", "shortcuts"]
+          "see": ["look", "panel-windows", "shortcuts"]
         },
         {
           "id": "news",
@@ -280,7 +280,7 @@
           "intro": "Works on the selected clip or on all the marked ones.",
           "steps": [
             "Put the playhead where you want to cut and split with {key:split}.",
-            "Duplicate with {key:duplicate}: the copy lands right after.",
+            "Duplicate with {key:duplicate}: the copy lands right after or, with the magnet on, on its next whole step.",
             "Copy with {key:copy} or cut with {key:cut}.",
             "Paste with {key:paste}: it starts at the playhead, on the selected track."
           ],
@@ -313,11 +313,12 @@
           "icon": "E8B3",
           "title": "Select several clips",
           "keywords": "mark multiple selection rectangle group",
-          "intro": "To move or delete several at once.",
+          "intro": "To move, edit or delete several at once.",
           "steps": [
             "Drag on the empty part of the tracks: everything the rectangle touches is marked.",
             "**Ctrl+click** on a clip adds or removes it.",
             "Drag one marked clip by its body and they all move.",
+            "Drag an edge, a fade or the loop of a marked clip and they all change the same way.",
             "Delete them with {key:delete}.",
             "{key:selectAll} marks every clip and {key:deselect} clears the selection."
           ],
@@ -392,10 +393,11 @@
             "Choose **Copy to project** or **Link**. **Don't show again** keeps that choice; change it in **Settings → Save and export**."
           ],
           "notes": [
+            "A sample from the Library also drops into a plugin's window (a sampler, a drum machine), as from the Explorer.",
             "If you move or delete a linked file, its clips go offline. In the Library they show the **Linked** mark.",
             "To bring a linked file inside, click **Copy to project** on its row in the Library. Your file stays where it is.",
             "If a file moved, click **Choose the file…** or **Search a folder…** in the Library or in the grey clip's menu.",
-            "Deleting a linked channel removes it from the project: your file isn't touched. A package carries a copy of linked files.",
+            "Removing a linked channel from the Library (or with **Delete unused**) takes it out of the project without asking: your file isn't touched. A package carries a copy of linked files.",
             "Formats only FFmpeg reads can't be linked: they come in as WAV.",
             "Formats: WAV, MP3, FLAC, OGG, M4A and AIFF. Some need FFmpeg."
           ],
@@ -569,9 +571,75 @@
             "The **⋯** or right-click turns it off, duplicates or removes it."
           ],
           "notes": [
-            "Built-in effects are grouped: **Dynamics**, **EQ**, **Saturation**, **Modulation** and **Space and stereo**."
+            "Built-in effects are grouped: **Dynamics**, **Classic compressors**, **EQ**, **Saturation**, **Modulation** and **Space and stereo**."
           ],
           "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
+        },
+        {
+          "id": "comp-models",
+          "icon": "E9D9",
+          "title": "Classic compressors",
+          "keywords": "compressor classic fet opto optical vca bus vari-mu tube 1176 la-2a ssl dbx fairchild glue",
+          "intro": "Five compressors with the character of the most used studio units, each with its own controls and way of reacting.",
+          "steps": [
+            "Click **+ Effect** → **Classic compressors** and pick one.",
+            "**FET**: fast and aggressive, attack from 20 µs. Turn **Input** up for more compression (the level is compensated); **All** puts the four ratios in at once.",
+            "**Opto**: smooth and musical. Just **Reduction** and **Gain**; the cell sets attack and release by the program.",
+            "**Bus VCA**: clean, to glue a mix or a group. Stepped ratio, attack and release, **Auto**, and **SC HPF** so the lows don't pump it.",
+            "**Classic VCA**: reads the average (RMS) and releases at 120 dB/s; punchy on kicks and bass. **Hard** or **Soft** knee, ratio up to ∞.",
+            "**Vari-Mu**: tube, a ratio that grows with the level, and color. **Time** 1 to 4 fixed, 5 and 6 automatic."
+          ],
+          "notes": [
+            "**Dry** and **Wet** give parallel compression.",
+            "The panel's graph shows the curve, with a dot where the signal is, and the last seconds of input, output and reduction. Every compressor has it, the **Compressor** in Dynamics too.",
+            "The strip's reduction meter shows how much each one compresses.",
+            "Every knob can be automated."
+          ],
+          "see": [
+            "add-fx",
+            "pump"
+          ]
+        },
+        {
+          "id": "pump",
+          "icon": "ECC8",
+          "title": "Pump: tempo sidechain",
+          "keywords": "sidechain pump ducking kickstart kick bass pad volume tempo",
+          "intro": "**Pump** ducks the volume on every beat and lets it come back, like a compressor sidechained to the kick, with no routing.",
+          "steps": [
+            "On the track (or bus) you want to breathe, click **+ Effect** → **Dynamics** → **Pump**.",
+            "On top, **Tempo** or **Sidechain**, and how often it ducks: 1/16, 1/8, 1/4, 1/2 or 1/1.",
+            "The big knob, **Depth**, is how far it drops.",
+            "Under the graph, pick a **shape**; **Length** (how much of the beat it takes to come back) and **Curve** fine-tune it."
+          ],
+          "notes": [
+            "It follows the project's tempo and lands on the beat wherever you start.",
+            "In the fine controls: **Attack** (how fast it drops) and **Offset** (ahead of or behind the beat).",
+            "The graph shows the curve over the sound (what comes in, dim; what goes out, in color) and a line that rides it with what is playing. With **Sidechain**, the bar on the right is the driving track's level: it fires when it crosses the accent line.",
+            "With **Sidechain** each hit decides when it ducks and the knobs become a compressor's: **Threshold** (Auto: half the recent peak), **Attack**, **Hold** and **Release**.",
+            "The strip's reduction meter shows how far it drops."
+          ],
+          "see": ["sidechain", "add-fx", "comp-presets"]
+        },
+        {
+          "id": "sidechain",
+          "icon": "ECC8",
+          "title": "Sidechain: let another track drive it",
+          "keywords": "sidechain kick bass ducking compressor gate pump ghost",
+          "intro": "A compressor, a gate or **Pump** can react to another track instead of their own: the bass ducks when the kick hits.",
+          "steps": [
+            "On the track that should duck (the bass, the pad), add a **Compressor** or a **Pump**.",
+            "In the effect's **Sidechain** dropdown, pick the track that drives it (the kick).",
+            "Set the compressor's threshold and amount, or Pump's threshold, depth and release."
+          ],
+          "notes": [
+            "It hears that track after its effects and before its fader: turning it down doesn't change how much it ducks the others.",
+            "A muted track still drives it: a \"ghost\" kick nobody hears works.",
+            "With a track picked, **Pump** ducks on each of that track's hits instead of on the beat.",
+            "A **Gate** with a sidechain opens when the other track plays.",
+            "If the driving track is removed, the effect goes back to its own signal."
+          ],
+          "see": ["pump", "add-fx", "comp-presets"]
         },
         {
           "id": "eq",
@@ -646,13 +714,14 @@
           "id": "automation",
           "icon": "E9D9",
           "title": "Automate volume and effects",
-          "keywords": "curve move by itself fade envelope parameter sampler cutoff resonance",
+          "keywords": "curve shape tension stairs pulse wave hold move by itself fade envelope parameter sampler cutoff resonance",
           "intro": "Makes a control change by itself along the song.",
           "steps": [
             "Right-click the control → **Automate…**, or the track's menu → **Automation**. In a plugin: click **Automate** in its window's bar and move the parameter.",
             "A lane appears under the track.",
             "Click adds a point, dragging moves it and double-click deletes it. Shift+drag draws.",
-            "Drag the circle in the middle of a segment to curve it.",
+            "Drag the circle in the middle of a segment to set its tension: bend it, or change how many stairs, pulses or waves it has. Double-click sets it back to zero.",
+            "Right-click a point or a segment → its shape: **Curve**, **Double curve**, **Hold**, **Stairs**, **Smooth stairs**, **Pulse** or **Wave**. A point's is the one of the segment coming into it.",
             "Drag a block's top right corner to loop it."
           ],
           "notes": [
@@ -711,24 +780,24 @@
       "id": "master",
       "icon": "E767",
       "title": "Master",
-      "hint": "Final loudness, Looks, Suggest and limiter.",
+      "hint": "Master chain, final loudness and limiter.",
       "topics": [
         {
           "id": "mastering",
           "icon": "EB95",
           "title": "Master in a few steps",
-          "keywords": "final loud finish polish look suggestion",
+          "keywords": "final loud finish polish chain limiter lufs",
           "intro": "The last step before exporting. Open the **Mastering** view in the transport.",
           "steps": [
             "Play the loudest part of the song.",
-            "Choose a **Look** (Natural, Glued, Bright, Warm, Upfront) and set **Amount**.",
-            "Or click **Suggest**: it analyzes the mix and proposes settings.",
-            "Choose the **Target** for where you'll publish.",
-            "Check that **True peak** stays under the **Ceiling**."
+            "At the top, choose the **Target** for where you'll publish.",
+            "Add effects with **+ Effect**, at the top (or **Full chain**). Click a tile in the chain to edit it below.",
+            "On the right, check that **True peak** stays under the **Ceiling** and watch the LUFS move in the graph."
           ],
           "notes": [
-            "With no effects in the list, the master does nothing. **+ Effect → Full chain** adds the stages.",
-            "Each effect in the list is a module: drag it to change the order."
+            "The power button next to **Master** turns the whole chain on or off, **Output** included (Soft clip and Limiter). Off, the mix passes untouched; the Target still sets the loudness.",
+            "Drag a tile by its grip to change the order. Right-click: its options.",
+            "Soft clip and Limiter always come last."
           ],
           "see": ["loudness", "export-audio"]
         },
@@ -739,7 +808,7 @@
           "keywords": "lufs spotify youtube instagram tiktok apple music normalization quiet loud target limiter",
           "intro": "Each platform normalizes to its own level. **Target** takes the mix there.",
           "steps": [
-            "In **Mastering**, **Output** box, choose the **Target**: YouTube, Instagram, TikTok, Spotify or Apple Music.",
+            "In **Mastering**, top right, choose the **Target**: YouTube, Instagram, TikTok, Spotify or Apple Music.",
             "The app measures the mix and sets the gain by itself.",
             "You hear and export at that loudness."
           ],
@@ -925,7 +994,7 @@
           "keywords": "piano roll notes drums beat compose draw",
           "intro": "A MIDI track keeps notes and plays them with an instrument.",
           "steps": [
-            "**New track → MIDI track**.",
+            "**New track → MIDI track**. Or **MIDI track with instrument** and pick one: the track already plays with it.",
             "Double-click an empty spot on the track: it creates a clip and opens the **Piano roll**.",
             "Click on the grid to write a note. Drag to move it; its right edge lengthens it.",
             "Right-click deletes.",
@@ -948,7 +1017,7 @@
             "In the **Piano roll**, or on the virtual keyboard, click **Scale** and choose the root and the scale.",
             "The scale's rows light up, and notes you write or move land on the scale by themselves.",
             "Turn on **Chords** ({key:chordTool}) and click a note: it writes the chord that belongs to it in the scale.",
-            "The selector appears over the chord: **R** is root position and **1**, **2** and **3** the inversions. Keys 1 to 4 work too.",
+            "The selector appears over the chord: **R** is root position and **1**, **2** and **3** the inversions. Keys 1 to 4 work too, or {wheel:wheelHeight} over the chord (or over the one you are about to write). Each inversion stays close to where it was: the chord doesn't climb.",
             "Drag the chord to move it: up and down it follows the scale, so it changes chord without leaving the key."
           ],
           "notes": [
@@ -970,7 +1039,7 @@
             "Choose one from the list. The first time, installed plugins are scanned.",
             "**Open its window** shows the plugin."
           ],
-          "see": ["sampler", "plugins", "plugin-fail"]
+          "see": ["sampler", "granular", "plugins", "plugin-fail"]
         },
         {
           "id": "sampler",
@@ -979,13 +1048,13 @@
           "keywords": "sampler sample wav loop one shot adsr envelope filter lfo drum instrument native root tune tuning detector note out of tune cents slide pan automate cutoff resonance",
           "intro": "Play any sound across the keyboard.",
           "steps": [
-            "Drag an audio file onto a MIDI track. Or choose **Sampler** under **Instrument** and drop it in its window.",
+            "Drag an audio file onto a MIDI track. Or choose **Sampler** under **Instrument** and drop it in its window. The file stays linked where it is, without asking.",
             "**Detected** shows the note the sound is on and how many cents it is off. **Tune** brings it to that note. You can also adjust it by hand with **Pitch** and **Fine**.",
             "The **Root** is the key that plays it as it is. To change it, right-click a key.",
             "Drag the **S** and **E** flags to choose which part plays.",
             "Under **Mode**: **Note** sounds while the note lasts; **One shot** plays whole, for drum hits.",
             "Choose a **Loop** so it keeps sounding while the note lasts, and move it with the **L** flags.",
-            "To keep the loop from clicking, leave **Snap to zero** on: the flags land where the wave crosses zero. Alt leaves them free.",
+            "The loop's seam always blends (at least 5 ms; **Crossfade** makes it longer). **Snap to zero** puts the flags where the wave crosses zero, for an even cleaner blend. Alt leaves them free.",
             "The wheel zooms the wave down to each sample. **Loop start** and **Loop end** go straight to each flag; a double-click shows it whole again.",
             "Drag the envelope's points, and try the **Filter** and the **LFO**."
           ],
@@ -999,16 +1068,39 @@
           "see": ["instrument", "midi-track", "midi-keyboard", "automation"]
         },
         {
+          "id": "granular",
+          "icon": "EC4F",
+          "title": "Stretch and texture with the Granular",
+          "keywords": "granular grains grain stretch time stretch scrub texture pad ambient density size jitter spray width position speed sync instrument native",
+          "intro": "Play a sample in short grains: stretch time without changing pitch, or freeze it at one point.",
+          "steps": [
+            "Choose **Granular** under **Instrument** and drop an audio file in its window (it stays linked where it is). From the Library: right-click → **Open in the granular**.",
+            "Drag the **S** and **E** flags to choose the part the playhead goes over.",
+            "Under **Playhead**: **Stretch** runs through the sample at its **Speed** (100% is the original; slower makes it longer without lowering the pitch). **Scrub** keeps the playhead at the **Position**.",
+            "**Sync** makes the speed follow the project's tempo: set the sample's tempo in **BPM**.",
+            "Under **Grain**: **Density** is grains per second (or a note value, with **Sync**), **Size** how long each one lasts, and **Shape** and **Skew** its envelope.",
+            "**Jitter** loosens the grains' rhythm, **Spray** moves them away from the playhead and **Width** spreads them across the stereo field.",
+            "Each note plays at its pitch from the **Root**; right-click a key to change it."
+          ],
+          "notes": [
+            "Right-click **Position**, **Speed**, **Density**, **Size**, **Jitter**, **Spray**, **Width**, **Volume** or **Pan**: **Automate…**. A lane on **Position** in **Scrub** moves the playhead through the sample.",
+            "With the position still and no Jitter or Spray, the grains repeat evenly and the sound buzzes at the density: raise Jitter or Spray a little to smooth it.",
+            "The sample stays in the project, like any import."
+          ],
+          "see": ["instrument", "sampler", "automation"]
+        },
+        {
           "id": "plugins",
           "icon": "E950",
           "title": "Install and manage plugins",
-          "keywords": "vst vst2 vst3 32 bits folder scan not showing hide thumbnail picture",
+          "keywords": "vst vst2 vst3 32 bits folder scan not showing hide thumbnail picture category maker vendor group sort list",
           "intro": "XTreme uses VST3 and VST2 plugins, 64 and 32 bits, each in its own process: if one crashes, recording goes on.",
           "steps": [
             "Install the plugin as usual.",
             "Click **Scan for new**.",
             "If it's in another folder, add it with **+**.",
             "Uncheck the ones you don't want in the menus.",
+            "In **Show in menus** pick **By maker**, **By category** or **List**; also from any plugin menu, in its **Show in menus** entry (a right click leaves the menu open). Each plugin's chip changes its category or makes a new one; **Automatic** goes back to the one the app detects.",
             "Each plugin takes its thumbnail the first time you open its window. To redo it, click **Thumbnail** in the window's bar."
           ],
           "settings": "plugins",
@@ -1254,14 +1346,31 @@
           "id": "look",
           "icon": "E771",
           "title": "Change the color and layout",
-          "keywords": "theme accent appearance vertical panels hide full screen",
-          "intro": "It's all in the title bar.",
+          "keywords": "theme accent appearance vertical panels hide full screen knobs style neumorphic",
+          "intro": "Most of it is in the title bar.",
           "steps": [
             "The theme picker chooses the accent color and background.",
             "The layout button {icon:E80A} switches between **Classic** and **Vertical**.",
             "The two panel buttons hide the sides.",
-            "{key:fullScreen} goes full screen."
-          ]
+            "{key:fullScreen} goes full screen.",
+            "Pick the knob style in **Settings → Appearance**."
+          ],
+          "settings": "view"
+        },
+        {
+          "id": "panel-windows",
+          "icon": "E8A7",
+          "title": "Move a panel to its own window",
+          "keywords": "undock dock separate window floating other monitor second monitor detach panels",
+          "intro": "Any panel can go to a window of its own, on another monitor for instance.",
+          "steps": [
+            "Press {icon:E8A7}, at the top right of each panel. Also from **View → Panels in windows**.",
+            "What stays in the main window takes the free room. With the video out, the timeline moves up and the mixer goes under it.",
+            "Mixer, piano roll and mastering each go to a window of their own, so all three can be in sight. With the mixer out, a piano roll or mastering that isn't out on its own shows in its window.",
+            "{key:maximize} inside one of these windows maximizes it; again, and it goes back to its size.",
+            "{icon:E944} or the window's X brings it back to the main window. The window remembers its place and size, and what was out goes out again when XTreme opens."
+          ],
+          "see": ["window", "look"]
         },
         {
           "id": "language",

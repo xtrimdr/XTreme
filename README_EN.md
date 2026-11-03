@@ -72,7 +72,7 @@ More details in [Requirements](DETALLES_EN.md#requirements).
 - **Folders** that fold and group tracks; Ctrl+click / Shift+click marks several tracks to move them together. Each
   track gets its own **color** (24, in rainbow order), an **instrument icon** (guitars, bass, drums, synths, strings,
   winds, percussion…), its own height and Saturation, Comp, Reverb, Delay and Pitch knobs in its header (which ones show,
-  in Settings → View).
+  in Settings → Appearance).
 - A sound you like saves as a **track preset** and comes back from New track → Preset.
 - Above the ruler, an **A–B range** loops a stretch and named **markers** (Intro, Chorus, Solo…) jump from one part
   to another. Zoom from one beat to the whole song with shortcuts you assign in Settings → Keyboard shortcuts.

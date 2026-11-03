@@ -87,7 +87,7 @@
 
   <Border x:Name="Card" HorizontalAlignment="Center" VerticalAlignment="Top" MaxWidth="672" Margin="16"
           Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
-          BoxShadow="0 25 50 -12 #80000000" ClipToBounds="True">
+          ClipToBounds="True">
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
 
       <!-- header -->
@@ -96,20 +96,20 @@
           <Image Source="/Assets/XTreme-64.png" Width="40" Height="40" RenderOptions.BitmapInterpolationMode="HighQuality" />
 
           <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="{loc:T title.projects}" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Classes="dialog-title" Text="{loc:T title.projects}" />
             <TextBlock Text="{loc:T proj.subtitle}" FontSize="12" Foreground="{StaticResource Dim}" Margin="0,2,0,0" />
           </StackPanel>
         </StackPanel>
-        <Button Grid.Column="1" x:Name="NewsButton" Classes="act" Width="32" Height="32" Margin="0,-4,0,0" VerticalAlignment="Top"
+        <Button Grid.Column="1" x:Name="NewsButton" Classes="act close" Margin="0,-4,0,0" VerticalAlignment="Top"
                 Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T news.title}" AutomationProperties.Name="{loc:T news.title}">
           <TextBlock Classes="icon" Text="&#xE789;" FontSize="14" />
         </Button>
-        <Button Grid.Column="2" x:Name="HelpButton" Classes="act" Width="32" Height="32" Margin="0,-4,0,0" VerticalAlignment="Top"
+        <Button Grid.Column="2" x:Name="HelpButton" Classes="act close" Margin="0,-4,0,0" VerticalAlignment="Top"
                 Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T help.title}" AutomationProperties.Name="{loc:T help.title}">
           <TextBlock Classes="icon" Text="&#xE897;" FontSize="14" />
         </Button>
-        <Button Grid.Column="3" x:Name="CloseButton" Classes="act" Width="32" Height="32" Margin="0,-4,-8,0" VerticalAlignment="Top"
-                Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T settings.close}">
+        <Button Grid.Column="3" x:Name="CloseButton" Classes="act close" Margin="0,-4,-8,0" VerticalAlignment="Top"
+                Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T common.close}">
           <TextBlock Classes="icon" Text="&#xE711;" FontSize="14" />
         </Button>
       </Grid>
@@ -155,7 +155,7 @@
             <TextBlock Text="{loc:T proj.newName}" FontSize="12" Foreground="{StaticResource Dim}" />
             <Grid ColumnDefinitions="*,Auto,Auto">
               <TextBox x:Name="NewName" Classes="field" MaxLength="120" />
-              <Button Grid.Column="1" x:Name="NewCancel" Classes="btn" Margin="8,0,0,0" Content="{loc:T transport.count.cancel}" />
+              <Button Grid.Column="1" x:Name="NewCancel" Classes="btn" Margin="8,0,0,0" Content="{loc:T common.cancel}" />
               <Button Grid.Column="2" x:Name="NewCreate" Classes="btn primary" Margin="8,0,0,0" Padding="16,0">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Arc x:Name="CreateSpin" Classes="spin" Width="14" Height="14" Stroke="{StaticResource AccentFg}" IsVisible="False" />
@@ -201,9 +201,12 @@
         </StackPanel>
       </Border>
 
-      <StackPanel Grid.Row="3" x:Name="NoticePanel" Margin="24,12,24,0" Spacing="8" IsVisible="False">
-        <TextBlock x:Name="NoticeText" FontSize="12" TextWrapping="Wrap" IsVisible="False" />
-      </StackPanel>
+      <Border Grid.Row="3" x:Name="NoticePanel" Classes="notice" Margin="24,12,24,0" IsVisible="False">
+        <Grid ColumnDefinitions="Auto,*">
+          <TextBlock x:Name="NoticeIcon" Classes="icon notice" Text="&#xE7BA;" />
+          <TextBlock Grid.Column="1" x:Name="NoticeText" Classes="notice" IsVisible="False" />
+        </Grid>
+      </Border>
 
       <!-- project list -->
       <Border Grid.Row="4" Margin="0,16,0,0" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0">

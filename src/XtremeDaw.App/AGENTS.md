@@ -53,9 +53,9 @@ acento), `AccentHover`, `AccentTint`, `Accent25/40/50/70`. Valores del tema por 
 | `Rec` | `#ef4444` | grabar y clip/saturación de nivel. Nada más |
 | `RecSoft` | `#24ef4444` | fondo suave asociado a grabación |
 | `Composition` | `#09090b` | fondo del cuadro del video |
-| ámbar | `#f59e0b` | mute activo y zona de −6 a 0 dB en medidores |
+| `Mute` | `#f59e0b` | mute activo, zona de −6 a 0 dB en medidores, lo que se pasa de algo (un largo de red social, una nota desafinada). Con un acento cálido (Fuego a Oro) pasa a azul `#60a5fa` (`UiTheme.StateColors`, decisión del usuario, 2026-11-03) |
 | gris offline | `#71717a` | clips cuyo archivo falta |
-| `InTune` | `#22c55e` | "afinado" en el afinador (el verde de los medidores del mixer, `Palette.MeterGreen`) |
+| `InTune` | `#22c55e` | "afinado" en el afinador (el verde de los medidores del mixer, `Palette.MeterGreen`); con un acento verde (Lima a Esmeralda), cyan `#22d3ee` |
 
 No inventes colores para estados nuevos sin necesidad; el acento no es decoración; el rojo es **grabación o peligro
 de clip**, nunca "error genérico". Las transparencias salen de `Palette.Alpha(color, a)` (relleno de clip 0,10 / 0,16
@@ -80,7 +80,12 @@ seleccionado, borde 0,45 / 0,9). Los colores de pista son datos del usuario, no 
 | 12.5 SemiBold | nombre de pista, botón de acento |
 | 13.5 SemiBold | nombre de la app en la barra de título |
 | 14 / 19 mono | BPM / reloj del transporte |
-| 16 SemiBold | título del inspector (nombre de la toma) |
+| 16 SemiBold | título del inspector (nombre del canal), título de un diálogo (`TextBlock.dialog-title`) |
+
+- Escala compacta, solo en las tiras del mixer y en el transporte (decisión del usuario, 2026-11-03: no crecen):
+  **8** escala de los medidores e íconos mínimos, **9** etiquetas y valores de la tira, **10** etiquetas del
+  transporte (`metro-label`) y valores chicos de la tira, **13** mono valores del transporte (`metro-value`). El nombre
+  de la tira va en 11. Fuera de ahí, la escala de arriba.
 
 ## Formato de valores
 
@@ -99,7 +104,7 @@ Respetan la cultura del sistema (en es-AR, con coma). Volumen, ganancia, paneo y
 
 ## Formas y espaciado
 
-- Radios: **10** paneles de la ventana (tarjetas `Border.card`, 4 px de margen), **8** secciones, **6** botones/chips/cajas, **5** clips y badges, **4** toggles M/S y etiquetas, **2** barras de medidor.
+- Radios: **12** diálogos, **10** paneles de la ventana (tarjetas `Border.card`, 4 px de margen), **8** secciones, **6** botones/chips/cajas, **5** clips y badges, **4** toggles M/S y etiquetas, **2** barras de medidor.
 - Bordes de 1 px en `Line`. Sin sombras, sin gradientes, sin animaciones decorativas. Única sombra: el **glow del
   hover** de todo botón (`HoverGlow`, un `DropShadowEffect` del acento que recolorea `UiTheme`; `RecGlow` en los
   rojos), puesto al final de los estilos de botón en `App.axaml` para que ninguna clase lo pierda. **El texto nunca
@@ -109,7 +114,7 @@ Respetan la cultura del sistema (en es-AR, con coma). Volumen, ganancia, paneo y
   `failed` en rojo si no se pudo guardar). En las filas el hover lo marca la fila
   (fondo `Raised` y borde `Line`); en el `CheckBox` brilla solo la cajita. Va como `Effect`
   del botón: un `BoxShadow` en el presentador queda cortado. Otra excepción pedida por el usuario: la tapa del fader
-  (`Fader`) y las perillas (`Knob.Draw`, con el mismo criterio) imitan las de una consola, con sombreado, ranuras y una sombra abajo, para que se vean y se agarren fácil. Y la
+  (`Fader`) imita la de una consola, con sombreado, ranuras y una sombra abajo, para que se vea y se agarre fácil; las perillas (`Knob.Draw`) tienen diez estilos a elegir en Configuración → Apariencia (`KnobLooks`, pedido del usuario, 2026-11-03; Neumórfico por defecto): uno nuevo es un método más ahí, con su nombre `set.look.knob.<id>`. Los de tapa clara (`KnobLooks.LightCap`) llevan oscuro el valor escrito encima. Y la
   línea de los separadores (timeline y mixer) lleva un brillo suave de su color (el acento si no tiene uno). Los botones de color (acento, primario, peligro, grabar,
   `lit`) no cambian de color en hover: el glow es la respuesta. Su fondo y su texto van en el presentador
   (`/template/ ContentPresenter#PART_ContentPresenter`, sin estado en el selector), como los chips ON: puesto solo en
@@ -136,12 +141,21 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 | `Button.ghost` | botón de ícono sin fondo (barra de título) |
 | `Button.accent` | **la** acción principal; una sola por pantalla ("Exportar MP4" / "Exportar audio") |
 | `Border.section` (+ `.off`) | tarjeta del inspector |
-| `TextBox.field`, `Button.btn` (`.sm`, `.primary`, `.outline`, `.danger`), `Button.act` (`.danger`) | campos y botones de diálogos y listas: botón de fila 28×28, confirmación roja |
+| `TextBox.field`, `Button.btn` (`.sm`, `.primary`, `.outline`, `.danger`), `Button.act` (`.danger`, `.close`) | campos y botones de diálogos y listas: botón de fila 28×28, confirmación roja; `.close` es la cruz de un diálogo (32×32). Viven solo en `App.axaml`: un diálogo no los redefine |
+| `Button.link` (`.accent`) | enlace de texto: tenue (migas, "Restablecer") o en acento (el que se sigue: "Ver en la ayuda") |
+| `Border.dialog`, `TextBlock.dialog-title`, `Scrim` | la tarjeta de un diálogo, su título (16 SemiBold) y el fondo que oscurece la ventana. Anchos: 440 una pregunta, 512 un formulario, 640 una lista o lectura (Configuración, Proyectos y Ayuda, los suyos) |
+| `Border.notice` + `TextBlock.notice` / `TextBlock.icon.notice` | **el** aviso dentro de un diálogo (un error, un archivo que ya existe, un permiso): caja `Raised` con el signo de advertencia en acento y el texto en `Fg`. Nunca en rojo. Un error de una línea bajo un campo, solo `TextBlock.notice` |
 | `Button.chip.purge` | "Borrar no usadas": contorno tenue que se pone rojo con el hover |
 | `PowerButton` (`Button.chip.power`) | **el** ON/OFF de un efecto, en todo lugar (inspector, Color, mixer, Mastering, banda del EQ): acento lleno prendido, contorno tenue apagado; el tooltip sigue al estado |
 | `SelectButton` | **el** desplegable (presets, tipos, modos); nunca un `ComboBox` |
 | `TextBlock.label` / `.dim` / `.mono` / `.icon` | etiqueta / secundario / números / ícono |
 | `ToolbarPanel` (código) | barra de herramientas que **nunca se superpone** (pedido del usuario): el primer grupo a la izquierda, los demás a la derecha, y los que no entran bajan a otra fila. Toda barra nueva con varios grupos va así, nunca un `DockPanel` que los pise |
+
+## Diálogos
+
+- Botones abajo a la derecha, en este orden: `[destructiva]` sola a la izquierda (Descartar), y a
+  la derecha `[Cancelar] [otras] [Primario]`. Un solo `Button.btn.primary`, el último. Esc es Cancelar y Enter el primario.
+- Los textos comunes salen de `common.cancel`, `common.close` y `common.ok`; un nombre entre comillas, de `common.quoted`.
 
 ## Atajos
 

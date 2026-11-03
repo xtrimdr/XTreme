@@ -311,7 +311,10 @@ public partial class MainWindow
         }
         if (!inTimeline)
         {
-            var trash = RowButton("", Loc.T("hist.trashTake"), () => { historyDeletingTake = m.Id; RefreshHistory(); }, danger: true);
+            // a linked file is the user's: taking it out of the project only unlinks it, with nothing to confirm (asked by the user)
+            var trash = m.Linked
+                ? RowButton("", Loc.T("hist.unlinkTake"), () => _ = DeleteTake(st, m))
+                : RowButton("", Loc.T("hist.trashTake"), () => { historyDeletingTake = m.Id; RefreshHistory(); }, danger: true);
             trash.IsEnabled = editable && historyBusyId == null && !historyTakeBusy;
             hover.Add(trash);
             Grid.SetColumn(trash, 5); grid.Children.Add(trash);
@@ -521,8 +524,21 @@ public partial class MainWindow
         });
         var b = new Button { Classes = { "chip", "purge" }, Content = content, Height = 32, MinHeight = 32, HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center, IsEnabled = editable && unused.Count > 0 };
-        b.Click += (_, _) => { historyConfirmPurge = true; RefreshHistory(); };
+        // only linked ones left: they are just unlinked, nothing goes to the Recycle Bin, so nothing to confirm
+        b.Click += async (_, _) =>
+        {
+            if (unused.All(m => m.Linked) && store is { } st) await PurgeUnused(st, unused);
+            else { historyConfirmPurge = true; RefreshHistory(); }
+        };
         return b;
+    }
+
+    /// <summary>What "Borrar no usados" will do: the project's own files go to the Recycle Bin, the linked ones are only unlinked.</summary>
+    static string PurgeText(List<Media> unused, long bytes)
+    {
+        int own = unused.Count(m => !m.Linked), linked = unused.Count - own;
+        string text = Loc.T("hist.purge.confirm", Loc.T(own == 1 ? "hist.channels.one" : "hist.channels.many", own), ProjectHistory.FormatBytes(bytes));
+        return linked == 0 ? text : text + " " + Loc.T(linked == 1 ? "hist.purge.linked.one" : "hist.purge.linked.many", linked);
     }
 
     Control PurgeConfirm(ProjectStore st, List<Media> unused)
@@ -536,12 +552,12 @@ public partial class MainWindow
         var text = new TextBlock
         {
             FontSize = 12, Foreground = Palette.Fg, TextWrapping = TextWrapping.Wrap,
-            Text = Loc.T("hist.purge.confirm", Loc.T(unused.Count == 1 ? "hist.channels.one" : "hist.channels.many", unused.Count), ProjectHistory.FormatBytes(bytes)),
+            Text = PurgeText(unused, bytes),
         };
         Grid.SetColumn(text, 1); line.Children.Add(text);
         stack.Children.Add(line);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        var cancel = new Button { Classes = { "btn", "sm" }, Content = Loc.T("transport.count.cancel"), IsEnabled = !historyPurging };
+        var cancel = new Button { Classes = { "btn", "sm" }, Content = Loc.T("common.cancel"), IsEnabled = !historyPurging };
         cancel.Click += (_, _) => { historyConfirmPurge = false; RefreshHistory(); };
         buttons.Children.Add(cancel);
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
@@ -624,7 +640,7 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>One unused take to the Recycle Bin, after its inline confirmation.</summary>
+    /// <summary>One unused take to the Recycle Bin, after its inline confirmation; a linked one is only unlinked (its file stays).</summary>
     async Task DeleteTake(ProjectStore st, Media m)
     {
         if (st != store || st.ReadOnly || historyTakeBusy) return;

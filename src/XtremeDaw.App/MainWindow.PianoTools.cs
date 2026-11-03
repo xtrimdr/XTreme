@@ -32,7 +32,12 @@ public partial class MainWindow
     };
     readonly Button pianoToolsButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     readonly Button pianoViewButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
-    readonly TextBlock pianoChordLabel = new() { FontSize = 12, Foreground = Palette.Accent, VerticalAlignment = VerticalAlignment.Center, Classes = { "mono" } };
+    /// <summary>The chord under the pointer: a fixed width, so a longer name doesn't push the tools beside it.</summary>
+    readonly TextBlock pianoChordLabel = new() { FontSize = 12, Foreground = Palette.Accent, VerticalAlignment = VerticalAlignment.Center, Classes = { "mono" },
+        Width = ChordLabelW, TextTrimming = TextTrimming.CharacterEllipsis };
+
+    /// <summary>Room for a long chord name in mono 12 ("Do#m7(b9)/Sol#").</summary>
+    const double ChordLabelW = 110;
     readonly List<ToggleButton> pianoWriteButtons = [];
 
     /// <summary>The tool on the panel with its settings, and the clip's notes as they were (the project holds the preview meanwhile).</summary>
@@ -82,8 +87,6 @@ public partial class MainWindow
         pianoViewButton.Content = IconText("", Loc.T("tool.view") + "  ▾");
         ToolTip.SetTip(pianoViewButton, Loc.T("tool.view.tip"));
         pianoViewButton.Click += (_, _) => ShowPianoViewMenu();
-        row.Children.Add(pianoViewButton);
-        row.Children.Add(pianoChordLabel);
         return row;
     }
 
@@ -118,7 +121,7 @@ public partial class MainWindow
     {
         var b = new Button
         {
-            Classes = { "seg", "flat" }, Content = text, Height = 22, MinHeight = 0, Padding = new Thickness(6, 0), FontSize = 11.5, Focusable = false, IsEnabled = enabled,
+            Classes = { "seg", "flat" }, Content = text, Height = 22, MinHeight = 0, Padding = new Thickness(6, 0), FontSize = 11, Focusable = false, IsEnabled = enabled,
             HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left,
         };
         if (tip != null) ToolTip.SetTip(b, tip);
@@ -392,7 +395,7 @@ public partial class MainWindow
             Classes = { "act" }, Width = 24, Height = 24, MinHeight = 0, Padding = new Thickness(0), Focusable = false,
             Content = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 11 },
         };
-        ToolTip.SetTip(close, Loc.T("tool.cancel"));
+        ToolTip.SetTip(close, Loc.T("common.cancel"));
         close.Click += (_, _) => CloseTool(accept: false);
         DockPanel.SetDock(close, Dock.Right);
         head.Children.Add(close);
@@ -544,7 +547,7 @@ public partial class MainWindow
         if (PianoTrack() is not { } t || store == null || store.ReadOnly) return;
         string id = t.Track.Id;
         string now = t.Track.KeyNames?.GetValueOrDefault(pitch) ?? "";
-        AskName(pianoRoll, null, Loc.T("tool.keyName", NoteNames.Of(pitch)), now, Loc.T("folder.rename.ok"), name =>
+        AskName(pianoRoll, null, Loc.T("tool.keyName", NoteNames.Of(pitch)), now, Loc.T("common.ok"), name =>
             _ = EditTimeline(p =>
             {
                 var track = p.Tracks.Find(x => x.Id == id);
@@ -660,10 +663,8 @@ public partial class MainWindow
             if (clips.Count > 0) OpenInPiano(clips[0]);
             Status(Loc.T("tool.import.done", clips.Count));
         }
-        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException)
-        {
-            Toast(e.Message);
-        }
+        catch (ArgumentException e) { Toast(e.Message); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast(Loc.T("tool.file.readFailed", Path.GetFileName(path))); }
     }
 
     async Task ExportMidiFile()
@@ -678,7 +679,7 @@ public partial class MainWindow
             await Task.Run(() => MidiFiles.Write(path, [(name, notes)], bpm));
             Toast(Loc.T("tool.export.done", Path.GetFileName(path)));
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast(e.Message); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast(Loc.T("tool.file.writeFailed", Path.GetFileName(path))); }
     }
 
     async Task ExportSheet()
@@ -694,6 +695,6 @@ public partial class MainWindow
             await Task.Run(() => ScoreSheet.Write(path, name, notes, beats, scale));
             Toast(Loc.T("tool.export.done", Path.GetFileName(path)));
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast(e.Message); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast(Loc.T("tool.file.writeFailed", Path.GetFileName(path))); }
     }
 }

@@ -12,7 +12,9 @@ namespace XtremeDaw.App.Controls;
 /// row right under its track, with its name in the header column and its blocks over a shadow of the track's clips. A
 /// block goes like a MIDI clip: double click on the empty lane makes one, its top strip moves it (with Ctrl, a copy) and
 /// its edges trim it. Inside it, a click adds a point, a drag moves it, a double click takes it out and Shift+drag draws;
-/// the handle in the middle of a stretch bends it, and a double click on it makes it straight again. The right end of its
+/// the handle in the middle of a stretch sets its tension (a curve's bend, the steps or cycles of the other shapes) and a
+/// double click on it takes it back to 0. A right click on a point or on a stretch (its handle or its line) asks for that
+/// stretch's shape (<see cref="AutoShape"/>, as in FL Studio: a point's is the stretch that comes into it). The right end of its
 /// top strip loops it (like GarageBand): its points repeat until where the drag stops, each repeat with the loop icon, and
 /// a point edited in any repeat changes them all. They fold with the
 /// track's chevron, go with their track when it folds into a folder, and a dragged track carries them folded. Like the
@@ -33,6 +35,11 @@ public sealed partial class TimelineView
     public event Action<LiveTrack>? AutomationFoldRequested;
     /// <summary>Right click on a lane: the block and point under the pointer (null, -1 = none) and the snapped time there.</summary>
     public event Action<LiveTrack, AutomationLane, AutomationBlock?, int, double, Point>? AutomationContextRequested;
+    /// <summary>
+    /// Right click on a point or a stretch: the block, the stretch whose shape it asks for (by the point it starts at) and
+    /// whether it was on the point (true) or on the stretch.
+    /// </summary>
+    public event Action<LiveTrack, AutomationLane, AutomationBlock, int, bool, Point>? AutomationShapeRequested;
     /// <summary>Right click on a header control: its target.</summary>
     public event Action<LiveTrack, string, Point>? AutomationAsked;
 
@@ -62,8 +69,10 @@ public sealed partial class TimelineView
     const double AutoHandleMinW = 28;
     /// <summary>A stretch this flat (of the lane's height) has nothing to bend.</summary>
     const double AutoFlat = 0.01;
-    /// <summary>How close a bent stretch is drawn to its curve (px between its segments).</summary>
-    const double AutoBendStep = 4;
+    /// <summary>How close a shaped stretch is drawn to its curve (px between its segments), and the most a cycle of a wave gets.</summary>
+    const double AutoBendStep = 4, AutoCycleSteps = 12;
+    /// <summary>Px of a vertical drag that take a stretch's steps or cycles from the fewest to the most.</summary>
+    const double AutoTensionDrag = 160;
 
     enum AutoDrag { None, Point, Bend, Draw, Move, Left, Right, Loop }
 
@@ -74,7 +83,7 @@ public sealed partial class TimelineView
     AutoDrag autoDrag;
     bool autoCopy;
     int autoTrack = -1, autoPoint = -1;
-    double autoPen, autoFrom;
+    double autoPen, autoFrom, autoTension;
     // where the pass being edited starts in the block (relative): a looped block's points are its first pass's
     double autoPassAt;
 
@@ -119,12 +128,16 @@ public sealed partial class TimelineView
         return -1;
     }
 
-    /// <summary>The handle of the stretch after point <paramref name="k"/>: on the curve, halfway through.</summary>
+    /// <summary>
+    /// The handle of the stretch after point <paramref name="k"/>: a curve's on it halfway through, the others' halfway
+    /// between its points (a double curve's middle never moves, so its handle stays there too: asked by the user).
+    /// </summary>
     Point AutoHandle(AutomationBlock block, int k, double y, double h)
     {
         var a = block.Points[k];
         var b = block.Points[k + 1];
-        return new(X(block.AtSec + (a.Sec + b.Sec) / 2), AutoY(y, h, a.Value + (b.Value - a.Value) * AutoCurve.Shape(0.5, a.Curve)));
+        double along = a.Shape == AutoShape.Curve ? AutoShapes.Along(a.Shape, 0.5, a.Tension) : 0.5;
+        return new(X(block.AtSec + a.Sec + (b.Sec - a.Sec) * 0.5), AutoY(y, h, a.Value + (b.Value - a.Value) * along));
     }
 
     /// <summary>Whether the stretch after point <paramref name="k"/> can bend: inside the block, wide enough and going somewhere.</summary>
@@ -147,6 +160,17 @@ public sealed partial class TimelineView
             if (Math.Abs(p.X - c.X) <= AutoGrab && Math.Abs(p.Y - c.Y) <= AutoGrab) return k;
         }
         return -1;
+    }
+
+    /// <summary>The stretch whose line is under the pointer (by the point it starts at), or -1: only one that can take a shape.</summary>
+    int AutoStretchAt(Row r, AutomationBlock b, Point p)
+    {
+        if (AutoStepped(r.Track, r.Lane!)) return -1;
+        double at = Sec(p.X) - b.AtSec;
+        if (at < 0 || at > b.PassSec) return -1;
+        int k = b.Points.FindLastIndex(x => x.Sec <= at);
+        if (k < 0 || k + 1 >= b.Points.Count || !AutoBendable(b, k)) return -1;
+        return Math.Abs(p.Y - AutoY(AutoY(r), r.H, b.PositionAt(at, false))) <= AutoGrab ? k : -1;
     }
 
     /// <summary>What a press on a block does where the pointer is, past its points and handles.</summary>
@@ -261,7 +285,7 @@ public sealed partial class TimelineView
             var p = pts[i];
             double px = X(p.Sec), py = AutoY(y, h, p.Value);
             if (stepped) g.LineTo(new Point(px, prev));
-            else if (i > 0 && pts[i - 1].Curve != 0) BendTo(g, pts[i - 1], p, y, h, W);
+            else if (i > 0 && (pts[i - 1].Shape != AutoShape.Curve || pts[i - 1].Tension != 0)) BendTo(g, pts[i - 1], p, y, h, W);
             g.LineTo(new Point(px, py));
             prev = py;
         }
@@ -269,13 +293,37 @@ public sealed partial class TimelineView
         g.EndFigure(false);
     }
 
-    /// <summary>A bent stretch as short lines, only over what the view shows.</summary>
+    /// <summary>
+    /// A shaped stretch, only over what the view shows: a stepped one (hold, stairs, pulses) by its flat pieces with
+    /// straight jumps, the rest as short lines, closer for a wave's cycles.
+    /// </summary>
     void BendTo(StreamGeometryContext g, AutomationPoint a, AutomationPoint b, double y, double h, double W)
     {
-        double x0 = X(a.Sec), x1 = X(b.Sec), width = x1 - x0;
+        double x0 = X(a.Sec), x1 = X(b.Sec), width = x1 - x0, lo = HeaderW - AutoBendStep, hi = W + AutoBendStep;
         if (width <= 0) return;
-        for (double x = Math.Max(x0, HeaderW - AutoBendStep); x < Math.Min(x1, W + AutoBendStep); x += AutoBendStep)
-            g.LineTo(new Point(x, AutoY(y, h, a.Value + (b.Value - a.Value) * AutoCurve.Shape((x - x0) / width, a.Curve))));
+        double Y(double along) => AutoY(y, h, a.Value + (b.Value - a.Value) * along);
+        int pieces = AutoShapes.Pieces(a.Shape, a.Tension);
+        if (pieces > 0)
+        {
+            for (int j = 0; j < pieces; j++)
+            {
+                double px0 = x0 + width * j / pieces, px1 = x0 + width * (j + 1) / pieces;
+                if (px1 < lo || px0 > hi) continue;
+                double py = Y(AutoShapes.Along(a.Shape, (j + 0.5) / pieces, a.Tension));
+                g.LineTo(new Point(Math.Max(px0, lo), py));
+                g.LineTo(new Point(Math.Min(px1, hi), py));
+            }
+            return;
+        }
+        double cycles = a.Shape switch
+        {
+            AutoShape.Wave => AutoShapes.Count(a.Tension),
+            AutoShape.SmoothStairs => AutoShapes.Count(a.Tension) / 2.0,
+            _ => 0,
+        };
+        double step = cycles > 0 ? Math.Clamp(width / (cycles * AutoCycleSteps), 1, AutoBendStep) : AutoBendStep;
+        for (double x = Math.Max(x0, lo); x < Math.Min(x1, hi); x += step)
+            g.LineTo(new Point(x, Y(AutoShapes.Along(a.Shape, (x - x0) / width, a.Tension))));
     }
 
     void DrawAutoPoints(DrawingContext ctx, Row r, AutomationBlock b, double y, double h, double W, Color tint, bool live, bool stepped)
@@ -285,7 +333,7 @@ public sealed partial class TimelineView
         if (!stepped && live)
             for (int k = 0; k + 1 < pts.Count; k++)
             {
-                if (!AutoBendable(b, k) || !over && pts[k].Curve == 0) continue;
+                if (!AutoBendable(b, k) || !over && pts[k].Shape == AutoShape.Curve && pts[k].Tension == 0) continue;
                 var c = AutoHandle(b, k, y, h);
                 if (c.X < HeaderW || c.X > W) continue;
                 bool bending = b == autoDraft && autoDrag == AutoDrag.Bend && k == autoPoint;
@@ -354,6 +402,18 @@ public sealed partial class TimelineView
         {
             var block = p.X >= HeaderW ? AutoBlockAt(lane, Sec(p.X)) : null;
             selectedBlock = block?.Id;
+            // on the curve, its shape and nothing else (asked by the user): a point's is the stretch coming into it
+            if (block != null && !AutoStepped(r.Track, lane))
+            {
+                int point = AutoPointAt(r, block, p);
+                int stretch = point >= 0 ? -1 : AutoHandleAt(r, block, p) is var k and >= 0 ? k : AutoStretchAt(r, block, p);
+                if (point >= 0 && block.Points.Count > 1) stretch = Math.Max(0, point - 1);
+                if (stretch >= 0)
+                {
+                    AutomationShapeRequested?.Invoke(tracks[r.Track], lane, block, stretch, point >= 0, p);
+                    return true;
+                }
+            }
             AutomationContextRequested?.Invoke(tracks[r.Track], lane, block, block == null ? -1 : AutoPointAt(r, block, p), SnapAt(Math.Max(p.X, HeaderW)), p);
             return true;
         }
@@ -394,7 +454,7 @@ public sealed partial class TimelineView
         if (e.ClickCount == 2 && (point >= 0 && block.Points.Count > 1 || bend >= 0))
         {
             var edited = Automate(block);
-            if (bend >= 0) edited.Points[bend].Curve = 0;
+            if (bend >= 0) edited.Points[bend].Tension = 0;
             else edited.Points.RemoveAt(point);
             AutomationBlockEdited?.Invoke(t, lane.Id, edited);
             e.Handled = true;
@@ -424,6 +484,7 @@ public sealed partial class TimelineView
         }
         autoPoint = bend >= 0 ? bend : point;
         autoPen = point >= 0 ? autoDraft.Points[point].Sec : 0;
+        autoTension = bend >= 0 ? autoDraft.Points[bend].Tension : 0;
         StartGesture("auto", e);
         moved = added; // a new point is an edit even if it does not move
     }
@@ -452,7 +513,8 @@ public sealed partial class TimelineView
         int at = list.FindIndex(x => x.Sec >= sec);
         if (at < 0) at = list.Count;
         if (at < list.Count && Math.Abs(list[at].Sec - sec) < Automations.MinGapSec) list[at].Value = value;
-        else list.Insert(at, new AutomationPoint { Sec = Math.Round(sec, 3), Value = value, Curve = at > 0 ? list[at - 1].Curve : 0 });
+        // a new point takes the shape of the stretch it splits, as both halves go on with it
+        else list.Insert(at, at > 0 ? list[at - 1].At(Math.Round(sec, 3), value) : new AutomationPoint { Sec = Math.Round(sec, 3), Value = value });
         return at;
     }
 
@@ -485,11 +547,16 @@ public sealed partial class TimelineView
             }
             case AutoDrag.Bend:
             {
-                // the curve goes through the pointer, halfway along the stretch
                 var a = list[autoPoint];
                 double rise = list[autoPoint + 1].Value - a.Value;
-                double along = Math.Clamp((AutoPosition(AutoY(r), r.H, lastPointer.Y) - a.Value) / rise, 0.02, 0.98);
-                a.Curve = Math.Round(Math.Clamp(Math.Log(Math.Log(along) / Math.Log(0.5), AutoCurve.BendBase), -1, 1), 3);
+                double along = (AutoPosition(AutoY(r), r.H, lastPointer.Y) - a.Value) / rise;
+                // a curve goes through the pointer; the others (the double curve too) count up as it goes up
+                a.Tension = Math.Round(a.Shape switch
+                {
+                    AutoShape.Curve => AutoShapes.TensionThrough(along),
+                    AutoShape.Hold => 0,
+                    _ => Math.Clamp(autoTension + (down.Y - lastPointer.Y) / (AutoTensionDrag / 2), -1, 1),
+                }, 3);
                 break;
             }
             case AutoDrag.Draw:

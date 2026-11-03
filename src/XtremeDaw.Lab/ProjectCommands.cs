@@ -159,8 +159,11 @@ static class ProjectCommands
             case "invertir": ClipEditing.Reverse(p, id); break;
             case "tono": ClipEditing.SetPitch(p, id, double.Parse(value, System.Globalization.CultureInfo.InvariantCulture)); break;
             case "dividir": Console.WriteLine(ClipEditing.Split(p, id, double.Parse(value, System.Globalization.CultureInfo.InvariantCulture))); break;
-            // several ids (comma-separated) go as one block, like D on a selection box
-            case "duplicar": Console.WriteLine(string.Join(",", ClipEditing.DuplicateMany(p, id.Split(',', StringSplitOptions.RemoveEmptyEntries)))); break;
+            // several ids (comma-separated) go as one block, like D on a selection box; --iman spaces the copies by its step
+            case "duplicar":
+                Console.WriteLine(string.Join(",", MidiEditing.DuplicateMany(p, id.Split(',', StringSplitOptions.RemoveEmptyEntries),
+                    step: a.Get("iman") is { } snap ? ClipEditing.GridOf(Subdivisions.Migrate(snap), p.Settings.Bpm).Step : 0)));
+                break;
             case "pegar":
                 // copies the clips and pastes them with their start at "value" seconds, the top one on --pista (or where they were)
                 Console.WriteLine(string.Join(",", (ClipClipboard.Take(p, id.Split(',', StringSplitOptions.RemoveEmptyEntries))
@@ -281,7 +284,7 @@ static class ProjectCommands
                     "mover" => ClipEditMode.Move, "recortar-inicio" => ClipEditMode.TrimStart,
                     "recortar-final" => ClipEditMode.TrimEnd, "fade-in" => ClipEditMode.FadeIn, "fade-out" => ClipEditMode.FadeOut,
                     "estirar-inicio" => ClipEditMode.StretchStart, "estirar-final" => ClipEditMode.StretchEnd,
-                    _ => throw new ArgumentException("editar: mover|recortar-inicio|recortar-final|estirar-inicio|estirar-final|fade-in|fade-out clip delta-segundos; dividir clip segundos; ganancia clip dB; curva clip seg:dB,seg:dB; duplicar clip[,clip…]; pegar clip[,clip…] segundos [--pista id]; a-pista|inicio|alinear|fijar-corte|restaurar|quitar-clip|quitar-pista|nueva-pista|agregar-toma|reordenar; nueva-carpeta [nombre] --pistas id,id; a-carpeta pista[,pista…] carpeta|raiz [--en n]; sacar-de-carpeta pista; mover-carpeta carpeta n; quitar-carpeta carpeta [--con-pistas]; carpeta id [--nombre --plegar --ocultar]; nuevo-separador [nombre] [--en n --visible]; lado id izquierda|derecha; transponer pista semitonos; tono clip semitonos; guardar-plantilla pista [nombre]; usar-plantilla id|nombre; borrar-rango pista[,pista…] desde --hasta fin [--cerrar]; al-frente clip; transicion clip corte|fundido|negro [--segundos 0.5]; bloquear|desbloquear clip|pista"),
+                    _ => throw new ArgumentException("editar: mover|recortar-inicio|recortar-final|estirar-inicio|estirar-final|fade-in|fade-out clip delta-segundos; dividir clip segundos; ganancia clip dB; curva clip seg:dB,seg:dB; duplicar clip[,clip…] [--iman 1/4]; pegar clip[,clip…] segundos [--pista id]; a-pista|inicio|alinear|fijar-corte|restaurar|quitar-clip|quitar-pista|nueva-pista|agregar-toma|reordenar; nueva-carpeta [nombre] --pistas id,id; a-carpeta pista[,pista…] carpeta|raiz [--en n]; sacar-de-carpeta pista; mover-carpeta carpeta n; quitar-carpeta carpeta [--con-pistas]; carpeta id [--nombre --plegar --ocultar]; nuevo-separador [nombre] [--en n --visible]; lado id izquierda|derecha; transponer pista semitonos; tono clip semitonos; guardar-plantilla pista [nombre]; usar-plantilla id|nombre; borrar-rango pista[,pista…] desde --hasta fin [--cerrar]; al-frente clip; transicion clip corte|fundido|negro [--segundos 0.5]; bloquear|desbloquear clip|pista"),
                 };
                 var (_, clip) = ClipEditing.Find(p, id);
                 double dx = double.Parse(value, System.Globalization.CultureInfo.InvariantCulture);

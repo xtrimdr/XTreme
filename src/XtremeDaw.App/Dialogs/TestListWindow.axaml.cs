@@ -20,16 +20,23 @@ namespace XtremeDaw.App.Dialogs;
 /// </summary>
 public sealed partial class TestListWindow : Window
 {
-    static readonly IBrush Amber = Palette.Brush("#f59e0b");
     /// <summary>A list that changes under the pointer would swallow the click that took the focus off a note.</summary>
     const int NoteSaveDelayMs = 300;
     /// <summary>What each tab shows, in the order of the buttons.</summary>
-    static readonly (string Key, (string State, string Key)[] Groups)[] TabList =
+    static readonly (string Key, (Func<TestItem, bool> Match, string Key)[] Groups)[] TabList =
     [
-        ("test.list.pending", [(TestItem.Pending, "")]),
-        ("test.list.fix", [(TestItem.Fails, "test.list.fail"), (TestItem.WorksBadly, "test.list.bad"), (TestItem.Improve, "test.list.improve")]),
-        ("test.list.done", [(TestItem.Works, "")]),
+        ("test.list.pending", [(i => i.State == TestItem.Pending && !Noted(i), "")]),
+        ("test.list.noted", [(i => i.State == TestItem.Pending && Noted(i), "")]),
+        ("test.list.fix", [(Is(TestItem.Fails), "test.list.fail"), (Is(TestItem.WorksBadly), "test.list.bad"), (Is(TestItem.Improve), "test.list.improve")]),
+        ("test.list.done", [(Is(TestItem.Works), "")]),
     ];
+
+    /// <summary>Room for about four lines of a note before typing; it grows up to <see cref="NoteMaxHeight"/>, then scrolls.</summary>
+    const double NoteMinHeight = 84;
+    const double NoteMaxHeight = 220;
+    static readonly Color GreenState = Color.Parse("#22c55e"), BlueState = Color.Parse("#60a5fa"), YellowState = Color.Parse("#f59e0b");
+    /// <summary>How strong a card's edge is in its verdict's color: visible, without shouting over the text.</summary>
+    const double StateEdge = 0.6;
 
     readonly string path;
     readonly ToggleButton[] tabs;
@@ -50,7 +57,7 @@ public sealed partial class TestListWindow : Window
     {
         this.path = path;
         InitializeComponent();
-        tabs = [PendingTab, FixTab, DoneTab];
+        tabs = [PendingTab, NotedTab, FixTab, DoneTab];
         for (int i = 0; i < tabs.Length; i++)
         {
             int index = i;
@@ -98,13 +105,19 @@ public sealed partial class TestListWindow : Window
         for (int i = 0; i < tabs.Length; i++)
         {
             tabs[i].IsChecked = i == tab;
-            tabs[i].Content = $"{Loc.T(TabList[i].Key)} · {TabList[i].Groups.Sum(g => data.Count(g.State))}";
+            tabs[i].Content = $"{Loc.T(TabList[i].Key)} · {TabList[i].Groups.Sum(g => data.Items.Count(g.Match))}";
         }
-        foreach (var (state, key) in TabList[tab].Groups)
+        foreach (var (match, key) in TabList[tab].Groups)
         {
-            var items = data.Items.Where(i => i.State == state).ToList();
+            // oldest first (asked by the user), by number: a fix keeps its place instead of jumping to the end
+            var items = data.Items.Where(match).OrderBy(i => i.Id).ToList();
             if (items.Count == 0) continue;
-            if (key != "") Rows.Children.Add(new TextBlock { Classes = { "label" }, Text = $"{Loc.T(key)} · {items.Count}", Margin = new(2, 4, 0, 0) });
+            if (key != "")
+            {
+                var label = new TextBlock { Classes = { "label" }, Text = $"{Loc.T(key)} · {items.Count}", Margin = new(2, 4, 0, 0) };
+                if (StateColor(items[0].State) is { } c) label.Foreground = Palette.Alpha(c, 1);
+                Rows.Children.Add(label);
+            }
             foreach (var i in items) Rows.Children.Add(Row(i));
         }
         if (Rows.Children.Count == 0) Rows.Children.Add(new TextBlock { Classes = { "dim" }, Text = Loc.T("test.list.empty"), Margin = new(2, 4, 0, 0) });
@@ -124,7 +137,14 @@ public sealed partial class TestListWindow : Window
         var body = new StackPanel { Spacing = 6 };
         body.Children.Add(new TextBlock { Text = item.Text, TextWrapping = TextWrapping.Wrap, LineHeight = 18 });
 
-        var info = new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = Info(item) };
+        var badge = new Border
+        {
+            Background = Palette.Hover, CornerRadius = new(5), Padding = new(6, 1), VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock { Classes = { "mono" }, FontSize = 11, Text = $"#{item.Id}" },
+        };
+        var info = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        info.Children.Add(badge);
+        info.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = Info(item), VerticalAlignment = VerticalAlignment.Center });
         var top = new Grid { ColumnDefinitions = new("*,Auto") };
         top.Children.Add(info);
         var remove = new Button { Classes = { "act" }, Content = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 11 } };
@@ -136,14 +156,15 @@ public sealed partial class TestListWindow : Window
 
         if (missing)
         {
-            body.Children.Add(new TextBlock { Text = Loc.T("test.list.missing"), Foreground = Amber, FontSize = 11, TextWrapping = TextWrapping.Wrap });
+            body.Children.Add(new TextBlock { Text = Loc.T("test.list.missing"), Foreground = Palette.Mute, FontSize = 11, TextWrapping = TextWrapping.Wrap });
             return Card(body);
         }
 
         string shown = item.Draft ?? item.State;
         var note = new TextBox
         {
-            Classes = { "field" }, Text = item.Note, Watermark = Loc.T("test.list.note"), TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
+            Classes = { "field", "note" }, Text = item.Note, Watermark = Loc.T("test.list.note"), TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
+            MinHeight = NoteMinHeight, MaxHeight = NoteMaxHeight,
             IsVisible = shown is TestItem.Fails or TestItem.WorksBadly or TestItem.Improve || item.Note != null,
         };
         note.LostFocus += (_, _) =>
@@ -158,23 +179,51 @@ public sealed partial class TestListWindow : Window
         notes[item.Id] = (note, item);
 
         var buttons = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
-        buttons.Children.Add(Verdict(item, note, TestItem.Works, "", "test.list.ok", Palette.InTune));
-        buttons.Children.Add(Verdict(item, note, TestItem.Improve, "", "test.list.improve", Amber));
-        buttons.Children.Add(Verdict(item, note, TestItem.WorksBadly, "", "test.list.bad", Amber));
-        buttons.Children.Add(Verdict(item, note, TestItem.Fails, "", "test.list.fail", Amber));
+        buttons.Children.Add(Verdict(item, note, TestItem.Works, "", "test.list.ok"));
+        buttons.Children.Add(Verdict(item, note, TestItem.Improve, "", "test.list.improve"));
+        buttons.Children.Add(Verdict(item, note, TestItem.WorksBadly, "", "test.list.bad"));
+        buttons.Children.Add(Verdict(item, note, TestItem.Fails, "", "test.list.fail"));
         if (note.IsVisible) buttons.Children.Add(SaveButton(item, note));
         body.Children.Add(buttons);
         body.Children.Add(note);
-        return Card(body);
+        return Card(body, StateColor(shown));
     }
 
-    static Border Card(Control body) => new() { Classes = { "section" }, Padding = new(12, 10), Child = body };
+    static Func<TestItem, bool> Is(string state) => i => i.State == state;
+
+    /// <summary>
+    /// A pending item that already has a note (asked by the user: a fix back with its note got mixed with the new ones).
+    /// A new item being explained has a draft and stays in Pendiente until it is saved; a fix stays here while it is.
+    /// </summary>
+    static bool Noted(TestItem i) => i.Note != null && (i.Tries > 1 || i.Draft == null);
+
+    /// <summary>
+    /// Each item in its own box, so it is clear where one ends (asked by the user). Drawn here: <c>Border.section</c>
+    /// lives in the main window's styles and does not reach this window.
+    /// </summary>
+    static Border Card(Control body, Color? state = null) => new()
+    {
+        Background = Palette.Raised, BorderBrush = state is { } c ? Palette.Alpha(c, StateEdge) : Palette.Hover,
+        BorderThickness = new(1), CornerRadius = new(8), Padding = new(12, 10), Child = body,
+    };
+
+    /// <summary>
+    /// Each verdict in its own color (asked by the user): green works, blue to improve, yellow works badly, red fails.
+    /// Fixed, not the theme's state colors, so a verdict reads the same with any accent. Pending has none.
+    /// </summary>
+    static Color? StateColor(string state) => state switch
+    {
+        TestItem.Works => GreenState,
+        TestItem.Improve => BlueState,
+        TestItem.WorksBadly => YellowState,
+        TestItem.Fails => Palette.RecColor,
+        _ => null,
+    };
 
     static string Info(TestItem item)
     {
         var at = item.At.Date == DateTime.Today ? item.At.ToString("HH:mm", CultureInfo.CurrentCulture) : item.At.ToString("dd/MM HH:mm", CultureInfo.CurrentCulture);
-        string t = $"#{item.Id} · {at}";
-        return item.Tries > 1 ? $"{t} · {Loc.T("test.list.try", item.Tries)}" : t;
+        return item.Tries > 1 ? $"{at} · {Loc.T("test.list.try", item.Tries)}" : at;
     }
 
     static bool NoteChanged(TextBox box, TestItem item) => (box.Text ?? "").Trim() != (item.Note ?? "");
@@ -183,9 +232,10 @@ public sealed partial class TestListWindow : Window
     /// Anda takes effect at once; the others wait for the note and <see cref="SaveButton"/>. Pressing the one
     /// lit undoes it: a verdict still in draft is dropped, a saved one takes the item back to pending.
     /// </summary>
-    Button Verdict(TestItem item, TextBox note, string state, string glyph, string key, IBrush color)
+    Button Verdict(TestItem item, TextBox note, string state, string glyph, string key)
     {
         bool lit = (item.Draft ?? item.State) == state;
+        var color = Palette.Alpha(StateColor(state) ?? Palette.FgColor, 1);
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         row.Children.Add(new TextBlock { Classes = { "icon" }, Text = glyph, FontSize = 12, Foreground = lit ? color : Palette.Dim, VerticalAlignment = VerticalAlignment.Center });
         row.Children.Add(new TextBlock { Text = Loc.T(key), Foreground = lit ? color : Palette.Dim, VerticalAlignment = VerticalAlignment.Center });

@@ -30,6 +30,7 @@ static class Program
                 "tiempos-carga" => ImportChecks.Times(a),
                 "samples" => SampleChecks.Run(a),
                 "sampler" => SamplerChecks.Run(a),
+                "granular" => GranularChecks.Run(a),
                 "colas" => TailCommands.Run(a),
                 "espectro" => DspCommands.Spectrum(a),
                 "lufs" => DspCommands.Lufs(a),
@@ -263,7 +264,7 @@ static class Program
               proyecto copiar-vinculado carpeta medio   copia a media/ lo que la toma tiene afuera
               proyecto reencontrar carpeta medio --archivo X | carpeta [medio] --buscar-en Y   vuelve a encontrar lo que falta
               proyecto cortar-copia carpeta medio [--al-final]   copia y mata el proceso a la mitad (o al terminar, sin guardar)
-              proyecto insertos carpeta pista [agregar vida|comp|eq|puerta|reverb|delay|limpieza|multibanda|color|cinta|ancho|softclip|limitador|chorus|flanger|phaser|tremolo [--en n] | agregar vst --plugin "nombre" | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n]
+              proyecto insertos carpeta pista [agregar vida|comp|eq|puerta|reverb|delay|limpieza|multibanda|color|cinta|ancho|softclip|limitador|chorus|flanger|phaser|tremolo|bombeo [--en n] | agregar vst --plugin "nombre" | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n]
                                            los slots de efectos de la pista (número o id), en el orden en que suenan; sin
                                            operación, los lista. Como el menú de cada efecto en la tira ancha del mixer;
                                            plegar n lo pliega o despliega en el mixer (no cambia el sonido)
@@ -328,6 +329,11 @@ static class Program
                                            la pista toca ese archivo con el sampler nativo
               sampler archivo [--nota 60] [--raiz n] [--segundos 2] [--filtro lp24] [--corte 2000] [--salida x.wav]
                                            toca un archivo con el sampler, en una nota
+              midi granular carpeta [--pista n] --sample archivo | --quitar
+                                           la pista toca ese archivo con el granular nativo
+              granular archivo [--nota 60] [--segundos 4] [--modo stretch|scrub] [--posicion 0] [--velocidad 1]
+                       [--densidad 20] [--tamano 0.08] [--spray 0] [--jitter 0] [--salida x.wav]
+                                           toca un archivo con el granular, en una nota
                                            el instrumento VST3 que toca la pista (de vst escanear); --quitar vuelve al
                                            tono de prueba. xtlab mezclar lo renderiza con el plugin
               midi comprobar               verifica el sonido de las notas (bloques, release, exportación, tempo) y el

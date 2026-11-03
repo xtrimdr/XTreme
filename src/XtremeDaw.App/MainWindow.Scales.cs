@@ -84,7 +84,7 @@ public partial class MainWindow
         }
         ToggleButton Choice(string text, Func<bool> on, Action pick, double padding = 6)
         {
-            var b = new ToggleButton { Classes = { "seg", "pick", "flat" }, Content = text, Height = ScaleRowH, MinHeight = 0, MinWidth = 0, Padding = new Thickness(padding, 0), FontSize = 11.5, Focusable = false, HorizontalAlignment = HorizontalAlignment.Stretch };
+            var b = new ToggleButton { Classes = { "seg", "pick", "flat" }, Content = text, Height = ScaleRowH, MinHeight = 0, MinWidth = 0, Padding = new Thickness(padding, 0), FontSize = 11, Focusable = false, HorizontalAlignment = HorizontalAlignment.Stretch };
             marks.Add(() => b.IsChecked = on());
             b.Click += (_, _) => { pick(); Show(); _ = SetScale(root, id); };
             return b;
@@ -130,7 +130,7 @@ public partial class MainWindow
         body.Children.Add(Title(Loc.T("scale.pick.root")));
         body.Children.Add(roots);
         body.Children.Add(lists);
-        var fit = new Button { Classes = { "chip" }, Content = Loc.T("scale.fit"), Height = ScaleRowH + 2, MinHeight = 0, Padding = new Thickness(8, 0), FontSize = 11.5, Focusable = false };
+        var fit = new Button { Classes = { "chip" }, Content = Loc.T("scale.fit"), Height = ScaleRowH + 2, MinHeight = 0, Padding = new Thickness(8, 0), FontSize = 11, Focusable = false };
         ToolTip.SetTip(fit, Loc.T("scale.fit.tip"));
         marks.Add(() => fit.IsEnabled = id != null);
         fit.Click += (_, _) =>
@@ -139,7 +139,7 @@ public partial class MainWindow
             if (moved < 0) Toast(Loc.T("scale.fit.noClip"));
             else Status(Loc.T("scale.fit.done", moved));
         };
-        var snapKeys = new ToggleButton { Classes = { "chip" }, Content = Loc.T("scale.snapKeys"), Height = ScaleRowH + 2, MinHeight = 0, Padding = new Thickness(8, 0), FontSize = 11.5, Focusable = false, IsChecked = AppConfig.Get("midiScaleSnap") == "true", Margin = new Thickness(0, 0, 6, 0) };
+        var snapKeys = new ToggleButton { Classes = { "chip" }, Content = Loc.T("scale.snapKeys"), Height = ScaleRowH + 2, MinHeight = 0, Padding = new Thickness(8, 0), FontSize = 11, Focusable = false, IsChecked = AppConfig.Get("midiScaleSnap") == "true", Margin = new Thickness(0, 0, 6, 0) };
         ToolTip.SetTip(snapKeys, Loc.T("scale.snapKeys.tip"));
         snapKeys.Click += (_, _) =>
         {
@@ -201,7 +201,7 @@ public partial class MainWindow
         return new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
-            Children = { pianoScaleButton, pianoChordButton, pianoChordKindButton },
+            Children = { pianoScaleButton, pianoChordButton, pianoChordKindButton, pianoChordLabel },
         };
     }
 

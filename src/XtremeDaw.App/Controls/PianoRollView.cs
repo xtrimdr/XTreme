@@ -634,7 +634,7 @@ public sealed partial class PianoRollView : Control
         if (MidiStamps.Find(chordKind) is { } stamp) return [.. MidiStamps.Notes(stamp, root, 0, scale, lastVelocity).Select(n => n.Pitch).Distinct()];
         int[] rootPosition = Chords.Build(chordKind, root, scale);
         int inversion = Math.Min(chordInversion, rootPosition.Length - 1);
-        return [.. Chords.Invert(rootPosition, inversion).Where(p => p is >= MidiNote.MinPitch and <= MidiNote.MaxPitch)];
+        return [.. Chords.Voice(rootPosition, inversion).Where(p => p is >= MidiNote.MinPitch and <= MidiNote.MaxPitch)];
     }
 
     /// <summary>The note a click writes on this row: on the scale, unless Alt is down.</summary>
@@ -697,7 +697,8 @@ public sealed partial class PianoRollView : Control
         var stack = selected.OrderBy(n => n.Pitch).ToList();
         if (Chords.Read(stack.ConvertAll(n => n.Pitch)) is not { } chord) return;
         chordNotes.AddRange(stack);
-        chordVoicings = [.. Enumerable.Range(0, stack.Count).Select(i => Chords.Invert(chord.Root, i))];
+        var root = Chords.RootOf(stack.ConvertAll(n => n.Pitch), chord.Root, chord.Inversion);
+        chordVoicings = [.. Enumerable.Range(0, stack.Count).Select(i => Chords.Voice(root, i))];
         chordAt = chord.Inversion;
         chordName = ChordLabel(chord.Root[0], chord.Kind);
     }
@@ -745,6 +746,26 @@ public sealed partial class PianoRollView : Control
                 ctx.FillRectangle(on ? Palette.Accent : Palette.Dim, new Rect(chip.Right - 14, Math.Round(y) - 1, 10, 2));
             }
         }
+    }
+
+    /// <summary>
+    /// The wheel over the selected chord (its notes or its bar) puts it in the next inversion, or the one before; over the
+    /// chord the tool would write, it turns that one. False when the pointer is over neither.
+    /// </summary>
+    bool TurnChord(Point p, int step)
+    {
+        if (chordVoicings.Length > 0 && (ChordBarRect() is { } bar && bar.Contains(p) || NoteAt(p) is { } n && chordNotes.Contains(n)))
+        {
+            SetInversion(((chordAt + step) % chordVoicings.Length + chordVoicings.Length) % chordVoicings.Length);
+            return true;
+        }
+        if (!chordTool || gesture != null || MidiStamps.Find(chordKind) != null || p.X < KeyW || p.Y < RulerH || p.Y >= GridBottom || NoteAt(p) != null) return false;
+        int count = Chords.Build(chordKind, WritePitch(p.Y), scale).Length;
+        if (count < 2) return false;
+        chordInversion = ((Math.Min(chordInversion, count - 1) + step) % count + count) % count;
+        ghostRoot = -1;
+        InvalidateVisual();
+        return true;
     }
 
     /// <summary>Puts the chord in the bar in this inversion, which the next chord drawn takes too.</summary>
@@ -1641,8 +1662,15 @@ public sealed partial class PianoRollView : Control
         if (clipId == null) return;
         var p = e.GetPosition(this);
         double d = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
-        // the same modifiers as the timeline (Configuración → Atajos): zoom, sideways, height
-        switch (Shortcuts.FindWheel(e.KeyModifiers))
+        // the same modifiers as the timeline (Configuración → Atajos): zoom, sideways, height; the height's, over a
+        // chord, turns it instead (asked by the user)
+        string? wheel = Shortcuts.FindWheel(e.KeyModifiers);
+        if (wheel == "wheelHeight" && TurnChord(p, d > 0 ? 1 : -1))
+        {
+            e.Handled = true;
+            return;
+        }
+        switch (wheel)
         {
             case "wheelZoom":
             {

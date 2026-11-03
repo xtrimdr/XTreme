@@ -15,6 +15,13 @@ public enum SamplerLoop { Off, Forward, PingPong }
 /// memory (less than double) and none on the audio thread. A forward loop is written into the buffers: the seam
 /// crossfaded, and past its end the start of the loop again, so the interpolator reads across the turn without a branch.
 /// </para>
+/// <para>
+/// The seam always fades, at least <see cref="MinSeam"/> (asked by the user: loops still clicked with the crossfade at
+/// 0). It fades into what comes before the loop's start when there is enough of it; a loop that starts near the
+/// beginning fades into its own first frames instead and turns back to <see cref="LoopBack"/>, just after them. The
+/// gains follow how alike the two stretches are (<see cref="Seam"/>), so the turn neither dips nor swells. A ping-pong
+/// loop mirrors the sound past its end, so the interpolator reads the same wave on both sides of the turn.
+/// </para>
 /// </summary>
 public sealed class SamplerSound
 {
@@ -36,13 +43,18 @@ public sealed class SamplerSound
     /// <summary>The loop, in frames of level 0; only meaningful with <see cref="Loop"/>.</summary>
     public int LoopStart { get; }
     public int LoopEnd { get; }
+    /// <summary>Where a forward loop turns back to from <see cref="LoopEnd"/>: <see cref="LoopStart"/>, or past the
+    /// frames its seam faded into when there was nothing before it to fade into.</summary>
+    public int LoopBack { get; }
     /// <summary>The loudest sample, for Normalizar.</summary>
     public float Peak { get; }
 
     /// <param name="loopStart">Where the loop begins, 0..1 of the sound as it plays (after <paramref name="reverse"/>).</param>
     /// <param name="loopEnd">Where it ends.</param>
     /// <param name="crossfade">How much of the loop the seam fades over, 0..1 of its length.</param>
-    public SamplerSound(float[] left, float[] right, bool reverse, SamplerLoop loop, double loopStart, double loopEnd, double crossfade, CancellationToken ct = default)
+    /// <param name="minSeam">The shortest seam, in frames (<see cref="MinSeam"/>; 0 only to check a seam as it is).</param>
+    public SamplerSound(float[] left, float[] right, bool reverse, SamplerLoop loop, double loopStart, double loopEnd, double crossfade,
+        CancellationToken ct = default, int minSeam = MinSeam)
     {
         int n = Frames = left.Length;
         var l = new float[n + 2 * Pad];
@@ -63,13 +75,30 @@ public sealed class SamplerSound
         Loop = looped ? loop : SamplerLoop.Off;
         LoopStart = looped ? from : 0;
         LoopEnd = looped ? to : n;
+        LoopBack = LoopStart;
         if (Loop == SamplerLoop.Forward)
         {
-            Seam(l, from, to, crossfade);
-            Seam(r, from, to, crossfade);
+            int len = to - from;
+            int x = Math.Min(Math.Max((int)(Math.Clamp(crossfade, 0, 1) * len), minSeam), len);
+            // before the start if there is room for the whole fade; otherwise inside the loop (up to half of it), which
+            // then turns back past it
+            bool before = from >= x;
+            if (!before) x = Math.Min(x, len / 2);
+            int src = before ? from - x : from;
+            Seam(l, r, to - x, src, x);
+            LoopBack = before ? from : from + x;
             int guard = Math.Min(Pad, l.Length - (Pad + to));
-            Array.Copy(l, Pad + from, l, Pad + to, guard);
-            Array.Copy(r, Pad + from, r, Pad + to, guard);
+            Array.Copy(l, Pad + LoopBack, l, Pad + to, guard);
+            Array.Copy(r, Pad + LoopBack, r, Pad + to, guard);
+        }
+        else if (Loop == SamplerLoop.PingPong)
+        {
+            int guard = Math.Min(Math.Min(Pad, l.Length - (Pad + to)), to - from);
+            for (int j = 1; j <= guard && Pad + to - j >= 0; j++)
+            {
+                l[Pad + to + j] = l[Pad + to - j];
+                r[Pad + to + j] = r[Pad + to - j];
+            }
         }
         L[0] = l;
         R[0] = r;
@@ -112,15 +141,35 @@ public sealed class SamplerSound
         return -1;
     }
 
-    /// <summary>The end of the loop fades into what comes before its start, so turning back is a continuation.</summary>
-    static void Seam(float[] d, int from, int to, double crossfade)
+    /// <summary>The shortest seam: 5 ms, below what an ear takes for a cut, above what a click needs to go away.</summary>
+    public const int MinSeam = 240;
+
+    /// <summary>
+    /// The <paramref name="x"/> frames from <paramref name="at"/> (the end of the loop) fade into the ones from
+    /// <paramref name="src"/>, which lead into where the loop turns back to, so the turn is a continuation. Alike
+    /// stretches add up in step, so they take a straight fade; unrelated ones an equal-power one; the rest, in between by
+    /// how alike they are (both channels together, so the image doesn't move).
+    /// </summary>
+    static void Seam(float[] l, float[] r, int at, int src, int x)
     {
-        int x = Math.Min((int)(Math.Clamp(crossfade, 0, 1) * (to - from)), from);
+        if (x <= 0) return;
+        double ab = 0, aa = 0, bb = 0;
         for (int j = 0; j < x; j++)
         {
-            double a = (j + 1) / (double)(x + 1);
-            int at = Pad + to - x + j, back = Pad + from - x + j;
-            d[at] = (float)(d[at] * Math.Cos(a * Math.PI / 2) + d[back] * Math.Sin(a * Math.PI / 2));
+            double a1 = l[Pad + at + j], a2 = r[Pad + at + j], b1 = l[Pad + src + j], b2 = r[Pad + src + j];
+            ab += a1 * b1 + a2 * b2;
+            aa += a1 * a1 + a2 * a2;
+            bb += b1 * b1 + b2 * b2;
+        }
+        double alike = aa > 0 && bb > 0 ? Math.Clamp(ab / Math.Sqrt(aa * bb), 0, 1) : 1;
+        for (int j = 0; j < x; j++)
+        {
+            double t = (j + 1) / (double)(x + 1);
+            double gOut = alike * (1 - t) + (1 - alike) * Math.Cos(t * Math.PI / 2);
+            double gIn = alike * t + (1 - alike) * Math.Sin(t * Math.PI / 2);
+            int i = Pad + at + j, k = Pad + src + j;
+            l[i] = (float)(l[i] * gOut + l[k] * gIn);
+            r[i] = (float)(r[i] * gOut + r[k] * gIn);
         }
     }
 

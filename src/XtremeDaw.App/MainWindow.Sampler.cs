@@ -52,9 +52,9 @@ public partial class MainWindow
     string? samplerFront;
 
     /// <summary>The name the track's instrument goes by, wherever it shows.</summary>
-    static string InstrumentName(Track t) => t.Sampler != null ? Loc.T("sampler.name") : t.Instrument?.Name ?? Loc.T("vst.testTone");
+    static string InstrumentName(Track t) => t.Sampler != null ? Loc.T("sampler.name") : t.Granular != null ? Loc.T("granular.name") : t.Instrument?.Name ?? Loc.T("vst.testTone");
 
-    /// <summary>Hands each track its sampler and drops the ones no track wants. After every <see cref="ApplyTracks"/>.</summary>
+    /// <summary>Hands each track its sampler (and its granular) and drops the ones no track wants. After every <see cref="ApplyTracks"/>.</summary>
     void SyncSamplers()
     {
         foreach (var id in samplers.Keys.ToList())
@@ -70,6 +70,7 @@ public partial class MainWindow
             if (t.Sampler != loaded.Player) t.Sampler = loaded.Player;
             ApplySampler(t, loaded);
         }
+        SyncGranulars();
     }
 
     void DropSampler(string trackId)
@@ -83,6 +84,7 @@ public partial class MainWindow
     void DropAllSamplers()
     {
         foreach (var id in samplers.Keys.ToList()) DropSampler(id);
+        DropAllGranulars();
         samplerImported.Clear();
     }
 
@@ -232,6 +234,7 @@ public partial class MainWindow
         {
             if (p.Tracks.Find(t => t.Id == id) is not { } t) return null;
             t.Instrument = null;
+            t.Granular = null;
             t.Sampler ??= new SamplerSettings();
             return id;
         }, "instrument-set");
@@ -239,10 +242,12 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// A file becomes the track's sample, copied or linked by the same rule as an import, on a sampler it gets if it
-    /// doesn't have one. Long files keep their first <see cref="SamplerSound.MaxSec"/> seconds.
+    /// A file becomes the track's sample, always linked where it is without asking (decided by the user, 2026-11-03:
+    /// samples belong to the user's library; what only FFmpeg reads still comes in as a WAV), on a sampler (or with
+    /// <paramref name="granular"/>, a granular) it gets if it doesn't have one. Long files keep their first
+    /// <see cref="SamplerSound.MaxSec"/> seconds.
     /// </summary>
-    async Task LoadSample(string trackId, string path)
+    async Task LoadSample(string trackId, string path, bool granular = false)
     {
         if (store is not { } st || !CanImport()) return;
         if (!AudioImport.IsSupported(path))
@@ -250,7 +255,6 @@ public partial class MainWindow
             Toast(Loc.T("imp.fail", Path.GetFileName(path), Loc.T("sampler.notAudio")));
             return;
         }
-        if (await LinkOrCopy([path]) is not { } link) return;
         string name = Path.GetFileName(path), dir = st.Dir;
         var toast = Toasts.ShowProgress(Loc.T("imp.importing", name));
         AudioImport.Imported file;
@@ -261,7 +265,7 @@ public partial class MainWindow
             (file, left, right, cut) = await Task.Run(() =>
             {
                 var audio = AudioImport.Read(path, PlaybackEngine.SampleRate, toast.Report);
-                var kept = link ? AudioImport.LinkIn(dir, path, audio) : AudioImport.CopyIn(dir, path, audio);
+                var kept = AudioImport.LinkIn(dir, path, audio);
                 int most = (int)(SamplerSound.MaxSec * PlaybackEngine.SampleRate);
                 bool longer = audio.Left.Length > most;
                 return (kept, longer ? audio.Left[..most] : audio.Left, longer ? audio.Right[..most] : audio.Right, longer);
@@ -281,11 +285,13 @@ public partial class MainWindow
         await EditTimeline(p =>
         {
             if (p.Tracks.Find(t => t.Id == trackId) is not { } t) return null;
-            SamplerMedia.Set(p, t, file, left, right, PlaybackEngine.SampleRate);
-            samplerImported[t.Sampler!.MediaId!] = (left, right);
+            if (granular) GranularMedia.Set(p, t, file, left, right, PlaybackEngine.SampleRate);
+            else SamplerMedia.Set(p, t, file, left, right, PlaybackEngine.SampleRate);
+            samplerImported[(t.Sampler?.MediaId ?? t.Granular?.MediaId)!] = (left, right);
             return trackId;
         }, "sampler-sample");
-        OpenSamplerWindow(trackId);
+        if (granular) OpenGranularWindow(trackId);
+        else OpenSamplerWindow(trackId);
     }
 
     /// <summary>The Biblioteca's "Abrir en el sampler": on the selected MIDI track if it takes it, else on a new one.</summary>
@@ -301,12 +307,13 @@ public partial class MainWindow
         if (id != null) await LoadSample(id, path);
     }
 
-    async Task PickSample(string trackId)
+    async Task PickSample(string trackId, bool granular = false)
     {
         if (!CanImport()) return;
-        var top = samplers.TryGetValue(trackId, out var loaded) && loaded.Window != null ? loaded.Window.StorageProvider : StorageProvider;
+        Window? own = granular ? granulars.GetValueOrDefault(trackId)?.Window : samplers.GetValueOrDefault(trackId)?.Window;
+        var top = own?.StorageProvider ?? StorageProvider;
         var files = await top.OpenFilePickerAsync(new FilePickerOpenOptions { Title = Loc.T("sampler.load"), FileTypeFilter = [AudioFiles, FilePickerFileTypes.All] });
-        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) await LoadSample(trackId, path);
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) await LoadSample(trackId, path, granular);
     }
 
     /// <summary>Opens the track's window, or brings it to the front.</summary>

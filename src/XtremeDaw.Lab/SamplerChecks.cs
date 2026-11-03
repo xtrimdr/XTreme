@@ -50,8 +50,9 @@ static class SamplerChecks
         return (l, r);
     }
 
-    static SamplerSound Sound(float[] x, SamplerLoop loop = SamplerLoop.Off, double from = 0, double to = 1, double fade = 0, bool reverse = false) =>
-        new(x, x, reverse, loop, from, to, fade);
+    static SamplerSound Sound(float[] x, SamplerLoop loop = SamplerLoop.Off, double from = 0, double to = 1, double fade = 0, bool reverse = false,
+        int minSeam = SamplerSound.MinSeam) =>
+        new(x, x, reverse, loop, from, to, fade, minSeam: minSeam);
 
     static float[] Sine(double hz, double sec, double level = 0.5)
     {
@@ -75,11 +76,12 @@ static class SamplerChecks
         return Math.Sqrt(sum / Math.Max(1, to - from));
     }
 
-    /// <summary>The step from the last frame of a forward loop to its first, as the voice hears it turn around.</summary>
-    static double SeamStep(float[] x, double from, double to)
+    /// <summary>The step from the last frame of a forward loop to where it turns back, as the voice hears it turn
+    /// around; <paramref name="minSeam"/> 0 measures the loop points alone, without the seam's fade.</summary>
+    static double SeamStep(float[] x, double from, double to, int minSeam = 0)
     {
-        var s = Sound(x, SamplerLoop.Forward, from, to);
-        return Math.Abs(s.L[0][SamplerSound.Pad + s.LoopEnd - 1] - s.L[0][SamplerSound.Pad + s.LoopStart]);
+        var s = Sound(x, SamplerLoop.Forward, from, to, minSeam: minSeam);
+        return Math.Abs(s.L[0][SamplerSound.Pad + s.LoopEnd - 1] - s.L[0][SamplerSound.Pad + s.LoopBack]);
     }
 
     /// <summary>The frequency from the zero crossings going up, between two frames.</summary>
@@ -209,6 +211,20 @@ static class SamplerChecks
         Row("Cruce por cero: la costura no salta", $"{zeroJump:0.000} (libre {freeJump:0.000})", $"< {2 * sineStep:0.000}", zeroJump < 2 * sineStep && freeJump > 2 * sineStep);
         int backwards = SamplerSound.ZeroCrossing(swing, swing, true, Sr / 2);
         Row("Cruce por cero: al revés, en la subida de lo que suena", $"{swing[swing.Length - backwards]:0.000} → {swing[swing.Length - 1 - backwards]:0.000}", "- → +", swing[swing.Length - backwards] < 0 && swing[swing.Length - 1 - backwards] >= 0);
+        // the seam fades even with the crossfade at 0, also when the loop starts at the very beginning
+        double fadedJump = SeamStep(swing, 0.2013, 0.8127, SamplerSound.MinSeam), headJump = SeamStep(swing, 0, 0.8127, SamplerSound.MinSeam);
+        Row("Loop: con crossfade en 0 igual se funde", $"{fadedJump:0.000} (libre {freeJump:0.000})", $"< {2 * sineStep:0.000}", fadedJump < 2 * sineStep);
+        Row("Loop: desde el principio también se funde", $"{headJump:0.000}", $"< {2 * sineStep:0.000}", headJump < 2 * sineStep);
+        var (headLoop, _) = Render(plain, Sound(swing, SamplerLoop.Forward, 0, 0.8127), [On(0, Sr * 3, 60)], Sr * 3);
+        double heardJump = 0;
+        for (int i = Sr; i < Sr * 3 - Sr / 4; i++) heardJump = Math.Max(heardJump, Math.Abs(headLoop[i] - headLoop[i - 1]));
+        Row("Loop: desde el principio, sin salto al oírlo", $"{heardJump:0.000}", $"< {2 * sineStep:0.000}", heardJump < 2 * sineStep);
+        // unrelated stretches (noise) keep their level across the seam: no dip
+        var hiss = Noise(1);
+        var (noisy, _) = Render(plain, Sound(hiss, SamplerLoop.Forward, 0.3, 0.6, 0.1), [On(0, Sr * 2, 60)], Sr * 2);
+        int seamAt = (int)(0.6 * Sr) - (int)(0.1 * 0.3 * Sr);
+        double seamDb = 20 * Math.Log10(Rms(noisy, seamAt, (int)(0.6 * Sr)) / Rms(noisy, (int)(0.35 * Sr), (int)(0.5 * Sr)));
+        Row("Loop: en la costura, el nivel no cae", $"{seamDb:+0.0;-0.0} dB", "±1,5", Math.Abs(seamDb) < 1.5);
         var hush = new float[Sr / 10];
         Row("Cruce por cero: en silencio no hay", SamplerSound.ZeroCrossing(hush, hush, false, Sr / 20).ToString(), "-1", SamplerSound.ZeroCrossing(hush, hush, false, Sr / 20) == -1);
 

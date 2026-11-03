@@ -3,14 +3,15 @@ using XtremeDaw.Audio.Dsp;
 namespace XtremeDaw.Projects;
 
 /// <summary>How a parameter's value reads: the window formats it, this says what it is.</summary>
-public enum FxUnit { Percent, Db, Hz, Ms, Sec, Ratio, Level, Ceiling, Recorte, Rate, Count }
+public enum FxUnit { Percent, Db, Hz, Ms, Sec, Ratio, Level, Ceiling, Recorte, Rate, Count, Division, Signed }
 
 /// <summary>
 /// One knob of a native effect: where it lives in the slot (<see cref="Get"/>, <see cref="Set"/>), its range and curve
 /// and what the window shows. <see cref="Label"/> and <see cref="Tip"/> are text keys. <see cref="OffBelow"/>: at or under
 /// this value it reads "Off". <see cref="OffAtZero"/>: the bottom of the knob is 0 = off, under a range that starts at
 /// <see cref="Min"/>. <see cref="Fine"/>: it goes in the fine controls. <see cref="Manual"/>: moving it takes a
-/// compressor out of its preset. <see cref="TurnsOn"/>: moving it turns the effect on.
+/// compressor out of its preset. <see cref="TurnsOn"/>: moving it turns the effect on. <see cref="Steps"/>: a stepped knob,
+/// like the switches of the hardware a compressor model follows; it holds the step's value, not its number.
 /// </summary>
 public sealed record FxParam(string Id, string Label, double Min, double Max, double Default, FxUnit Unit, double Step, Func<InsertSlot, double> Get, Action<InsertSlot, double> Set)
 {
@@ -21,12 +22,32 @@ public sealed record FxParam(string Id, string Label, double Min, double Max, do
     public bool Manual { get; init; }
     public bool TurnsOn { get; init; }
     public string? Tip { get; init; }
+    /// <summary>The text key it reads at or under <see cref="OffBelow"/> (null = "Off").</summary>
+    public string? OffText { get; init; }
     /// <summary>A switch, not a knob: a lane holds it until its next point (<see cref="FxDefs.Power"/>).</summary>
     public bool Toggle { get; init; }
+    /// <summary>The values a stepped knob stops at, in order, and the text key of the ones a number doesn't say (null = the value).</summary>
+    public double[]? Steps { get; init; }
+    public string?[]? StepNames { get; init; }
+
+    int StepOf(double v)
+    {
+        int best = 0;
+        for (int i = 1; i < Steps!.Length; i++)
+            if (Math.Abs(Steps[i] - v) < Math.Abs(Steps[best] - v)) best = i;
+        return best;
+    }
+
+    /// <summary>The nearest step's value (a stepped knob), or the value as it is.</summary>
+    public double Snap(double v) => Steps == null ? v : Steps[StepOf(v)];
+
+    /// <summary>The text key of a step that has a name ("Auto", "Todos"), or null.</summary>
+    public string? StepName(double v) => Steps == null || StepNames == null ? null : StepNames[StepOf(v)];
 
     /// <summary>The knob's position (0 to 1) for a value.</summary>
     public double ToKnob(double v)
     {
+        if (Steps != null) return Steps.Length < 2 ? 0 : StepOf(v) / (double)(Steps.Length - 1);
         if (OffAtZero && v <= 0) return 0;
         double x = Math.Clamp(v, Min, Max);
         return Log ? Math.Log(x / Min) / Math.Log(Max / Min) : (x - Min) / (Max - Min);
@@ -36,6 +57,7 @@ public sealed record FxParam(string Id, string Label, double Min, double Max, do
     public double FromKnob(double k)
     {
         k = Math.Clamp(k, 0, 1);
+        if (Steps != null) return Steps[(int)Math.Round(k * (Steps.Length - 1))];
         if (OffAtZero && k < 0.02) return 0;
         double v = Log ? Min * Math.Pow(Max / Min, k) : Min + (Max - Min) * k;
         return Step > 0 ? Math.Clamp(Math.Round(v / Step) * Step, Min, Max) : v;
@@ -186,6 +208,88 @@ public static class FxDefs
         ModSpread(0),
     ];
 
+    static readonly FxParam[] PumpList =
+    [
+        Stage("depth", "fx.p.depth", 0, 1, PumpParams.Defaults.Depth, FxUnit.Percent, 0.01, "fx.pump.depth.tip"),
+        Stage("division", "fx.pump.division", 0, PumpParams.Beats.Length - 1, PumpParams.Defaults.Division, FxUnit.Division, 1, "fx.pump.division.tip"),
+        Stage("length", "fx.pump.length", PumpParams.LengthMin, 1, PumpParams.Defaults.Length, FxUnit.Percent, 0.01, "fx.pump.length.tip"),
+        Stage("curve", "fx.pump.curve", -1, 1, PumpParams.Defaults.Curve, FxUnit.Signed, 0.01, "fx.pump.curve.tip"),
+        Stage("attack", "fx.pump.attack", 0, PumpParams.AttackMaxMs, PumpParams.Defaults.AttackMs, FxUnit.Ms, 0.1, "fx.pump.attack.tip") with { Fine = true },
+        Stage("offset", "fx.pump.offset", -0.5, 0.5, 0, FxUnit.Signed, 0.01, "fx.pump.offset.tip") with { Fine = true },
+        Stage("threshold", "insp.comp.threshold", PumpParams.ThresholdAutoDb, 0, PumpParams.ThresholdAutoDb, FxUnit.Level, 0.5, "fx.pump.threshold.tip")
+            with { OffBelow = PumpParams.ThresholdAutoDb, OffText = "fx.auto" },
+        Stage("hold", "fx.pump.hold", 0, PumpParams.HoldMaxMs, 0, FxUnit.Ms, 1, "fx.pump.hold.tip"),
+        Stage("keyMs", "insp.comp.release", PumpParams.KeyMinMs, PumpParams.KeyMaxMs, 250, FxUnit.Ms, 1, "fx.pump.keyMs.tip") with { Log = true },
+    ];
+
+    /// <summary>The pump as the engine reads it.</summary>
+    public static PumpParams ToPump(InsertSlot s)
+    {
+        double V(string id) => PumpList.First(p => p.Id == id).Get(s);
+        return new((int)Math.Round(V("division")), V("depth"), V("length"), V("curve"), V("attack"), V("offset"))
+            { KeyMs = V("keyMs"), ThresholdDb = V("threshold"), HoldMs = V("hold") };
+    }
+
+    static FxParam Makeup(double max) => Stage("makeup", "insp.comp.makeup", 0, max, 0, FxUnit.Db, 0.5, "fx.model.makeup.tip");
+    static FxParam Stepped(string id, string label, double[] steps, double start, FxUnit unit, string tip, string?[]? names = null) =>
+        Stage(id, label, steps.Min(), steps.Max(), start, unit, 0, tip) with { Steps = steps, StepNames = names };
+
+    static readonly FxParam[] FetList =
+    [
+        Stage("input", "fx.p.input", 0, 48, 6, FxUnit.Db, 0.5, "fx.fet.input.tip"),
+        Stepped("ratio", "insp.comp.ratio", [4, 8, 12, 20, CompModelParams.AllButtons], 4, FxUnit.Ratio, "fx.fet.ratio.tip", [null, null, null, null, "fx.fet.all"]),
+        Stage("attack", "insp.comp.attack", 0.02, 0.8, 0.2, FxUnit.Ms, 0.01, "fx.fet.attack.tip") with { Log = true },
+        Stage("release", "insp.comp.release", 50, 1100, 400, FxUnit.Ms, 5, "fx.fet.release.tip") with { Log = true },
+        Makeup(24),
+    ];
+
+    static readonly FxParam[] OptoList =
+    [
+        Stage("reduction", "fx.p.reduction", 0, 1, 0.4, FxUnit.Percent, 0.01, "fx.opto.reduction.tip"),
+        Makeup(40),
+        Stepped("mode", "fx.p.mode", [0, 1], 0, FxUnit.Count, "fx.opto.mode.tip", ["fx.opto.compress", "fx.opto.limit"]),
+    ];
+
+    static readonly FxParam[] BusCompList =
+    [
+        Stage("threshold", "insp.comp.threshold", -40, 0, -14, FxUnit.Level, 0.5, "fx.model.threshold.tip"),
+        Stepped("ratio", "insp.comp.ratio", [2, 4, 10], 4, FxUnit.Ratio, "fx.bus.ratio.tip"),
+        Stepped("attack", "insp.comp.attack", [0.1, 0.3, 1, 3, 10, 30], 30, FxUnit.Ms, "fx.bus.attack.tip"),
+        Stepped("release", "insp.comp.release", [100, 300, 600, 1200, CompModelParams.AutoRelease], CompModelParams.AutoRelease, FxUnit.Ms, "fx.bus.release.tip",
+            [null, null, null, null, "fx.auto"]),
+        Makeup(20),
+        Stage("scHpf", "fx.p.schpf", 20, 300, 20, FxUnit.Hz, 1, "fx.p.schpf.tip") with { Log = true, OffBelow = 20 },
+    ];
+
+    static readonly FxParam[] VcaList =
+    [
+        Stage("threshold", "insp.comp.threshold", -50, 0, -20, FxUnit.Level, 0.5, "fx.model.threshold.tip"),
+        Stepped("ratio", "insp.comp.ratio", [1.5, 2, 3, 4, 6, 10, 20, CompModelParams.Infinite], 4, FxUnit.Ratio, "fx.vca.ratio.tip",
+            [null, null, null, null, null, null, null, "fx.ratio.inf"]),
+        Stepped("knee", "insp.comp.knee", [0, 1], 0, FxUnit.Count, "fx.vca.knee.tip", ["fx.knee.hard", "fx.knee.soft"]),
+        Makeup(24),
+    ];
+
+    static readonly FxParam[] VariMuList =
+    [
+        Stage("input", "fx.p.input", 0, 24, 6, FxUnit.Db, 0.5, "fx.varimu.input.tip"),
+        Stage("threshold", "insp.comp.threshold", -40, 0, -18, FxUnit.Level, 0.5, "fx.model.threshold.tip"),
+        Stepped("time", "fx.p.time", [1, 2, 3, 4, 5, 6], 2, FxUnit.Count, "fx.varimu.time.tip",
+            ["fx.varimu.t1", "fx.varimu.t2", "fx.varimu.t3", "fx.varimu.t4", "fx.varimu.t5", "fx.varimu.t6"]),
+        Makeup(24),
+    ];
+
+    /// <summary>A compressor model as the engine reads it: the Óptico's Reducción becomes its threshold, and each model's switch its mode.</summary>
+    public static CompModelParams ToCompModel(InsertSlot s)
+    {
+        var ps = Params(s.Type);
+        double V(string id, double fallback) => Array.Find(ps, p => p.Id == id)?.Get(s) ?? fallback;
+        var d = CompModelParams.Defaults;
+        double threshold = s.Type == TrackInserts.Opto ? OptoCompInsert.ThresholdFor(V("reduction", 0.4)) : V("threshold", d.ThresholdDb);
+        double mode = s.Type switch { TrackInserts.VariMu => V("time", 2), TrackInserts.Vca => V("knee", 0), _ => V("mode", 0) };
+        return new(V("input", d.InputDb), threshold, V("ratio", d.Ratio), V("attack", d.AttackMs), V("release", d.ReleaseMs), V("makeup", 0), V("scHpf", 0), (int)Math.Round(mode));
+    }
+
     /// <summary>A modulation effect as the engine reads it.</summary>
     public static ModParams ToMod(InsertSlot s)
     {
@@ -218,6 +322,12 @@ public static class FxDefs
         TrackInserts.Flanger => FlangerList,
         TrackInserts.Phaser => PhaserList,
         TrackInserts.Tremolo => TremoloList,
+        TrackInserts.Fet => FetList,
+        TrackInserts.Opto => OptoList,
+        TrackInserts.BusComp => BusCompList,
+        TrackInserts.Vca => VcaList,
+        TrackInserts.VariMu => VariMuList,
+        TrackInserts.Pump => PumpList,
         _ => [],
     };
 

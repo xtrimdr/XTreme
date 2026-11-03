@@ -5,7 +5,7 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// Which effect knobs the timeline's track headers show (asked by the user: all by default, and you turn off the ones
-/// you know you won't use). Chosen in Configuración → "Vista" and kept in config.json ("timeline.hiddenKnobs") as the
+/// you know you won't use). Chosen in Configuración → "Apariencia" and kept in config.json ("timeline.hiddenKnobs") as the
 /// hidden ones, so a knob added in a later version shows up without touching anyone's settings.
 /// </summary>
 public static class TrackKnobs

@@ -4,28 +4,11 @@
              xmlns:controls="using:XtremeDaw.App.Controls"
              x:Class="XtremeDaw.App.Dialogs.AboutDialog"
              AutomationProperties.Name="{loc:T title.about}"
-             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+             Background="{StaticResource Scrim}" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
 
   <!-- native only: the web app has no about box; same frame as SettingsDialog -->
-  <UserControl.Styles>
-    <Style Selector="Button.act">
-      <Setter Property="Width" Value="32" />
-      <Setter Property="Height" Value="32" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="{StaticResource Faint}" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.act:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource Hover}" />
-      <Setter Property="Foreground" Value="{StaticResource Fg}" />
-    </Style>
-  </UserControl.Styles>
 
-  <Border Width="560" HorizontalAlignment="Center" VerticalAlignment="Center"
+  <Border Width="640" HorizontalAlignment="Center" VerticalAlignment="Center"
           Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
     <Grid RowDefinitions="Auto,Auto">
       <!-- the same hero as the splash (SplashWindow): glow, big logo, name and tagline, version at the corner -->
@@ -38,8 +21,8 @@
           <controls:BrandTitle NameSize="40" VerticalAlignment="Center" />
         </StackPanel>
 
-        <Button x:Name="CloseButton" Classes="act" Margin="10" HorizontalAlignment="Right" VerticalAlignment="Top"
-                ToolTip.Tip="{loc:T settings.close}" AutomationProperties.Name="{loc:T settings.close}">
+        <Button x:Name="CloseButton" Classes="act close" Margin="10" HorizontalAlignment="Right" VerticalAlignment="Top"
+                ToolTip.Tip="{loc:T common.close}" AutomationProperties.Name="{loc:T common.close}">
           <TextBlock Classes="icon" Text="&#xE711;" FontSize="13" />
         </Button>
 
@@ -47,7 +30,7 @@
           <Border x:Name="TestChip" IsVisible="False" Background="{StaticResource RecSoft}" CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
             <TextBlock x:Name="TestText" FontSize="10" FontWeight="Bold" Foreground="{StaticResource Rec}" />
           </Border>
-          <TextBlock x:Name="VersionText" Classes="mono" FontSize="11.5" Foreground="{StaticResource Faint}" VerticalAlignment="Center" />
+          <TextBlock x:Name="VersionText" Classes="mono" FontSize="11" Foreground="{StaticResource Faint}" VerticalAlignment="Center" />
         </StackPanel>
 
         <Border x:Name="AccentLine" Height="2" VerticalAlignment="Bottom" />

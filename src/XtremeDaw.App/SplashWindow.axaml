@@ -26,12 +26,12 @@
       </StackPanel>
 
       <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="24,0,24,18">
-        <TextBlock Text="{loc:T splash.loading}" FontSize="11.5" Foreground="{StaticResource Faint}" VerticalAlignment="Center" />
+        <TextBlock Text="{loc:T splash.loading}" FontSize="11" Foreground="{StaticResource Faint}" VerticalAlignment="Center" />
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <Border x:Name="TestChip" IsVisible="False" Background="{StaticResource RecSoft}" CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
             <TextBlock x:Name="TestText" FontSize="10" FontWeight="Bold" Foreground="{StaticResource Rec}" />
           </Border>
-          <TextBlock x:Name="VersionText" Classes="mono" FontSize="11.5" Foreground="{StaticResource Faint}" VerticalAlignment="Center" />
+          <TextBlock x:Name="VersionText" Classes="mono" FontSize="11" Foreground="{StaticResource Faint}" VerticalAlignment="Center" />
         </StackPanel>
       </Grid>
 

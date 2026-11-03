@@ -38,7 +38,7 @@ public partial class MainWindow
                 job.Skip.Cancel();
                 return Task.CompletedTask;
             }, icon: "\ue90b", tip: Loc.T("scale.skip.tip"));
-        return MenuAction(Loc.T("scale.detect") + "…", () => DetectScale(clip), enabled: enabled && clip.Audio != null && !RecordingBusy,
+        return MenuAction(Loc.T("scale.detect"), () => DetectScale(clip), enabled: enabled && clip.Audio != null && !RecordingBusy,
             icon: "\ue90b", tip: Loc.T(clip.Audio == null ? "tempo.detect.offline" : "scale.detect.tip"));
     }
 

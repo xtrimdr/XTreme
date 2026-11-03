@@ -77,7 +77,7 @@ public sealed partial class NewsDialog : UserControl
         body.Children.Add(HelpDialog.Rich(item.Text, Palette.Dim, 12, 18));
         if (item.Topic is { } topic && HelpGuide.Find(topic) != null)
         {
-            var link = new Button { Classes = { "link" }, Content = Loc.T("news.seeHelp"), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
+            var link = new Button { Classes = { "link", "accent" }, Content = Loc.T("news.seeHelp"), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
             link.Click += (_, _) => { HideDialog(); TopicRequested?.Invoke(topic); };
             body.Children.Add(link);
         }

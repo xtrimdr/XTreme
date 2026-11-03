@@ -3,7 +3,7 @@
              xmlns:loc="using:XtremeDaw.App"
              x:Class="XtremeDaw.App.Dialogs.HelpDialog"
              AutomationProperties.Name="{loc:T help.title}"
-             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+             Background="{StaticResource Scrim}" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
 
   <!-- same frame as SettingsDialog, as large as the window allows: these are pages to read next to the app -->
   <UserControl.Styles>
@@ -36,34 +36,6 @@
       <Setter Property="Background" Value="{StaticResource AccentSoft}" />
       <Setter Property="Foreground" Value="{StaticResource Accent}" />
     </Style>
-    <Style Selector="Button.act">
-      <Setter Property="Width" Value="32" />
-      <Setter Property="Height" Value="32" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="{StaticResource Faint}" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.act:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource Hover}" />
-      <Setter Property="Foreground" Value="{StaticResource Fg}" />
-    </Style>
-    <!-- breadcrumbs and text links -->
-    <Style Selector="Button.link">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="Foreground" Value="{StaticResource Faint}" />
-      <Setter Property="FontSize" Value="11" />
-    </Style>
-    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="{StaticResource Fg}" />
-    </Style>
     <Style Selector="Button.card">
       <Setter Property="Padding" Value="14,12" />
       <Setter Property="CornerRadius" Value="8" />
@@ -88,9 +60,9 @@
         <Grid ColumnDefinitions="*,Auto">
           <StackPanel Orientation="Horizontal" Spacing="10">
             <TextBlock Classes="icon" Text="&#xE897;" FontSize="15" Foreground="{StaticResource Accent}" />
-            <TextBlock Text="{loc:T help.title}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock Classes="dialog-title" Text="{loc:T help.title}" />
           </StackPanel>
-          <Button Grid.Column="1" x:Name="CloseButton" Classes="act" ToolTip.Tip="{loc:T settings.close}" AutomationProperties.Name="{loc:T settings.close}">
+          <Button Grid.Column="1" x:Name="CloseButton" Classes="act close" ToolTip.Tip="{loc:T common.close}" AutomationProperties.Name="{loc:T common.close}">
             <TextBlock Classes="icon" Text="&#xE711;" FontSize="13" />
           </Button>
         </Grid>

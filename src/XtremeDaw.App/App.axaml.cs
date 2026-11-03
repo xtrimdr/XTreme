@@ -17,6 +17,7 @@ public partial class App : Application
         SaveMode.Load();
         ImportMode.Load();
         TrackKnobs.Load();
+        Controls.KnobLooks.Load();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // XTreme.exe [carpeta | proyecto.xtp] (a double click on a .xtp passes the file)

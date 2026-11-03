@@ -99,6 +99,12 @@ Etapas (cada una sirve sola):
     pueden oír los bends; lo demás tiene sentido con el sampler y los VST3, que las reciben como eventos MIDI.
 - [x] **Etapa 2: sampler** (hecho, ver [HECHO.md](HECHO.md)), con un sample por pista (decisión del usuario, 2026-11-02: "más adelante vemos"). Lo que quedó:
   - [ ] Varios samples: uno por nota (kit de batería) o por zonas de teclado y velocidad.
+- [ ] **Granular** (pedido del usuario, 2026-11-03, a la manera de un granular de estudio; la fase 1 está hecha, ver [HECHO.md](HECHO.md)). Lo que queda, por fases:
+  - [ ] Tono: Retune a una escala (Suave / Duro), Detune por grano, voces extra (+3, +7, +12) y acorde o arpegio.
+  - [ ] Proceso de grano: filtro, imagen estéreo y delay por grano.
+  - [ ] Modulación: dos macros, LFOs, curvas dibujables y seguidor de envolvente, asignables a cualquier perilla.
+  - [ ] Animador: un pad XY con recorrido automático (órbita, deriva, al compás) que mueve las macros.
+  - [ ] Detectar el BPM del sample para Sync (hoy se escribe a mano).
 - [ ] **Etapa 3: instrumentos VST3** con el puente del punto 2.
 - [x] **Etapa 4: entradas MIDI** (hecho, ver [HECHO.md](HECHO.md)). Lo que quedó para después:
   - [ ] Probarlo con un teclado de verdad: la latencia al tocar un VST3 (buffer + el bloque del puente) y si las notas
@@ -151,11 +157,8 @@ Decidido con el usuario:
 Etapas (cada una sirve sola):
 - [x] **Etapas 1 y 2: paneles que se mueven sin reconstruirse y diseños Clásico / Vertical** (hecho, ver
   [HECHO.md](HECHO.md)).
-- [ ] **Etapa 3: sacar a otra ventana.** _En pausa (el usuario, 2026-10-26: no es prioridad hoy)._ Botón en el encabezado del panel; cerrar la ventana lo devuelve a su lugar. Se
-  recuerdan monitor, posición y tamaño; si el monitor ya no está, vuelve a la principal. Preview con pantalla completa
-  (monitor para grabar lejos de la compu). Con el mixer afuera se ven timeline y mixer a la vez: la X lo trae al frente.
-  Los atajos funcionan desde cualquier ventana. Ojo: dos ventanas dibujando tampoco pueden generar basura por cuadro, y la
-  preview de afuera usa el mismo decodificador.
+- [x] **Etapa 3: sacar a otra ventana** (hecho, todos los paneles, ver [HECHO.md](HECHO.md)). Queda: la preview a
+  pantalla completa en su ventana (monitor para grabar lejos de la compu).
 - [ ] **Etapa 4 (si hace falta): arrastrar y soltar** como CapCut, con guías para soltar y diseños propios guardados.
 
 #### 8. Editor de afinación tipo Melodyne (pedido 2026-10-28)
@@ -195,10 +198,10 @@ timeline, mixer y master, y una colección que compita con la stock de FL Studio
 **Relevado en el código (no medido con audio):**
 - Reverb: impulso de ruido sintético. Al cambiar Decay, Tone o Width el convolver se reemplaza sin crossfade y pierde
   la cola; el predelay salta sin deslizarse. Va contra "nada de clics": probarlo con `AudioGapLog`.
-- Compresor solo de picos, sin RMS, sidechain, lookahead ni Mix. Delay sin modulación ni saturación en la realimentación.
+- Compresor solo de picos, sin RMS, lookahead ni Mix. Delay sin modulación ni saturación en la realimentación.
 - Saturación sin oversampling (ADAA de primer orden) y con dos modos.
 - No hay transient, de-esser, amp/cab ni pitch en tiempo real. Ningún efecto tiene
-  sidechain ni A/B.
+  A/B.
 
 **FL Studio como referencia** (manual y comparación de Image-Line, 2026-11-01): 53 / 59 / 65 / 71 efectos según la
 edición, contando utilidades, controladores, VFX y versiones repetidas. El objetivo es cubrir sus funciones, no su
@@ -212,14 +215,15 @@ XTreme ya tiene algo que el Fruity Limiter no trae por defecto: techo en pico re
 - [ ] Una fila o botón de efectos dibujado en el encabezado del timeline (hoy se abren desde el menú de la pista).
 - [ ] VST3 en el master: hoy su lista lleva solo nativos, hace falta que la ventana abra su proceso (`LiveVst`).
 - [ ] Oversampling común (2× / 4×) y latencia declarada: la PDC ya existe, hay que sacar el "cero" de los nativos.
-- [ ] Sidechain: fuente elegible en el ruteo. Es el cambio más grande del motor (`MixLatency`, `ChannelDsp.Nodes`).
+- [ ] Sidechain, lo que falta: una carpeta o un bus como fuente (hoy solo pistas) y alinear la key con la PDC cuando la
+  fuente y quien escucha tienen latencias distintas (hoy la key llega con la latencia de la fuente).
 
 **Fase 1: subir lo que hay**
 - [ ] EQ: notch y bandpass, pendientes hasta 48 dB/oct, solo de banda, mid/side, detección dinámica externa.
-- [ ] Compresor: pico/RMS, lookahead, Mix, gráfico de reducción, sidechain; todo editable en cualquier lugar.
+- [ ] Compresor: pico/RMS, lookahead, Mix, gráfico de reducción; todo editable en cualquier lugar.
 - [ ] Reverb algorítmica nueva (primeras reflexiones, tamaño, difusión, modulación), con cambios sin cortes.
 - [ ] Delay: modos cinta y digital, modulación, saturación y filtro en la realimentación.
-- [ ] Saturación con más modos y oversampling. Compuerta con rango, hold, release y sidechain.
+- [ ] Saturación con más modos y oversampling. Compuerta con rango, hold y release.
 
 **Fase 2: lo que le sirve a la guitarra**
 - [ ] Amp y gabinete con impulsos propios (reusa el convolver), distorsión de pedal, transient, de-esser, filtro con LFO.
@@ -243,6 +247,15 @@ La etapa 1 está hecha (ver [HECHO.md](HECHO.md)). Falta:
 - [ ] Colecciones propias, etiquetas (automáticas por el nombre y manuales) y últimos usados.
 - [ ] Marcar un pedazo de la onda y arrastrar solo eso. Selección múltiple en la lista.
 - [ ] Más adelante: buscar parecidos, clasificar por contenido, archivos .mid, duplicados, procesar antes de insertar.
+
+#### 11. Más opciones en Configuración → Apariencia (pedido 2026-11-03)
+
+Los estilos de perilla (`KnobLooks`) son el primero. Falta, con el mismo criterio (elegir y verlo en vivo):
+
+- [ ] Estilos de fader (la tapa de `Fader` y su riel).
+- [ ] Estilos de ventana (bordes, radios, densidad).
+- [ ] Fuente de la interfaz (la del sistema u otra) y su tamaño.
+- [ ] Ver qué más conviene hacer elegible (medidores, ondas, grilla del timeline…).
 
 ### Separar en stems: antes de publicarlo
 

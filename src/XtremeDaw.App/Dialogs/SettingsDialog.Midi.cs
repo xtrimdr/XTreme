@@ -128,7 +128,7 @@ public sealed partial class SettingsDialog
         var info = new TextBlock
         {
             Text = s.Alias != null ? $"{port.Device.Name} · {state}" : state, FontSize = 11, TextWrapping = TextWrapping.Wrap,
-            Foreground = port.Error != null ? Palette.Accent : Palette.Faint,
+            Foreground = port.Error != null ? Palette.Fg : Palette.Faint,
         };
         var last = new TextBlock { Text = Loc.T("set.midi.last.none"), FontSize = 11, Foreground = Palette.Faint, Classes = { "mono" }, TextTrimming = TextTrimming.CharacterEllipsis };
 

@@ -137,8 +137,12 @@ public static class MixLatency
     /// <summary>A track or a node: its own latency, where it goes (a node index, -1 = the master) and its sends' nodes.</summary>
     public readonly record struct Source(int Latency, int Out, int[] Sends);
 
-    /// <summary>How long each leg waits: each track's output and sends, each node's output and sends, and how late the master is.</summary>
-    public sealed record Plan(int[] TrackOut, int[][] TrackSends, int[] NodeOut, int[][] NodeSends, int Master);
+    /// <summary>How long each leg waits: each track's output and sends, each node's output and sends, and how late the master is.
+    /// <see cref="NodeArrive"/>: how late each node's input is (what a slot on the beat goes by).</summary>
+    public sealed record Plan(int[] TrackOut, int[][] TrackSends, int[] NodeOut, int[][] NodeSends, int Master)
+    {
+        public int[] NodeArrive { get; init; } = [];
+    }
 
     /// <summary>
     /// <paramref name="nodes"/> go in their run order: a node's output and sends only reach later ones (or the master).
@@ -186,6 +190,6 @@ public static class MixLatency
             nodeOut[j] = Wait(Valid(nodes[j].Out), outAt[j]);
             nodeSends[j] = [.. nodes[j].Sends.Select(s => Valid(s) >= 0 ? Wait(s, outAt[j]) : 0)];
         }
-        return new Plan(trackOut, trackSends, nodeOut, nodeSends, master);
+        return new Plan(trackOut, trackSends, nodeOut, nodeSends, master) { NodeArrive = arrive };
     }
 }

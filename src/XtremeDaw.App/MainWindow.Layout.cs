@@ -18,7 +18,8 @@ namespace XtremeDaw.App;
 /// right, for 9:16 videos, with the timeline beside it and the mixer under it, the way solo audio stacks them.
 /// The layout belongs to the program, not to a project: it and the sizes live in config.json ("layout",
 /// "stageWidth", plus the "sidebarWidth", "projectBarWidth", "timelineHeight" and "mixerHeight" kept since before).
-/// Solo audio has no stage, so it always looks the same whatever the layout.
+/// Solo audio has no stage, so it always looks the same whatever the layout; neither does a window whose stage is in
+/// its own window (<see cref="StageHere"/>), nor one with no timeline or mixer beside the video.
 /// </summary>
 public partial class MainWindow
 {
@@ -33,8 +34,8 @@ public partial class MainWindow
     /// <summary>The 9:16 → Vertical suggestion shows once per session: after that the user knows where it is.</summary>
     bool verticalSuggested;
 
-    /// <summary>The video has its own column (a Vertical layout with a stage to show).</summary>
-    bool SideStage => layout != ClassicLayout && !AudioOnly && maxPanel == MaxPanel.None;
+    /// <summary>The video has its own column (a Vertical layout with a stage to show, and something to show beside it).</summary>
+    bool SideStage => layout != ClassicLayout && StageHere && maxPanel == MaxPanel.None && !BottomEmpty;
 
     /// <summary>What the video's column takes from the width the sidebars share with the timeline.</summary>
     double SideStageWidth => SideStage ? stageWidth : 0;
@@ -84,21 +85,17 @@ public partial class MainWindow
     /// </summary>
     void ApplyLayout()
     {
-        if (ViewsCovered && AudioOnly) maxPanel = MaxPanel.Views; // no stage to keep maximized
+        if (ViewsCovered && !StageHere) maxPanel = MaxPanel.Views; // no stage to keep maximized
         bool side = SideStage, left = layout == VerticalLeftLayout;
         Workspace.ColumnDefinitions = new ColumnDefinitions(!side ? "Auto,*" : left ? "Auto,Auto,*" : "Auto,*,Auto");
         Grid.SetColumn(StageArea, side && !left ? 2 : 1);
         Grid.SetColumn(AudioArea, side && left ? 2 : 1);
-        StageArea.IsVisible = !AudioOnly && maxPanel != MaxPanel.Views;
+        StageArea.IsVisible = StageOut || (StageHere && maxPanel != MaxPanel.Views);
         Live.IsVisible = !ViewsCovered;
         StageArea.Width = side ? stageWidth : double.NaN;
-        // in its own column the stage is tall and narrow: "En vivo" goes under the preview instead of beside it
-        StageArea.ColumnDefinitions = new ColumnDefinitions(side ? "*" : "*,Auto");
-        StageArea.RowDefinitions = new RowDefinitions(side ? "Auto,*,Auto" : "Auto,*");
-        Grid.SetRow(Live, side ? 2 : 1);
-        Grid.SetColumn(Live, side ? 0 : 1);
-        Live.Margin = side ? new Thickness(16, 0, 16, 16) : new Thickness(0, 16, 16, 16);
-        Live.HorizontalAlignment = side ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
+        // in its own window it follows that window's shape (MainWindow.PanelWindows.cs)
+        if (!StageOut) ArrangeStage(side);
+        ShowStageWindow();
         if (stageGripLeft != null && stageGripRight != null)
         {
             stageGripLeft.IsVisible = side && !left;
@@ -107,9 +104,20 @@ public partial class MainWindow
         // solo audio has no video to place: the button stays where it is, off, and says why
         LayoutButton.IsEnabled = !AudioOnly;
         ToolTip.SetTip(LayoutButton, Loc.T(AudioOnly ? "winlayout.audioOnly" : "winlayout.title"));
-        MoveBottomView(AudioOnly || side || maxPanel != MaxPanel.None);
+        MoveBottomView(!StageHere || side || maxPanel != MaxPanel.None);
         if (side) StageArea.Width = ClampStage(stageWidth);
         ShowMaxPanelState();
+    }
+
+    /// <summary>A tall and narrow stage (its own column, or a window taller than wide) puts "En vivo" under the preview instead of beside it.</summary>
+    void ArrangeStage(bool column)
+    {
+        StageArea.ColumnDefinitions = new ColumnDefinitions(column ? "*" : "*,Auto");
+        StageArea.RowDefinitions = new RowDefinitions(column ? "Auto,*,Auto" : "Auto,*");
+        Grid.SetRow(Live, column ? 2 : 1);
+        Grid.SetColumn(Live, column ? 0 : 1);
+        Live.Margin = column ? new Thickness(16, 0, 16, 16) : new Thickness(0, 16, 16, 16);
+        Live.HorizontalAlignment = column ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
     }
 
     /// <summary>The title bar's layout menu: one row per layout with a sketch of it, the current one lit.</summary>

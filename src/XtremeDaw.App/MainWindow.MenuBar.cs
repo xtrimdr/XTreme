@@ -99,7 +99,7 @@ public partial class MainWindow
         Entry(Loc.T("menu.import"), PickAudioToImport, enabled: CanImport()),
         Entry(Loc.T("menubar.export"), () => Press(ExportButton), enabled: HasProject && MenuFree),
         new Separator(),
-        Entry(Loc.T("settings.title") + "…", () => Settings.Show(), enabled: MenuFree),
+        Entry(Loc.T("settings.title.more"), () => Settings.Show(), enabled: MenuFree),
         new Separator(),
         Entry(Loc.T("menubar.exit"), Close),
     ];
@@ -139,8 +139,9 @@ public partial class MainWindow
 
     List<object> ViewMenu()
     {
-        bool piano = PianoShown && !ViewsCovered, mastering = mixerView && masteringView && !ViewsCovered;
-        bool mixer = mixerView && !masteringView && !piano, timeline = !mixer && !piano && !mastering;
+        bool piano = PianoShown && !ViewsCovered, mastering = MasteringShown && !ViewsCovered;
+        // a view in its own window is on screen along with what the place shows
+        bool mixer = MixerShown && !ViewsCovered, timeline = !mixerView || TimelineOut || MixerOut;
         bool audioOnly = store != null && AudioOnly, modes = store is { ReadOnly: false } && MenuFree;
         return
         [
@@ -149,8 +150,9 @@ public partial class MainWindow
             Check(Loc.T("transport.view.mixer"), mixer, () => Press(MixerViewButton), "mixer"),
             Check(Loc.T("transport.view.mastering"), mastering, () => Press(MasteringViewButton)),
             new Separator(),
-            Check(Loc.T("menubar.leftPanel"), InspectorBar.IsVisible, () => SetInspectorHidden(InspectorBar.IsVisible), "leftPanel"),
-            Check(Loc.T("menubar.rightPanel"), ProjectBar.IsVisible, () => SetProjectBarHidden(ProjectBar.IsVisible), "rightPanel"),
+            Check(Loc.T("menubar.leftPanel"), !inspectorHidden || InspectorOut, ToggleInspectorShown, "leftPanel"),
+            Check(Loc.T("menubar.rightPanel"), !projectBarHidden || ProjectBarOut, ToggleProjectBarShown, "rightPanel"),
+            PanelsOutItem(),
             new Separator(),
             Entry(Loc.T("sc.fit"), () => Timeline.FitAll(), "fit", HasProject),
             Entry(Loc.T("sc.maximize"), ToggleMaxPanel, "maximize"),
@@ -194,8 +196,8 @@ public partial class MainWindow
             list.Add(StemsItem(track, clip, enabled));
         }
         else
-            foreach (var key in new[] { "tempo.detect", "menubar.scale", "menubar.toMidi", "menubar.stems" })
-                list.Add(Entry(Loc.T(key) + "…", () => { }, enabled: false, tip: Loc.T("menubar.needClip")));
+            foreach (var key in new[] { "tempo.detect.more", "scale.detect", "toMidi.menu", "stems.menu" })
+                list.Add(Entry(Loc.T(key), () => { }, enabled: false, tip: Loc.T("menubar.needClip")));
         list.Add(new Separator());
         list.Add(Entry(Loc.T("menubar.plugins"), () => Settings.Show("plugins"), enabled: MenuFree));
         list.Add(Entry(Loc.T("menubar.components"), () => ComponentsHelp.Show(), enabled: MenuFree));
@@ -207,7 +209,7 @@ public partial class MainWindow
         Entry(Loc.T("help.title"), OpenHelp, "help"),
         Entry(Loc.T("menubar.shortcuts"), () => Settings.Show("shortcuts"), enabled: MenuFree),
         Entry(Loc.T("news.title"), OpenNews),
-        Entry(Loc.T("feedback.title") + "…", OpenFeedback, enabled: !RecordingBusy),
+        Entry(Loc.T("feedback.title.more"), OpenFeedback, enabled: !RecordingBusy),
         new Separator(),
         Entry(Loc.T("menubar.about"), () => About.Show(), enabled: MenuFree),
     ];

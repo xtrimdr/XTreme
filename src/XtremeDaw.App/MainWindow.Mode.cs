@@ -79,9 +79,10 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Stacked (solo audio, or the video in its own column in a Vertical layout): the timeline moves up beside the
-    /// inspector, the mixer opens under it and the bottom row closes; otherwise both go back to the bottom with the
-    /// height they had (the remembered heights stay untouched meanwhile).
+    /// Stacked (solo audio, the stage in its own window, or the video in its own column in a Vertical layout): the
+    /// timeline moves up beside the inspector, the mixer opens under it and the bottom row closes; otherwise both go back
+    /// to the bottom with the height they had (the remembered heights stay untouched meanwhile). One in its own window
+    /// stays there (<see cref="PutPanel"/> brings it back to wherever this left the other).
     /// </summary>
     void MoveBottomView(bool stacked)
     {
@@ -94,55 +95,66 @@ public partial class MainWindow
         var row = Root.RowDefinitions[3];
         if (stacked)
         {
-            if (row.ActualHeight > 0) { if (mixerView) { if (!masteringView) mixerH = row.ActualHeight; } else timelineH = row.ActualHeight; }
-            Root.Children.Remove(MixerHost);
-            Root.Children.Remove(TimelineHost);
+            KeepBottomRow();
             // the timeline always stays on screen; the mixer opens under it (so no mini timeline there)
-            Grid.SetRow(TimelineHost, 0);
-            Grid.SetRow(MixerHost, 2);
-            AudioArea.Children.Add(TimelineHost);
-            AudioArea.Children.Add(MixerHost);
+            if (!TimelineOut)
+            {
+                Root.Children.Remove(TimelineHost);
+                Grid.SetRow(TimelineHost, 0);
+                AudioArea.Children.Add(TimelineHost);
+            }
+            if (!MixerOut)
+            {
+                Root.Children.Remove(MixerHost);
+                Grid.SetRow(MixerHost, 2);
+                AudioArea.Children.Add(MixerHost);
+            }
             row.MinHeight = 0;
             row.Height = new GridLength(0);
         }
         else
         {
-            AudioArea.Children.Remove(MixerHost);
-            AudioArea.Children.Remove(TimelineHost);
-            Grid.SetRow(TimelineHost, 3);
-            Grid.SetRow(MixerHost, 3);
             // under the dialogs and toasts: added at the end they'd be drawn over them and keep taking the clicks
-            int at = Root.Children.IndexOf(Projects);
-            Root.Children.Insert(at, TimelineHost);
-            Root.Children.Insert(at, MixerHost);
-            row.MinHeight = mixerView ? MixerMinH : TimelineMinH;
-            row.Height = new GridLength(mixerView ? mixerH : timelineH);
+            foreach (var host in new Control[] { TimelineHost, MixerHost })
+            {
+                if (host == TimelineHost ? TimelineOut : MixerOut) continue;
+                AudioArea.Children.Remove(host);
+                Grid.SetRow(host, 3);
+                Root.Children.Insert(Root.Children.IndexOf(Projects), host);
+            }
+            ApplyBottomRow();
         }
-        BottomSplitter.IsVisible = !stacked;
         ApplyViewHosts();
         RefreshMixer();
     }
 
-    /// <summary>Which of the timeline and the mixer's place is on screen. Stacked shows both; a maximized view, only itself.</summary>
+    /// <summary>
+    /// Which of the timeline and the mixer's place is on screen. Stacked shows both; a maximized view, only itself; one
+    /// in its own window, always (and the mixer's window its mini timeline).
+    /// </summary>
     void ApplyViewHosts()
     {
         bool alone = maxPanel == MaxPanel.Views;
         AudioArea.IsVisible = stackedViews && !ViewsCovered;
-        TimelineHost.IsVisible = ToolBox.IsEnabled = !mixerView || (stackedViews && !alone);
-        miniRow.IsVisible = !stackedViews || alone;
+        TimelineHost.IsVisible = ToolBox.IsEnabled = TimelineOut || !MixerHere || (stackedViews && !alone);
+        miniRow.IsVisible = MixerOut || !stackedViews || alone;
+        BottomSplitter.IsVisible = !stackedViews && !BottomEmpty;
         ApplyAudioMixerRows();
         if (mixerView && masteringView) FitMasteringHeight();
     }
 
-    /// <summary>Stacked: the mixer's row under the timeline (resizable with its splitter) is open only while the mixer is; maximized, it is all there is.</summary>
+    /// <summary>
+    /// Stacked: the mixer's row under the timeline (resizable with its splitter) is open only while the mixer is;
+    /// maximized, or with the timeline in its own window, it is all there is.
+    /// </summary>
     void ApplyAudioMixerRows()
     {
-        bool alone = maxPanel == MaxPanel.Views && mixerView, open = stackedViews && mixerView && !alone;
+        bool timeline = !TimelineOut && !(maxPanel == MaxPanel.Views && MixerHere), open = stackedViews && timeline && MixerHere;
         AudioSplitter.IsVisible = open;
         AudioArea.RowDefinitions[0].MinHeight = open ? TimelineMinH : 0;
-        AudioArea.RowDefinitions[0].Height = alone ? new GridLength(0) : GridLength.Star;
+        AudioArea.RowDefinitions[0].Height = timeline ? GridLength.Star : new GridLength(0);
         AudioArea.RowDefinitions[2].MinHeight = open ? MixerMinH : 0;
-        AudioArea.RowDefinitions[2].Height = alone ? GridLength.Star : new GridLength(open ? Math.Max(MixerMinH, mixerH) : 0);
+        AudioArea.RowDefinitions[2].Height = !MixerHere ? new GridLength(0) : timeline ? new GridLength(Math.Max(MixerMinH, mixerH)) : GridLength.Star;
     }
 
     /// <summary>Opens the decoders of the clips shown in the video that don't have one yet (after an edit, or back from solo audio).</summary>
@@ -166,6 +178,6 @@ public partial class MainWindow
         RefreshInspectorText();
         Timeline.InvalidateVisual();
         await OpenMissingVideos(store);
-        Status(on ? $"\"{t.Track.Name}\" vuelve a tener su panel en el video." : $"\"{t.Track.Name}\" suena pero no sale en el video.");
+        Status(Loc.T(on ? "status.inVideo.on" : "status.inVideo.off", t.Track.Name));
     }
 }

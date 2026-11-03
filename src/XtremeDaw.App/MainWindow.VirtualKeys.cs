@@ -191,14 +191,18 @@ public partial class MainWindow
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { panel.Scale, panel.Chords } },
             },
         });
+        DockPanel.SetDock(settings, Dock.Left);
+        root.Children.Add(settings);
+        // at the top right, like every panel's (asked by the user)
         if (!inPlugin)
         {
             panel.Float.Content = panel.FloatIcon;
             panel.Float.Click += (_, _) => SetVirtualFloat(!virtualFloat);
-            settings.Children.Add(panel.Float);
+            panel.Float.VerticalAlignment = VerticalAlignment.Top;
+            panel.Float.Margin = new Thickness(8, 0, 0, 0);
+            DockPanel.SetDock(panel.Float, Dock.Right);
+            root.Children.Add(panel.Float);
         }
-        DockPanel.SetDock(settings, Dock.Left);
-        root.Children.Add(settings);
         root.Children.Add(strip);
         virtualPanels.Add(panel);
         FillVirtualPanel(panel);
@@ -543,7 +547,7 @@ public partial class MainWindow
                 virtualKeys.ReleaseSustain();
                 MidiSetup.Inputs.Push(new MidiEvent { Ticks = Stopwatch.GetTimestamp(), Port = MidiInputs.VirtualPort, Channel = 1, Kind = MidiKind.AllOff });
                 t.Instrument?.Panic();
-                t.Sampler?.Panic();
+                t.Native?.Panic();
                 break;
         }
     }

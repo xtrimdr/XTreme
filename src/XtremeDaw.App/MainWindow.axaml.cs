@@ -85,6 +85,11 @@ public partial class MainWindow : Window
         Settings.Attach(engine, camera, () => RecordingBusy);
         Settings.AudioChanged += ShowAudioStatus;
         Settings.Dismissed += () => Timeline.Focus();
+        SettingsButton.Click += (_, _) =>
+        {
+            if (!MenuFree) return;
+            Settings.Show();
+        };
         About.Dismissed += () => Timeline.Focus();
         LogoButton.Click += (_, _) =>
         {
@@ -175,6 +180,7 @@ public partial class MainWindow : Window
         InitMixer();
         InitLayout();
         InitMaxPanel();
+        InitPanelWindows();
         InitTopBar();
         InitUpdates();
         InitMeters();
@@ -324,7 +330,7 @@ public partial class MainWindow : Window
             timer.Stop();
             SaveWindowPlace();
             // stacked (solo audio, Vertical layout) the bottom row is closed: the heights remembered before stay
-            try { if (!stackedViews && !(mixerView && masteringView)) AppConfig.Set(mixerView ? "mixerHeight" : "timelineHeight", Root.RowDefinitions[3].ActualHeight.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
+            try { if (!stackedViews && !BottomEmpty && !(MixerHere && masteringView)) AppConfig.Set(MixerHere ? "mixerHeight" : "timelineHeight", Root.RowDefinitions[3].ActualHeight.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* View preference only. */ }
             MidiSetup.Stop();
             engine.Dispose();
@@ -716,7 +722,8 @@ public partial class MainWindow : Window
         if (VirtualKeyDown(e)) { e.Handled = true; return; }
         if (restoring) { e.Handled = true; return; }
         if (RecordingBusy && await RecordingKey(e)) return;
-        if (PianoShown && !ViewsCovered && pianoRoll.HandleKey(e)) { e.Handled = true; return; }
+        // in its own window, only while that window has the keys
+        if ((PianoOut ? PanelActive(FloatPiano) : PianoShown && !ViewsCovered) && pianoRoll.HandleKey(e)) { e.Handled = true; return; }
         if (e.Key == Key.Escape)
         {
             Timeline.CancelGesture();
@@ -819,14 +826,20 @@ public partial class MainWindow : Window
             case "solo" when sel != null:
                 TogglePicked(true);
                 break;
-            // a hidden panel comes back first, as it was; shown, the key folds or opens it
-            case "leftPanel" when !InspectorBar.IsVisible:
+            // a hidden panel comes back first, as it was; shown, the key folds or opens it; in its own window, brings it up
+            case "leftPanel" when InspectorOut:
+                ActivatePanel(FloatInspector);
+                break;
+            case "leftPanel" when inspectorHidden:
                 SetInspectorHidden(false);
                 break;
             case "leftPanel":
                 SetInspectorCollapsed(inspectorExpanded.IsVisible);
                 break;
-            case "rightPanel" when !ProjectBar.IsVisible:
+            case "rightPanel" when ProjectBarOut:
+                ActivatePanel(FloatProject);
+                break;
+            case "rightPanel" when projectBarHidden:
                 SetProjectBarHidden(false);
                 break;
             case "rightPanel":
@@ -1138,7 +1151,7 @@ public partial class MainWindow : Window
                 Timeline.UpdateTracks(tracks, st.Project.Folders);
                 UpdateResetHeights();
                 engine.SetSettings(st.Project.Settings, glideDelay: true);
-                if (masteringView && mixerView) BuildMastering();
+                if (MasteringShown) BuildMastering();
                 Timeline.Bpm = st.Project.Settings.Bpm;
                 Timeline.InvalidateVisual();
                 Preview.SetProject(tracks, st.Project.Settings);
