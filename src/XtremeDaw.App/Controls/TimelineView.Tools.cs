@@ -16,7 +16,7 @@ public enum TimelineTool { Select, Range, Split, Erase, Listen, Zoom, Hand }
 /// touches, Escuchar plays the track alone from the click while the button is held, Zoom zooms on a click (Alt, out) or
 /// to the stretch dragged, and Mano drags the view. A tool only changes what a press on the lanes does: the headers,
 /// the ruler, the markers and the menus work the same with any of them. Each tool shows its own pointer
-/// (<see cref="ToolCursors"/>), so the timeline still needs no hover help.
+/// (<see cref="ToolCursors"/>), so the timeline still needs no hover help. Takes and MIDI clips answer to them alike.
 /// </summary>
 public sealed partial class TimelineView
 {
@@ -38,6 +38,8 @@ public sealed partial class TimelineView
 
     /// <summary>Dividir: a click on a clip, at the (snapped) time under the pointer.</summary>
     public event Action<LiveTrack, LiveClip, double>? SplitAtRequested;
+    /// <summary>Dividir on a MIDI clip: its track, its id and the (snapped) time.</summary>
+    public event Action<LiveTrack, string, double>? MidiSplitRequested;
     /// <summary>Borrar: the clips one drag touched, removed together (one step to undo).</summary>
     public event Action<IReadOnlyList<string>>? ClipsErased;
     /// <summary>Escuchar: the track to hear alone and from where, while the button is held; <see cref="ListenEnded"/> on release.</summary>
@@ -84,15 +86,20 @@ public sealed partial class TimelineView
                     SelectClip(i, cut.Clip.Id);
                     SplitAtRequested?.Invoke(tracks[i], cut, SnappedSec(p.X));
                 }
+                else if (e.ClickCount == 1 && MidiClipAt(i, p.X) is { } notes)
+                {
+                    SelectMidiClip(i, notes.Id);
+                    MidiSplitRequested?.Invoke(tracks[i], notes.Id, SnappedSec(p.X));
+                }
                 e.Handled = true;
                 return true;
             case TimelineTool.Erase:
                 erasing.Clear();
-                if (lane && ClipAt(i, p.X) is { } gone) erasing.Add(gone.Clip.Id);
+                if (lane && AnyClipAt(i, p.X) is { } gone) erasing.Add(gone);
                 StartGesture("erase", e);
                 return true;
             case TimelineTool.Listen when lane:
-                if (ClipAt(i, p.X) != null)
+                if (AnyClipAt(i, p.X) != null)
                 {
                     Select(i);
                     StartGesture("listen", e);
@@ -104,6 +111,9 @@ public sealed partial class TimelineView
         e.Handled = true;
         return true;
     }
+
+    /// <summary>The id of the take or MIDI clip under the pointer in lane <paramref name="i"/>, or null.</summary>
+    string? AnyClipAt(int i, double x) => ClipAt(i, x)?.Clip.Id ?? MidiClipAt(i, x)?.Id;
 
     /// <summary>Starts a range on track <paramref name="i"/> (Rango, or Shift+drag with Seleccionar).</summary>
     void StartRange(int i, Point p, PointerPressedEventArgs e)
@@ -136,7 +146,7 @@ public sealed partial class TimelineView
     void DragErase()
     {
         int i = HitTrack(lastPointer.Y);
-        if (lastPointer.X >= HeaderW && ClipAt(i, lastPointer.X) is { } c && erasing.Add(c.Clip.Id)) moved = true;
+        if (lastPointer.X >= HeaderW && AnyClipAt(i, lastPointer.X) is { } c && erasing.Add(c)) moved = true;
     }
 
     /// <summary>A released Zoom: a drag shows that stretch across the view, a click zooms around the pointer.</summary>
@@ -170,6 +180,11 @@ public sealed partial class TimelineView
             double at = SnappedSec(lastPointer.X);
             var w = Window(c);
             if (at > w.Start + ClipEnvelope.MinClipSec && at < w.End - ClipEnvelope.MinClipSec) splitHover = (i, at);
+        }
+        else if (tool == TimelineTool.Split && lastPointer.X >= HeaderW && MidiClipAt(i, lastPointer.X) is { } m)
+        {
+            double at = SnappedSec(lastPointer.X);
+            if (MidiEditing.CanSplit(m, at, Bpm)) splitHover = (i, at);
         }
         if (splitHover != before) InvalidateVisual();
     }

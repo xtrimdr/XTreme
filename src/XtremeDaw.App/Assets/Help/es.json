@@ -77,7 +77,7 @@
           "id": "window",
           "icon": "E80A",
           "title": "Conocer la ventana",
-          "keywords": "interfaz partes paneles inspector timeline transporte donde esta",
+          "keywords": "interfaz partes paneles inspector timeline transporte donde esta maximizar agrandar enter",
           "intro": "Qué hay en cada zona.",
           "steps": [
             "**Arriba**: modo del proyecto, nombre, guardar, deshacer, herramientas y **Exportar**.",
@@ -85,7 +85,8 @@
             "**Centro**: la vista previa del video y la cámara en vivo.",
             "**Debajo de la vista previa**: el timeline, con las pistas y sus clips. {key:mixer} lo cambia por el mixer.",
             "**Derecha**: lo que es del proyecto: Color, Patrones, Biblioteca e Historial. Se pliega con {key:rightPanel}.",
-            "**Abajo de todo**: reloj, reproducir, grabar, tempo, click, afinador y las vistas Timeline, Piano roll, Mixer y Mastering."
+            "**Abajo de todo**: reloj, reproducir, grabar, tempo, click, afinador y las vistas Timeline, Piano roll, Mixer y Mastering. Tocar de nuevo la vista activa vuelve al timeline.",
+            "**Maximizar**: {key:maximize} o {icon:E740} le da toda la ventana al panel que tocaste último (video, timeline, piano roll, mixer o mastering). Otra vez, vuelve todo como estaba."
           ],
           "see": ["look", "shortcuts"]
         },
@@ -281,6 +282,10 @@
             "Copiá con {key:copy} o cortá con {key:cut}.",
             "Pegá con {key:paste}: empieza en el cabezal y en la pista elegida."
           ],
+          "notes": [
+            "En un clip MIDI, una nota que cruza el corte queda en los dos pedazos y sigue sonando como una sola.",
+            "En un patrón, cortá en la raya de una vuelta para que los dos pedazos sigan enlazados. En otro lugar, el de la derecha queda como clip propio."
+          ],
           "see": ["select-many", "tools", "move-trim"]
         },
         {
@@ -309,6 +314,9 @@
             "Borrá con {key:delete}: queda el hueco.",
             "Con {key:deleteClose}, además se corre lo de después y se cierra el hueco."
           ],
+          "notes": [
+            "Vale para tomas y clips MIDI."
+          ],
           "see": ["tools", "undo-versions"]
         },
         {
@@ -324,6 +332,9 @@
             "**Borrar** ({key:toolErase}): saca lo que toca.",
             "**Escuchar** ({key:toolListen}): mantené apretado sobre un clip para oír esa pista sola.",
             "**Zoom** ({key:toolZoom}) y **Mano** ({key:toolHand}): acercar y mover la vista."
+          ],
+          "notes": [
+            "Dividir, Borrar y Escuchar valen para tomas y clips MIDI."
           ],
           "see": ["navigate"]
         },
@@ -349,14 +360,20 @@
           "id": "import",
           "icon": "E896",
           "title": "Importar audio y usar samples",
-          "keywords": "traer archivo wav mp3 sample loop arrastrar biblioteca pista base",
-          "intro": "Lo que importás se copia al proyecto: nunca depende de la carpeta original.",
+          "keywords": "traer archivo wav mp3 sample loop arrastrar biblioteca pista base copiar vincular duplicar media",
+          "intro": "Lo que importás se copia al proyecto o se vincula donde está, sin duplicarlo.",
           "steps": [
             "Arrastrá el archivo al timeline, o tocá **Nueva pista → Importar audio…**.",
             "Para tus carpetas de sonidos, abrí **Biblioteca → Samples** y sumá una carpeta.",
-            "Escuchá con **Espacio** y arrastrá el sample a una pista."
+            "Escuchá con **Espacio** y arrastrá el sample a una pista.",
+            "Elegí **Copiar al proyecto** o **Vincular**. Con **No mostrar más** queda esa opción; se cambia en **Configuración → Guardado y exportación**."
           ],
           "notes": [
+            "Si movés o borrás un archivo vinculado, sus clips quedan sin conexión. En la Biblioteca llevan la marca **Vinculado**.",
+            "Para traer un vinculado adentro, tocá **Copiar al proyecto** en su fila de la Biblioteca. Tu archivo queda donde está.",
+            "Si un archivo se movió, tocá **Elegir el archivo…** o **Buscar en una carpeta…** en la Biblioteca o en el menú del clip gris.",
+            "Borrar una toma vinculada la saca del proyecto: tu archivo no se toca. Un paquete lleva copia de los vinculados.",
+            "Lo que solo lee FFmpeg no se vincula: entra como WAV.",
             "Formatos: WAV, MP3, FLAC, OGG, M4A y AIFF. Algunos necesitan FFmpeg."
           ],
           "see": ["library", "no-ffmpeg"]
@@ -605,7 +622,7 @@
           "id": "automation",
           "icon": "E9D9",
           "title": "Automatizar volumen y efectos",
-          "keywords": "curva mover solo fade envolvente parametro",
+          "keywords": "curva mover solo fade envolvente parametro sampler corte resonancia",
           "intro": "Hace que un control cambie solo a lo largo del tema.",
           "steps": [
             "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista → **Automatización**. En un plugin: tocá **Automatizar** en la barra de su ventana y mové el parámetro.",
@@ -891,7 +908,8 @@
           ],
           "notes": [
             "{key:quantize} acomoda las notas a la grilla.",
-            "El imán del piano roll es propio, o **Igual que el timeline**."
+            "El imán del piano roll es propio, o **Igual que el timeline**.",
+            "Lo que tocás en el piano roll suena por los efectos y el fader de la pista: en una pista silenciada no se oye."
           ],
           "see": ["scales-chords", "instrument", "midi-keyboard", "patterns"]
         },
@@ -918,31 +936,77 @@
         {
           "id": "instrument",
           "icon": "E7F5",
-          "title": "Elegir un instrumento VST",
+          "title": "Elegir un instrumento",
           "keywords": "plugin sonido piano sintetizador kontakt sampler sin sonido tono de prueba",
-          "intro": "Sin instrumento, la pista suena con un tono de prueba.",
+          "intro": "Sin instrumento, la pista suena con un tono de prueba. Elegí el **Sampler** o un plugin.",
           "steps": [
             "Elegí la pista MIDI.",
             "En el canal, abrí el desplegable **Instrumento**, o clic derecho en la pista → **Instrumento**.",
             "Elegí uno de la lista. La primera vez se buscan los plugins instalados.",
             "**Abrir la ventana** muestra el plugin."
           ],
-          "see": ["plugins", "plugin-fail"]
+          "see": ["sampler", "plugins", "plugin-fail"]
+        },
+        {
+          "id": "sampler",
+          "icon": "EC4F",
+          "title": "Tocar un sample con el Sampler",
+          "keywords": "sampler sample wav loop one shot adsr envolvente filtro lfo bateria drum instrumento nativo raiz afinar afinacion detector nota desafinado cents slide paneo automatizar corte resonancia",
+          "intro": "Tocá cualquier sonido en todo el teclado.",
+          "steps": [
+            "Arrastrá un archivo de audio a una pista MIDI. O elegí **Sampler** en **Instrumento** y soltalo en su ventana.",
+            "**Detectado** muestra en qué nota está el sonido y cuántos cents se desvía. **Afinar** lo lleva a esa nota. También podés ajustarlo a mano con **Tono** y **Fino**.",
+            "La **Raíz** es la tecla en la que suena como es. Para cambiarla, hacé clic derecho en una tecla.",
+            "Arrastrá las banderas **S** y **E** para elegir qué parte suena.",
+            "En **Modo**: **Nota** suena mientras dura la nota; **One shot** suena entero, para golpes de batería.",
+            "Elegí un **Loop** para que siga sonando mientras dura la nota, y movés su tramo con las banderas **L**.",
+            "Arrastrá los puntos de la envolvente, y probá el **Filtro** y el **LFO**."
+          ],
+          "notes": [
+            "La detección mira el tramo entre **S** y **E**. Un golpe de batería no tiene una altura clara.",
+            "El sample queda en el proyecto, como cualquier importación.",
+            "El slide, el portamento y el paneo de cada nota suenan en el Sampler, nota por nota.",
+            "Clic derecho en **Corte**, **Reso**, **Drive**, **Env**, **Volumen**, **Paneo** o en lo que el LFO mueve: **Automatizar…**.",
+            "Por ahora, un sample por pista."
+          ],
+          "see": ["instrument", "midi-track", "midi-keyboard", "automation"]
         },
         {
           "id": "plugins",
           "icon": "E950",
           "title": "Instalar y administrar plugins",
-          "keywords": "vst vst2 vst3 32 bits carpeta buscar no aparece escanear ocultar",
+          "keywords": "vst vst2 vst3 32 bits carpeta buscar no aparece escanear ocultar miniatura imagen",
           "intro": "XTreme usa plugins VST3 y VST2, de 64 y 32 bits, cada uno en su propio proceso: si uno se cuelga, la grabación sigue.",
           "steps": [
             "Instalá el plugin como siempre.",
             "Tocá **Buscar nuevos**.",
             "Si está en otra carpeta, sumala con **+**.",
-            "Destildá los que no quieras ver en los menús."
+            "Destildá los que no quieras ver en los menús.",
+            "Cada plugin toma su miniatura la primera vez que abrís su ventana. Para rehacerla, tocá **Miniatura** en la barra de la ventana."
           ],
           "settings": "plugins",
           "see": ["add-fx", "plugin-fail"]
+        },
+        {
+          "id": "piano-tools",
+          "icon": "E90F",
+          "title": "Herramientas del piano roll",
+          "keywords": "arpegiador arpegiar strum rasgueo legato staccato cortar chop unir glue flam claw limitar espejar flip azar riff progresion acordes cuantizar groove humanizar lfo rotar silenciar agrupar color lazo pintar slide portamento fantasma partitura pdf mid",
+          "intro": "Todas las ayudas para escribir MIDI, con el resultado a la vista y al oído antes de aplicarlas.",
+          "steps": [
+            "Elegí las notas (sin elegir ninguna, la herramienta toma todo el clip) y abrí **Herramientas** en la cabecera del piano roll.",
+            "Una herramienta con ajustes abre un panel al costado: mové los valores y escuchá el resultado mientras suena.",
+            "**Enter** aplica y **Esc** cancela. Un clic en las notas también aplica. Cada aplicación es un paso de deshacer.",
+            "**Escribir**, **Pintar** y **Cortar** cambian qué hace el clic en la grilla. Con Ctrl+Alt y arrastrando elegís con un lazo.",
+            "Doble clic en una nota abre su tarjeta: velocidad, paneo, release, modulación, color, slide y portamento.",
+            "**Vista** cambia el carril de abajo, muestra otras pistas en gris y pone una forma de onda de fondo. Clic derecho en una tecla la nombra.",
+            "En **Escala**, **Teclado MIDI a la escala** hace que lo que tocás caiga en la escala. **Arpegiador**, en Herramientas, arpegia el teclado y graba lo que suena."
+          ],
+          "see": [
+            "midi-track",
+            "scales-chords",
+            "midi-keyboard"
+          ]
         },
         {
           "id": "midi-keyboard",
@@ -956,7 +1020,8 @@
             "Para grabar, armala con **●** y grabá con {key:record}. Las notas quedan en un clip."
           ],
           "notes": [
-            "**Cuantizar al grabar**, en la misma página, acomoda las notas solo."
+            "**Cuantizar al grabar**, en la misma página, acomoda las notas solo.",
+            "Las notas se escriben en disco mientras grabás. Si se corta la luz, vuelven al abrir el proyecto."
           ],
           "settings": "midi",
           "see": ["virtual-keyboard", "no-midi"]
@@ -977,7 +1042,8 @@
             "Mientras está prendido, esas letras no funcionan como atajos.",
             "Con una **escala** elegida, las filas de la **Z**, la **A** y la **Q** son tres octavas de la escala, de 7 notas cada una desde la tónica. La octava pasa a **O** y **P**, y la velocidad a **L** y **Ñ**.",
             "Con **Acordes** prendido, cada tecla toca el acorde de su nota.",
-            "Con la ventana de un instrumento abierta, las teclas tocan en su pista."
+            "Con la ventana de un instrumento abierta, las teclas tocan en su pista.",
+            "El botón al final de los ajustes lo abre en su propia ventana. Al cerrarla vuelve a su lugar. Con poca altura muestra solo las teclas."
           ],
           "see": ["scales-chords"]
         },
@@ -985,16 +1051,19 @@
           "id": "patterns",
           "icon": "F0E2",
           "title": "Repetir un patrón",
-          "keywords": "loop ritmo bateria enlazar clips iguales fl studio",
+          "keywords": "loop ritmo bateria enlazar clips iguales fl studio instrumentos notas fantasma",
           "intro": "Clips enlazados: editar uno cambia todos.",
           "steps": [
             "Clic derecho en un clip MIDI → **Crear patrón**.",
             "Duplicá o copiá el clip: la copia queda enlazada.",
             "Estirá un clip por el borde derecho para repetir la vuelta.",
+            "**Varios instrumentos**: en el piano roll, el chip de instrumentos → **Sumar instrumento**. Cada uno va en su pista, con sus notas.",
+            "En esa lista, un clic pasa a otro instrumento y el ojo muestra u oculta sus notas fantasma.",
             "**Hacer único** saca un clip del patrón."
           ],
           "notes": [
-            "La pestaña **Patrones** los lista. Se arrastran a cualquier pista MIDI.",
+            "Los instrumentos de un patrón se mueven, se estiran y se duplican juntos. Shift+borde estira uno solo; Supr quita solo el elegido.",
+            "La pestaña **Patrones** los lista. Se arrastran a cualquier pista MIDI; con varios instrumentos, cada uno cae en su pista.",
             "Abrir un clip de patrón muestra una sola vuelta. Desde la pestaña también se renombran y se eliminan."
           ]
         }
@@ -1083,7 +1152,7 @@
           "id": "library",
           "icon": "E8F1",
           "title": "Encontrar tomas y liberar espacio",
-          "keywords": "biblioteca toma borrada recuperar disco lleno espacio no usadas papelera",
+          "keywords": "biblioteca toma borrada recuperar disco lleno espacio no usadas papelera sin conexion archivo movido falta vinculado copiar",
           "intro": "**Biblioteca**, en el panel derecho, lista todas las tomas: usadas o no.",
           "steps": [
             "Escuchá una toma con su botón de reproducir.",
@@ -1091,7 +1160,8 @@
             "**Borrar no usados** manda a la Papelera lo que no está en el timeline."
           ],
           "notes": [
-            "Quitar un clip del timeline nunca borra su archivo."
+            "Quitar un clip del timeline nunca borra su archivo.",
+            "Una toma cuyo archivo falta lleva la marca **Sin conexión** y los botones para volver a encontrarlo."
           ],
           "see": ["punch-in", "import"]
         },
@@ -1120,7 +1190,7 @@
           "id": "shortcuts",
           "icon": "E765",
           "title": "Ver y cambiar los atajos",
-          "keywords": "teclado teclas lista combinaciones",
+          "keywords": "teclado teclas lista combinaciones distribución cubase logic fl studio reaper fender studio pro otro daw",
           "intro": "Los principales, con las teclas que tenés configuradas:",
           "steps": [
             "Reproducir y parar: {key:play}. Grabar: {key:record}. Armar: {key:arm}.",
@@ -1130,6 +1200,7 @@
           ],
           "notes": [
             "En **Atajos de teclado** está la lista completa y se cambia cualquiera.",
+            "En **Distribución de teclas** elegís las teclas de Cubase, Logic Pro, FL Studio, Reaper o Studio Pro. Tus cambios quedan guardados en cada una. Lo que ese DAW no tiene sigue con la tecla de XTreme.",
             "Con la ventana de un plugin adelante andan los del grupo **Transporte**, salvo mientras escribís en un campo de texto del plugin."
           ],
           "settings": "shortcuts"

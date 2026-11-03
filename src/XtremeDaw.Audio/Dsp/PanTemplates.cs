@@ -3,7 +3,7 @@ namespace XtremeDaw.Audio.Dsp;
 public sealed record PanTemplateDef(string Id, string Label, string Hint);
 
 /// <summary>
-/// Port of <c>GuitarCam/src/audio/panTemplates.ts</c>: pan positions (−1..1) across all tracks.
+/// Port of the web app's <c>panTemplates.ts</c>: pan positions (−1..1) across all tracks.
 /// </summary>
 public static class PanTemplates
 {

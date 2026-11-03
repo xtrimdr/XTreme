@@ -6,7 +6,7 @@ using XtremeDaw.Audio;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// Port of Swatch in GuitarCam/src/components/ColorPanel.tsx: skin, red, green, blue and a grey ramp drawn
+/// Port of Swatch in the web app's ColorPanel.tsx: skin, red, green, blue and a grey ramp drawn
 /// through a grade, so each look chip and template shows what it does. The web calls gradeFn directly; this
 /// samples a small LUT built by the same code the preview and the export use.
 /// </summary>

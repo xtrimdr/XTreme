@@ -7,7 +7,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App;
 
 /// <summary>
-/// UI themes, port of GuitarCam/src/theme.ts: always dark, an accent color plus a surface palette (the greys,
+/// UI themes, port of the web app's theme.ts: always dark, an accent color plus a surface palette (the greys,
 /// tinted). Applied live to the App.axaml brushes, to <see cref="Palette"/> and to the Fluent accent colors.
 /// Same as the web except it adds nine accent presets and three dark surface palettes, and is remembered
 /// in the program's config ("theme") instead of localStorage.

@@ -1,6 +1,6 @@
 # XTreme: detalles
 
-Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `wtlab`. Lo general está en el [README](README.md).
+Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `xtlab`. Lo general está en el [README](README.md).
 
 **Español** · [English](DETALLES_EN.md)
 
@@ -17,7 +17,7 @@ Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `wtlab`. Lo g
 - [.NET 10 SDK](https://dotnet.microsoft.com/) para compilar.
 - Para los plugins VST3 y VST2 (opcional): Visual Studio con **Desarrollo para el escritorio con C++** y el **Windows 11 SDK**,
   y el SDK de VST3 de Steinberg (licencia MIT) en `lib\vst3sdk`, que baja `tools\get-vst3sdk.ps1` (unos 21 MB, fuera de
-  git). Con eso, `dotnet build` también compila `wtvsthost.exe` y `wtvsthost32.exe` (`src\XtremeDaw.VstHost`, C++) y los copia junto al exe;
+  git). Con eso, `dotnet build` también compila `xtvsthost.exe` y `xtvsthost32.exe` (`src\XtremeDaw.VstHost`, C++) y los copia junto al exe;
   sin eso la app compila igual y las pistas MIDI suenan con el tono de prueba.
 - Para **Extraer MIDI**: el modelo de Basic Pitch (Spotify, Apache 2.0, ~230 KB) en `lib\basic-pitch`, que baja
   `tools\get-basic-pitch.ps1` (fuera de git). El build lo copia a `basic-pitch\` junto al exe; sin él, "Extraer MIDI"
@@ -32,25 +32,27 @@ Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `wtlab`. Lo g
 tools\probar.ps1 "qué probar"
 ```
 
-Compila, corre `wtlab comprobar-dsp`, copia la app a `pruebas\<fecha>-<commit>` (fuera de git; quedan las
+Compila, corre `xtlab comprobar-dsp`, copia la app a `pruebas\<fecha>-<commit>` (fuera de git; quedan las
 últimas 5) y la abre desde ahí, con la marca "PRUEBA <commit>" en la barra de título. Como nunca corre desde `bin\`,
 la app abierta no traba la próxima compilación. `-Abrir` abre la última copia sin compilar, `-NoAbrir` solo compila y
-copia, `-SinComprobar` salta `wtlab`, `-Proyecto carpeta` abre ese proyecto. Si ya hay un XTreme abierto, antes de abrir
+copia, `-SinComprobar` salta `xtlab`, `-Proyecto carpeta` abre ese proyecto. Si ya hay un XTreme abierto, antes de abrir
 pregunta en un cuadro si lo cierra (guarda el proyecto antes), así la copia nueva no abre el mismo proyecto en solo
-lectura. Si algo falla, dice "NO SE PUEDE PROBAR" y no abre nada (desde el acceso directo, que no muestra la consola, queda
-anotado en `%APPDATA%\XTreme\sesiones.log`, junto con cada inicio y cierre de la app y sus errores). `-SoloCompilar` solo compila, y `dotnet build` también sirve.
+lectura. Si algo falla, dice "NO SE PUEDE PROBAR" y no abre nada (desde el acceso directo, que no muestra la consola, lo avisa en un
+cuadro; queda anotado en `%APPDATA%\XTreme\sesiones.log`, junto con cada inicio y cierre de la app y sus errores). `-SoloCompilar` solo compila, y `dotnet build` también sirve.
 
 El texto queda en la lista **Para probar** (`pruebas\lista.json`, sobrevive a las copias). Una copia de prueba la muestra en un panel aparte, que se abre solo si hay algo pendiente y desde el botón junto a "PRUEBA": cada ítem se marca Anda o No anda, con una nota de qué falló. Un ítem de una copia más nueva que la abierta avisa que falta en esta. `-Lista` muestra lo pendiente y lo que no anda; `-Arregla 12` (con `-NoAbrir` o no) devuelve ese ítem a por probar en la copia nueva y cuenta un intento más.
 
-Si hay varias sesiones trabajando en esta carpeta, compilar, comprobar y copiar van de a una: `dotnet build` en Debug (`tools\turno.targets`), `probar.ps1` y los comandos pesados de `wtlab` (`comprobar-dsp`, `exportar`, `separar`…) esperan su turno (`turno.lock`, junto a `wtlab.exe`). `probar.ps1` y `wtlab` corren con prioridad baja para que la máquina siga respondiendo. Si en 9 minutos no les toca, salen con error diciendo quién lo tiene (`probar.ps1` y `wtlab`, código 4).
+Si hay varias sesiones trabajando en esta carpeta, compilar, comprobar y copiar van de a una: `dotnet build` en Debug (`tools\turno.targets`), `probar.ps1` y los comandos pesados de `xtlab` (`comprobar-dsp`, `exportar`, `separar`…) esperan su turno (`turno.lock`, junto a `xtlab.exe`). `probar.ps1` y `xtlab` corren con prioridad baja para que la máquina siga respondiendo. Si en 9 minutos no les toca, salen con error diciendo quién lo tiene (`probar.ps1` y `xtlab`, código 4).
 
 La app arranca en el gestor de **Proyectos** (lista, buscador, plantillas, renombrar, duplicar, Papelera).
-Con una carpeta de proyecto como argumento, la abre directo. `tools\make-shortcut.ps1` crea un acceso
-directo en el escritorio que abre la última copia de prueba (`probar.ps1 -Abrir`). Los ajustes se guardan en `%APPDATA%\XTreme`.
+Con una carpeta de proyecto como argumento, la abre directo. `tools\make-shortcut.ps1` crea en el escritorio el acceso
+directo **XTreme Prueba**, que abre la última copia de prueba terminada (`probar.ps1 -Abrir -Acceso`) sin compilar y sin depender de ninguna sesión abierta; `probar.ps1` lo rehace después de cada copia. Los ajustes se guardan en `%APPDATA%\XTreme`.
 
 ## Atajos principales
 
-Todos se pueden cambiar en ⚙ Configuración → Atajos de teclado (menos Esc). Con la ventana de un plugin en primer plano
+Todos se pueden cambiar en ⚙ Configuración → Atajos de teclado (menos Esc). Ahí mismo, **Distribución de teclas** cambia
+todos de una vez a los de Cubase, Logic Pro, FL Studio, Reaper o Studio Pro (`KeyLayouts`); los cambios propios quedan
+guardados en cada distribución. Esta tabla es la de XTreme. Con la ventana de un plugin en primer plano
 andan los del grupo Transporte, salvo mientras se escribe en un campo de texto del plugin.
 
 | Tecla | Acción |
@@ -74,6 +76,11 @@ andan los del grupo Transporte, salvo mientras se escribe en un campo de texto d
 | Shift+Q | alinear los clips elegidos a la grilla |
 | Ctrl+A / Ctrl+D | marcar todos los clips / sacar la selección |
 | Q | cuantizar al imán del piano roll: las notas elegidas (o todas) en el piano roll, o los clips MIDI elegidos |
+| Alt+1 / 2 / 3 | piano roll: escribir, pintar, cortar |
+| Alt+A, Alt+S, Alt+U, Alt+F, Alt+W, Alt+J, Alt+Y, Alt+R, Alt+E, Alt+P, Alt+Q, Alt+V, Alt+O, Alt+L | piano roll: arpegiar, rasgueo, cortar con ritmo, flam, claw, limitar, espejar, azar, riff, progresión, cuantizar, niveles, LFO, articular |
+| Ctrl+L, Ctrl+U, Ctrl+G | piano roll: legato, cortar al imán, unir |
+| Shift+M, Shift+G, Alt+G, Shift+I | piano roll: silenciar notas, agrupar, desagrupar, invertir la selección |
+| Enter / Esc | con una herramienta abierta: aplicar / cancelar |
 | Ctrl+C / Ctrl+X / Ctrl+V | copiar / cortar los clips elegidos (tomas y clips MIDI) / pegarlos en el cabezal, desde la pista elegida |
 | Supr | quitar el clip (o los marcados, o la pista vacía); con un rango, borrarlo |
 | Shift+Supr | borrar el rango y cerrar el hueco (lo de después se corre) |
@@ -85,6 +92,7 @@ andan los del grupo Transporte, salvo mientras se escribe en un campo de texto d
 | Ctrl+clic / Shift+clic en un encabezado | marcar varias pistas (una por una / un rango) para moverlas juntas |
 | Ctrl+S | guardar ya |
 | B / P | plegar o abrir el panel del canal / del proyecto (si está oculto con su botón de la barra de título, lo vuelve a mostrar) |
+| Enter | maximizar el panel que tocaste último: video, timeline, piano roll, mixer o mastering (otra vez Enter vuelve a como estaba) |
 | F11 | pantalla completa (otra vez F11 vuelve a como estaba) |
 | F1 | ayuda (otra vez F1 la cierra) |
 | Rueda, Shift+rueda, Ctrl+rueda, Alt+rueda | subir y bajar, zoom, desplazar a los costados, alto de pista (los modificadores y el sentido de cada uno, con "Invertir", se cambian en Configuración → Atajos de teclado; zoom y alto también con los sliders al pie de los encabezados). En el mixer, la rueda sola y Ctrl+rueda lo desplazan a los costados y Shift+rueda (o la barra de su cabecera) agranda o achica el ancho de los canales |
@@ -118,26 +126,26 @@ src/
   XtremeDaw.Audio      motor de audio: DSP, ASIO dúplex, click, grabación a disco, exportación
   XtremeDaw.Projects   modelo del proyecto, guardado atómico, historial, gestor de proyectos
   XtremeDaw.App        la ventana (Avalonia 11.3)
-  XtremeDaw.Lab        wtlab.exe: consola para probar audio, DSP y proyectos sin la ventana
-  XtremeDaw.VstHost    wtvsthost.exe y wtvsthost32.exe (C++): abren un plugin VST3 o VST2 en su propio proceso
+  XtremeDaw.Lab        xtlab.exe: consola para probar audio, DSP y proyectos sin la ventana
+  XtremeDaw.VstHost    xtvsthost.exe y xtvsthost32.exe (C++): abren un plugin VST3 o VST2 en su propio proceso
 tools/                 ícono, acceso directo y utilidades de verificación
 ```
 
 Las dependencias van hacia abajo (App → Projects → Audio): el motor y el modelo del proyecto no conocen la
-interfaz, y todo lo que hacen se puede ejercitar desde `wtlab`. El proyecto se guarda en una carpeta:
+interfaz, y todo lo que hacen se puede ejercitar desde `xtlab`. El proyecto se guarda en una carpeta:
 
 ```
-guitarcam.json        el proyecto
-guitarcam.json.bak    el guardado anterior
-historial/            copias para volver atrás
-media/                grabaciones e importados (nunca se reescriben)
-cache/                tomas transpuestas y estiradas por el tempo (se rehacen solas si se borran)
-exports/              videos y audios exportados
+xtreme_project.json      el proyecto
+xtreme_project.json.bak  el guardado anterior
+historial/               copias para volver atrás
+media/                   grabaciones e importados (nunca se reescriben); mientras se graba, los diarios de las tomas y las notas de las MIDI (.notas)
+cache/                   tomas transpuestas y estiradas por el tempo (se rehacen solas si se borran)
+exports/                 videos y audios exportados
 ```
 
-## wtlab
+## xtlab
 
-`wtlab.exe` (`src\XtremeDaw.Lab\bin\Debug\net10.0-windows\wtlab.exe`) prueba el motor y los proyectos desde
+`xtlab.exe` (`src\XtremeDaw.Lab\bin\Debug\net10.0-windows\xtlab.exe`) prueba el motor y los proyectos desde
 la consola, sin abrir la ventana.
 
 | Comando | Qué hace |
@@ -152,13 +160,17 @@ la consola, sin abrir la ventana.
 | `version` | esta versión contra la última release de GitHub (lo que avisa la ventana y muestra "Acerca de") |
 | `reporte enlace "título" [--texto t] [--idea]` / `reporte comprobar` | el enlace al issue nuevo que abre "Enviar comentarios", sin abrir nada; `comprobar` prueba textos, codificación y largo |
 | `lista [ver \| agregar "qué probar" \| arreglado número [--texto t]] --archivo x [--copia nombre]` / `lista comprobar` | la lista "Para probar" de las copias de prueba (la usa `tools\probar.ps1`); `comprobar` la prueba sobre un archivo temporal |
+| `atajos comprobar` | que ninguna distribución de teclas de otro DAW (`KeyLayouts`) repita una tecla |
 | `espectro [toma.wav]` | el espectro en vivo del EQ |
 | `comprobar-dsp` | comprobaciones propias del DSP: remuestreo, tomas, reinicio de la cadena, afinador, LUFS y mastering (bandas que suman plano, reducción por banda sin importar el nivel, Cinta, Ancho (graves mono y mismo volumen), soft clip, limitador prendido y apagado) y slots de efectos (un canal viejo migrado suena idéntico a la cadena fija, repetir, reordenar, cambio de lista sin saltos, el bypass de FX los apaga sin tocar el canal), puerta de ruido (baja el zumbido, deja pasar la nota, no aletea cuando una nota se apaga); además Nitidez, Claridad y Resplandor (un cuadro plano queda igual, un borde se marca, una luz en lo oscuro deja su halo de su color, los looks HDR y Soñado suman lo suyo solo con el filtro prendido) |
 | `looks [--look id] [--salida look.cube] [--blancos n] [--negros n] [--luz n]` | los looks de color con colores de prueba, comprobación de rango y, con `--look`, el LUT `.cube` de ese look con Blancos, Negros y Sensación de luz |
 | `masterizar archivo.wav [--cuanto 0.35] [--banda-graves\|--banda-medios\|--banda-agudos 0..1] [--corte] [--barro] [--graves] [--presencia] [--aire] [--inclinacion] [--cinta] [--ancho] [--graves-mono] [--recorte] [--empuje] [--techo] [--release] [--sin-limitador] [--volumen youtube\|instagram\|tiktok\|spotify\|apple] [--pua 0..1] [--look natural\|glue\|bright\|warm\|front\|pick [--cuanto-look 1]] [--sugerime]` | el mastering de la ventana sobre un WAV: cuánto comprime cada banda (y la Púa), cuánto recortan el soft clip (Auto incluido) y el limitador y los LUFS de entrada y salida; `--volumen` es el Destino del master (mide el archivo y usa esa ganancia en vez del Empuje), `--look` pone un look, `--sugerime` muestra qué oye y qué propone, y masteriza con eso |
 | `midi ver\|pista\|clip\|nota\|acordes\|quitar carpeta` | pistas MIDI, sus clips y sus notas (`clip --pista n --en 0 --compases 4`, `nota --clip id --altura C4 --pulso 0 --largo 1 --vel 100`, `acordes --clip id` escribe Do, Sol, Lam, Fa); `mezclar carpeta` las renderiza |
-| `midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]`, `patron-insertar --clip id --pista n [--en 0]`, `patron-unico --clip id`, `patron-disolver --clip id`, `patron-borrar --clip id` | hace de un clip un patrón (clips enlazados, una vuelta que se repite), suma otro clip del patrón, saca uno sonando igual, termina el patrón dejando todos sus clips únicos o lo borra con sus clips |
+| `midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]`, `patron-insertar --clip id --pista n [--en 0]`, `patron-instrumento --clip id --pista n` (o `--quitar`), `patron-unico --clip id`, `patron-disolver --clip id`, `patron-borrar --clip id` | hace de un clip un patrón (clips enlazados, una vuelta que se repite), suma otro clip del patrón, suma o quita un instrumento, saca uno sonando igual, termina el patrón dejando todos sus clips únicos o lo borra con sus clips |
 | `midi acorde carpeta --clip id [--raiz C4] [--tipo scale] [--inversion 0] [--pulso 0] [--largo 1] [--vel 100]` | un acorde en el clip; `scale` y `scale7` lo sacan de la escala del proyecto |
+| `midi exportar-mid carpeta --clip id --a x.mid`, `importar-mid carpeta --de x.mid [--pista n] [--en 0]` | el clip como `.mid` (tipo 1, al tempo del proyecto); un `.mid` adentro: con `--pista`, todo en un clip de esa pista MIDI, sin ella una pista nueva por cada pista del archivo (en un tipo 0, una por canal) |
+| `midi herramienta carpeta --clip id --tool arpeggiate [--rate 5 …]` | corre cualquier herramienta del piano roll (`MidiTools.All`) con sus ajustes por id |
+| `midi partitura carpeta --clip id --a x.pdf` | el clip como partitura en PDF: doble pentagrama, 4/4, cuantizado a 1/16, con la armadura de la escala del proyecto si es mayor o menor natural |
 | `midi escala carpeta [--raiz C4] [--escala minor]` | la escala del proyecto; sin `--escala`, ninguna |
 | `midi ajustar-escala carpeta --clip id` | lleva a la escala del proyecto las notas que quedaron afuera |
 | `midi cuantizar carpeta --clip id [--grilla 1/16]` | mueve el comienzo de las notas a la grilla de la canción (bar, 1/2, 1/4, 1/8, 1/8T, 1/16, 1/32, 1/64, 1/4beat, 1/6beat, 1/3step, 1/6step) |
@@ -168,15 +180,19 @@ la consola, sin abrir la ventana.
 | `midi escuchar [--entrada nombre] [--segundos 10]` | abre las entradas como la ventana e imprime lo que llega y lo que toma el motor (canal y curva de velocidad aplicados) |
 | `midi teclas [--segundos 10]` | las teclas físicas de la computadora como las lee el teclado virtual, por Raw Input |
 | `midi instrumento carpeta [--pista n] --plugin "nombre" \| --quitar` | el instrumento VST3 que toca la pista; `mezclar carpeta` lo renderiza con el plugin, como la exportación |
+| `midi sampler carpeta [--pista n] --sample archivo \| --quitar` | la pista toca ese archivo con el sampler nativo |
+| `sampler archivo [--nota 60] [--raiz n] [--segundos 2] [--filtro lp24] [--corte 2000] [--salida x.wav]` | toca un archivo con el sampler en una nota: dice la raíz que encontró y el pico |
 | `vst estado "nombre"` | carga el estado del plugin en una copia nueva y comprueba que vuelve igual, como al reabrir un proyecto |
+| `vst miniatura "nombre" [--salida x.png] [--ya]` | abre la ventana del plugin y guarda su miniatura como la app (espera a que se quede quieta; con `--ya`, lo que muestra al abrir) |
 | `vst escanear [--todo] [--archivo X]` / `vst lista` | busca los plugins VST3 y VST2, de 64 y 32 bits (cada archivo en su propio proceso; los recuerda en `plugins.json`; `--archivo` reintenta uno) / los lista |
 | `vst carpetas [--agregar X] [--sacar X]` / `vst ocultar\|mostrar "nombre"` | dónde se buscan los plugins y cuáles salen en los menús (lo mismo que Configuración → Plugins) |
 | `vst probar "nombre" [--segundos 4] [--ventana] [--espera s] [--tiempo-real]` | toca un acorde (o un ritmo, si es una batería) con el plugin a un WAV, por el mismo puente que la exportación; `--ventana` abre antes su ventana y `--espera` limita cuánto espera a que suene (10 s, como la exportación; 0 = no espera). Con la variable `GCVST_DEBUG=1`, el puente cuenta sus salidas y cada bloque |
 | `colas [--proyecto carpeta] [--bloque 192] [--segundos 3] [--silencio 120] [--paso 5] [--nivel 0.1] [--caida dB/s]` | lo que cuestan por bloque los buses y el master mientras se apagan sus colas; `--caida` apaga la entrada de a poco, como la cola de un instrumento |
 | `vst vivo "nombre" [--segundos 4] [--bloque 256] [--tope 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--prioridad] [--mmcss] [--ventana] [--salida x.wav]` | toca el instrumento como la reproducción, en bloques del driver a tiempo real, y cuenta los bloques perdidos y los que salieron con sonido, lo que tarda cada bloque en el hilo de audio y en el del plugin, y la CPU de su proceso. `--tope` es el bloque máximo que se le anuncia (por defecto, el del driver), `--prioridad` y `--mmcss` suben este hilo a la prioridad de uno de driver. `--desde` arranca en ese segundo (en medio de una nota), `--espera` lo deja parado antes, `--sin-carga` no espera a que suene y `--apuro 20` adelanta los bloques para que el plugin llegue siempre tarde |
-| `vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--apagado]` | pasa audio (o acordes de prueba) por un efecto como la exportación y en vivo, en bloques del driver a tiempo real; escribe los dos WAV y comprueba que en vivo llega justo un bloque después (lo que cuenta la compensación de latencia) |
+| `vst bucle "nombre" [--bloque 256] [--vueltas 4]` | un bucle en un instrumento, en bloques del driver a tiempo real: mide cuánto se corre el primer tiempo de cada vuelta (sabiendo el bucle de antes y como un salto) y que una nota que cruza B no quede prendida |
+| `vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--tarde] [--toma] [--apagado]` | pasa audio (o acordes de prueba) por un efecto como la exportación y en vivo, en bloques del driver a tiempo real; escribe los dos WAV y comprueba que en vivo llega justo un bloque después (lo que cuenta la compensación de latencia). `--tarde` llama cada bloque apenas terminó el anterior, así el plugin nunca llega a tiempo: tiene que salir entero, un bloque más tarde |
 | `vst parametros "nombre" [--mover "parámetro"] [--segundos 2]` | lista lo que el plugin deja automatizar; con `--mover`, pasa un carril de 0 a 1 por ese parámetro como la exportación y comprueba que el sonido cambia |
-| `midi comprobar` | el sonido de las notas: igual en cualquier tamaño de bloque, termina con el release, la exportación suena como la reproducción y el clip pasa a notas con el tempo; y el teclado: una tecla suena como la nota escrita, el pedal, las tomas, cuantizar y el clip grabado (también corre en `comprobar-dsp`) |
+| `midi comprobar` | el sonido de las notas: igual en cualquier tamaño de bloque, termina con el release, la exportación suena como la reproducción y el clip pasa a notas con el tempo; y el teclado: una tecla suena como la nota escrita, el pedal, las tomas, cuantizar y el clip grabado; la toma cortada: mata un proceso a mitad de toma (`midi cortar carpeta`) y comprueba que al abrir vuelvan las notas; dividir y borrar rango con y sin patrón, notas que cruzan el corte y deshacer; y el tono de prueba por la cadena de la pista, sin asignar (también corre en `comprobar-dsp`) |
 | `transponer archivo.wav [--semitonos 2] [--salida x.wav]` | cambia el tono sin cambiar el largo, como el Transponer de la pista (de −12 a +12, admite cents) |
 | `estirar archivo.wav [--razon 1.25 \| --de 120 --a 100] [--semitonos 0] [--salida x.wav] [--comprobar]` | cambia el largo sin cambiar el tono, como un clip que sigue el tempo; `--comprobar` corre solo sus filas de `comprobar-dsp` |
 | `proyecto editar carpeta tempo bpm` | cambia el tempo con todo en su compás y deja los clips estirados en `cache/` |
@@ -213,7 +229,7 @@ la consola, sin abrir la ventana.
 | `proyecto editar carpeta nuevo-separador [nombre] [--en n] [--visible] \| lado id izquierda\|derecha` | separadores con nombre (nacen ocultos en el timeline salvo `--visible`; `carpeta id --ocultar` lo alterna) y de qué lado del mixer va cada tira |
 | `proyecto editar carpeta guardar-plantilla pista [nombre] \| usar-plantilla nombre \| aplicar-plantilla pista nombre`, `proyecto plantillas-de-pista x` | plantillas de pista (`pistas.json`) |
 | `proyecto encuadre\|sincronia\|formato\|modo carpeta …` | encuadre del clip, ajuste de sincronía, formato del video y modo Video / Solo audio |
-| `proyecto importar-audio carpeta archivo` | copia un audio de afuera a `media/` y lo pone en una pista |
+| `proyecto importar-audio carpeta archivo` | copia un audio de afuera a `media/` (con `--vincular`, lo deja donde está) y lo pone en una pista |
 | `proyecto marcadores carpeta [agregar\|mover\|renombrar\|quitar … \| capitulos]`, `proyecto repetir carpeta [desde hasta \| --quitar]` | marcadores del tema y rango A–B del loop (`capitulos`: los marcadores como capítulos de YouTube) |
 | `proyecto duracion carpeta` | cuánto dura el tema y si entra en cada red (historias, X, Reels · Shorts, TikTok) |
 | `proyecto historial carpeta` | tomas en uso y no usadas, exportaciones y actividad |
@@ -221,7 +237,9 @@ la consola, sin abrir la ventana.
 | `proyecto insertos carpeta --bus id\|n [agregar … \| quitar n \| …]`, `proyecto insertos carpeta [agregar … \| cadena \| quitar n \| …] --master` | lo mismo para un bus o el master; `cadena` (solo `--master`) es "Cadena completa": agrega las etapas que falten |
 | `proyecto buses carpeta [agregar [nombre] [--tipo reverb\|delay\|vacio] \| quitar n \| renombrar n nombre \| volumen n x \| paneo n x \| mute n \| color n #rrggbb\|ninguno \| icono n id\|ninguno]` | los buses, en el orden en que suenan, con sus slots, su salida y sus envíos; quitar uno se lleva los envíos que le llegaban |
 | `proyecto envios carpeta quien [bus [nivel] [--pre\|--post] [--apagar\|--prender] [--quitar\|--sumar]] [--salida bus\|master]` | la salida y los envíos de una pista (número o id) o `carpeta:n`; un bus (`bus:n`) sale solo al master, así que lo rechaza; `--quitar`/`--sumar` saca o vuelve a poner un bus en su lista |
-| `proyecto verificar-deshacer\|verificar-pasos\|verificar-clips\|verificar-tomas\|verificar-importar\|verificar-historial\|verificar-carpetas\|verificar-marcadores\|verificar-paquete` | pruebas automáticas sobre una carpeta temporal |
+| `proyecto vinculados carpeta`, `proyecto copiar-vinculado carpeta medio`, `proyecto reencontrar carpeta medio --archivo X`, `proyecto reencontrar carpeta [medio] --buscar-en Y` | dónde están los archivos de cada toma, copia a media/ lo vinculado y vuelve a encontrar lo que falta |
+| `proyecto cortar-copia carpeta medio [--al-final]` | copia y mata el proceso a la mitad (o al terminar, sin guardar) |
+| `proyecto verificar-deshacer\|verificar-pasos\|verificar-clips\|verificar-tomas\|verificar-importar\|verificar-vinculados\|verificar-historial\|verificar-carpetas\|verificar-marcadores\|verificar-paquete` | pruebas automáticas sobre una carpeta temporal |
 | `proyectos lista\|plantillas\|nuevo\|renombrar\|duplicar\|borrar\|olvidar\|carpeta\|buscar` | lo que hace el gestor de proyectos (`buscar`: qué abre "Abrir carpeta") |
 | `proyectos empaquetar carpeta [--completo] [--salida x.zip] \| desempaquetar x.zip` | el proyecto en un ZIP (para compartir: lo que suena; `--completo`: también las tomas sin usar, las versiones y las exportaciones) y de vuelta a un proyecto nuevo |
 | `proyectos guardar-plantilla\|borrar-plantilla` | plantillas de proyecto del usuario |
@@ -230,7 +248,7 @@ la consola, sin abrir la ventana.
 En `proyecto` y `proyectos`, `--datos X` usa otra carpeta para la configuración, los recientes y las
 plantillas (para probar sin tocar los tuyos), y `--raiz X` otra carpeta de proyectos.
 
-`wtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: estado de los componentes opcionales, instalación y prueba de la descarga contra un servidor local.
+`xtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: estado de los componentes opcionales, instalación y prueba de la descarga contra un servidor local.
 
 ## Modelos de Separar en stems
 

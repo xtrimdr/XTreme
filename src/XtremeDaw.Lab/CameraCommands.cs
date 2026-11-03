@@ -84,12 +84,12 @@ static class CameraCommands
     }
 
     /// <summary>
-    /// Records from a child wtlab and kills it mid-take: once alone (FFmpeg closes the file when the pipe ends)
+    /// Records from a child xtlab and kills it mid-take: once alone (FFmpeg closes the file when the pipe ends)
     /// and once with FFmpeg (the fragmented MP4 keeps every finished second). Both files must play.
     /// </summary>
     static int VerifyCrash(Args a)
     {
-        string dir = Path.Combine(Path.GetTempPath(), "wtlab-camara");
+        string dir = Path.Combine(Path.GetTempPath(), "xtlab-camara");
         Directory.CreateDirectory(dir);
         string self = Environment.ProcessPath!;
         foreach (bool tree in new[] { false, true })

@@ -3,6 +3,7 @@ using XtremeDaw.App.Model;
 using XtremeDaw.Audio;
 using XtremeDaw.Audio.Dsp;
 using XtremeDaw.Audio.Midi;
+using XtremeDaw.Audio.Vst;
 using XtremeDaw.Projects;
 
 namespace XtremeDaw.App.Audio;
@@ -51,13 +52,6 @@ public sealed class PlaybackEngine : IDisposable
     int clickPos;
     // a single click asked for by the sound menu; the callback takes it, so it also sounds while stopped
     float[]? previewClick;
-    /// <summary>A note the piano roll asked to hear (<see cref="PreviewNote"/>), taken by the audio thread.</summary>
-    float[]? pendingNote;
-    // audio thread only: the note being heard and where it is, and the one it cut, fading out
-    float[]? note, cutNote;
-    int notePos, cutPos, cutLeft;
-    /// <summary>How long a note cut by the next one takes to fade out (5 ms), so it doesn't click.</summary>
-    const int NoteCutFade = 240;
 
     /// <summary>The Biblioteca's sample preview, summed to the output like the click.</summary>
     public SampleVoice Sample { get; } = new();
@@ -72,8 +66,12 @@ public sealed class PlaybackEngine : IDisposable
     long midiLatencyFrames;
     /// <summary>How late the whole mix is heard because of the VST3 effects (<see cref="UpdateLatency"/>), in frames.</summary>
     volatile int pdcFrames;
-    /// <summary>The PDC when the take started: the take is moved back by it.</summary>
+    /// <summary>The PDC the take was placed with: the take is moved back by it, and the mix stays that late until it ends (<see cref="VstInsert.Steady"/>).</summary>
     int recPdcFrames;
+    /// <summary>What the master is putting out now, after the PDC (<see cref="HeardSec"/>).</summary>
+    readonly HeardClock heard = new();
+    /// <summary><see cref="heard"/> knows this run of the transport: set by the audio thread on its first block.</summary>
+    volatile bool rolling;
     /// <summary>What the last <see cref="UpdateLatency"/> worked from, so a tick with nothing new costs one pass.</summary>
     int latencyKey;
 
@@ -326,6 +324,20 @@ public sealed class PlaybackEngine : IDisposable
     public double PositionSec => Math.Max(recording ? Interlocked.Read(ref recStartFrame) : 0,
         Interlocked.Read(ref pendingSeek) is var seek && seek != NoSeek ? seek : Interlocked.Read(ref position)) / (double)SampleRate;
 
+    /// <summary>
+    /// What the eye follows: <see cref="PositionSec"/> as late as the master (<see cref="PdcFrames"/>) while it plays, so the
+    /// picture, the playhead and the clock go with the sound; stopped, or after a seek, the same as it. Only for what is
+    /// shown: recording, edits and the native lanes go by <see cref="PositionSec"/>, where the tracks are being read.
+    /// </summary>
+    public double HeardSec
+    {
+        get
+        {
+            if (!rolling || !playing || Interlocked.Read(ref pendingSeek) != NoSeek) return PositionSec;
+            return Math.Max(recording ? Interlocked.Read(ref recStartFrame) : 0, heard.At(Interlocked.Read(ref position), pdcFrames)) / (double)SampleRate;
+        }
+    }
+
     /// <summary>Where the take being recorded starts in the timeline.</summary>
     public double RecordStartSec => Interlocked.Read(ref recStartFrame) / (double)SampleRate;
 
@@ -372,7 +384,7 @@ public sealed class PlaybackEngine : IDisposable
             io.Start();
             for (int i = 0; i < 100 && io.FramesPerBuffer == 0; i++) Thread.Sleep(10);
             // a VST3 effect is heard one driver block late
-            if (io.FramesPerBuffer > 0) XtremeDaw.Audio.Vst.VstInsert.LiveBlock = io.FramesPerBuffer;
+            if (io.FramesPerBuffer > 0) VstInsert.LiveBlock = io.FramesPerBuffer;
             double ms = 1000.0 * io.FramesPerBuffer / SampleRate;
             Status = Loc.T("engine.status", driver, SampleRate / 1000, io.FramesPerBuffer, $"{ms:0.0}");
 
@@ -470,7 +482,8 @@ public sealed class PlaybackEngine : IDisposable
     /// <summary>
     /// The plugin delay compensation (PDC), live: when a track's or a bus's slots put out their sound late (a VST3 effect
     /// is heard one block plus its own latency late), every other path into the same node and into the master waits as
-    /// much (<see cref="MixLatency"/>), and so do the click and a recorded take (<see cref="PdcFrames"/>). UI thread, on
+    /// much (<see cref="MixLatency"/>), and so do the click, a recorded take and what is shown (<see cref="PdcFrames"/>,
+    /// <see cref="HeardSec"/>). UI thread, on
     /// every tick: it only works it out again when a latency, an output or a list of sends changed.
     /// </summary>
     public void UpdateLatency()
@@ -493,13 +506,16 @@ public sealed class PlaybackEngine : IDisposable
             h.Add(n.Sends);
         }
         h.Add(buses.Slots.LatencySamples);
+        // a take keeps the delay it was placed with, even if a plugin goes away under it
+        int floor = recording ? Math.Max(0, recPdcFrames - buses.Slots.LatencySamples) : 0;
+        h.Add(floor);
         int key = h.ToHashCode();
         if (key == latencyKey) return;
         latencyKey = key;
         int Index(BusDspChain? b) => b == null ? -1 : Array.IndexOf(ns, b);
         var plan = MixLatency.Compute(
             [.. list.Select(t => new MixLatency.Source(t.Chain.LatencySamples, Index(t.Out), [.. t.Chain.Sends.Select(s => Index(s.To))]))],
-            [.. ns.Select(n => new MixLatency.Source(n.LatencySamples, Index(n.Out), [.. n.Sends.Select(s => Index(s.To))]))]);
+            [.. ns.Select(n => new MixLatency.Source(n.LatencySamples, Index(n.Out), [.. n.Sends.Select(s => Index(s.To))]))], floor);
         for (int k = 0; k < list.Length; k++)
         {
             list[k].Chain.OutDelay.Set(plan.TrackOut[k]);
@@ -592,6 +608,7 @@ public sealed class PlaybackEngine : IDisposable
         Interlocked.Exchange(ref cancelPause, 1);
         stopping = false;
         if (playing) return; // a fade-out pause still in flight: it fades back in where it is
+        rolling = false;
         if (endFrame > 0 && Interlocked.Read(ref position) >= endFrame) Seek(loop && loopRange is { } lr ? lr.Start / (double)SampleRate : 0);
         long pos = Interlocked.Read(ref position);
         Interlocked.CompareExchange(ref pendingSeek, NoSeek, pos); // a seek made while stopped already moved it
@@ -757,9 +774,6 @@ public sealed class PlaybackEngine : IDisposable
         // with only MIDI tracks armed there is no take: the keyboard's notes are the recording
         if (takes.Count == 0 && !notesOnly) throw new ArgumentException(Loc.T("engine.nothingToRecord"), nameof(takes));
         int outSamples = io.ReportedOutputLatency > 0 ? io.ReportedOutputLatency : io.FramesPerBuffer;
-        // what you hear while you play comes this much late: the take and the keyboard's notes go back by as much
-        recPdcFrames = pdcFrames;
-        Interlocked.Exchange(ref midiLatencyFrames, outSamples + buses.Limiter.Latency + recPdcFrames);
 
         SetInputs(takes.Select(t => t.Route).ToList());
         var recorders = new List<TakeRecorder>();
@@ -773,7 +787,17 @@ public sealed class PlaybackEngine : IDisposable
             throw;
         }
 
+        // recording over the playback: the block under way would put its position (or its stop) on top of the take's
+        bool wasPlaying = playing;
         playing = false;
+        if (wasPlaying) WaitForBlock();
+        // a take has one offset: the slots stop being able to move the mix, and the delay they will keep is known now,
+        // before the first sample. What you hear while you play comes this much late: the take and the keyboard's notes
+        // go back by as much
+        VstInsert.Steady = true;
+        UpdateLatency();
+        recPdcFrames = pdcFrames;
+        Interlocked.Exchange(ref midiLatencyFrames, outSamples + buses.Limiter.Latency + recPdcFrames);
         lastRecordingError = null;
         Interlocked.Exchange(ref lastRecordingDroppedFrames, 0);
         Interlocked.Exchange(ref pendingBusReset, 1);
@@ -799,8 +823,24 @@ public sealed class PlaybackEngine : IDisposable
         Interlocked.Exchange(ref pendingSeek, NoSeek);
         Interlocked.Exchange(ref position, startFrame);
         playStartSec = recStart / (double)SampleRate;
+        rolling = false;
         recording = true;
         playing = true;
+    }
+
+    /// <summary>The longest <see cref="WaitForBlock"/> waits: a block of 8192 frames, and a driver that stopped calling.</summary>
+    const int BlockWaitMs = 200;
+
+    /// <summary>
+    /// Waits for the next block to begin, so the one that may be under way has ended: after clearing <c>playing</c>, what is
+    /// written next isn't overwritten by that block. Never on the audio thread.
+    /// </summary>
+    void WaitForBlock()
+    {
+        long seen = Volatile.Read(ref lastCallback);
+        if (seen == 0) return;
+        var waited = Stopwatch.StartNew();
+        while (Volatile.Read(ref lastCallback) == seen && waited.ElapsedMilliseconds < BlockWaitMs) Thread.Sleep(1);
     }
 
     /// <summary>Cancels the recording while still in the count-in (<c>Esc</c> in <c>App.tsx</c>).</summary>
@@ -825,7 +865,10 @@ public sealed class PlaybackEngine : IDisposable
         if (!recording && recs.All(r => r == null)) return [];
         recording = false;
         playing = false;
+        VstInsert.Steady = false;
         click = null;
+        // the block under way writes its position when it ends: that one must not win
+        WaitForBlock();
         // back to where the take started, like the web goes back to 0
         Interlocked.Exchange(ref position, Interlocked.Read(ref recStartFrame));
         foreach (var t in cur) t.Recorder = null;
@@ -966,6 +1009,7 @@ public sealed class PlaybackEngine : IDisposable
         else Pitch.Write(procL, procR);
 
         DispatchMidi(t0);
+        RunArps(n);
         inputDone = Stopwatch.GetTimestamp();
 
         var cal = activeCalibration;
@@ -1017,6 +1061,7 @@ public sealed class PlaybackEngine : IDisposable
                 {
                     // the position moves first and the request clears after, so PositionSec never shows the old one
                     long req = Interlocked.Read(ref pendingSeek);
+                    heard.Start(req);
                     xfFrom = Interlocked.Exchange(ref position, req);
                     Interlocked.CompareExchange(ref pendingSeek, NoSeek, req);
                     xfLevel = 0;
@@ -1029,6 +1074,11 @@ public sealed class PlaybackEngine : IDisposable
                 }
             }
             long pos = Interlocked.Read(ref position);
+            if (!rolling)
+            {
+                heard.Start(pos);
+                rolling = true;
+            }
 
             // During recording count-in (pos < recStart), backing tracks and disk recording start only once f >= recStart.
             long recStart = isRec ? recStartFrame : 0;
@@ -1055,8 +1105,9 @@ public sealed class PlaybackEngine : IDisposable
                 long lapStart = lap?.Start ?? 0, lapEnd = lap?.End ?? endFrame;
                 bool splice = !xf && !isRec && loop && LoopSplice.Weights(trackPos, playCount, lapStart, lapEnd, xfIn, xfOut);
                 long second = xf ? xfFrom : splice ? trackPos - (lapEnd - lapStart) : LiveTrack.NoSecondRead;
+                int turnAt = splice && trackPos + playCount >= lapEnd ? (int)(lapEnd - trackPos) : -1;
                 for (int i = 0; i < list.Length; i++)
-                    list[i].MixInto(trackPos, playCount, anySolo, subMl, subMr, playOffset, second, xfIn.AsSpan(0, playCount), xfOut.AsSpan(0, playCount));
+                    list[i].MixInto(trackPos, playCount, anySolo, subMl, subMr, playOffset, second, xfIn.AsSpan(0, playCount), xfOut.AsSpan(0, playCount), turnAt, lapStart, loop && !isRec ? lapEnd : 0);
                 if (xf)
                 {
                     xfFrom += playCount;
@@ -1143,6 +1194,12 @@ public sealed class PlaybackEngine : IDisposable
                 if (Interlocked.Exchange(ref cancelPause, 0) != 0) fadeMode = 1; // played again meanwhile
                 else
                 {
+                    // the master fades where it is heard: the playhead stays there, and playing on skips nothing
+                    long stopAt = heard.At(pos, pdcFrames);
+                    heard.Start(stopAt);
+                    Interlocked.Exchange(ref position, stopAt);
+                    var faded = tracks;
+                    for (int i = 0; i < faded.Length; i++) faded[i].Sampler?.FadedOut();
                     fadeMode = 0;
                     stopping = false;
                     playing = false;
@@ -1166,12 +1223,14 @@ public sealed class PlaybackEngine : IDisposable
                         xfLevel = 0;
                     }
                     nextBeat = BeatAt((long)Math.Round(nextBeat * beatLen) - (loopEnd - loopStart));
+                    heard.Turn(loopStart, loopEnd - loopStart);
                     Interlocked.Exchange(ref position, lapTo);
                 }
                 else if (!isRec && atEnd && loop)
                 {
                     // past B, at the end of the song: nothing sounds here to join with
                     nextBeat = BeatAt(loopStart);
+                    heard.Turn(loopStart, pos - loopStart);
                     Interlocked.Exchange(ref position, loopStart);
                 }
                 else if (!isRec && atEnd)
@@ -1188,6 +1247,7 @@ public sealed class PlaybackEngine : IDisposable
         else
         {
             // a seek caught by a stop: apply it as is, then any newer one
+            rolling = false;
             xfFrom = -1;
             fadeMode = 0;
             fadeLevel = 0; // the next Play fades in from silence
@@ -1226,45 +1286,6 @@ public sealed class PlaybackEngine : IDisposable
             outR = or;
         }
 
-        if (Interlocked.Exchange(ref pendingNote, null) is { } nextNote)
-        {
-            if (note != null)
-            {
-                cutNote = note;
-                cutPos = notePos;
-                cutLeft = NoteCutFade;
-            }
-            note = nextNote;
-            notePos = 0;
-        }
-        // straight to the output, like the click: heard while it plays and while it is stopped
-        if (cutNote != null)
-        {
-            var heard = cutNote;
-            int k = Math.Min(n, Math.Min(cutLeft, heard.Length - cutPos));
-            for (int i = 0; i < k; i++)
-            {
-                float v = heard[cutPos + i] * (cutLeft - i) / NoteCutFade;
-                output[0][i] += v;
-                output[1][i] += v;
-            }
-            cutPos += k;
-            cutLeft -= k;
-            if (cutLeft <= 0 || cutPos >= heard.Length) cutNote = null;
-        }
-        if (note != null)
-        {
-            var heard = note;
-            int k = Math.Min(n, heard.Length - notePos);
-            for (int i = 0; i < k; i++)
-            {
-                float v = heard[notePos + i];
-                output[0][i] += v;
-                output[1][i] += v;
-            }
-            notePos += k;
-            if (notePos >= heard.Length) note = null;
-        }
         if (Sample.Active) Sample.Mix(output[0], output[1], n);
 
         if (softwareMonitor)
@@ -1286,6 +1307,9 @@ public sealed class PlaybackEngine : IDisposable
     /// </summary>
     /// <summary>A key that arrives more than half a second before its block is old news: it isn't played.</summary>
     static readonly long StaleKey = Stopwatch.Frequency / 2;
+
+    /// <summary>The scale the MIDI keyboard falls on; null = as played. Immutable, replaced whole by the UI.</summary>
+    public volatile MusicScale? KeySnap;
 
     void DispatchMidi(long t0)
     {
@@ -1319,12 +1343,31 @@ public sealed class PlaybackEngine : IDisposable
                 if (!everyone && (l.Port != 0 && l.Port != e.Port || l.Channel != 0 && l.Channel != e.Channel)) continue;
                 var keys = l.Track.Keys;
                 int before = keys.EventCount;
+                keys.Snap = KeySnap;
                 keys.Handle(e);
                 if (!rec || l.Take is not { } take) continue;
                 long frame = pos - midiLatencyFrames + (long)(Math.Min(0, e.Ticks - t0) * framesPerTick);
                 var done = keys.Events;
                 for (int k = before; k < done.Length; k++) take.Add(frame, done[k]);
             }
+        }
+    }
+
+    /// <summary>The arpeggiators of the tracks that hear the keyboard, in time with the song; what they play is recorded as it sounds.</summary>
+    void RunArps(int n)
+    {
+        var list = midiListeners;
+        bool rec = recording;
+        long pos = Interlocked.Read(ref position);
+        for (int i = 0; i < list.Length; i++)
+        {
+            var l = list[i];
+            var keys = l.Track.Keys;
+            int before = keys.EventCount;
+            keys.RunArp(playing ? pos : -1, n, SampleRate * 60 / Math.Max(1, keys.Tempo));
+            if (!rec || l.Take is not { } take) continue;
+            var done = keys.Events;
+            for (int k = before; k < done.Length; k++) take.Add(pos - midiLatencyFrames, done[k]);
         }
     }
 
@@ -1360,9 +1403,6 @@ public sealed class PlaybackEngine : IDisposable
 
     /// <summary>Plays one click of the current sound and volume, playing or not (the web's playClick from the sound menu).</summary>
     public void PreviewClick(bool accent = true) => Volatile.Write(ref previewClick, accent ? clickHi : clickLo);
-
-    /// <summary>Plays one note on its own (<see cref="NoteSynth.Audition"/>), playing or not, cutting the one before.</summary>
-    public void PreviewNote(float[] samples) => Volatile.Write(ref pendingNote, samples);
 
     public void SetClickSound(ClickSound s, double volumeDb = 0)
     {

@@ -3,7 +3,7 @@ using System.Globalization;
 namespace XtremeDaw.Audio.Dsp;
 
 /// <summary>
-/// Port of <c>CompEq</c> in <c>GuitarCam/src/types.ts</c>: low-cut and mud cut before the compressor,
+/// Port of <c>CompEq</c> in the web app's <c>types.ts</c>: low-cut and mud cut before the compressor,
 /// presence bell and air high-shelf after it.
 /// </summary>
 public readonly record struct CompEqParams(
@@ -17,7 +17,7 @@ public readonly record struct CompEqParams(
 }
 
 /// <summary>
-/// Port of <c>CompSettings</c> in <c>GuitarCam/src/types.ts</c> for DSP calculations.
+/// Port of <c>CompSettings</c> in the web app's <c>types.ts</c> for DSP calculations.
 /// </summary>
 public readonly record struct CompState(
     bool On,
@@ -342,7 +342,7 @@ public static class CompPresets
 }
 
 /// <summary>
-/// Port of the 4 biquads around the compressor in <c>GuitarCam/src/audio/mixGraph.ts</c>:
+/// Port of the 4 biquads around the compressor in the web app's <c>mixGraph.ts</c>:
 /// <c>eq[0]</c> (highpass) and <c>eq[1]</c> (mud peaking at 280 Hz) before the compressor;
 /// <c>eq[2]</c> (presence peaking) and <c>eq[3]</c> (air highshelf at 9000 Hz) after it.
 /// Updates via <see cref="Set"/> replace a single immutable configuration reference so live UI edits

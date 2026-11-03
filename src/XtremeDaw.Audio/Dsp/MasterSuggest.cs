@@ -55,7 +55,7 @@ public static class MasterSuggest
         return acc.Result();
     }
 
-    /// <summary>Listens to audio already rendered (wtlab, the checks).</summary>
+    /// <summary>Listens to audio already rendered (xtlab, the checks).</summary>
     public static MixProfile Analyze(float[] left, float[] right, int sampleRate)
     {
         var acc = new Listener(sampleRate);

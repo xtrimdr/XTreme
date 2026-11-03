@@ -34,7 +34,7 @@ public partial class MainWindow
     bool verticalSuggested;
 
     /// <summary>The video has its own column (a Vertical layout with a stage to show).</summary>
-    bool SideStage => layout != ClassicLayout && !AudioOnly;
+    bool SideStage => layout != ClassicLayout && !AudioOnly && maxPanel == MaxPanel.None;
 
     /// <summary>What the video's column takes from the width the sidebars share with the timeline.</summary>
     double SideStageWidth => SideStage ? stageWidth : 0;
@@ -84,11 +84,13 @@ public partial class MainWindow
     /// </summary>
     void ApplyLayout()
     {
+        if (ViewsCovered && AudioOnly) maxPanel = MaxPanel.Views; // no stage to keep maximized
         bool side = SideStage, left = layout == VerticalLeftLayout;
         Workspace.ColumnDefinitions = new ColumnDefinitions(!side ? "Auto,*" : left ? "Auto,Auto,*" : "Auto,*,Auto");
         Grid.SetColumn(StageArea, side && !left ? 2 : 1);
         Grid.SetColumn(AudioArea, side && left ? 2 : 1);
-        StageArea.IsVisible = !AudioOnly;
+        StageArea.IsVisible = !AudioOnly && maxPanel != MaxPanel.Views;
+        Live.IsVisible = !ViewsCovered;
         StageArea.Width = side ? stageWidth : double.NaN;
         // in its own column the stage is tall and narrow: "En vivo" goes under the preview instead of beside it
         StageArea.ColumnDefinitions = new ColumnDefinitions(side ? "*" : "*,Auto");
@@ -105,8 +107,9 @@ public partial class MainWindow
         // solo audio has no video to place: the button stays where it is, off, and says why
         LayoutButton.IsEnabled = !AudioOnly;
         ToolTip.SetTip(LayoutButton, Loc.T(AudioOnly ? "winlayout.audioOnly" : "winlayout.title"));
-        MoveBottomView(AudioOnly || side);
+        MoveBottomView(AudioOnly || side || maxPanel != MaxPanel.None);
         if (side) StageArea.Width = ClampStage(stageWidth);
+        ShowMaxPanelState();
     }
 
     /// <summary>The title bar's layout menu: one row per layout with a sketch of it, the current one lit.</summary>

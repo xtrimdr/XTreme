@@ -14,6 +14,7 @@ static class ProjectCommands
         if (sub == "verificar-clips") return ClipChecks.Run();
         if (sub == "verificar-tomas") return TakeChecks.Run();
         if (sub == "verificar-importar") return ImportChecks.Run();
+        if (sub == "verificar-vinculados") return LinkedChecks.Run();
         if (sub == "verificar-historial") return HistoryCommands.Check();
         if (sub == "verificar-carpetas") return FolderChecks();
         if (sub == "verificar-marcadores") return MarkerChecks();
@@ -34,6 +35,10 @@ static class ProjectCommands
             "clips" => Clips(dir),
             "transiciones" => Transitions(dir),
             "importar-audio" => ImportAudio(dir, a),
+            "vinculados" => LinkedChecks.List(dir),
+            "copiar-vinculado" => LinkedChecks.Copy(dir, a),
+            "reencontrar" => LinkedChecks.Find(dir, a),
+            "cortar-copia" => LinkedChecks.Die(dir, a),
             "editar" => EditClips(dir, a),
             "historial" => HistoryCommands.Run(dir, a),
             "insertos" => InsertCommands.Run(dir, a),
@@ -101,7 +106,7 @@ static class ProjectCommands
         using var store = ProjectStore.Open(dir);
         if (store.ReadOnly) throw new IOException(store.ReadOnlyReason);
         string file = a.Positional.ElementAtOrDefault(2) ?? throw new ArgumentException("Falta el archivo de audio.");
-        var imported = AudioImport.CopyIn(dir, Path.GetFullPath(file));
+        var imported = a.Flag("vincular") ? AudioImport.LinkIn(dir, Path.GetFullPath(file)) : AudioImport.CopyIn(dir, Path.GetFullPath(file));
         var track = AudioImport.AddClip(store.Project, imported, a.Double("en", 0), a.Get("pista"));
         store.Save();
         Console.WriteLine($"{track.Id} · {imported.Name} · {imported.DurationSec:0.00} s · {imported.SampleRate} Hz · {imported.Channels} canal(es) · {imported.RelativePath}");
@@ -231,7 +236,7 @@ static class ProjectCommands
                 break;
             case "usar-plantilla":
                 var preset = TrackPresets.All().Find(t => t.Id == id || string.Equals(t.Name, id, StringComparison.OrdinalIgnoreCase))
-                    ?? throw new ArgumentException("No encontré esa plantilla de pista (wtlab proyecto plantillas-de-pista).");
+                    ?? throw new ArgumentException("No encontré esa plantilla de pista (xtlab proyecto plantillas-de-pista).");
                 Console.WriteLine(TrackPresets.AddTo(p, preset, p.Settings.AudioOnly));
                 break;
             case "aplicar-plantilla":
@@ -239,7 +244,7 @@ static class ProjectCommands
                 var onto = p.Tracks.Find(t => t.Id == id) ?? (int.TryParse(id, out int nt) && nt >= 1 && nt <= p.Tracks.Count ? p.Tracks[nt - 1] : null)
                     ?? throw new ArgumentException("No encontré esa pista.");
                 var chosen = TrackPresets.All().Find(t => t.Id == value || string.Equals(t.Name, value, StringComparison.OrdinalIgnoreCase))
-                    ?? throw new ArgumentException("No encontré esa plantilla de pista (wtlab proyecto plantillas-de-pista).");
+                    ?? throw new ArgumentException("No encontré esa plantilla de pista (xtlab proyecto plantillas-de-pista).");
                 int skipped = TrackPresets.ApplyTo(p, onto, chosen);
                 Console.WriteLine($"{onto.Name}: suena como «{chosen.Name}» ({onto.Channel.Slots.Count} slots{(skipped > 0 ? $", {skipped} envíos a buses que no hay" : "")})");
                 break;
@@ -599,7 +604,7 @@ static class ProjectCommands
     {
         var list = ProjectStore.Snapshots(dir);
         if (!int.TryParse(value, out int n) || n < 1 || n > list.Count)
-            throw new ArgumentException("Elegí un número de la lista de «wtlab proyecto versiones carpeta».");
+            throw new ArgumentException("Elegí un número de la lista de «xtlab proyecto versiones carpeta».");
         using var store = ProjectStore.Open(dir);
         store.RenameVersion(list[n - 1], name);
         Console.WriteLine(string.IsNullOrWhiteSpace(name) ? $"La versión {n} quedó sin nombre." : $"La versión {n} ahora se llama «{name.Trim()}».");
@@ -610,7 +615,7 @@ static class ProjectCommands
     {
         var list = ProjectStore.Snapshots(dir);
         if (!int.TryParse(value, out int n) || n < 1 || n > list.Count)
-            throw new ArgumentException("Elegí un número de la lista de «wtlab proyecto versiones carpeta».");
+            throw new ArgumentException("Elegí un número de la lista de «xtlab proyecto versiones carpeta».");
         var snapshot = list[n - 1];
         using var store = ProjectStore.Open(dir);
         if (store.ReadOnly) throw new IOException(store.ReadOnlyReason);
@@ -661,7 +666,7 @@ static class ProjectCommands
     /// Records a test tone the way the window does (journal, WAV, take into the project, save, journal off),
     /// to try where a take lands without the window. --pista plays the selected track.
     /// </summary>
-    /// <summary>Opens the app's camera and starts its video for a take (wtlab --camara).</summary>
+    /// <summary>Opens the app's camera and starts its video for a take (xtlab --camara).</summary>
     static (CameraCapture Cam, VideoTakeWriter Writer) StartVideo(ProjectStore store, ProjectStore.RecordingJournal j, long start)
     {
         var cam = CameraCapture.Open(new CameraSource(CameraDevices.Pick(CameraDevices.List(), null)));
@@ -766,7 +771,7 @@ static class ProjectCommands
         var w = new RecordingWriter(store.Resolve(rel)!, sr) { CheckpointSec = 0.5 };
         // a few blocks after the last checkpoint, then the "crash": no Dispose, no save (the camera's FFmpeg is left orphaned)
         long f = WriteTone(w, seconds + 0.2, camera, start);
-        Console.WriteLine($"Grabé {f / (double)sr:0.0} s y corté sin cerrar el archivo. Abrilo con: wtlab proyecto abrir \"{dir}\"");
+        Console.WriteLine($"Grabé {f / (double)sr:0.0} s y corté sin cerrar el archivo. Abrilo con: xtlab proyecto abrir \"{dir}\"");
         Environment.Exit(3);
         return 3;
     }

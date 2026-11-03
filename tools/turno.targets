@@ -1,9 +1,9 @@
 <Project>
-  <!-- A build takes the same turn as tools\probar.ps1 and wtlab (HeavyTurn.cs), so no session has to remember to wait.
+  <!-- A build takes the same turn as tools\probar.ps1 and xtlab (HeavyTurn.cs), so no session has to remember to wait.
        It is taken once, by whatever the build started from: a solution, or the App or Lab project. Taking it per project
        would deadlock, since a project holding it builds the ones it references. It is registered for the build's
        lifetime, so MSBuild closes the file when the build ends, however it ends, even on a reused node.
-       Only Debug: that's the output wtlab runs from, and the installer's Release build has nobody to wait for. -->
+       Only Debug: that's the output xtlab runs from, and the installer's Release build has nobody to wait for. -->
   <UsingTask TaskName="TakeBuildTurn" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
     <ParameterGroup>
       <Path ParameterType="System.String" Required="true" />

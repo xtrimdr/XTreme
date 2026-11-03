@@ -7,7 +7,7 @@ using XtremeDaw.App.Model;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// Port of GuitarCam/src/components/MiniTimeline.tsx: the whole project in one strip above the mixer and the
+/// Port of the web app's MiniTimeline.tsx: the whole project in one strip above the mixer and the
 /// Mastering view, each track's clips as thin bars and the playhead, under a small ruler in bars or in minutes and
 /// seconds, as the timeline's ruler switch says (native only, asked by the user). Click or drag to move the playhead
 /// (not while recording). The control only raises <see cref="SeekRequested"/>; the window moves the engine.

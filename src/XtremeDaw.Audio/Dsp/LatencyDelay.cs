@@ -140,8 +140,12 @@ public static class MixLatency
     /// <summary>How long each leg waits: each track's output and sends, each node's output and sends, and how late the master is.</summary>
     public sealed record Plan(int[] TrackOut, int[][] TrackSends, int[] NodeOut, int[][] NodeSends, int Master);
 
-    /// <summary><paramref name="nodes"/> go in their run order: a node's output and sends only reach later ones (or the master).</summary>
-    public static Plan Compute(IReadOnlyList<Source> tracks, IReadOnlyList<Source> nodes)
+    /// <summary>
+    /// <paramref name="nodes"/> go in their run order: a node's output and sends only reach later ones (or the master).
+    /// With <paramref name="minMaster"/> the master is at least that late: during a take, a plugin that goes away doesn't
+    /// bring the mix forward, everything waits for the delay the take was placed with.
+    /// </summary>
+    public static Plan Compute(IReadOnlyList<Source> tracks, IReadOnlyList<Source> nodes, int minMaster = 0)
     {
         int count = nodes.Count;
         // when each node's input arrives (the latest of what feeds it), and the master's
@@ -165,6 +169,7 @@ public static class MixLatency
             Reach(Valid(nodes[j].Out), outAt[j]);
             foreach (int s in nodes[j].Sends) if (Valid(s) >= 0) Reach(s, outAt[j]);
         }
+        master = Math.Max(master, minMaster);
         int Wait(int to, int at) => to < 0 ? master - at : arrive[to] - at;
         var trackOut = new int[tracks.Count];
         var trackSends = new int[tracks.Count][];

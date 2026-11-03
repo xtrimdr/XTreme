@@ -1,6 +1,117 @@
 {
   "releases": [
     {
+      "version": "0.9.13",
+      "items": [
+        {
+          "icon": "E8C6",
+          "title": "Herramientas en clips MIDI",
+          "text": "Dividir, Borrar, Escuchar y el Rango ahora actúan sobre clips MIDI. Dividir no cambia lo que suena. Las notas del piano roll pasan por los efectos de la pista.",
+          "topic": "split-copy"
+        },
+        {
+          "icon": "E8C8",
+          "title": "Archivos vinculados",
+          "text": "Copiá una toma vinculada al proyecto desde la Biblioteca. Si un archivo se movió, elegilo o buscalo en una carpeta y sus clips vuelven a sonar.",
+          "topic": "import"
+        },
+        {
+          "icon": "E74E",
+          "title": "Tomas MIDI a salvo",
+          "text": "Las notas se escriben en disco mientras grabás. Si el programa se cierra de golpe, vuelven al abrir el proyecto.",
+          "topic": "midi-keyboard"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Efectos e instrumentos VST más firmes",
+          "text": "Un efecto que llega tarde ya no se corta entero: suena un bloque después. Con un bucle, el primer tiempo de cada vuelta de un instrumento entra justo en A. La imagen y el cabezal van con lo que se oye aunque un plugin tenga mucha latencia, y un plugin que se atrasa no corre la toma."
+        },
+        {
+          "icon": "E8A7",
+          "title": "Formato de proyecto nuevo",
+          "text": "Los proyectos se guardan en xtreme_project.json. Los proyectos y ajustes de versiones anteriores ya no se abren."
+        },
+        {
+          "icon": "E90F",
+          "title": "Herramientas del piano roll",
+          "text": "Arpegiar, rasguear, cortar, Riff Machine, progresiones de acordes, cuantizador avanzado, groove y más, con el resultado sonando mientras movés los valores.",
+          "topic": "piano-tools"
+        },
+        {
+          "icon": "E8D6",
+          "title": "Slide y expresión por nota",
+          "text": "Cada nota puede deslizarse, tener portamento, paneo, release y modulación. Doble clic en la nota.",
+          "topic": "piano-tools"
+        },
+        {
+          "icon": "E8E5",
+          "title": "Archivos .mid y partitura",
+          "text": "Importá y exportá .mid, y sacá el clip a un PDF con pentagrama.",
+          "topic": "piano-tools"
+        },
+        {
+          "icon": "F0E2",
+          "title": "Varios instrumentos en un patrón",
+          "text": "Sumá instrumentos a un patrón desde el piano roll: cada uno va en su pista, y las notas de los otros se ven de fondo como notas fantasma.",
+          "topic": "patterns"
+        },
+        {
+          "icon": "EC4F",
+          "title": "Sampler",
+          "text": "Arrastrá un sonido a una pista MIDI y tocalo en todo el teclado. Detecta su nota y lo afina, con loop, envolventes, filtros y LFO. Oye el slide y el paneo de cada nota, y sus perillas se automatizan.",
+          "topic": "sampler"
+        },
+        {
+          "icon": "E740",
+          "title": "Maximizar un panel",
+          "text": "Enter le da toda la ventana al panel que estás usando: video, timeline, piano roll, mixer o mastering. Otro Enter vuelve todo como estaba.",
+          "topic": "window"
+        },
+        {
+          "icon": "E765",
+          "title": "Teclas de otros DAW",
+          "text": "En Configuración → Atajos de teclado elegís las teclas de Cubase, Logic Pro, FL Studio, Reaper o Studio Pro con un clic.",
+          "topic": "shortcuts"
+        },
+        {
+          "icon": "E71B",
+          "title": "Copiar o vincular al importar",
+          "text": "Al importar elegís si el archivo se copia al proyecto o se usa donde está, sin duplicarlo. También en Configuración.",
+          "topic": "import"
+        },
+        {
+          "icon": "E8D6",
+          "title": "Escala desde el plugin",
+          "text": "La escala y los acordes del teclado virtual ahora se eligen también en la ventana del plugin.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E8A7",
+          "title": "Teclado en su propia ventana",
+          "text": "Sacá el teclado virtual a una ventana aparte con el botón al final de sus ajustes.",
+          "topic": "virtual-keyboard"
+        },
+        {
+          "icon": "E722",
+          "title": "Miniaturas de plugins",
+          "text": "Cada plugin toma su miniatura la primera vez que abrís su ventana. Se ve en Configuración y al pasar por los menús de plugins.",
+          "topic": "plugins"
+        },
+        {
+          "icon": "E8A7",
+          "title": "Cerrar la vista activa",
+          "text": "Tocá de nuevo Piano roll, Mixer o Mastering para volver al timeline.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "E767",
+          "title": "Instrumentos en silencio al abrir",
+          "text": "Un instrumento recién abierto ya no suena hasta que lo tocás.",
+          "topic": "plugins"
+        }
+      ]
+    },
+    {
       "version": "0.9.12",
       "items": [
         {

@@ -27,6 +27,8 @@ public partial class MainWindow
     readonly Button pianoChordKindButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     /// <summary>The scale a root takes when none was on: the last one used.</summary>
     string lastScaleId = "major";
+    /// <summary>The picker open from a plugin's panel, and what it shows.</summary>
+    (Flyout Flyout, Control Card)? pluginPicker;
 
     static string ScaleName(string id) => Loc.T($"scale.kind.{id}");
 
@@ -40,6 +42,7 @@ public partial class MainWindow
     {
         var s = store?.Project.Settings;
         var scale = s == null ? null : MusicScale.Find(s.ScaleRoot, s.Scale);
+        engine.KeySnap = AppConfig.Get("midiScaleSnap") == "true" ? scale : null;
         if (scale?.Root == virtualKeys.Scale?.Root && scale?.Kind == virtualKeys.Scale?.Kind) return;
         pianoRoll.Scale = scale;
         virtualKeys.Scale = scale;
@@ -67,7 +70,9 @@ public partial class MainWindow
     /// The picker, as compact as a menu (asked by the user): the 12 roots on one row, the scales as plain rows in three
     /// columns, the modes split over the last two, and at the foot none and taking the notes that stayed out to the scale.
     /// </summary>
-    void ShowScalePicker(Control anchor)
+    /// <param name="anchor">The button it opens from.</param>
+    /// <param name="inPlugin">It opens from the panel inside a plugin's window, at the bottom of it: above the button, and <see cref="DismissPluginPicker"/> closes it.</param>
+    void ShowScalePicker(Control anchor, bool inPlugin = false)
     {
         var settings = store?.Project.Settings;
         int root = settings?.ScaleRoot ?? 0;
@@ -133,12 +138,21 @@ public partial class MainWindow
             int moved = pianoRoll.FitToScale();
             Status(Loc.T(moved < 0 ? "scale.fit.noClip" : "scale.fit.done", moved));
         };
+        var snapKeys = new ToggleButton { Classes = { "chip" }, Content = Loc.T("scale.snapKeys"), Height = ScaleRowH + 2, MinHeight = 0, Padding = new Thickness(8, 0), FontSize = 11.5, Focusable = false, IsChecked = AppConfig.Get("midiScaleSnap") == "true", Margin = new Thickness(0, 0, 6, 0) };
+        ToolTip.SetTip(snapKeys, Loc.T("scale.snapKeys.tip"));
+        snapKeys.Click += (_, _) =>
+        {
+            SaveViewPref("midiScaleSnap", snapKeys.IsChecked == true ? "true" : "false");
+            engine.KeySnap = snapKeys.IsChecked == true ? virtualKeys.Scale : null;
+        };
         var bottom = new DockPanel { LastChildFill = false };
         var off = Choice(Loc.T("scale.off"), () => id == null, () => id = null);
         off.HorizontalAlignment = HorizontalAlignment.Left;
         off.Padding = new Thickness(8, 0);
         DockPanel.SetDock(fit, Dock.Right);
+        DockPanel.SetDock(snapKeys, Dock.Right);
         bottom.Children.Add(fit);
+        bottom.Children.Add(snapKeys);
         bottom.Children.Add(off);
         body.Children.Add(bottom);
         Show();
@@ -147,7 +161,24 @@ public partial class MainWindow
             Padding = new Thickness(8), Background = Palette.Raised, BorderBrush = Palette.Line, BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8), Child = body,
         };
-        new Flyout { Content = card, FlyoutPresenterClasses = { "bare" }, Placement = PlacementMode.BottomEdgeAlignedLeft }.ShowAt(anchor);
+        var flyout = new Flyout { Content = card, FlyoutPresenterClasses = { "bare" }, Placement = inPlugin ? PlacementMode.TopEdgeAlignedLeft : PlacementMode.BottomEdgeAlignedLeft };
+        if (inPlugin)
+        {
+            pluginPicker = (flyout, card);
+            flyout.Closed += (_, _) =>
+            {
+                if (pluginPicker?.Flyout == flyout) pluginPicker = null;
+            };
+        }
+        flyout.ShowAt(anchor);
+    }
+
+    /// <summary>Every tick: the picker on a plugin's panel closes on a click anywhere else. The plugin's window is another process's, so that click never reaches the picker.</summary>
+    void DismissPluginPicker()
+    {
+        if (pluginPicker is not { } open || !ButtonHeld || TopLevel.GetTopLevel(open.Card) is not { } top || !GetCursorPos(out var at)) return;
+        var room = new PixelRect(open.Card.PointToScreen(default), PixelSize.FromSize(open.Card.Bounds.Size, top.RenderScaling));
+        if (!room.Contains(new PixelPoint(at.X, at.Y))) open.Flyout.Hide();
     }
 
     /// <summary>The piano roll's scale and chords, in its header. The tool and its kind are remembered in config.json.</summary>
@@ -159,7 +190,7 @@ public partial class MainWindow
 
         pianoRoll.ChordTool = AppConfig.Get("pianoChordTool") == "true";
         string saved = AppConfig.Get("pianoChordKind") ?? Chords.InScale;
-        pianoRoll.ChordKind = Array.Exists(Chords.Kinds, k => k.Id == saved) ? saved : Chords.InScale;
+        pianoRoll.ChordKind = Array.Exists(Chords.Kinds, k => k.Id == saved) || MidiStamps.Find(saved) != null ? saved : Chords.InScale;
         pianoChordButton.Content = Loc.T("piano.chords");
         ToolTip.SetTip(pianoChordButton, Shortcuts.Tip(Loc.T("piano.chords.tip"), "chordTool"));
         pianoChordButton.Click += (_, _) => SetChordTool(pianoChordButton.IsChecked == true);
@@ -200,6 +231,19 @@ public partial class MainWindow
                 SaveViewPref("pianoChordKind", kind.Id);
             }, refresh));
             if (kind.Id == Chords.InScale7) list.Add(new Separator());
+        }
+        // what else a click can write: runs along the scale and drum figures
+        foreach (var (group, title) in new[] { (MidiStamps.Scales, "piano.chords.stamps"), (MidiStamps.Drums, "piano.chords.drums") })
+        {
+            list.Add(new Separator());
+            list.Add(MenuGroup(Loc.T(title)));
+            foreach (var stamp in MidiStamps.All.Where(s => s.Group == group))
+                list.Add(MenuCheck(Loc.T($"chord.kind.{stamp.Id}"), () => pianoRoll.ChordKind == stamp.Id, () =>
+                {
+                    pianoRoll.ChordKind = stamp.Id;
+                    ShowChordTool();
+                    SaveViewPref("pianoChordKind", stamp.Id);
+                }, refresh));
         }
         var menu = Popup(list, 220);
         menu.Placement = PlacementMode.BottomEdgeAlignedLeft;

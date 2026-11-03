@@ -12,6 +12,9 @@ namespace XtremeDaw.Projects;
 /// it keeps its own extension (the loaders pick the decoder by it) and gets a unique name in media/. A format only
 /// FFmpeg reads goes in as a WAV of its sound instead: the project must open on a PC without FFmpeg. A video also
 /// brings its picture when asked (<see cref="CopyVideoIn"/>), next to that WAV, as a take does.
+/// Linking (<see cref="LinkIn(string, string, AudioLoader.LoadedAudio)"/>, the user's choice) leaves the file where it
+/// is and keeps its absolute path, so nothing is duplicated; if it moves, its clips go offline until <see cref="LinkedMedia"/>
+/// finds it. The WAV rule still wins.
 /// The track is audio only (no video panel) with a neutral strip: no compressor or saturation, because
 /// an imported mix is already finished.
 /// </summary>
@@ -19,11 +22,16 @@ public static class AudioImport
 {
     /// <summary>How much is copied between progress reports.</summary>
     const int CopyChunk = 1 << 20;
+    /// <summary>Ends the name of a file still being copied into media/; only a finished one gets its real name.</summary>
+    public const string PartialCopy = ".importando";
 
     public static bool IsSupported(string path) => MediaDecoder.IsMedia(path);
 
-    /// <summary>A file already copied into media/, ready for <see cref="AddClip"/>; <paramref name="Video"/> = its picture, when it brought it.</summary>
-    public sealed record Imported(string Name, string RelativePath, double DurationSec, int SampleRate, int Channels, string? Video = null);
+    /// <summary>
+    /// A file already in media/, or linked (then <paramref name="RelativePath"/> is absolute), ready for <see cref="AddClip"/>;
+    /// <paramref name="Video"/> = its picture, when it brought it; <paramref name="Bytes"/> and <paramref name="VideoBytes"/> = the sizes of what stayed outside.
+    /// </summary>
+    public sealed record Imported(string Name, string RelativePath, double DurationSec, int SampleRate, int Channels, string? Video = null, long Bytes = 0, long VideoBytes = 0);
 
     /// <summary>
     /// Decodes <paramref name="source"/>, at <paramref name="sampleRate"/> (0 = its own). Throws
@@ -46,6 +54,14 @@ public static class AudioImport
         return audio;
     }
 
+    /// <summary>The name a file gets in media/, without its extension.</summary>
+    internal static string CleanStem(string source)
+    {
+        string stem = string.Concat(Path.GetFileNameWithoutExtension(source).Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
+        if (stem.Length > 100) stem = stem[..100].TrimEnd();
+        return stem.Length == 0 ? "Audio" : stem;
+    }
+
     /// <summary>Checks the file and copies it in; see the overload that takes it already read.</summary>
     public static Imported CopyIn(string projectDir, string source) => CopyIn(projectDir, source, Read(source));
 
@@ -59,11 +75,8 @@ public static class AudioImport
         string mediaDir = Path.Combine(projectDir, ProjectStore.MediaDir);
         Directory.CreateDirectory(mediaDir);
         string ext = Path.GetExtension(source).ToLowerInvariant();
-        string stem = string.Concat(Path.GetFileNameWithoutExtension(source).Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
-        if (stem.Length > 100) stem = stem[..100].TrimEnd();
-        if (stem.Length == 0) stem = "Audio";
-        string dest = UniquePath(mediaDir, stem, ext);
-        string tmp = dest + ".importando";
+        string dest = UniquePath(mediaDir, CleanStem(source), ext);
+        string tmp = dest + PartialCopy;
         try
         {
             CopyFile(source, tmp, progress);
@@ -85,7 +98,7 @@ public static class AudioImport
         string stem = Path.GetFileNameWithoutExtension(file.RelativePath);
         string mediaDir = Path.Combine(projectDir, ProjectStore.MediaDir);
         string dest = UniquePath(mediaDir, stem, Path.GetExtension(source).ToLowerInvariant());
-        string tmp = dest + ".importando";
+        string tmp = dest + PartialCopy;
         try
         {
             CopyFile(source, tmp, progress);
@@ -98,8 +111,22 @@ public static class AudioImport
         }
     }
 
+    /// <summary>Checks the file and links it; see the overload that takes it already read.</summary>
+    public static Imported LinkIn(string projectDir, string source) => LinkIn(projectDir, source, Read(source));
+
+    /// <summary>
+    /// Leaves <paramref name="source"/>, already checked by <see cref="Read"/>, where it is. What only FFmpeg reads can't
+    /// stay outside (a project opens without FFmpeg): its sound goes into media/ as a WAV, as when copying.
+    /// </summary>
+    public static Imported LinkIn(string projectDir, string source, AudioLoader.LoadedAudio audio) => audio.Converted
+        ? WriteIn(projectDir, Path.GetFileNameWithoutExtension(source).Trim(), audio.Left, audio.Right, audio.SampleRate)
+        : new Imported(Path.GetFileNameWithoutExtension(source).Trim(), Path.GetFullPath(source), audio.DurationSec, audio.SourceSampleRate, audio.SourceChannels, Bytes: new FileInfo(source).Length);
+
+    /// <summary>Returns <paramref name="file"/> with the video's picture left where it is; its sound can be a WAV in media/.</summary>
+    public static Imported LinkVideoIn(string source, Imported file) => file with { Video = Path.GetFullPath(source), VideoBytes = new FileInfo(source).Length };
+
     /// <summary>Copies by hand to tell how far it is, and forces it to disk before it gets its final name.</summary>
-    static void CopyFile(string from, string to, Action<double>? progress)
+    internal static void CopyFile(string from, string to, Action<double>? progress)
     {
         using var input = new FileStream(from, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.SequentialScan);
         using var output = new FileStream(to, FileMode.Create, FileAccess.Write, FileShare.None, 1);
@@ -124,7 +151,7 @@ public static class AudioImport
         Directory.CreateDirectory(mediaDir);
         string stem = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
         string dest = UniquePath(mediaDir, stem.Length == 0 ? "Audio" : stem, ".wav");
-        string tmp = dest + ".importando";
+        string tmp = dest + PartialCopy;
         try
         {
             using (var file = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -189,10 +216,10 @@ public static class AudioImport
         return folder;
     }
 
-    static string UniquePath(string dir, string stem, string ext)
+    internal static string UniquePath(string dir, string stem, string ext)
     {
         string path = Path.Combine(dir, stem + ext);
-        for (int n = 2; File.Exists(path) || File.Exists(path + ".importando"); n++) path = Path.Combine(dir, $"{stem} ({n}){ext}");
+        for (int n = 2; File.Exists(path) || File.Exists(path + PartialCopy); n++) path = Path.Combine(dir, $"{stem} ({n}){ext}");
         return path;
     }
 
@@ -214,6 +241,8 @@ public static class AudioImport
             Channels = file.Channels,
             SyncMs = 0,
             Video = file.Video,
+            AudioBytes = file.Bytes,
+            VideoBytes = file.VideoBytes,
             VideoOffsetMs = 0, // that default is a camera's latency, and this was not filmed here
         };
         p.Media.Add(media);

@@ -14,8 +14,9 @@ namespace XtremeDaw.App.Controls;
 /// steps, a double click opens it in the piano roll and a double click on an empty stretch of the lane makes a new one
 /// there. Ctrl+click and the selection box pick several, takes and MIDI clips together (asked by the user): grabbing one
 /// of them by its body carries them all by the same time, each on its own track (<see cref="ClipsMoved"/>). A pattern's
-/// clip shows its name and every pass, a seam between them, and its right edge adds passes. The window does the edit
-/// (<see cref="MidiClipChanged"/>): the control never touches the project.
+/// clip shows its name and every pass, a seam between them, and its right edge adds passes. The clips of a pattern's
+/// other instruments that start with it go along (<see cref="UseOf"/>): moved by its body as a carry, resized by its edge
+/// unless Shift is held. The window does the edit (<see cref="MidiClipChanged"/>): the control never touches the project.
 /// </summary>
 public sealed partial class TimelineView
 {
@@ -62,7 +63,7 @@ public sealed partial class TimelineView
     }
 
     InstrumentState StateOf(LiveTrack t) =>
-        InstrumentStateOf?.Invoke(t.Track.Id) ?? (t.Track.Instrument == null ? InstrumentState.TestTone : InstrumentState.Loading);
+        InstrumentStateOf?.Invoke(t.Track.Id) ?? (t.Track.Instrument == null && t.Track.Sampler == null ? InstrumentState.TestTone : InstrumentState.Loading);
 
     /// <summary>The chip: the plugin's name (accent once it plays, dim while it loads, amber when it couldn't open) or "Tono de prueba", and its arrow.</summary>
     void DrawInstrumentChip(DrawingContext ctx, int i)
@@ -84,7 +85,7 @@ public sealed partial class TimelineView
             InstrumentState.Ready => Palette.Accent, InstrumentState.Loading => Palette.Dim,
             InstrumentState.Failed => Palette.Alpha(Over, 1), _ => Palette.Faint,
         };
-        string name = t.Track.Instrument?.Name ?? Loc.T("vst.testTone");
+        string name = t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Instrument?.Name ?? Loc.T("vst.testTone");
         ctx.DrawText(name, 11, brush, new Point(r.X + 8, r.Y + 5), ready ? Palette.UiBold : Palette.Ui, Math.Max(0, r.Width - ChipArrowW - 10));
         double ax = r.Right - ChipArrowW;
         ctx.DrawLine(Palette.Pen(ready ? Palette.Alpha(Palette.AccentColor, 0.3) : Palette.Line), new Point(ax + 0.5, r.Y + 5), new Point(ax + 0.5, r.Bottom - 5));
@@ -124,10 +125,26 @@ public sealed partial class TimelineView
     /// <summary>What was selected when a Ctrl+click on a take began: on release without moving, the take is added or taken out.</summary>
     HashSet<string>? toggleBase;
 
+    /// <summary>The other instruments of the pattern's use held by its edge, as long as it: they take its length. Shift leaves them.</summary>
+    readonly HashSet<MidiClip> midiAlong = [];
+    /// <summary>The clips <see cref="midiAlong"/> ended up resizing, read by the handler of <see cref="MidiClipChanged"/>.</summary>
+    List<string> resizedAlong = [];
+
     /// <summary>Px from a MIDI clip's right edge that grab it to change its length.</summary>
     const double MidiEdgeGrab = 7;
 
     double BeatSec => 60 / Math.Max(1, Bpm);
+
+    /// <summary>The other instruments of a pattern's use that a gesture on <paramref name="c"/> takes along.</summary>
+    List<MidiClip> UseOf(MidiClip c) => MidiPatterns.Together(tracks.Where(t => !t.Track.Locked).Select(t => t.Track), c);
+
+    /// <summary>The clips resized along with the last one, once.</summary>
+    public List<string> TakeResizedAlong()
+    {
+        var taken = resizedAlong;
+        resizedAlong = [];
+        return taken;
+    }
 
     MidiClip? MidiClipAt(int i, double x)
     {
@@ -144,6 +161,7 @@ public sealed partial class TimelineView
     (double Start, double End) MidiSpan(MidiClip c)
     {
         if (moved && midiCarried.TryGetValue(c, out double from)) return (from + carryShift, from + carryShift + c.LengthBeats * BeatSec);
+        if (moved && midiAlong.Contains(c)) return (c.AtSec, c.AtSec + midiBeats * BeatSec);
         return c == midiHeld && moved ? (midiAtSec, midiAtSec + midiBeats * BeatSec) : (c.AtSec, c.EndSec(Bpm));
     }
 
@@ -173,7 +191,7 @@ public sealed partial class TimelineView
         var color = TrackIcons.ColorOf(t.Track) ?? Palette.AccentColor;
         bool silent = t.Silenced || tracks.Any(o => o.Soloed) && !t.Soloed;
         var r = new Rect(x0, y + 5, Math.Max(2, x1 - x0), lh - 10);
-        using var opacity = ctx.PushOpacity(silent ? 0.5 : held ? 0.85 : 1);
+        using var opacity = ctx.PushOpacity((silent ? 0.5 : held ? 0.85 : 1) * (erasing.Contains(c.Id) ? 0.25 : 1));
         ctx.DrawRectangle(Palette.Alpha(color, sel ? 0.24 : 0.14), Palette.Pen(Palette.Alpha(color, sel ? 0.95 : 0.45), sel ? 1.5 : 1), r, 5, 5);
         using (ctx.PushClip(new RoundedRect(r, 5)))
         {
@@ -246,6 +264,8 @@ public sealed partial class TimelineView
         }
         midiEdge = OnMidiEdge(c, p.X);
         cloning = (modifiers & KeyModifiers.Shift) != 0 && !midiEdge;
+        if (midiEdge && (modifiers & KeyModifiers.Shift) == 0)
+            midiAlong.UnionWith(UseOf(c).Where(o => Math.Abs(o.LengthBeats - c.LengthBeats) < 1e-9));
         // a boxed clip grabbed by its body carries the other boxed ones; its edge resizes it alone
         midiCarrying = boxed.Count > 1 && boxed.Contains(c.Id) && !midiEdge;
         SelectedMidiId = c.Id;
@@ -279,6 +299,15 @@ public sealed partial class TimelineView
         if (midiHeld == null) return;
         double dxPx = lastPointer.X - down.X + scrollX - downScrollX;
         if (!moved && Math.Abs(dxPx) < 3 && Math.Abs(lastPointer.Y - down.Y) < 3) return;
+        // a pattern's clip dragged by its body brings its other instruments: only now, so a click still picks it alone
+        if (!moved && !midiEdge && !midiCarrying && UseOf(midiHeld) is { Count: > 0 } use)
+        {
+            boxed.Clear();
+            boxed.Add(midiHeld.Id);
+            boxed.UnionWith(use.Select(c => c.Id));
+            midiCarrying = true;
+            StartCarry(null);
+        }
         moved = true;
         bool free = (modifiers & KeyModifiers.Alt) != 0;
         var grid = Grid;
@@ -333,6 +362,7 @@ public sealed partial class TimelineView
         var c = midiHeld;
         if (c == null || !moved) return null;
         string? to = midiOver >= 0 && midiOver < tracks.Count && midiOver != fromIndex ? tracks[midiOver].Track.Id : null;
+        resizedAlong = [.. midiAlong.Select(o => o.Id)];
         return midiAtSec != c.AtSec || midiBeats != c.LengthBeats || to != null ? (c.Id, midiAtSec, midiBeats, to) : null;
     }
 
@@ -348,6 +378,7 @@ public sealed partial class TimelineView
         midiEdge = false;
         midiCarrying = false;
         midiCarried.Clear();
+        midiAlong.Clear();
         carryShift = 0;
     }
 

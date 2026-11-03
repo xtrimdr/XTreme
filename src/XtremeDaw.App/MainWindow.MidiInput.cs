@@ -21,6 +21,8 @@ public partial class MainWindow
 {
     /// <summary>The armed MIDI tracks' takes while recording, by track id; empty otherwise.</summary>
     readonly Dictionary<string, MidiTake> midiTakes = [];
+    /// <summary>What keeps those takes on disk meanwhile.</summary>
+    readonly List<(ProjectStore.MidiTakeJournal Journal, MidiTakeWriter Writer)> midiWriters = [];
     int midiListenKey;
 
     void InitMidiInput()
@@ -73,7 +75,7 @@ public partial class MainWindow
     /// <summary>The one track the keys play on now, by id (<see cref="KeyTrack"/>), kept up to date every tick.</summary>
     string? keyTrack;
 
-    /// <summary>With the virtual keyboard on, the track of the instrument window that is open; else the selected MIDI track; else the first armed one.</summary>
+    /// <summary>The track of the sampler window in front, or with the virtual keyboard on, of the instrument window that is open; else the selected MIDI track; else the first armed one.</summary>
     string? KeyTrack()
     {
         if (keyTarget != null) return keyTarget;
@@ -168,38 +170,65 @@ public partial class MainWindow
 
     // --- recording ----------------------------------------------------------------------------------
 
-    /// <summary>Makes an empty take for each armed MIDI track and hands them to the engine, before it starts recording.</summary>
-    void BeginMidiTakes(IEnumerable<Track> targets)
+    /// <summary>
+    /// Makes an empty take for each armed MIDI track and hands them to the engine, before it starts recording, each
+    /// with its journal and its copy on disk: the notes survive a crash from here on.
+    /// </summary>
+    void BeginMidiTakes(IEnumerable<Track> targets, double startSec)
     {
         midiTakes.Clear();
-        foreach (var t in targets) midiTakes[t.Id] = new MidiTake();
+        double grid = RecordQuantizeBeats;
+        foreach (var t in targets)
+        {
+            var take = new MidiTake();
+            var journal = new ProjectStore.MidiTakeJournal { ClipId = Ids.New("mid"), TrackId = t.Id, TrackName = t.Name, StartSec = startSec, GridBeats = grid };
+            var writer = new MidiTakeWriter(store!.MidiNotesPath(journal.ClipId), take, PlaybackEngine.SampleRate,
+                () => (long)(engine.PositionSec * PlaybackEngine.SampleRate));
+            midiTakes[t.Id] = take;
+            midiWriters.Add((journal, writer));
+            store.BeginMidiTake(journal);
+        }
         midiListenKey = 0;
         ShowMidiListeners();
     }
 
     /// <summary>
     /// The takes' notes once the recording stopped, as clips to add (one per track that got any): from the bar where
-    /// the take began (<paramref name="startSec"/>) to <paramref name="endSec"/>. Empty when discarded.
+    /// the take began (<paramref name="startSec"/>) to <paramref name="endSec"/>. Empty when discarded. The journals
+    /// of what is returned stay until the project with the clips is saved (<see cref="EndMidiJournals"/>).
     /// </summary>
-    List<(string TrackId, List<(double Sec, double LengthSec, int Pitch, int Velocity)> Notes)> EndMidiTakes(double startSec, double endSec, bool discard)
+    List<(string TrackId, string ClipId, List<(double Sec, double LengthSec, int Pitch, int Velocity)> Notes)> EndMidiTakes(double startSec, double endSec, bool discard)
     {
-        var takes = midiTakes.ToList();
+        var takes = midiTakes.ToDictionary();
+        var writers = midiWriters.ToList();
         midiTakes.Clear();
+        midiWriters.Clear();
         midiListenKey = 0;
         ShowMidiListeners();
-        if (discard || store == null) return [];
-        double barSec = 4 * 60 / Math.Max(1, store.Project.Settings.Bpm);
-        double barStart = Math.Floor(startSec / barSec + 1e-9) * barSec;
-        const double sr = PlaybackEngine.SampleRate;
-        var result = new List<(string, List<(double, double, int, int)>)>();
-        foreach (var (id, take) in takes)
+        var result = new List<(string, string, List<(double, double, int, int)>)>();
+        foreach (var (journal, writer) in writers)
         {
-            var notes = take.Notes((long)Math.Round(barStart * sr), (long)Math.Round(endSec * sr));
-            if (notes.Count == 0) continue;
-            result.Add((id, notes.Select(n => (n.Start / sr, n.Length / sr, n.Pitch, n.Velocity)).ToList()));
-            if (take.Dropped > 0) SessionLog.Write($"MIDI: {take.Dropped} notas no entraron en la toma");
+            writer.Close();
+            if (writer.Error is { } error) SessionLog.Write($"MIDI: la copia de la toma en disco falló: {error}");
+            if (store == null) continue;
+            string id = journal.TrackId!;
+            List<(double Sec, double LengthSec, int Pitch, int Velocity)> notes = discard ? [] : MidiEditing.TakeNotes(store.Project, takes[id], startSec, endSec, PlaybackEngine.SampleRate);
+            if (notes.Count == 0)
+            {
+                try { store.EndMidiTake(journal.ClipId); } catch (IOException) { }
+                continue;
+            }
+            result.Add((id, journal.ClipId, notes));
+            if (takes[id].Dropped > 0) SessionLog.Write($"MIDI: {takes[id].Dropped} notas no entraron en la toma");
         }
         return result;
+    }
+
+    /// <summary>The project with the clips is saved: their journals go. One whose clip isn't there stays, and comes back at the next open.</summary>
+    static void EndMidiJournals(ProjectStore st, IEnumerable<string> clipIds)
+    {
+        foreach (var id in clipIds)
+            if (MidiEditing.TryFind(st.Project, id) != null) st.EndMidiTake(id);
     }
 
     /// <summary>The grid a recording is quantized to: the piano roll's magnet when "Cuantizar al grabar" is on; 0 = as played.</summary>

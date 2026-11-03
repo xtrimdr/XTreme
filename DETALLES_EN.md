@@ -1,6 +1,6 @@
 # XTreme: details
 
-Requirements, how to build, keyboard shortcuts, how it is built and `wtlab`. The overview is in the [README](README_EN.md).
+Requirements, how to build, keyboard shortcuts, how it is built and `xtlab`. The overview is in the [README](README_EN.md).
 
 [Español](DETALLES.md) · **English**
 
@@ -17,23 +17,25 @@ Requirements, how to build, keyboard shortcuts, how it is built and `wtlab`. The
 tools\probar.ps1 "what to try"
 ```
 
-It builds, runs `wtlab comprobar-dsp`, copies the app to `pruebas\<date>-<commit>` (ignored by git; the last
+It builds, runs `xtlab comprobar-dsp`, copies the app to `pruebas\<date>-<commit>` (ignored by git; the last
 5 are kept) and opens it from there, marked "TEST <commit>" in the title bar. Since it never runs from `bin\`, an open
 app does not block the next build. `-Abrir` opens the newest copy without building, `-NoAbrir` only builds and copies,
-`-SinComprobar` skips `wtlab`, `-Proyecto folder` opens that project. If a XTreme is already open, a dialog asks first whether to close it
-(it saves the project before closing), so the new copy does not open the same project read-only. `-SoloCompilar` only builds, and `dotnet build` works too.
+`-SinComprobar` skips `xtlab`, `-Proyecto folder` opens that project. If a XTreme is already open, a dialog asks first whether to close it
+(it saves the project before closing), so the new copy does not open the same project read-only. From the desktop shortcut, which has no console, a failure shows in a dialog. `-SoloCompilar` only builds, and `dotnet build` works too.
 
 The text goes on the **To test** list (`pruebas\lista.json`, it outlives the copies). A test copy shows it in a separate panel, which opens by itself when something is pending and from the button next to "TEST": each item is marked Works or Fails, with a note on what went wrong. An item from a copy newer than the open one says it is missing here. `-Lista` shows what is pending and what fails; `-Arregla 12` (with `-NoAbrir` or not) sends that item back to be tried on the new copy and counts one more attempt.
 
-When several sessions work in this folder, building, checking and copying go one at a time: Debug `dotnet build` (`tools\turno.targets`), `probar.ps1` and the heavy `wtlab` commands (`comprobar-dsp`, `exportar`, `separar`…) wait for their turn (`turno.lock`, next to `wtlab.exe`). `probar.ps1` and `wtlab` run below normal priority so the machine stays responsive. If the turn doesn't come within 9 minutes they fail and say who holds it (`probar.ps1` and `wtlab`, code 4).
+When several sessions work in this folder, building, checking and copying go one at a time: Debug `dotnet build` (`tools\turno.targets`), `probar.ps1` and the heavy `xtlab` commands (`comprobar-dsp`, `exportar`, `separar`…) wait for their turn (`turno.lock`, next to `xtlab.exe`). `probar.ps1` and `xtlab` run below normal priority so the machine stays responsive. If the turn doesn't come within 9 minutes they fail and say who holds it (`probar.ps1` and `xtlab`, code 4).
 
 The app starts in the **Projects** manager (list, search, templates, rename, duplicate, Recycle Bin). With a
-project folder as an argument, it opens it directly. `tools\make-shortcut.ps1` creates a desktop shortcut that opens the newest test copy (`probar.ps1 -Abrir`).
+project folder as an argument, it opens it directly. `tools\make-shortcut.ps1` creates the desktop shortcut **XTreme Prueba**, which opens the newest finished test copy (`probar.ps1 -Abrir -Acceso`) without building and without needing any open session; `probar.ps1` remakes it after every copy.
 Settings are stored in `%APPDATA%\XTreme`.
 
 ## Main shortcuts
 
-All of them can be changed in ⚙ Settings → Keyboard shortcuts (except Esc). With a plugin's window in front, the
+All of them can be changed in ⚙ Settings → Keyboard shortcuts (except Esc). There, **Key layout** switches them all at
+once to those of Cubase, Logic Pro, FL Studio, Reaper or Studio Pro (`KeyLayouts`); your own changes are kept in each
+layout. This table is XTreme's. With a plugin's window in front, the
 Transport group keeps working, except while typing in one of the plugin's text fields. The interface itself is in
 Spanish by default; the language is chosen in Settings.
 
@@ -65,6 +67,7 @@ Spanish by default; the language is chosen in Settings.
 | Ctrl+click / Shift+click on a header | pick several tracks (one by one / a range) to move them together |
 | Ctrl+S | save now |
 | B / P | fold or open the channel panel / the project panel (hidden with its title bar button, it shows it again) |
+| Enter | maximize the panel you touched last: video, timeline, piano roll, mixer or mastering (Enter again goes back to how it was) |
 | F11 | full screen (F11 again goes back to how it was) |
 | F1 | help (F1 again closes it) |
 | Wheel, Shift+wheel, Ctrl+wheel, Alt+wheel | scroll up and down, zoom, scroll sideways, track height (the modifiers can be changed in Settings → Keyboard shortcuts). In the mixer, the plain wheel and Ctrl+wheel scroll sideways and Shift+wheel (or the bar in its header) widens or narrows the channels |
@@ -92,29 +95,33 @@ src/
   XtremeDaw.Audio      audio engine: DSP, duplex ASIO, click, recording to disk, export
   XtremeDaw.Projects   project model, atomic saving, history, project manager
   XtremeDaw.App        the window (Avalonia 11.3)
-  XtremeDaw.Lab        wtlab.exe: console to test audio, DSP and projects without the window
+  XtremeDaw.Lab        xtlab.exe: console to test audio, DSP and projects without the window
 tools/                 icon, shortcut and verification utilities
 ```
 
 Dependencies point downward (App → Projects → Audio): the engine and the project model know nothing about
-the interface, and everything they do can be exercised from `wtlab`. A project is saved in a folder:
+the interface, and everything they do can be exercised from `xtlab`. A project is saved in a folder:
 
 ```
-guitarcam.json        the project
-guitarcam.json.bak    the previous save
-historial/            copies to go back to
-media/                recordings and imports (never rewritten)
-exports/              exported videos and audio
+xtreme_project.json      the project
+xtreme_project.json.bak  the previous save
+historial/               copies to go back to
+media/                   recordings and imports (never rewritten); while recording, the takes' journals and the MIDI takes' notes (.notas)
+exports/                 exported videos and audio
 ```
 
-## wtlab
+## xtlab
 
-`wtlab.exe` (`src\XtremeDaw.Lab\bin\Debug\net10.0-windows\wtlab.exe`) tests the engine and projects from the
+`xtlab.exe` (`src\XtremeDaw.Lab\bin\Debug\net10.0-windows\xtlab.exe`) tests the engine and projects from the
 console without opening the window. Its commands and options are in Spanish (for example `grabar`, `mezclar`,
 `exportar`, `proyecto`, `proyectos`); run it without arguments to see the help, or see the command table in
-the [Spanish version](DETALLES.md#wtlab).
+the [Spanish version](DETALLES.md#xtlab).
 
-`wtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: optional component state, install, and a download test against a local server.
+`xtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: optional component state, install, and a download test against a local server.
+
+`xtlab proyecto vinculados folder`: each take and where its files are. `xtlab proyecto copiar-vinculado folder media`: copies what is linked into media/. `xtlab proyecto reencontrar folder media --archivo X` or `folder [media] --buscar-en Y`: finds what is missing, by hand or by name and size. `xtlab proyecto verificar-vinculados`: the checks, with a process that really dies mid-copy (`proyecto cortar-copia`).
+
+`xtlab midi herramienta folder --clip id --tool arpeggiate [--rate 5 …]`: runs any piano roll tool (`MidiTools.All`) with its settings by id. `xtlab midi exportar-mid folder --clip id --a x.mid`: the clip as a type 1 MIDI file, at the project's tempo. `xtlab midi importar-mid folder --de x.mid [--pista n] [--en 0]`: with `--pista`, everything in one clip on that MIDI track; without it, a new track per track of the file (per channel in a type 0). `xtlab midi partitura folder --clip id --a x.pdf`: the clip as a PDF score (grand staff, 4/4, quantized to 1/16, with the key signature of the project's scale when it is natural major or minor).
 
 ## Stem separation models
 

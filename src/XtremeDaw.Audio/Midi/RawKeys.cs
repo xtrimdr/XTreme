@@ -48,7 +48,7 @@ public sealed class RawKeys : IDisposable
 
     const int VkControl = 0x11, VkMenu = 0x12;
     const uint VscToVk = 1, VkToChar = 2;
-    const string ClassName = "WtRawKeys";
+    const string ClassName = "XtRawKeys";
     /// <summary>The class outlives every instance: its procedure can't be collected.</summary>
     static readonly WndProc Proc = (hwnd, msg, w, l) => msg == WmInput && Current is { } me ? me.Input(hwnd, msg, w, l) : DefWindowProcW(hwnd, msg, w, l);
     static bool classMade;

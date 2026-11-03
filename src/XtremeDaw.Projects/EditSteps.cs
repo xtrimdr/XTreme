@@ -43,6 +43,11 @@ public static class EditSteps
     public static Label PatternRemoved(string name) => new("trash", [P(T("step.patternRemoved", "Borraste el patrón ")), Q(name)]);
     public static Label PatternDissolved(string name) => new("edit", [P(T("step.patternDissolved", "Dejaste como únicos los clips de ")), Q(name)]);
 
+    /// <summary>What <see cref="LinkedMedia"/> did to a take: where its files are isn't in the diff.</summary>
+    public static Label CopiedIn(string name) => new("plus", [P(T("step.copiedIn", "Copiaste al proyecto ")), Q(name)]);
+    public static Label FileFound(string name) => new("edit", [P(T("step.fileFound", "Volviste a encontrar ")), Q(name)]);
+    public static Label FilesFound(int n) => new("edit", [P(T("step.filesFound", "Volviste a encontrar {0} archivos", n))]);
+
     static string Channels(int n) => n == 1 ? T("act.oneChannel", "un canal") : T("act.nChannels", "{0} canales", n);
 
     /// <summary>The label of the step that took the editable state from <paramref name="before"/> to <paramref name="after"/>.</summary>
@@ -173,7 +178,8 @@ public static class EditSteps
                 Add("lock", "track-lock", P(Bool(t, "locked") ? T("step.lockTrack", "Bloqueaste ") : T("step.unlockTrack", "Desbloqueaste ")), Q(name));
             if (!Same(old, t, "input") || !Same(old, t, "midiInput") || !Same(old, t, "midiChannel"))
                 Add("edit", "track-input", P(T("step.input", "Entrada de ")), Q(name));
-            if (!Same(old, t, "instrument")) Add("fx", "track-instrument", P(T("step.instrument", "Instrumento de ")), Q(name));
+            if (!Same(old, t, "instrument") || (old["sampler"] == null) != (t["sampler"] == null)) Add("fx", "track-instrument", P(T("step.instrument", "Instrumento de ")), Q(name));
+            else if (!Same(old, t, "sampler")) Add("fx", "track-sampler", P(T("step.sampler", "Sampler de ")), Q(name));
             if (!Same(old, t, "heightScale")) Add("edit", "track-height", P(T("step.height", "Altura de ")), Q(name));
             if (!Same(old, t, "mixerSide")) Add("move", "track-side", P(T("step.side", "Cambiaste de lado en el mixer a ")), Q(name));
             if (!Same(old, t, "kind")) Add("edit", "track-kind", P(T("step.changed", "Cambiaste ")), Q(name));

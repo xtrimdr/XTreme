@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- wtvsthost.exe (x64) and wtvsthost32.exe (Win32, for 32-bit plugins): the plugin host process (main.cpp). Built by
+<!-- xtvsthost.exe (x64) and xtvsthost32.exe (Win32, for 32-bit plugins): the plugin host process (main.cpp). Built by
      XtremeDaw.App's build with Visual Studio's MSBuild when the C++ tools, the Windows SDK and lib\vst3sdk are there
      (tools\get-vst3sdk.ps1); see DETALLES.md. Static runtime, so the exe needs no Visual C++ redistributable. -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
@@ -37,8 +37,8 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <TargetName>wtvsthost</TargetName>
-    <TargetName Condition="'$(Platform)'=='Win32'">wtvsthost32</TargetName>
+    <TargetName>xtvsthost</TargetName>
+    <TargetName Condition="'$(Platform)'=='Win32'">xtvsthost32</TargetName>
     <OutDir>$(MSBuildProjectDirectory)\bin\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\$(Platform)\</IntDir>
     <Vst3Sdk>$(MSBuildProjectDirectory)\..\..\lib\vst3sdk</Vst3Sdk>

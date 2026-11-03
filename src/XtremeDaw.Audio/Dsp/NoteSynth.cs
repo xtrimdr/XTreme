@@ -2,32 +2,164 @@ namespace XtremeDaw.Audio.Dsp;
 
 /// <summary>
 /// A note as the engine plays it: from frame <see cref="Start"/>, held <see cref="Length"/> frames, at <see cref="Hz"/>,
-/// with its velocity's gain (the test tone), and as MIDI (<see cref="Pitch"/>, <see cref="Velocity"/>) for an instrument plugin.
+/// with its velocity's gain (the test tone), and as MIDI (<see cref="Pitch"/>, <see cref="Velocity"/>, the note-off's
+/// <see cref="Release"/>, 0 = none) for an instrument plugin. The properties below are the test tone's expression, and
+/// <see cref="Pan"/> and <see cref="Bend"/> the sampler's; all zero, it is a plain note.
 /// </summary>
-public readonly record struct NoteEvent(long Start, long Length, double Hz, float Gain, int Pitch = 60, int Velocity = 100);
+public readonly record struct NoteEvent(long Start, long Length, double Hz, float Gain, int Pitch = 60, int Velocity = 100, int Release = 0)
+{
+    /// <summary>-1 (left) to 1 (right), equal gain: left × (1 - pan), right × (1 + pan).</summary>
+    public float Pan { get; init; }
+    /// <summary>It starts this many semitones away from <see cref="Hz"/> and arrives there, straight in pitch, after <see cref="BendFrames"/>.</summary>
+    public double BendSemis { get; init; }
+    public long BendFrames { get; init; }
+    /// <summary>The fundamental's phase at <see cref="Start"/>, in radians: a slide goes on from the note before.</summary>
+    public double Phase { get; init; }
+    /// <summary>How far into its envelope it starts: a slide has no attack of its own.</summary>
+    public long EnvFrames { get; init; }
+    /// <summary>Another event goes on from its last frame (<see cref="NoteSynth.Glide"/>): it has no release.</summary>
+    public bool Tied { get; init; }
+    /// <summary>Its slides and porta for what has a voice per note (<see cref="Sampler"/>); null = none. The test tone has its own events.</summary>
+    public NoteBend? Bend { get; init; }
+}
+
+/// <summary>
+/// What a note's pitch does over its life: semitones away from it in straight lines between points, holding the last.
+/// Immutable and a function of the time since the note began, so a note picked up in its middle is where it would be.
+/// Allocates nothing.
+/// </summary>
+public sealed class NoteBend
+{
+    /// <summary>ln(2) / 12: a semitone as an exponent.</summary>
+    const double PerSemitone = 0.05776226504666211;
+    readonly long[] at;
+    readonly double[] semis;
+    /// <summary>The furthest down it goes, 0 at most.</summary>
+    public double Lowest { get; }
+
+    /// <param name="at">Frames since the note began, in order, the first one 0.</param>
+    /// <param name="semis">Semitones away at each of them.</param>
+    public NoteBend(long[] at, double[] semis)
+    {
+        this.at = at;
+        this.semis = semis;
+        foreach (double s in semis) Lowest = Math.Min(Lowest, s);
+    }
+
+    /// <summary>Semitones away, <paramref name="t"/> frames into the note.</summary>
+    public double At(long t)
+    {
+        int lo = 0, hi = at.Length;
+        while (hi - lo > 1)
+        {
+            int mid = (lo + hi) >> 1;
+            if (at[mid] <= t) lo = mid;
+            else hi = mid;
+        }
+        if (lo + 1 >= at.Length) return semis[lo];
+        return semis[lo] + (semis[lo + 1] - semis[lo]) * (t - at[lo]) / (at[lo + 1] - at[lo]);
+    }
+
+    /// <summary>
+    /// How many frames of the note's plain speed it has run through after <paramref name="t"/>: the integral of
+    /// 2^(semitones / 12), so a note picked up in its middle reads the sample where it would have got to.
+    /// </summary>
+    public double Frames(long t)
+    {
+        double run = 0;
+        for (int k = 0; k < at.Length && at[k] < t; k++)
+        {
+            long end = k + 1 < at.Length ? Math.Min(t, at[k + 1]) : t;
+            double from = semis[k], to = At(end), len = end - at[k];
+            run += Math.Abs(to - from) < 1e-9 ? len * Math.Exp(PerSemitone * from)
+                : len * (Math.Exp(PerSemitone * to) - Math.Exp(PerSemitone * from)) / (PerSemitone * (to - from));
+        }
+        return run;
+    }
+}
+
+/// <summary>
+/// A MIDI controller's new value at a frame of the song, for a plugin. <see cref="Controller"/> is 0..127 for a CC
+/// (<see cref="Value"/> 0..1 of its 0..127) or <see cref="Bend"/> (0..1, <see cref="Centre"/> in the middle).
+/// </summary>
+public readonly record struct NoteControl(long Frame, int Controller, float Value)
+{
+    public const int ModX = 1, Pan = 10, ModY = 74, Bend = 128;
+    /// <summary>How many controllers there can be: every CC and the bend.</summary>
+    public const int Count = Bend + 1;
+    public const float Centre = 0.5f;
+    /// <summary>The semitones a full bend reaches: nothing tells a host how a plugin is set, and 2 is what they come with. Past it, a bend stops there.</summary>
+    public const int BendRange = 2;
+}
 
 /// <summary>
 /// A MIDI track's notes in frames, sorted by start (<c>ChannelDsp.Notes</c> builds it from the project). Never changed
 /// once built: the UI swaps a new one in whole and the audio thread reads the reference once per block.
+/// <see cref="Notes"/> is what plugins and the sampler play, <see cref="Controls"/> goes along with them to a plugin, and
+/// <see cref="Tone"/> is what <see cref="NoteSynth"/> renders: the same notes unless a slide, which for a plugin is a
+/// held note and a bend, for the sampler that held note's <see cref="NoteEvent.Bend"/> and for the test tone a chain of
+/// tied events.
 /// </summary>
 public sealed class NoteSequence
 {
     public readonly NoteEvent[] Notes;
+    /// <summary>What the test tone plays, sorted by start.</summary>
+    public readonly NoteEvent[] Tone;
+    /// <summary>Sorted by frame; at one frame, in the order they came.</summary>
+    public readonly NoteControl[] Controls;
+    /// <summary>How many different controllers <see cref="Controls"/> has.</summary>
+    public readonly int Controllers;
     /// <summary>The longest a note sounds, release included: how far back a block looks for notes still ringing.</summary>
     public readonly long MaxSpan;
     /// <summary>The frame after the last note's release.</summary>
     public readonly long End;
 
-    public NoteSequence(NoteEvent[] notes, int sampleRate)
+    public NoteSequence(NoteEvent[] notes, int sampleRate, NoteEvent[]? tone = null, NoteControl[]? controls = null)
     {
         Array.Sort(notes, (a, b) => a.Start.CompareTo(b.Start));
         Notes = notes;
+        if (tone != null) Array.Sort(tone, (a, b) => a.Start.CompareTo(b.Start));
+        Tone = tone ?? notes;
+        Controls = controls is { Length: > 0 } ? [.. controls.OrderBy(c => c.Frame)] : []; // stable, unlike Array.Sort
+        Controllers = Controls.Select(c => c.Controller).Distinct().Count();
         long release = NoteSynth.ReleaseFrames(sampleRate);
-        foreach (var n in notes)
+        foreach (var list in (NoteEvent[][])[notes, Tone])
+            foreach (var n in list)
+            {
+                MaxSpan = Math.Max(MaxSpan, n.Length + release);
+                End = Math.Max(End, n.Start + n.Length + release);
+            }
+    }
+
+    /// <summary>The first control at or after <paramref name="frame"/>.</summary>
+    public int ControlAt(long frame)
+    {
+        var all = Controls;
+        int lo = 0, hi = all.Length;
+        while (lo < hi)
         {
-            MaxSpan = Math.Max(MaxSpan, n.Length + release);
-            End = Math.Max(End, n.Start + n.Length + release);
+            int mid = (lo + hi) >> 1;
+            if (all[mid].Frame < frame) lo = mid + 1; else hi = mid;
         }
+        return lo;
+    }
+
+    /// <summary>
+    /// The last value of each controller before <paramref name="frame"/>, where a jump lands: what a plugin should be
+    /// left at. Fills <paramref name="into"/> (at least <see cref="NoteControl.Count"/> long) and says how many. Allocates nothing.
+    /// </summary>
+    public int LastValues(long frame, Span<NoteControl> into)
+    {
+        Span<bool> seen = stackalloc bool[NoteControl.Count];
+        int found = 0;
+        for (int k = ControlAt(frame) - 1; k >= 0 && found < Controllers; k--)
+        {
+            var c = Controls[k];
+            if (seen[c.Controller]) continue;
+            seen[c.Controller] = true;
+            into[found++] = c;
+        }
+        return found;
     }
 }
 
@@ -36,7 +168,9 @@ public sealed class NoteSequence
 /// come next): a soft electric-piano-like tone, three harmonics with a short attack, a decay to a held level and a
 /// release after the note ends. Every sample is a function of the time since its note began, with no state, so the
 /// live engine (<c>LiveTrack</c>) and the export (<see cref="MixRenderer"/>) render it in any block size and from any
-/// position (a seek, a loop, a crossfade) and get the same floats.
+/// position (a seek, a loop, a crossfade) and get the same floats. That goes for a glide too: its phase is the closed
+/// form of the frequency's integral, and a slid note carries the phase and the envelope of the one it goes on from
+/// (<see cref="Glide"/>), so the join has no attack and no step.
 /// </summary>
 public static class NoteSynth
 {
@@ -66,9 +200,9 @@ public static class NoteSynth
     /// </summary>
     public static void Render(NoteSequence seq, long pos, int n, int sampleRate, Span<float> l, Span<float> r, ReadOnlySpan<float> weight = default)
     {
-        var notes = seq.Notes;
+        var notes = seq.Tone;
         if (notes.Length == 0 || pos >= seq.End) return;
-        long release = ReleaseFrames(sampleRate);
+        long fullRelease = ReleaseFrames(sampleRate);
         // the first note that may still ring: notes start in order, none rings longer than MaxSpan
         int lo = 0, hi = notes.Length;
         long from = pos - seq.MaxSpan;
@@ -82,25 +216,64 @@ public static class NoteSynth
         {
             var note = notes[k];
             if (note.Start >= pos + n) break;
+            long release = note.Tied ? 0 : fullRelease;
             long stop = note.Start + note.Length;
             if (stop + release <= pos) continue;
             int i0 = (int)Math.Max(0, note.Start - pos);
             int i1 = (int)Math.Min(n, stop + release - pos);
             double w = 2 * Math.PI * note.Hz * invSr;
             // the level the note had when it was let go, so the release starts from there
-            double held = Envelope(note.Length * invSr);
+            double held = Envelope((note.Length + note.EnvFrames) * invSr);
+            bool bent = Bent(note);
+            float gl = 1 - note.Pan, gr = 1 + note.Pan;
             for (int i = i0; i < i1; i++)
             {
                 long t = pos + i - note.Start;
-                double env = t < note.Length ? Envelope(t * invSr) : held * (1 - (t - note.Length) / (double)release);
-                double ph = w * t;
+                double env = t < note.Length ? Envelope((t + note.EnvFrames) * invSr) : held * (1 - (t - note.Length) / (double)release);
+                double ph = note.Phase + w * (bent ? BentFrames(note, t) : t);
                 double s = (Math.Sin(ph) + H2 * Math.Sin(2 * ph) + H3 * Math.Sin(3 * ph)) * Norm * env * note.Gain;
                 float v = (float)s;
                 if (!weight.IsEmpty) v *= weight[i];
-                l[i] += v;
-                r[i] += v;
+                l[i] += v * gl;
+                r[i] += v * gr;
             }
         }
+    }
+
+    /// <summary>Below this many semitones a glide is nothing: rounding, and <see cref="BentFrames"/> would divide by it.</summary>
+    const double NoBend = 1e-6;
+
+    static bool Bent(in NoteEvent n) => n.BendFrames > 0 && n.BendSemis != 0;
+
+    /// <summary>
+    /// How many frames of its plain <see cref="NoteEvent.Hz"/> a bent note has run through after <paramref name="t"/>:
+    /// the integral of 2^(semitones left / 12), which falls straight to 0 over <see cref="NoteEvent.BendFrames"/>.
+    /// </summary>
+    static double BentFrames(in NoteEvent n, long t)
+    {
+        double f = n.BendFrames, a = n.BendSemis * Math.Log(2) / 12, part = Math.Min(t, n.BendFrames);
+        return f / a * (Math.Exp(a) - Math.Exp(a * (1 - part / f))) + (t - part);
+    }
+
+    /// <summary>The pitch of a note <paramref name="t"/> frames after it starts, bend included.</summary>
+    public static double PitchAt(in NoteEvent n, long t) =>
+        69 + 12 * Math.Log2(n.Hz / 440) + (Bent(n) && t < n.BendFrames ? n.BendSemis * (1 - t / (double)n.BendFrames) : 0);
+
+    /// <summary>
+    /// What goes on from <paramref name="n"/> <paramref name="t"/> frames into it, with no new attack: same level, same
+    /// pan, the phase and the envelope where it left them, and <paramref name="glide"/> frames to reach <paramref name="pitch"/>.
+    /// <paramref name="n"/> has to be cut there and <see cref="NoteEvent.Tied"/>.
+    /// </summary>
+    public static NoteEvent Glide(in NoteEvent n, long t, long length, double pitch, long glide, int sampleRate)
+    {
+        double semis = PitchAt(n, t) - pitch;
+        return n with
+        {
+            Start = n.Start + t, Length = length, Hz = Hz(pitch), Tied = false,
+            BendSemis = Math.Abs(semis) < NoBend ? 0 : semis, BendFrames = glide,
+            Phase = n.Phase + 2 * Math.PI * n.Hz / sampleRate * (Bent(n) ? BentFrames(n, t) : t),
+            EnvFrames = n.EnvFrames + t,
+        };
     }
 
     /// <summary>
@@ -132,8 +305,8 @@ public static class NoteSynth
     /// <summary>The level while the note is held: a linear attack, then an exponential fall to <see cref="Sustain"/>.</summary>
     static double Envelope(double t) => t < AttackSec ? t / AttackSec : Sustain + (1 - Sustain) * Math.Exp(-(t - AttackSec) / DecaySec);
 
-    /// <summary>One note on its own (the piano roll's keys and new notes), mono: what <see cref="Render"/> plays for it.</summary>
-    public static float[] Audition(int pitch, int velocity, int sampleRate, double heldSec = 0.35)
+    /// <summary>One note on its own (the piano roll's keys and new notes, <see cref="NotePreview"/>), mono: what <see cref="Render"/> plays for it. Fractions of <paramref name="pitch"/> are cents.</summary>
+    public static float[] Audition(double pitch, int velocity, int sampleRate, double heldSec = 0.35)
     {
         long len = (long)Math.Round(heldSec * sampleRate);
         var seq = new NoteSequence([new NoteEvent(0, len, Hz(pitch), Gain(velocity))], sampleRate);

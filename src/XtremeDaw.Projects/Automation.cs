@@ -175,18 +175,19 @@ public sealed class AutomationLane
 /// <summary>
 /// The names of what a lane can drive, as saved in <see cref="AutomationLane.Target"/>: <c>volume</c>, <c>pan</c>,
 /// <c>mute</c>, <c>send:&lt;bus&gt;</c>, <c>fx:&lt;slot&gt;:&lt;param&gt;</c> (a native effect's <see cref="FxParam"/>, its
-/// ON or an EQ band's knob), <c>vst:&lt;slot&gt;:&lt;id&gt;</c> (a VST3 effect's parameter) and <c>inst:&lt;id&gt;</c> (the
-/// MIDI track's instrument). Ids in the project, so a slot moved or renamed keeps its lanes.
+/// ON or an EQ band's knob), <c>vst:&lt;slot&gt;:&lt;id&gt;</c> (a VST3 effect's parameter), <c>inst:&lt;id&gt;</c> (the
+/// MIDI track's instrument) and <c>sampler:&lt;knob&gt;</c> (<see cref="SamplerKnobs.Ids"/>). Ids in the project, so a slot moved or renamed keeps its lanes.
 /// </summary>
 public static class AutoTarget
 {
     public const string Volume = "volume", Pan = "pan", Mute = "mute";
-    const string SendPrefix = "send:", FxPrefix = "fx:", VstPrefix = "vst:", InstPrefix = "inst:";
+    const string SendPrefix = "send:", FxPrefix = "fx:", VstPrefix = "vst:", InstPrefix = "inst:", SamplerPrefix = "sampler:";
 
     public static string Send(string busId) => SendPrefix + busId;
     public static string Fx(string slotId, string paramId) => $"{FxPrefix}{slotId}:{paramId}";
     public static string Vst(string slotId, uint id) => $"{VstPrefix}{slotId}:{id}";
     public static string Instrument(uint id) => InstPrefix + id;
+    public static string Sampler(SamplerKnob knob) => SamplerPrefix + SamplerKnobs.Ids[(int)knob];
 
     public static string? BusOf(string target) => target.StartsWith(SendPrefix, StringComparison.Ordinal) ? target[SendPrefix.Length..] : null;
 
@@ -200,6 +201,13 @@ public static class AutoTarget
     public static uint? InstrumentOf(string target) =>
         target.StartsWith(InstPrefix, StringComparison.Ordinal) && uint.TryParse(target.AsSpan(InstPrefix.Length), out uint id) ? id : null;
 
+    public static SamplerKnob? SamplerOf(string target)
+    {
+        if (!target.StartsWith(SamplerPrefix, StringComparison.Ordinal)) return null;
+        int at = Array.IndexOf(SamplerKnobs.Ids, target[SamplerPrefix.Length..]);
+        return at < 0 ? null : (SamplerKnob)at;
+    }
+
     static (string First, string Tail)? Split(string target, string prefix)
     {
         if (!target.StartsWith(prefix, StringComparison.Ordinal)) return null;
@@ -209,7 +217,7 @@ public static class AutoTarget
 }
 
 /// <summary>
-/// The edits of a track's lanes and their reading: one place for the window, the export and wtlab. A control's position
+/// The edits of a track's lanes and their reading: one place for the window, the export and xtlab. A control's position
 /// goes through <see cref="Position"/> and <see cref="Stepped"/>, and <see cref="Compile"/> hands the engine what it plays.
 /// </summary>
 public static class Automations
@@ -343,6 +351,7 @@ public static class Automations
         if (AutoTarget.BusOf(target) is { } bus) return SendOf(t.Channel, bus) != null;
         if (AutoTarget.VstOf(target) is { } v) return t.Channel.Slots.Exists(s => s.Id == v.Slot && s.Type == InsertSlot.VstKind);
         if (AutoTarget.InstrumentOf(target) != null) return t.Instrument != null;
+        if (AutoTarget.SamplerOf(target) != null) return t.Sampler != null;
         return FxParamOf(t.Channel.Slots, target) != null;
     }
 
@@ -354,6 +363,7 @@ public static class Automations
         if (target == AutoTarget.Pan) return (c.Pan + 1) / 2;
         if (target == AutoTarget.Mute) return c.Muted ? 1 : 0;
         if (AutoTarget.BusOf(target) is { } bus) return SendOf(c, bus)?.Level ?? 0;
+        if (AutoTarget.SamplerOf(target) is { } knob) return t.Sampler is { } s ? SamplerKnobs.Position(knob, s.Knob(knob)) : 0.5;
         return FxParamOf(c.Slots, target) is { } f ? f.Param.ToKnob(f.Param.Get(f.Slot)) : 0.5;
     }
 
@@ -392,6 +402,21 @@ public static class Automations
 
     /// <summary>The instrument's lanes, or null.</summary>
     public static VstParamCurves? InstrumentCurves(Track t) => Plugin(t, AutoTarget.InstrumentOf);
+
+    /// <summary>The native sampler's lanes, or null. It reads them itself, at its voices' control steps.</summary>
+    public static SamplerCurves? SamplerCurves(Track t)
+    {
+        if (t.Sampler == null || t.Automation == null) return null;
+        var byKnob = new AutoCurve?[SamplerKnobs.Ids.Length];
+        bool any = false;
+        foreach (var l in t.Automation)
+            if (AutoTarget.SamplerOf(l.Target) is { } knob && Curve(l) is { } c)
+            {
+                byKnob[(int)knob] = c;
+                any = true;
+            }
+        return any ? new SamplerCurves(byKnob) : null;
+    }
 
     static VstParamCurves? Plugin(Track t, Func<string, uint?> idOf)
     {

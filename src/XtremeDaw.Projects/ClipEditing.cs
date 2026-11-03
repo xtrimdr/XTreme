@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace XtremeDaw.Projects;
 
-/// <summary>The five clip handles in GuitarCam/src/components/Timeline.tsx.</summary>
+/// <summary>The five clip handles in the web app's Timeline.tsx.</summary>
 public enum ClipEditMode { Move, TrimStart, TrimEnd, FadeIn, FadeOut, StretchStart, StretchEnd }
 
 /// <summary>Which edges of a moved clip stick to the edges of the others (the snap to other clips).</summary>
@@ -162,7 +162,7 @@ public static class ClipEditing
     }
 
     /// <summary>
-    /// The lock rule, the same for the window and wtlab: a clip of a locked track, or a locked clip, keeps its place,
+    /// The lock rule, the same for the window and xtlab: a clip of a locked track, or a locked clip, keeps its place,
     /// its length and its spot on the track. The edits that would change those refuse it (<see cref="Unlocked"/>) and
     /// the ones over several clips skip it; its gain, fades, curve and framing still change, so a locked take can still
     /// be mixed.
@@ -464,7 +464,7 @@ public static class ClipEditing
                 clip.FadeInSec = clip.VideoFadeInSec = 0;
             }
         }
-        return changed;
+        return changed + MidiEditing.DeleteRange(p, track, startSec, endSec);
     }
 
     /// <summary>
@@ -480,7 +480,8 @@ public static class ClipEditing
         if (!(endSec > startSec)) return 0;
         double len = endSec - startSec;
         int changed = 0;
-        bool Holds(Track t) => t.Clips.Any(c => IsLocked(t, c) && Window(c, p.FindMedia(c.MediaId), lengthOf?.Invoke(c)).End > startSec);
+        bool Holds(Track t) => t.Clips.Any(c => IsLocked(t, c) && Window(c, p.FindMedia(c.MediaId), lengthOf?.Invoke(c)).End > startSec)
+            || t.Locked && t.MidiClips?.Any(c => c.EndSec(p.Settings.Bpm) > startSec) == true;
         var ids = trackIds.Distinct().Where(id => p.Tracks.Find(t => t.Id == id) is { } t && !Holds(t)).ToList();
         if (p.Tracks.All(t => ids.Contains(t.Id))) ProjectMarkers.CloseGap(p, startSec, endSec);
         foreach (string id in ids)
@@ -491,6 +492,12 @@ public static class ClipEditing
             foreach (var clip in p.Tracks.Find(t => t.Id == id)!.Clips)
             {
                 if (Window(clip, p.FindMedia(clip.MediaId), lengthOf?.Invoke(clip)).Start < endSec - HalfSample) continue;
+                clip.AtSec = ToSample(clip.AtSec - len);
+                changed++;
+            }
+            foreach (var clip in p.Tracks.Find(t => t.Id == id)!.MidiClips ?? [])
+            {
+                if (clip.AtSec < endSec - HalfSample) continue;
                 clip.AtSec = ToSample(clip.AtSec - len);
                 changed++;
             }

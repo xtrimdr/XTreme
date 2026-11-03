@@ -3,7 +3,7 @@ using System.Globalization;
 namespace XtremeDaw.Audio.Dsp;
 
 /// <summary>
-/// Port of <c>EqBand</c> in <c>GuitarCam/src/audio/eq.ts</c>.
+/// Port of <c>EqBand</c> in the web app's <c>eq.ts</c>.
 /// </summary>
 public readonly record struct EqBandSpec(
     bool On,
@@ -31,7 +31,7 @@ public readonly record struct EqBandSpec(
 public sealed record EqPresetDef(string Id, string Label, string Hint, EqBandSpec[] Bands);
 
 /// <summary>
-/// Port of <c>GuitarCam/src/audio/eq.ts</c>: per-track 7-band parametric EQ (low cut, 5 bells, high cut),
+/// Port of the web app's <c>eq.ts</c>: per-track 7-band parametric EQ (low cut, 5 bells, high cut),
 /// 2 biquad stages per band (14 Biquads in series, zero latency, zero allocations in <see cref="Process"/>). A bell or
 /// shelf can also move with the signal (<see cref="EqDynamics"/>); those run after the static curve.
 /// </summary>

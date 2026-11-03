@@ -6,7 +6,7 @@ using Avalonia.Threading;
 namespace XtremeDaw.App.Video;
 
 /// <summary>
-/// Port of GuitarCam/src/session/thumbnails.ts: evenly spaced frames of a take's video for its timeline lane,
+/// Port of the web app's thumbnails.ts: evenly spaced frames of a take's video for its timeline lane,
 /// generated once per file and kept in memory for the session. FFmpeg pulls each frame with a fast seek
 /// (-ss before -i, a keyframe every second in our takes) on a single background thread, one take at a time,
 /// like the web's queue, so the UI never waits for it.

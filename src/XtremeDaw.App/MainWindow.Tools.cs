@@ -78,6 +78,7 @@ public partial class MainWindow
         ToolBox.SizeChanged += (_, _) => PlaceTools();
 
         Timeline.SplitAtRequested += async (track, clip, at) => await SplitAt(track, clip, at);
+        Timeline.MidiSplitRequested += async (track, id, at) => await SplitMidi(track, id, at);
         Timeline.ClipsErased += async erased =>
         {
             var ids = WithoutLocked(erased);
@@ -85,7 +86,7 @@ public partial class MainWindow
             string? trackId = sel?.Track.Id;
             await EditTimeline(p =>
             {
-                foreach (var id in ids) ClipEditing.RemoveClip(p, id);
+                foreach (var id in ids) MidiEditing.RemoveAny(p, id);
                 return trackId;
             }, ids.Count > 1 ? "clips-removed" : "clip-removed");
         };

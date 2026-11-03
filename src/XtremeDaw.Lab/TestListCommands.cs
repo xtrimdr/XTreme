@@ -3,7 +3,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab lista: the changes waiting to be tried (<see cref="TestList"/>). <c>tools\probar.ps1</c> runs it to add to the
+/// xtlab lista: the changes waiting to be tried (<see cref="TestList"/>). <c>tools\probar.ps1</c> runs it to add to the
 /// list and to read it. The text can come in <see cref="TextVar"/>: Windows PowerShell breaks quotes inside an argument.
 /// </summary>
 static class TestListCommands
@@ -60,7 +60,7 @@ static class TestListCommands
     static int Check()
     {
         const string first = "20261102-100000-aaaaaaa", second = "20261102-110000-bbbbbbb";
-        string dir = Path.Combine(Path.GetTempPath(), "wtlab-lista-" + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "xtlab-lista-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(dir, "lista.json");
         int fails = 0;
         void Row(string name, bool ok)

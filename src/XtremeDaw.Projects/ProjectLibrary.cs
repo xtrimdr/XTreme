@@ -8,7 +8,7 @@ namespace XtremeDaw.Projects;
 
 /// <summary>
 /// The project manager's operations: list, create, rename, duplicate, delete, forget, projects folder.
-/// Port of the project routes of the web app's server (GuitarCam/server/sessions.js), on guitarcam.json
+/// Port of the project routes of the web app's server (sessions.js), on xtreme_project.json
 /// instead of session.json. Same names, same "(2)" rules, same Recycle Bin.
 /// Like the web's projectSummary except duration uses the native clip's trimmed end:
 /// AtSec + media duration - TrimEndSec, rather than the untrimmed take duration.
@@ -39,8 +39,7 @@ public static partial class ProjectLibrary
 
     /// <summary>
     /// Where new projects go and which folder the list scans. Saved in the program's config; by default
-    /// the web app's projects folder (so both live together), else Documentos\XTreme Proyectos (or
-    /// Documentos\WildTrack Proyectos / Documentos\GuitarCam Proyectos, the defaults before the renames, when one exists).
+    /// Documentos\XTreme Proyectos.
     /// </summary>
     public static string Root
     {
@@ -48,11 +47,11 @@ public static partial class ProjectLibrary
         {
             if (RootOverride != null) return RootOverride;
             if (AppConfig.Get("projectsRoot") is { } r && Path.IsPathRooted(r)) return Path.GetFullPath(r);
-            return WebRoot() ?? DefaultRoot();
+            return DefaultRoot();
         }
     }
 
-    /// <summary>For wtlab: a projects folder for this run only, without touching the config.</summary>
+    /// <summary>For xtlab: a projects folder for this run only, without touching the config.</summary>
     public static string? RootOverride { get; set; }
 
     public static void SetRoot(string dir)
@@ -66,26 +65,7 @@ public static partial class ProjectLibrary
     {
         string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         string parent = Directory.Exists(docs) ? docs : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        foreach (string old in new[] { "WildTrack Proyectos", "GuitarCam Proyectos" })
-        {
-            string legacy = Path.Combine(parent, old);
-            if (Directory.Exists(legacy)) return legacy;
-        }
         return Path.Combine(parent, "XTreme Proyectos");
-    }
-
-    static string? WebRoot()
-    {
-        try
-        {
-            string cfg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".guitarcam", "config.json");
-            using var doc = JsonDocument.Parse(File.ReadAllText(cfg));
-            return doc.RootElement.TryGetProperty("projectsRoot", out var v) && v.GetString() is { } s && Path.IsPathRooted(s) ? Path.GetFullPath(s) : null;
-        }
-        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
-        {
-            return null;
-        }
     }
 
     // --- list -------------------------------------------------------------------------------------
@@ -227,7 +207,7 @@ public static partial class ProjectLibrary
     const string WebProjectFile = "session.json";
 
     /// <summary>
-    /// Works out what the user meant by a picked folder: the project itself (or one that lost guitarcam.json
+    /// Works out what the user meant by a picked folder: the project itself (or one that lost xtreme_project.json
     /// but can be rescued), a folder of the project (media/, exports/…), the folder holding it, or an empty
     /// folder for a new one. Anything else gets a clear reason instead of "not empty".
     /// </summary>
@@ -408,7 +388,7 @@ public static partial class ProjectLibrary
         dir = Path.GetFullPath(dir);
         if (Path.GetPathRoot(dir) == dir) throw new ArgumentException(Texts.T("err.lib.badPath", "Ruta inválida"));
         if (!ProjectStore.IsProject(dir)) throw new IOException(Texts.T("err.lib.notProject", "Esa carpeta no es un proyecto de XTreme"));
-        // a project open in another window holds guitarcam.lock: don't pull the folder from under it
+        // a project open in another window holds xtreme_project.lock: don't pull the folder from under it
         using (var store = ProjectStore.Open(dir))
             if (store.ReadOnly) throw new IOException(Texts.T("err.lib.open", "Está abierto en otra ventana de XTreme"));
         Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(dir,
@@ -452,7 +432,7 @@ public static partial class ProjectLibrary
 /// <summary>The program's own settings (not a project's), in %APPDATA%\XTreme\config.json.</summary>
 public static class AppConfig
 {
-    /// <summary>For isolated wtlab runs, without changing the user's recent projects or templates.</summary>
+    /// <summary>For isolated xtlab runs, without changing the user's recent projects or templates.</summary>
     public static string? DirectoryOverride { get; set; }
     public static string Dir => DirectoryOverride ?? AppFolder.Dir;
     static string FilePath => Path.Combine(Dir, "config.json");

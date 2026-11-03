@@ -186,7 +186,7 @@ public sealed partial class SettingsDialog
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 10, MinHeight = 40, Opacity = visible ? 1 : 0.5 };
         var icon = new TextBlock { Classes = { "icon" }, Text = p.IsInstrument ? "" : "", FontSize = 14, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(icon, Loc.T(p.IsInstrument ? "set.vst.kind.instrument" : "set.vst.kind.effect"));
-        g.Children.Add(icon);
+        g.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { icon, PluginThumbView.Row(p) } });
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 1 };
         text.Children.Add(new TextBlock { Text = p.Name, FontSize = 12.5, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         string details = string.Join(" · ", new[] { p.FormatText, p.Vendor, p.Version, p.Categories.Replace("|", ", ") }.Where(s => s.Length > 0));

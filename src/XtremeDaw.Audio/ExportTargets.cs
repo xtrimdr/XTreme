@@ -1,7 +1,7 @@
 namespace XtremeDaw.Audio;
 
 /// <summary>Where an export is going: the frame it needs. The window shows <c>Label</c> through <c>Loc</c>
-/// ("export.target.{id}"); here it is what wtlab prints.</summary>
+/// ("export.target.{id}"); here it is what xtlab prints.</summary>
 public sealed record ExportTarget(string Id, string Label, string? Aspect);
 
 /// <summary>
@@ -12,7 +12,7 @@ public sealed record ExportTarget(string Id, string Label, string? Aspect);
 public static class ExportTargets
 {
     public const string Project = "project";
-    /// <summary>The loudness streaming platforms normalise to (wtlab's --lufs without a value).</summary>
+    /// <summary>The loudness streaming platforms normalise to (xtlab's --lufs without a value).</summary>
     public const double StreamingLufs = -14;
 
     public static readonly IReadOnlyList<ExportTarget> All =

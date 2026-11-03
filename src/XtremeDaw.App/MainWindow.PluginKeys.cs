@@ -7,7 +7,8 @@ namespace XtremeDaw.App;
 /// <summary>
 /// The transport's shortcuts while a plugin's window has the keyboard. That window is another process's, so its keys never
 /// reach <see cref="OnKey"/>: the host takes the ones listed here before the plugin sees them (not while the plugin has a
-/// text field in use) and says which one went down, and it goes through <see cref="OnKey"/> like any other. Only the
+/// text field in use), also when its interface is a third process's (WebView2, CEF), and says which one went down, and it
+/// goes through <see cref="OnKey"/> like any other. Only the
 /// transport (<see cref="Shortcuts.Transport"/>): the rest edits the project, too much for a key the plugin may have meant.
 /// </summary>
 public partial class MainWindow

@@ -16,7 +16,7 @@ public enum BiquadType
 }
 
 /// <summary>
-/// Port of <c>BiquadSpec</c> in <c>GuitarCam/src/audio/eq.ts</c>. Note that Web Audio's
+/// Port of <c>BiquadSpec</c> in the web app's <c>eq.ts</c>. Note that Web Audio's
 /// <c>BiquadFilterNode</c> reads <see cref="Q"/> in dB for <see cref="BiquadType.Highpass"/> and
 /// <see cref="BiquadType.Lowpass"/>, linearly for <see cref="BiquadType.Peaking"/>, and ignores it for shelves.
 /// </summary>
@@ -49,7 +49,7 @@ public readonly record struct BiquadSpec(BiquadType Type, double Freq, double Q,
 
 /// <summary>
 /// Stereo zero-latency biquad filter matching Web Audio's <c>BiquadFilterNode</c> formulas and
-/// <c>getFrequencyResponse</c> (<c>GuitarCam/src/audio/eq.ts</c> and <c>mixGraph.ts</c>).
+/// <c>getFrequencyResponse</c> (the web app's <c>eq.ts</c> and <c>mixGraph.ts</c>).
 /// Coefficient updates via <see cref="Set"/> replace a single immutable reference so live UI changes never
 /// tear coefficients on the audio thread.
 /// </summary>
@@ -336,7 +336,7 @@ public sealed class Biquad
         return 20.0 * Math.Log10(Math.Max(1e-6, mag));
     }
 
-    /// <summary>Port of <c>responseDb</c> in <c>GuitarCam/src/audio/eq.ts</c>.</summary>
+    /// <summary>Port of <c>responseDb</c> in the web app's <c>eq.ts</c>.</summary>
     public static void ResponseDb(ReadOnlySpan<BiquadSpec> specs, double sampleRate, ReadOnlySpan<float> freqs, Span<float> outDb)
     {
         outDb.Clear();

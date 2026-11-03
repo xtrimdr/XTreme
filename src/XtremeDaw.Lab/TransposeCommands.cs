@@ -5,7 +5,7 @@ using XtremeDaw.Audio.Dsp;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab transponer and the transpose checks of comprobar-dsp: <see cref="PitchShifter"/> measured on signals whose
+/// xtlab transponer and the transpose checks of comprobar-dsp: <see cref="PitchShifter"/> measured on signals whose
 /// right answer is known (a sine's exact frequency, a chord's partials, where a pluck starts, a mono take).
 /// </summary>
 static class TransposeCommands

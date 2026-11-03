@@ -10,7 +10,7 @@ public enum InputChannelMode
 }
 
 /// <summary>
-/// Port of <c>StereoCaptureProcessor</c> (<c>GuitarCam/src/audio/audioEngine.ts</c>):
+/// Port of <c>StereoCaptureProcessor</c> (the web app's <c>audioEngine.ts</c>):
 /// routes input channels (<c>stereo</c> with automatic mono-ch0 detection when ch1 is silent,
 /// <c>ch1-mono</c>, <c>ch2-mono</c>), applies input pre-amp gain (0 dB default, user-adjustable up or down), soft-limits peaks
 /// above 0.92 with <c>tanh</c>, and reports peak levels and clipping without allocating in <see cref="Process"/>.

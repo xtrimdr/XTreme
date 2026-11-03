@@ -5,7 +5,7 @@ namespace XtremeDaw.Audio;
 /// <summary>
 /// Hook for the few texts this layer builds itself (the Actividad lines, day names, "hace 5 min"): it has no UI,
 /// so it cannot reach the app's language files. The window sets <see cref="Translate"/> and <see cref="Culture"/>;
-/// without them (wtlab, tests) the Spanish text passed along is used, so the output stays what it always was.
+/// without them (xtlab, tests) the Spanish text passed along is used, so the output stays what it always was.
 /// </summary>
 public static class Texts
 {

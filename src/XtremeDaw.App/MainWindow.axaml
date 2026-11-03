@@ -541,6 +541,9 @@
               <Button x:Name="MasteringViewButton" Classes="seg" Height="32" Padding="12,0" Content="{loc:T transport.view.mastering}" />
             </StackPanel>
           </Border>
+          <Button x:Name="MaxPanelButton" Classes="tbtn" Focusable="False">
+            <TextBlock x:Name="MaxPanelIcon" Classes="icon" Text="&#xE740;" FontSize="15" />
+          </Button>
           <ToggleButton x:Name="VirtualKeysButton" Classes="tbtn" Focusable="False">
             <TextBlock Classes="icon" Text="&#xE765;" FontSize="15" />
           </ToggleButton>
@@ -566,6 +569,7 @@
     <d:NewsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="News" IsVisible="False" />
     <d:UnsavedDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Unsaved" IsVisible="False" />
     <d:TempoDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="TempoAsk" IsVisible="False" />
+    <d:ImportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="ImportAsk" IsVisible="False" />
     <d:FeedbackDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Feedback" IsVisible="False" />
     <!-- toasts float over everything (the manager and the dialogs too), above the transport bar -->
     <c:ToastHost Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Toasts" Margin="0,0,16,68" />

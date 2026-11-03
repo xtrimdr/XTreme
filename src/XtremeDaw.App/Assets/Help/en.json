@@ -77,7 +77,7 @@
           "id": "window",
           "icon": "E80A",
           "title": "Learn the window",
-          "keywords": "interface parts panels inspector timeline transport where is",
+          "keywords": "interface parts panels inspector timeline transport where is maximize enlarge enter",
           "intro": "What each area holds.",
           "steps": [
             "**Top**: project mode, name, save, undo, tools and **Export**.",
@@ -85,7 +85,8 @@
             "**Center**: the video preview and the live camera.",
             "**Below the preview**: the timeline, with tracks and clips. {key:mixer} swaps it for the mixer.",
             "**Right**: project-wide things: Color, Patterns, Library and History. {key:rightPanel} folds it.",
-            "**Bottom**: clock, play, record, tempo, click, tuner and the Timeline, Piano roll, Mixer and Mastering views."
+            "**Bottom**: clock, play, record, tempo, click, tuner and the Timeline, Piano roll, Mixer and Mastering views. Pressing the active view again goes back to the timeline.",
+            "**Maximize**: {key:maximize} or {icon:E740} gives the whole window to the panel you touched last (video, timeline, piano roll, mixer or mastering). Again, and everything goes back as it was."
           ],
           "see": ["look", "shortcuts"]
         },
@@ -281,6 +282,10 @@
             "Copy with {key:copy} or cut with {key:cut}.",
             "Paste with {key:paste}: it starts at the playhead, on the selected track."
           ],
+          "notes": [
+            "On a MIDI clip, a note across the cut stays in both pieces and keeps sounding as one.",
+            "On a pattern, cut on the line between two passes to keep both pieces linked. Anywhere else, the right piece becomes a clip of its own."
+          ],
           "see": ["select-many", "tools", "move-trim"]
         },
         {
@@ -309,6 +314,9 @@
             "Delete with {key:delete}: the gap stays.",
             "With {key:deleteClose}, what follows also shifts and closes the gap."
           ],
+          "notes": [
+            "Works on takes and MIDI clips."
+          ],
           "see": ["tools", "undo-versions"]
         },
         {
@@ -324,6 +332,9 @@
             "**Erase** ({key:toolErase}): removes what it touches.",
             "**Listen** ({key:toolListen}): hold down on a clip to hear that track alone.",
             "**Zoom** ({key:toolZoom}) and **Hand** ({key:toolHand}): zoom in and move the view."
+          ],
+          "notes": [
+            "Split, Delete and Listen work on takes and MIDI clips."
           ],
           "see": ["navigate"]
         },
@@ -349,14 +360,20 @@
           "id": "import",
           "icon": "E896",
           "title": "Import audio and use samples",
-          "keywords": "bring file wav mp3 sample loop drag library backing track",
-          "intro": "What you import is copied into the project: it never depends on the original folder.",
+          "keywords": "bring file wav mp3 sample loop drag library backing track copy link duplicate media",
+          "intro": "What you import is copied into the project or linked where it is, without duplicating it.",
           "steps": [
             "Drag the file onto the timeline, or click **New track → Import audio…**.",
             "For your sound folders, open **Library → Samples** and add a folder.",
-            "Listen with **Space** and drag the sample onto a track."
+            "Listen with **Space** and drag the sample onto a track.",
+            "Choose **Copy to project** or **Link**. **Don't show again** keeps that choice; change it in **Settings → Save and export**."
           ],
           "notes": [
+            "If you move or delete a linked file, its clips go offline. In the Library they show the **Linked** mark.",
+            "To bring a linked file inside, click **Copy to project** on its row in the Library. Your file stays where it is.",
+            "If a file moved, click **Choose the file…** or **Search a folder…** in the Library or in the grey clip's menu.",
+            "Deleting a linked take removes it from the project: your file isn't touched. A package carries a copy of linked files.",
+            "Formats only FFmpeg reads can't be linked: they come in as WAV.",
             "Formats: WAV, MP3, FLAC, OGG, M4A and AIFF. Some need FFmpeg."
           ],
           "see": ["library", "no-ffmpeg"]
@@ -605,7 +622,7 @@
           "id": "automation",
           "icon": "E9D9",
           "title": "Automate volume and effects",
-          "keywords": "curve move by itself fade envelope parameter",
+          "keywords": "curve move by itself fade envelope parameter sampler cutoff resonance",
           "intro": "Makes a control change by itself along the song.",
           "steps": [
             "Right-click the control → **Automate…**, or the track's menu → **Automation**. In a plugin: click **Automate** in its window's bar and move the parameter.",
@@ -891,7 +908,8 @@
           ],
           "notes": [
             "{key:quantize} snaps the notes to the grid.",
-            "The piano roll has its own snap, or **Same as the timeline**."
+            "The piano roll has its own snap, or **Same as the timeline**.",
+            "What you play in the piano roll goes through the track's effects and fader: on a muted track you won't hear it."
           ],
           "see": ["scales-chords", "instrument", "midi-keyboard", "patterns"]
         },
@@ -927,22 +945,68 @@
             "Choose one from the list. The first time, installed plugins are scanned.",
             "**Open its window** shows the plugin."
           ],
-          "see": ["plugins", "plugin-fail"]
+          "see": ["sampler", "plugins", "plugin-fail"]
+        },
+        {
+          "id": "sampler",
+          "icon": "EC4F",
+          "title": "Play a sample with the Sampler",
+          "keywords": "sampler sample wav loop one shot adsr envelope filter lfo drum instrument native root tune tuning detector note out of tune cents slide pan automate cutoff resonance",
+          "intro": "Play any sound across the keyboard.",
+          "steps": [
+            "Drag an audio file onto a MIDI track. Or choose **Sampler** under **Instrument** and drop it in its window.",
+            "**Detected** shows the note the sound is on and how many cents it is off. **Tune** brings it to that note. You can also adjust it by hand with **Pitch** and **Fine**.",
+            "The **Root** is the key that plays it as it is. To change it, right-click a key.",
+            "Drag the **S** and **E** flags to choose which part plays.",
+            "Under **Mode**: **Note** sounds while the note lasts; **One shot** plays whole, for drum hits.",
+            "Choose a **Loop** so it keeps sounding while the note lasts, and move it with the **L** flags.",
+            "Drag the envelope's points, and try the **Filter** and the **LFO**."
+          ],
+          "notes": [
+            "Detection looks at the part between **S** and **E**. A drum hit has no clear pitch.",
+            "A note's slide, portamento and pan sound in the Sampler, note by note.",
+            "Right-click **Cutoff**, **Reso**, **Drive**, **Env**, **Volume**, **Pan** or what the LFO moves: **Automate…**.",
+            "The sample stays in the project, like any import.",
+            "One sample per track, for now."
+          ],
+          "see": ["instrument", "midi-track", "midi-keyboard", "automation"]
         },
         {
           "id": "plugins",
           "icon": "E950",
           "title": "Install and manage plugins",
-          "keywords": "vst vst2 vst3 32 bits folder scan not showing hide",
+          "keywords": "vst vst2 vst3 32 bits folder scan not showing hide thumbnail picture",
           "intro": "XTreme uses VST3 and VST2 plugins, 64 and 32 bits, each in its own process: if one crashes, recording goes on.",
           "steps": [
             "Install the plugin as usual.",
             "Click **Scan for new**.",
             "If it's in another folder, add it with **+**.",
-            "Uncheck the ones you don't want in the menus."
+            "Uncheck the ones you don't want in the menus.",
+            "Each plugin takes its thumbnail the first time you open its window. To redo it, click **Thumbnail** in the window's bar."
           ],
           "settings": "plugins",
           "see": ["add-fx", "plugin-fail"]
+        },
+        {
+          "id": "piano-tools",
+          "icon": "E90F",
+          "title": "Piano roll tools",
+          "keywords": "arpeggiator arpeggiate strum legato staccato chop glue flam claw limit flip random riff progression chords quantize groove humanize lfo rotate mute group color lasso paint slide portamento ghost score pdf mid",
+          "intro": "Every MIDI helper, with the result in view and in your ears before you apply it.",
+          "steps": [
+            "Select notes (with none selected, the tool takes the whole clip) and open **Tools** in the piano roll's header.",
+            "A tool with settings opens a panel at the side: move the values and hear the result while it plays.",
+            "**Enter** applies and **Esc** cancels. A click on the notes applies too. Each apply is one undo step.",
+            "**Draw**, **Paint** and **Slice** change what a click on the grid does. Ctrl+Alt and drag selects with a lasso.",
+            "Double-click a note to open its card: velocity, pan, release, modulation, color, slide and portamento.",
+            "**View** changes the lower lane, shows other tracks in grey and puts a waveform behind the notes. Right-click a key to name it.",
+            "In **Scale**, **MIDI keyboard to scale** lands what you play on the scale. **Arpeggiator**, in Tools, arpeggiates the keyboard and records what sounds."
+          ],
+          "see": [
+            "midi-track",
+            "scales-chords",
+            "midi-keyboard"
+          ]
         },
         {
           "id": "midi-keyboard",
@@ -956,7 +1020,8 @@
             "To record, arm it with **●** and record with {key:record}. The notes land in a clip."
           ],
           "notes": [
-            "**Quantize while recording**, on the same page, snaps notes automatically."
+            "**Quantize while recording**, on the same page, snaps notes automatically.",
+            "Notes are written to disk as you record. If the power fails, they come back when you open the project."
           ],
           "settings": "midi",
           "see": ["virtual-keyboard", "no-midi"]
@@ -977,7 +1042,8 @@
             "While it's on, those letters don't work as shortcuts.",
             "With a **scale** chosen, the **Z**, **A** and **Q** rows are three octaves of the scale, 7 notes each from the root. The octave moves to **O** and **P**, and the velocity to **L** and **;**.",
             "With **Chords** on, each key plays its note's chord.",
-            "With an instrument's window open, the keys play on its track."
+            "With an instrument's window open, the keys play on its track.",
+            "The button at the end of the settings opens it in its own window. Closing that window brings it back. With little height it shows only the keys."
           ],
           "see": ["scales-chords"]
         },
@@ -985,16 +1051,19 @@
           "id": "patterns",
           "icon": "F0E2",
           "title": "Repeat a pattern",
-          "keywords": "loop rhythm drums link same clips fl studio",
+          "keywords": "loop rhythm drums link same clips fl studio instruments ghost notes",
           "intro": "Linked clips: editing one changes them all.",
           "steps": [
             "Right-click a MIDI clip → **Create pattern**.",
             "Duplicate or copy the clip: the copy stays linked.",
             "Stretch a clip by its right edge to repeat the loop.",
+            "**Several instruments**: in the piano roll, the instruments chip → **Add instrument**. Each one goes on its own track, with its own notes.",
+            "In that list, a click moves to another instrument and the eye shows or hides its ghost notes.",
             "**Make unique** takes a clip out of the pattern."
           ],
           "notes": [
-            "The **Patterns** tab lists them. Drag them onto any MIDI track.",
+            "A pattern's instruments move, stretch and duplicate together. Shift+edge stretches just one; Delete removes only the selected one.",
+            "The **Patterns** tab lists them. Drag them onto any MIDI track; with several instruments, each lands on its own track.",
             "Opening a pattern clip shows a single loop. The tab also renames and deletes them."
           ]
         }
@@ -1083,7 +1152,7 @@
           "id": "library",
           "icon": "E8F1",
           "title": "Find takes and free up space",
-          "keywords": "library deleted take recover disk full space unused recycle bin",
+          "keywords": "library deleted take recover disk full space unused recycle bin offline moved file missing linked copy",
           "intro": "**Library**, in the right panel, lists every take: used or not.",
           "steps": [
             "Listen to a take with its play button.",
@@ -1091,7 +1160,8 @@
             "**Delete unused** sends what isn't on the timeline to the Recycle Bin."
           ],
           "notes": [
-            "Removing a clip from the timeline never deletes its file."
+            "Removing a clip from the timeline never deletes its file.",
+            "A take whose file is missing shows the **Offline** mark and the buttons to find it again."
           ],
           "see": ["punch-in", "import"]
         },
@@ -1120,7 +1190,7 @@
           "id": "shortcuts",
           "icon": "E765",
           "title": "See and change shortcuts",
-          "keywords": "keyboard keys list combinations",
+          "keywords": "keyboard keys list combinations layout cubase logic fl studio reaper fender studio pro other daw",
           "intro": "The main ones, with the keys you have set:",
           "steps": [
             "Play and stop: {key:play}. Record: {key:record}. Arm: {key:arm}.",
@@ -1130,6 +1200,7 @@
           ],
           "notes": [
             "**Keyboard shortcuts** has the full list, and any of them can be changed.",
+            "In **Key layout**, choose the keys of Cubase, Logic Pro, FL Studio, Reaper or Studio Pro. Your changes are kept in each one. What that DAW doesn't have keeps XTreme's key.",
             "With a plugin's window in front, the **Transport** group keeps working, except while you type in one of the plugin's text fields."
           ],
           "settings": "shortcuts"

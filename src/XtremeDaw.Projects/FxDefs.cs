@@ -44,7 +44,7 @@ public sealed record FxParam(string Id, string Label, double Min, double Max, do
 
 /// <summary>
 /// The list of every native effect's parameters, one place for the window's panel (the same in the inspector, the
-/// mixer, the timeline and the master), <see cref="ChannelDsp"/> and wtlab. Each kind's <see cref="Common"/> knobs (Mix,
+/// mixer, the timeline and the master), <see cref="ChannelDsp"/> and xtlab. Each kind's <see cref="Common"/> knobs (Mix,
 /// output) come from here too. Also what the perillas configurables, MIDI learn and automation will read.
 /// </summary>
 public static class FxDefs

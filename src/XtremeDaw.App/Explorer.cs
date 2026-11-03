@@ -82,7 +82,7 @@ public static class Explorer
         return list;
     }
 
-    /// <summary>Port of GuitarCamForeground.Bring (GuitarCam/server/ForegroundWindow.cs).</summary>
+    /// <summary>Port of the web app's ForegroundWindow.cs.</summary>
     static void Bring(IntPtr hWnd)
     {
         if (IsIconic(hWnd)) ShowWindow(hWnd, SwRestore);

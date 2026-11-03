@@ -72,7 +72,7 @@ public sealed class MidiInputs : IDisposable
 
     public IReadOnlyList<Port> Ports => ports;
 
-    /// <summary>Every raw message as it arrives, on winmm's thread (wtlab's midi escuchar). Keep it short.</summary>
+    /// <summary>Every raw message as it arrives, on winmm's thread (xtlab's midi escuchar). Keep it short.</summary>
     public event Action<Port, int>? Received;
 
     /// <summary>Messages lost because the ring was full (nobody read it: the audio is closed).</summary>
@@ -200,7 +200,7 @@ public sealed class MidiInputs : IDisposable
         Push(e);
     }
 
-    /// <summary>Queues an event as if a device had sent it (wtlab's checks, the window's tests). Any thread.</summary>
+    /// <summary>Queues an event as if a device had sent it (xtlab's checks, the window's tests). Any thread.</summary>
     public void Push(MidiEvent e)
     {
         lock (produce)

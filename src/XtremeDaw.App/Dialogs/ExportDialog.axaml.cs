@@ -55,7 +55,7 @@ public sealed record ExportedVideo(
 
 /// <summary>
 /// Port of <c>ExportSetupDialog</c>, <c>ExportProgressDialog</c>, <c>ExportErrorDialog</c> and
-/// <c>ExportDialog</c> from <c>GuitarCam/src/components/ExportDialog.tsx</c>.
+/// <c>ExportDialog</c> from the web app's <c>ExportDialog.tsx</c>.
 /// Native differences vs. the web app:
 /// <list type="bullet">
 /// <item><description>Mix and FFmpeg run in-process via <see cref="Mp4Exporter"/> instead of uploading to a local HTTP server (the 4 stages and weights 0.12 / 0.03 / 0.83 / 0.02 are preserved identically).</description></item>
@@ -1308,7 +1308,7 @@ public sealed partial class ExportDialog : UserControl
                 });
             }
 
-            mixTracks.Add(ChannelDsp.Track(p, nodes, trk, mixClips, firstRmsDb ?? -24.0));
+            mixTracks.Add(ChannelDsp.Track(p, nodes, trk, mixClips, firstRmsDb ?? -24.0, SamplerMedia.Rig(store, trk, p.Settings.Bpm, sampleRate)));
         }
 
         var mixBus = ChannelDsp.Bus(p);

@@ -13,10 +13,10 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// The "Proyectos" manager. Same as SessionPicker in the web app (GuitarCam/src/components/SessionPicker.tsx):
+/// The "Proyectos" manager. Same as SessionPicker in the web app (SessionPicker.tsx):
 /// list with search, new project with a template, rename (F2), save as template, duplicate, show in
 /// Explorer, delete to the Recycle Bin, forget missing ones, projects folder. Differences, all from the
-/// native format: it lists guitarcam.json projects, and "Abrir carpeta…" on a web project offers an import.
+/// native format: it lists xtreme_project.json projects, and "Abrir carpeta…" on a web project offers an import.
 /// The window wires the callbacks; this control never touches the open project directly.
 /// </summary>
 public sealed partial class ProjectsDialog : UserControl

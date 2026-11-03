@@ -15,6 +15,7 @@ public partial class App : Application
         UiTheme.Apply(UiTheme.Read(), persist: false);
         Shortcuts.Load();
         SaveMode.Load();
+        ImportMode.Load();
         TrackKnobs.Load();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

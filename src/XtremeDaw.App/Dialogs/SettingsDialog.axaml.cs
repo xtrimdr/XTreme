@@ -15,7 +15,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App.Dialogs;
 
 /// <summary>
-/// Port of SettingsDialog (GuitarCam/src/components/SettingsDialog.tsx): tabs "Entradas y salidas",
+/// Port of SettingsDialog (the web app's SettingsDialog.tsx): tabs "Entradas y salidas",
 /// "Cámara" and "Sincronización", every control live. Same as the web except what ASIO imposes:
 /// "Interfaz" lists the ASIO drivers and "Dispositivo" the driver's output pairs (no "Predeterminada de
 /// Windows"), texts that say "navegador" say "driver", and the driver and output are remembered between
@@ -55,6 +55,8 @@ public sealed partial class SettingsDialog : UserControl
     readonly TextBlock saveHelp = Help("");
     readonly List<ToggleButton> encoderButtons = [];
     readonly TextBlock encoderHelp = Help("");
+    readonly TextBlock importHelp = Help("");
+    readonly List<ToggleButton> importButtons = [];
     /// <summary>What FFmpeg can do here; null while <see cref="VideoEncoders.DetectAsync"/> is still probing.</summary>
     FfmpegCaps? encoderCaps;
     readonly TextBlock outputHelp = Help("");
@@ -346,7 +348,7 @@ public sealed partial class SettingsDialog : UserControl
         MidiTab.Classes.Set("active", id == "midi");
         StopCapture();
         StopMidi();
-        if (id == "save") { RefreshSave(); RefreshEncoder(); }
+        if (id == "save") { RefreshSave(); RefreshEncoder(); RefreshImport(); }
         if (id == "shortcuts") { shortcutNote = null; BuildShortcuts(); }
         if (id == "plugins") RefreshPlugins();
         Body.Content = id switch { "components" => componentsPage, "midi" => midiPage, "plugins" => pluginsPage, "camera" => cameraPage, "sync" => syncPage, "shortcuts" => shortcutsPage, "language" => languagePage, "save" => savePage, "view" => viewPage, _ => audioPage };
@@ -646,8 +648,38 @@ public sealed partial class SettingsDialog : UserControl
         s.Children.Add(saveHelp);
         s.Children.Add(Help(Loc.T("set.save.always")));
         savePage.Children.Add(Card(s));
+        BuildImport();
         BuildEncoder();
         return minutes;
+    }
+
+    /// <summary>"Importación" (native only): what an import does with the file, see <see cref="ImportMode"/>; applied at once.</summary>
+    void BuildImport()
+    {
+        var modes = new UniformGrid { Columns = 3 };
+        foreach (var (mode, text, tip) in new[]
+        {
+            (ImportMode.Ask, Loc.T("set.import.ask"), Loc.T("set.import.ask.tip")),
+            (ImportMode.Copy, Loc.T("set.import.copy"), Loc.T("set.import.copy.tip")),
+            (ImportMode.Link, Loc.T("set.import.link"), Loc.T("set.import.link.tip")),
+        })
+        {
+            var b = new ToggleButton { Content = text, Tag = mode, Classes = { "seg" }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            ToolTip.SetTip(b, tip);
+            b.Click += (_, _) => { ImportMode.Set(mode); RefreshImport(); };
+            importButtons.Add(b);
+            modes.Children.Add(b);
+        }
+        var s = Section(Loc.T("set.import.section"));
+        s.Children.Add(Field(Loc.T("set.import.when"), new Border { Classes = { "seg" }, Child = modes }));
+        s.Children.Add(importHelp);
+        savePage.Children.Add(Card(s));
+    }
+
+    void RefreshImport()
+    {
+        foreach (var b in importButtons) b.IsChecked = (string)b.Tag! == ImportMode.Mode;
+        importHelp.Text = Loc.T($"set.import.{ImportMode.Mode}.help");
     }
 
     /// <summary>"Exportación de video" (native only): whether the export encodes on the video card (when FFmpeg finds
@@ -746,6 +778,21 @@ public sealed partial class SettingsDialog : UserControl
         ToolTip.SetTip(resetAll, Loc.T("set.sc.resetAll.tip"));
         resetAll.Click += (_, _) => { shortcutNote = null; capturing = capturingWheel = null; Shortcuts.ResetAll(); };
         var intro = Section(Loc.T("settings.tab.shortcuts"), resetAll);
+        var layouts = new UniformGrid { Columns = 1 + KeyLayouts.Daws.Length };
+        foreach (var (id, text) in KeyLayouts.Daws.Select(l => (l.Id, l.Name)).Prepend((KeyLayouts.Own, Loc.T("set.sc.layout.own"))))
+        {
+            var b = new ToggleButton { Content = text, Classes = { "seg" }, IsChecked = Shortcuts.Layout == id, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            ToolTip.SetTip(b, id == KeyLayouts.Own ? Loc.T("set.sc.layout.own.tip") : Loc.T("set.sc.layout.tip", text));
+            b.Click += (_, _) =>
+            {
+                shortcutNote = null;
+                capturing = capturingWheel = null;
+                Shortcuts.SetLayout(id);
+                BuildShortcuts();
+            };
+            layouts.Children.Add(b);
+        }
+        intro.Children.Add(Field(Loc.T("set.sc.layout"), new Border { Classes = { "seg" }, Child = layouts }));
         intro.Children.Add(Help(Loc.T("set.sc.help")));
         if (shortcutNote != null) intro.Children.Add(Warning(shortcutNote));
         shortcutsPage.Children.Add(Card(intro));

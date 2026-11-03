@@ -119,6 +119,7 @@ public partial class MainWindow
         Timeline.Bpm = value;
         // MIDI notes are in beats: they follow the tempo
         foreach (var t in tracks) t.SetMidi(value);
+        SyncSamplers(); // an LFO in time with the song
         if (follow)
         {
             foreach (var t in tracks)

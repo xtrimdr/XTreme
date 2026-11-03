@@ -6,7 +6,7 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// Locking takes and tracks (native only): a locked clip, or every clip of a locked track, keeps its place and length
-/// (<see cref="ClipEditing.IsLocked"/>, the same rule wtlab uses). The timeline doesn't start the gesture, the commands
+/// (<see cref="ClipEditing.IsLocked"/>, the same rule xtlab uses). The timeline doesn't start the gesture, the commands
 /// skip it or are greyed out, and a new take never replaces it: here the window says why, in a toast with a button that
 /// unlocks it, so a locked take is never a dead end.
 /// </summary>
@@ -39,13 +39,14 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// The ids an edit over several clips may touch: the locked takes stay out (MIDI clips have no lock yet). Says how
-    /// many stayed when some did.
+    /// The ids an edit over several clips may touch: the locked takes stay out, and the MIDI clips of a locked track (they
+    /// have no lock of their own yet). Says how many stayed when some did.
     /// </summary>
     List<string> WithoutLocked(IReadOnlyList<string> ids)
     {
         if (store == null) return [.. ids];
-        var free = ids.Where(id => !ClipEditing.IsLocked(store.Project, id)).ToList();
+        var p = store.Project;
+        var free = ids.Where(id => !ClipEditing.IsLocked(p, id) && (MidiEditing.TryFind(p, id) == null || !MidiEditing.Find(p, id).Track.Locked)).ToList();
         if (free.Count < ids.Count) Toast(Loc.T("lock.toast.skipped", ids.Count - free.Count));
         return free;
     }

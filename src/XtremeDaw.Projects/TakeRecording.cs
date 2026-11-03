@@ -6,7 +6,7 @@ namespace XtremeDaw.Projects;
 
 /// <summary>
 /// Where a new take goes and how it lands in the project. Port of the target choice in
-/// handleStartRecordingSequence and of the take built in handleStopRecording (GuitarCam/src/App.tsx).
+/// handleStartRecordingSequence and of the take built in handleStopRecording (the web app's App.tsx).
 /// The web keeps one take per lane; here the take becomes a Media plus a Clip on the target track, and
 /// the track keeps the channel strip it had (the web's withChannel). The camera's video goes with it, mirrored
 /// if the live image was (the web's mirror: liveMirror). Native differences: without a camera the take is

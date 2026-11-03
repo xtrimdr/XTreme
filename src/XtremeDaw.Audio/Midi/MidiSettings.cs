@@ -42,7 +42,7 @@ public sealed class MidiInputSettings
 /// <summary>
 /// The MIDI side of the program's settings ("midi" in config.json): the inputs the user has seen, plugged in or not, and
 /// whether a recording's notes go to the piano roll's magnet on their own. Read and written as JSON text, so the
-/// window and wtlab share it through <c>AppConfig</c> without this assembly knowing about it.
+/// window and xtlab share it through <c>AppConfig</c> without this assembly knowing about it.
 /// </summary>
 public sealed class MidiSettings
 {

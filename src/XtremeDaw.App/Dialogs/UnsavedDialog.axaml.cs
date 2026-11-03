@@ -4,7 +4,7 @@ using Avalonia.Input;
 namespace XtremeDaw.App.Dialogs;
 
 /// <summary>
-/// "¿Guardo los cambios?", asked when the window closes with edits that haven't reached guitarcam.json (only
+/// "¿Guardo los cambios?", asked when the window closes with edits that haven't reached xtreme_project.json (only
 /// possible when <see cref="SaveMode"/> saves every few minutes or by hand, or after a failed save). Same frame as
 /// <see cref="AboutDialog"/>. Takes are always saved already, so "Cerrar sin guardar" only drops edits. Enter saves,
 /// Escape or a click outside cancels: the safe choices are the easy ones.

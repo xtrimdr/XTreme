@@ -136,7 +136,7 @@ public static class PluginCatalog
     /// <summary>Where a scan looks: Windows' folders and the ones the user added.</summary>
     public static List<string> Folders => [.. VstScanner.DefaultFolders, .. ExtraFolders()];
 
-    /// <summary>The folders the user added (Configuración → Plugins, or wtlab vst carpetas --agregar).</summary>
+    /// <summary>The folders the user added (Configuración → Plugins, or xtlab vst carpetas --agregar).</summary>
     public static List<string> ExtraFolders() => ReadList(FoldersKey);
 
     /// <summary>Adds a folder to look in; false if it was already there (Windows' ones included).</summary>
@@ -182,7 +182,7 @@ public static class PluginCatalog
     static bool SamePath(string a, string b) =>
         string.Equals(a.TrimEnd('\\', '/'), b.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>A plugin by name (exact, then the first that contains it), for wtlab.</summary>
+    /// <summary>A plugin by name (exact, then the first that contains it), for xtlab.</summary>
     public static VstPluginInfo? Find(IEnumerable<VstPluginInfo> plugins, string name) =>
         plugins.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
         ?? plugins.FirstOrDefault(p => p.Name.Contains(name, StringComparison.OrdinalIgnoreCase));

@@ -7,7 +7,9 @@ using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using XtremeDaw.App.Audio;
 using XtremeDaw.App.Controls;
+using XtremeDaw.App.Dialogs;
 using XtremeDaw.App.Model;
+using XtremeDaw.Audio.Dsp;
 using XtremeDaw.Audio.Vst;
 using XtremeDaw.Projects;
 
@@ -91,8 +93,11 @@ public partial class MainWindow
         if (AutoTarget.VstOf(target) is { } v)
             return slots.Find(s => s.Id == v.Slot) is { } slot ? $"{slot.Vst?.Plugin.Name} · {l.Name}" : Loc.T("auto.gone");
         if (AutoTarget.InstrumentOf(target) != null) return $"{t.Track.Instrument?.Name ?? Loc.T("auto.gone")} · {l.Name}";
+        if (AutoTarget.SamplerOf(target) is { } knob) return t.Track.Sampler != null ? $"{Loc.T("sampler.name")} · {SamplerKnobName(knob)}" : Loc.T("auto.gone");
         return Automations.FxParamOf(slots, target) is { } f ? $"{SlotName(slots, f.Slot)} · {ParamName(f.Param)}" : Loc.T("auto.gone");
     }
+
+    static string SamplerKnobName(SamplerKnob knob) => Loc.T("auto.sampler." + SamplerKnobs.Ids[(int)knob]);
 
     static string ParamName(FxParam p) =>
         p.Id is ['b', var b, '.', ..] ? Loc.T("auto.eq.band", b - '0' + 1) + " " + Loc.T(p.Label) : Loc.T(p.Label);
@@ -118,6 +123,7 @@ public partial class MainWindow
             return Math.Abs(pan) < 0.01 ? "C" : pan < 0 ? $"L{-pan * 100:0}" : $"R{pan * 100:0}";
         }
         if (l.Target == AutoTarget.Mute) return Loc.T(k >= 0.5 ? "auto.mute.on" : "auto.mute.off");
+        if (AutoTarget.SamplerOf(l.Target) is { } knob) return SamplerWindow.KnobText(knob, SamplerKnobs.Value(knob, k));
         if (Automations.FxParamOf(t.Channel.Slots, l.Target) is { } f)
             return f.Param.Toggle ? Loc.T(k >= 0.5 ? "auto.fx.onValue" : "auto.fx.offValue") : FxText(f.Param, f.Param.FromKnob(k));
         return $"{k * 100:0}%";
@@ -161,6 +167,11 @@ public partial class MainWindow
         {
             items.Add(new Separator());
             items.Add(new MenuItem { Header = t.Track.Instrument.Name, ItemsSource = PluginItems(t, t.Instrument?.Bridge, AutoTarget.Instrument) });
+        }
+        if (t.Track.Sampler != null)
+        {
+            items.Add(new Separator());
+            items.Add(new MenuItem { Header = Loc.T("sampler.name"), ItemsSource = Enum.GetValues<SamplerKnob>().Select(k => (object)AutomateItem(t, AutoTarget.Sampler(k), SamplerKnobName(k))).ToList() });
         }
         return items;
     }

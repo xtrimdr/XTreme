@@ -19,7 +19,7 @@ public sealed record PackResult(string File, int Files, long Bytes, int Missing)
 
 /// <summary>
 /// The project as one ZIP to move it to another computer or keep a backup, and back (the manager's "Paquete").
-/// Takes left outside the folder (imported without copying) go inside, in media/, and the packed guitarcam.json
+/// Takes left outside the folder (imported without copying) go inside, in media/, and the packed xtreme_project.json
 /// points to them there, so the package opens anywhere. The lock and cache/ never go: one is this computer's, the
 /// other is remade from media/. Both ways write somewhere temporary first and publish at the end (the ZIP's
 /// <c>.part</c> renamed, the unpacked folder moved), so a crash halfway never leaves a package or a project that
@@ -75,7 +75,7 @@ public static partial class ProjectLibrary
 
         if (kind == PackageKind.Share)
         {
-            var used = project.Tracks.SelectMany(t => t.Clips).Select(c => c.MediaId).ToHashSet();
+            var used = ProjectHistory.UsedMediaIds(project);
             project.Media.RemoveAll(m => !used.Contains(m.Id));
             project.Exports = [];
             project.Settings.Export.Dir = null;

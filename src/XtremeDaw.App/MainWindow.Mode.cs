@@ -85,7 +85,11 @@ public partial class MainWindow
     /// </summary>
     void MoveBottomView(bool stacked)
     {
-        if (stacked == stackedViews) return;
+        if (stacked == stackedViews)
+        {
+            ApplyViewHosts();
+            return;
+        }
         stackedViews = stacked;
         var row = Root.RowDefinitions[3];
         if (stacked)
@@ -114,23 +118,31 @@ public partial class MainWindow
             row.MinHeight = mixerView ? MixerMinH : TimelineMinH;
             row.Height = new GridLength(mixerView ? mixerH : timelineH);
         }
-        AudioArea.IsVisible = stacked;
         BottomSplitter.IsVisible = !stacked;
-        TimelineHost.IsVisible = ToolBox.IsEnabled = !mixerView || stacked;
-        miniRow.IsVisible = !stacked;
-        ApplyAudioMixerRows();
-        if (mixerView && masteringView) FitMasteringHeight();
+        ApplyViewHosts();
         RefreshMixer();
     }
 
-    /// <summary>Stacked: the mixer's row under the timeline (resizable with its splitter) is open only while the mixer is.</summary>
+    /// <summary>Which of the timeline and the mixer's place is on screen. Stacked shows both; a maximized view, only itself.</summary>
+    void ApplyViewHosts()
+    {
+        bool alone = maxPanel == MaxPanel.Views;
+        AudioArea.IsVisible = stackedViews && !ViewsCovered;
+        TimelineHost.IsVisible = ToolBox.IsEnabled = !mixerView || (stackedViews && !alone);
+        miniRow.IsVisible = !stackedViews || alone;
+        ApplyAudioMixerRows();
+        if (mixerView && masteringView) FitMasteringHeight();
+    }
+
+    /// <summary>Stacked: the mixer's row under the timeline (resizable with its splitter) is open only while the mixer is; maximized, it is all there is.</summary>
     void ApplyAudioMixerRows()
     {
-        bool open = stackedViews && mixerView;
+        bool alone = maxPanel == MaxPanel.Views && mixerView, open = stackedViews && mixerView && !alone;
         AudioSplitter.IsVisible = open;
         AudioArea.RowDefinitions[0].MinHeight = open ? TimelineMinH : 0;
+        AudioArea.RowDefinitions[0].Height = alone ? new GridLength(0) : GridLength.Star;
         AudioArea.RowDefinitions[2].MinHeight = open ? MixerMinH : 0;
-        AudioArea.RowDefinitions[2].Height = new GridLength(open ? Math.Max(MixerMinH, mixerH) : 0);
+        AudioArea.RowDefinitions[2].Height = alone ? GridLength.Star : new GridLength(open ? Math.Max(MixerMinH, mixerH) : 0);
     }
 
     /// <summary>Opens the decoders of the clips shown in the video that don't have one yet (after an edit, or back from solo audio).</summary>

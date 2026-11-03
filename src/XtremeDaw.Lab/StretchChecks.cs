@@ -6,7 +6,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab estirar and the time-stretch rows of comprobar-dsp: <see cref="PitchShifter.Render"/> measured on signals whose
+/// xtlab estirar and the time-stretch rows of comprobar-dsp: <see cref="PitchShifter.Render"/> measured on signals whose
 /// right answer is known (a sine keeps its frequency and level, an attack lands where the stretch puts it), its cache
 /// made again from nothing, and <see cref="TempoFollow"/>: the song goes to a tempo and comes back, undo included.
 /// </summary>
@@ -127,7 +127,7 @@ static class StretchChecks
         TransposeCommands.Row("+7 st x1,25; mono; x1 = igual", $"{moved:0.00} {monoDiff:0.0e0}", $"{want:0.00} <1e-5", both);
 
         // the cache: read back the same, the name of a plain transpose as it was, and rendered again when it is gone
-        string dir = Path.Combine(Path.GetTempPath(), "wtlab-estirar-" + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "xtlab-estirar-" + Guid.NewGuid().ToString("N"));
         try
         {
             string source = Path.Combine(dir, "toma.wav");

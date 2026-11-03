@@ -11,6 +11,9 @@ namespace XtremeDaw.App;
 /// Esc is not in the table: it always cancels (count-in, gesture, dialogs). The timeline's wheel gestures (zoom,
 /// sideways, track height) are a second, smaller table (<see cref="Wheel"/>): their "key" is only the modifiers held
 /// while turning the wheel, remembered apart ("wheel") because a modifier alone is not a <see cref="KeyGesture"/>.
+/// A layout (<see cref="KeyLayouts"/>, config "shortcutLayout") swaps the base table for another DAW's; the user's
+/// changes go on top of the active layout and each layout keeps its own ("shortcuts.cubase"…; XTreme's table keeps
+/// the plain keys). The wheel's direction is the user's hand, not a layout's, so it stays the same in all of them.
 /// </summary>
 static class Shortcuts
 {
@@ -62,6 +65,7 @@ static class Shortcuts
         new("mixer", Loc.T("sc.group.view"), Loc.T("sc.mixer"), [G(Key.X)]),
         new("leftPanel", Loc.T("sc.group.view"), Loc.T("sc.leftPanel"), [G(Key.B)]),
         new("rightPanel", Loc.T("sc.group.view"), Loc.T("sc.rightPanel"), [G(Key.P)]),
+        new("maximize", Loc.T("sc.group.view"), Loc.T("sc.maximize"), [G(Key.Enter)]),
         new("fullScreen", Loc.T("sc.group.view"), Loc.T("sc.fullScreen"), [G(Key.F11)]),
         new("help", Loc.T("sc.group.view"), Loc.T("sc.help"), [G(Key.F1)]),
         new("toolSelect", Loc.T("sc.group.tools"), Loc.T("sc.toolSelect"), [G(Key.D1), G(Key.NumPad1)]),
@@ -71,7 +75,27 @@ static class Shortcuts
         new("toolListen", Loc.T("sc.group.tools"), Loc.T("sc.toolListen"), [G(Key.D5), G(Key.NumPad5)]),
         new("toolZoom", Loc.T("sc.group.tools"), Loc.T("sc.toolZoom"), [G(Key.D6), G(Key.NumPad6)]),
         new("toolHand", Loc.T("sc.group.tools"), Loc.T("sc.toolHand"), [G(Key.D7), G(Key.NumPad7)]),
+        .. PianoKeys(),
     ];
+
+    /// <summary>The start of the id of what only works with the focus on the piano roll: tool ids, and the note commands of <see cref="MainWindow"/>.</summary>
+    public const string PianoPrefix = "piano.";
+
+    static IEnumerable<Action> PianoKeys()
+    {
+        const KeyModifiers Alt = KeyModifiers.Alt, Ctrl = KeyModifiers.Control, Shift = KeyModifiers.Shift;
+        (string Id, KeyGesture[] Keys)[] table =
+        [
+            ("draw", [G(Key.D1, Alt)]), ("paint", [G(Key.D2, Alt)]), ("slice", [G(Key.D3, Alt)]),
+            ("arpeggiate", [G(Key.A, Alt)]), ("strum", [G(Key.S, Alt)]), ("legato", [G(Key.L, Ctrl)]), ("articulate", [G(Key.L, Alt)]),
+            ("chop-quick", [G(Key.U, Ctrl)]), ("chop", [G(Key.U, Alt)]), ("glue", [G(Key.G, Ctrl)]), ("flam", [G(Key.F, Alt)]),
+            ("claw", [G(Key.W, Alt)]), ("limit", [G(Key.J, Alt)]), ("flip", [G(Key.Y, Alt)]), ("random", [G(Key.R, Alt)]),
+            ("riff", [G(Key.E, Alt)]), ("progression", [G(Key.P, Alt)]), ("quantize", [G(Key.Q, Alt)]), ("levels", [G(Key.V, Alt)]), ("lfo", [G(Key.O, Alt)]),
+            ("mute", [G(Key.M, Shift)]), ("group", [G(Key.G, Shift)]), ("ungroup", [G(Key.G, Alt)]), ("invert", [G(Key.I, Shift)]),
+        ];
+        foreach (var (id, keys) in table)
+            yield return new(PianoPrefix + id, Loc.T("sc.group.piano"), Loc.Or($"tool.{id}", Loc.T($"sc.piano.{id}")), keys);
+    }
 
     /// <summary>The ones that keep working with a plugin's window in front (<see cref="MainWindow.TellPluginKeys"/>).</summary>
     public static IEnumerable<Action> Transport => All.Where(a => a.Group == Loc.T("sc.group.transport"));
@@ -120,26 +144,62 @@ static class Shortcuts
     /// <summary>A shortcut changed: tooltips that show keys refresh.</summary>
     public static event System.Action? Changed;
 
+    /// <summary>The active layout's id, <see cref="KeyLayouts.Own"/> for XTreme's own table.</summary>
+    public static string Layout { get; private set; } = KeyLayouts.Own;
+
+    /// <summary>The active layout's keys and wheel modifiers; empty for XTreme's own table.</summary>
+    static Dictionary<string, KeyGesture[]> layoutKeys = [];
+    static Dictionary<string, KeyModifiers> layoutWheel = [];
+
+    /// <summary>What the config keys of the active layout's changes end with.</summary>
+    static string LayoutSuffix => Layout == KeyLayouts.Own ? "" : "." + Layout;
+
+    /// <summary>Applies a layout's table, keeping the changes the user made to it. Picking one loses nothing.</summary>
+    public static void SetLayout(string id)
+    {
+        if (id == Layout) return;
+        ApplyLayout(id);
+        LoadChanges();
+        string saved = id;
+        _ = Task.Run(() =>
+        {
+            try { AppConfig.Set("shortcutLayout", saved); }
+            catch (Exception x) when (x is IOException or UnauthorizedAccessException) { /* keep this session's layout */ }
+        });
+        Changed?.Invoke();
+    }
+
+    /// <summary>An action the layout doesn't list keeps XTreme's keys, minus those the layout gave to another one.</summary>
+    static void ApplyLayout(string id)
+    {
+        var layout = KeyLayouts.Find(id);
+        Layout = layout?.Id ?? KeyLayouts.Own;
+        layoutKeys = [];
+        layoutWheel = [];
+        if (layout == null) return;
+        foreach (var a in All)
+            if (layout.Keys.TryGetValue(a.Id, out var keys))
+                layoutKeys[a.Id] = keys.Split('|', StringSplitOptions.RemoveEmptyEntries).Select(Parse).OfType<KeyGesture>().ToArray();
+        var taken = layoutKeys.Values.SelectMany(k => k).ToArray();
+        foreach (var a in All)
+            if (!layoutKeys.ContainsKey(a.Id) && a.Defaults.Any(g => taken.Any(t => Same(t, g))))
+                layoutKeys[a.Id] = a.Defaults.Where(g => !taken.Any(t => Same(t, g))).ToArray();
+        foreach (var a in Wheel)
+            if (layout.Wheel.TryGetValue(a.Id, out var mods) && Enum.TryParse<KeyModifiers>(mods, out var m))
+                layoutWheel[a.Id] = m & Mods;
+    }
+
+    /// <summary>The key or keys an action has in the active layout, before the user's changes.</summary>
+    static KeyGesture[] BaseKeys(string id) =>
+        layoutKeys.TryGetValue(id, out var k) ? k : All.First(a => a.Id == id).Defaults;
+
+    static KeyModifiers BaseWheel(string id) =>
+        layoutWheel.TryGetValue(id, out var m) ? m : Wheel.First(a => a.Id == id).Default;
+
     public static void Load()
     {
-        custom.Clear();
-        try
-        {
-            var saved = JsonSerializer.Deserialize<Dictionary<string, string[]>>(AppConfig.Get("shortcuts") ?? "{}") ?? [];
-            foreach (var (id, keys) in saved)
-                if (All.Any(a => a.Id == id))
-                    custom[id] = keys.Select(Parse).OfType<KeyGesture>().ToArray();
-        }
-        catch (JsonException) { }
-        customWheel.Clear();
-        try
-        {
-            var saved = JsonSerializer.Deserialize<Dictionary<string, string>>(AppConfig.Get("wheel") ?? "{}") ?? [];
-            foreach (var (id, mods) in saved)
-                if (Wheel.Any(a => a.Id == id) && Enum.TryParse<KeyModifiers>(mods, out var m))
-                    customWheel[id] = m & Mods;
-        }
-        catch (JsonException) { }
+        ApplyLayout(AppConfig.Get("shortcutLayout") ?? KeyLayouts.Own);
+        LoadChanges();
         reversed.Clear();
         try
         {
@@ -149,8 +209,31 @@ static class Shortcuts
         catch (JsonException) { }
     }
 
+    /// <summary>The user's changes to the active layout.</summary>
+    static void LoadChanges()
+    {
+        custom.Clear();
+        try
+        {
+            var saved = JsonSerializer.Deserialize<Dictionary<string, string[]>>(AppConfig.Get("shortcuts" + LayoutSuffix) ?? "{}") ?? [];
+            foreach (var (id, keys) in saved)
+                if (All.Any(a => a.Id == id))
+                    custom[id] = keys.Select(Parse).OfType<KeyGesture>().ToArray();
+        }
+        catch (JsonException) { }
+        customWheel.Clear();
+        try
+        {
+            var saved = JsonSerializer.Deserialize<Dictionary<string, string>>(AppConfig.Get("wheel" + LayoutSuffix) ?? "{}") ?? [];
+            foreach (var (id, mods) in saved)
+                if (Wheel.Any(a => a.Id == id) && Enum.TryParse<KeyModifiers>(mods, out var m))
+                    customWheel[id] = m & Mods;
+        }
+        catch (JsonException) { }
+    }
+
     public static KeyGesture[] Keys(string id) =>
-        custom.TryGetValue(id, out var k) ? k : All.First(a => a.Id == id).Defaults;
+        custom.TryGetValue(id, out var k) ? k : BaseKeys(id);
 
     public static bool IsDefault(string id) => !custom.ContainsKey(id) && !customWheel.ContainsKey(id);
 
@@ -169,7 +252,7 @@ static class Shortcuts
     }
 
     public static KeyModifiers WheelMods(string id) =>
-        customWheel.TryGetValue(id, out var m) ? m : Wheel.First(a => a.Id == id).Default;
+        customWheel.TryGetValue(id, out var m) ? m : BaseWheel(id);
 
     /// <summary>The wheel action for the held modifiers (exact match), or null for the plain scroll. Runs on every
     /// wheel step, so it doesn't allocate.</summary>
@@ -201,7 +284,7 @@ static class Shortcuts
 
     public static void ResetWheel(string id)
     {
-        var def = Wheel.First(a => a.Id == id).Default;
+        var def = BaseWheel(id);
         if (FindWheel(def) is { } other && other != id) SetWheel(other, KeyModifiers.None);
         customWheel.Remove(id);
         Save();
@@ -209,7 +292,7 @@ static class Shortcuts
 
     static void SetWheel(string id, KeyModifiers mods)
     {
-        if (mods == Wheel.First(a => a.Id == id).Default) customWheel.Remove(id);
+        if (mods == BaseWheel(id)) customWheel.Remove(id);
         else customWheel[id] = mods;
     }
 
@@ -248,7 +331,7 @@ static class Shortcuts
 
     public static void Reset(string id)
     {
-        foreach (var g in All.First(a => a.Id == id).Defaults)
+        foreach (var g in BaseKeys(id))
             if (Find(g.Key, g.KeyModifiers) is { } other && other != id)
                 SetKeys(other, Keys(other).Where(k => !Same(k, g)).ToArray());
         custom.Remove(id);
@@ -265,7 +348,7 @@ static class Shortcuts
 
     static void SetKeys(string id, KeyGesture[] keys)
     {
-        var defaults = All.First(a => a.Id == id).Defaults;
+        var defaults = BaseKeys(id);
         if (keys.Length == defaults.Length && keys.Zip(defaults).All(p => Same(p.First, p.Second))) custom.Remove(id);
         else custom[id] = keys;
     }
@@ -277,9 +360,10 @@ static class Shortcuts
         string json = JsonSerializer.Serialize(custom.ToDictionary(p => p.Key, p => p.Value.Select(g => g.ToString()).ToArray()));
         string wheel = JsonSerializer.Serialize(customWheel.ToDictionary(p => p.Key, p => p.Value.ToString()));
         string reverse = JsonSerializer.Serialize(reversed.Order().ToArray());
+        string suffix = LayoutSuffix;
         _ = Task.Run(() =>
         {
-            try { AppConfig.Set("shortcuts", json); AppConfig.Set("wheel", wheel); AppConfig.Set("wheelReverse", reverse); }
+            try { AppConfig.Set("shortcuts" + suffix, json); AppConfig.Set("wheel" + suffix, wheel); AppConfig.Set("wheelReverse", reverse); }
             catch (Exception x) when (x is IOException or UnauthorizedAccessException) { /* keep this session's keys */ }
         });
         Changed?.Invoke();

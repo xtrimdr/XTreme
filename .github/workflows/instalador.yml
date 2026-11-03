@@ -43,20 +43,20 @@ jobs:
           $v = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
           if ("v$v" -ne $env:GITHUB_REF_NAME) { throw "Directory.Build.props dice $v y el tag es $env:GITHUB_REF_NAME" }
 
-      - name: Comprobar el DSP (wtlab comprobar-dsp)
+      - name: Comprobar el DSP (xtlab comprobar-dsp)
         shell: pwsh
         run: |
           dotnet build src/XtremeDaw.Lab -c Release -nologo -v:minimal
-          if ($LASTEXITCODE -ne 0) { throw 'wtlab no compiló' }
-          & src/XtremeDaw.Lab/bin/Release/net10.0-windows/wtlab.exe comprobar-dsp
-          if ($LASTEXITCODE -ne 0) { throw "wtlab comprobar-dsp falló ($LASTEXITCODE)" }
+          if ($LASTEXITCODE -ne 0) { throw 'xtlab no compiló' }
+          & src/XtremeDaw.Lab/bin/Release/net10.0-windows/xtlab.exe comprobar-dsp
+          if ($LASTEXITCODE -ne 0) { throw "xtlab comprobar-dsp falló ($LASTEXITCODE)" }
 
       - name: Instalador
         shell: pwsh
         run: |
           ./tools/make-installer.ps1
-          if (-not (Test-Path artifacts/publish/wtvsthost.exe)) { throw 'Falta wtvsthost.exe: no compiló el puente de VST3' }
-          if (-not (Test-Path artifacts/publish/wtvsthost32.exe)) { throw 'Falta wtvsthost32.exe: no compiló el puente de 32 bits' }
+          if (-not (Test-Path artifacts/publish/xtvsthost.exe)) { throw 'Falta xtvsthost.exe: no compiló el puente de VST3' }
+          if (-not (Test-Path artifacts/publish/xtvsthost32.exe)) { throw 'Falta xtvsthost32.exe: no compiló el puente de 32 bits' }
 
       - name: Subir el instalador sin firmar
         id: unsigned

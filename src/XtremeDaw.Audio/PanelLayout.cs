@@ -1,6 +1,6 @@
 namespace XtremeDaw.Audio;
 
-/// <summary>Port of computePanelRects (GuitarCam/src/shared/panelLayout.js).</summary>
+/// <summary>Port of computePanelRects (the web app's panelLayout.js).</summary>
 public static class PanelLayout
 {
     const double TargetCellAspect = 16.0 / 9;

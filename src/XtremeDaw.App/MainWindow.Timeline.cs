@@ -369,7 +369,8 @@ public partial class MainWindow
         var p = st.Project;
         var liveTracks = tracks.ToDictionary(t => t.Track.Id);
         var liveClips = tracks.SelectMany(t => t.Clips).ToDictionary(c => c.Clip.Id);
-        var audio = tracks.SelectMany(t => t.Clips).Where(c => c.Media != null)
+        // a file found again, or the undo of that: what is loaded came from somewhere else
+        var audio = tracks.SelectMany(t => t.Clips).Where(c => c.Media != null && c.AudioPath == st.Resolve(c.Media.Audio))
             .GroupBy(c => c.Media!.Id).ToDictionary(g => g.Key, g => g.First().Audio);
         foreach (var (id, a) in importedAudio) audio[id] = a;
         importedAudio.Clear();
@@ -395,13 +396,13 @@ public partial class MainWindow
             foreach (var c in t.Clips)
             {
                 var m = p.FindMedia(c.MediaId);
-                if (liveClips.TryGetValue(c.Id, out var lc) && lc.Media?.Id == m?.Id && used.Add(lc))
+                if (liveClips.TryGetValue(c.Id, out var lc) && lc.Media?.Id == m?.Id && !FilesMoved(st, lc) && used.Add(lc))
                 {
                     lc.Clip = c;
                     lc.Media = m;
                     clips.Add(lc);
                 }
-                else clips.Add(new LiveClip(c, m, m == null ? null : audio.GetValueOrDefault(m.Id)) { VideoPath = st.Resolve(m?.Video) });
+                else clips.Add(new LiveClip(c, m, m == null ? null : audio.GetValueOrDefault(m.Id)) { AudioPath = st.Resolve(m?.Audio), VideoPath = st.Resolve(m?.Video) });
             }
             if (liveTracks.TryGetValue(t.Id, out var live))
             {
@@ -420,6 +421,7 @@ public partial class MainWindow
         tracks = list;
         engine.UpdateTracks(list);
         SyncInstruments();
+        SyncSamplers();
         SyncEffects();
         RefreshTranspose();
         Timeline.LengthSec = engine.LengthSec;
@@ -500,6 +502,7 @@ public partial class MainWindow
     async Task SplitAtPlayhead()
     {
         if (sel == null) { Status(Loc.T("timeline.split.pick")); return; }
+        if (sel.Track.IsMidi) { await SplitMidiAtPlayhead(); return; }
         if (ClipUnderPlayhead() is not { } clip) { Status(Loc.T("timeline.split.nowhere")); return; }
         if (RefuseLocked(sel, clip)) return;
         string trackId = sel.Track.Id;
@@ -875,6 +878,18 @@ public partial class MainWindow
         return Task.CompletedTask;
     }
 
+    /// <summary>What a clip's menu offers when the click falls on a range over its track.</summary>
+    void AddRangeItems(List<object> list, LiveTrack track, bool enabled)
+    {
+        if (Timeline.Range is not { } range || !range.TrackIds.Contains(track.Track.Id)) return;
+        list.Add(MenuAction(Loc.T("menu.loopRange"), () => { Timeline.ClearRange(); SetLoopRange(range.Start, range.End); return Task.CompletedTask; },
+            icon: "", tip: Loc.T("menu.loopRange.tip")));
+        list.Add(MenuAction(Loc.T("menu.deleteRange"), () => DeleteRangeSelection(), Shortcuts.Label("delete"), enabled, danger: true));
+        list.Add(MenuAction(Loc.T("menu.deleteRangeClose"), () => DeleteRangeSelection(close: true), Shortcuts.Label("deleteClose"), enabled,
+            danger: true, tip: Loc.T("menu.deleteRangeClose.tip")));
+        list.Add(new Separator());
+    }
+
     void ShowTimelineMenu(LiveTrack track, LiveClip? clicked, Point point)
     {
         if (store == null || restoring) return;
@@ -884,15 +899,7 @@ public partial class MainWindow
         var group = clip == null ? TrackGroup(track) : null;
         var list = new List<object> { new MenuItem { Header = group != null ? Loc.T("menu.tracks.title", group.Count) : track.Track.Name, IsEnabled = false, FontSize = 11 } };
         Task Command(Action<Project> action, string type) => EditTimeline(p => { action(p); return track.Track.Id; }, type, clip?.Clip.Id);
-        if (point.X > Timeline.HeaderW && Timeline.Range is { } range && range.TrackIds.Contains(track.Track.Id))
-        {
-            list.Add(MenuAction(Loc.T("menu.loopRange"), () => { Timeline.ClearRange(); SetLoopRange(range.Start, range.End); return Task.CompletedTask; },
-                icon: "", tip: Loc.T("menu.loopRange.tip")));
-            list.Add(MenuAction(Loc.T("menu.deleteRange"), () => DeleteRangeSelection(), Shortcuts.Label("delete"), enabled, danger: true));
-            list.Add(MenuAction(Loc.T("menu.deleteRangeClose"), () => DeleteRangeSelection(close: true), Shortcuts.Label("deleteClose"), enabled,
-                danger: true, tip: Loc.T("menu.deleteRangeClose.tip")));
-            list.Add(new Separator());
-        }
+        if (point.X > Timeline.HeaderW) AddRangeItems(list, track, enabled);
         if (clip != null)
         {
             string id = clip.Clip.Id;
@@ -902,6 +909,12 @@ public partial class MainWindow
             bool free = !ClipEditing.IsLocked(track.Track, clip.Clip);
             // the boxed clips, when this is one of them, are duplicated, copied, aligned (or removed) all at once
             var boxed = Timeline.BoxedClipIds.Contains(id) ? Timeline.BoxedClipIds.ToList() : [id];
+            if (clip.Offline && clip.Media is { } offline)
+            {
+                list.Add(MenuAction(Loc.T("hist.findFile"), () => FindFile(store, offline), enabled: enabled));
+                list.Add(MenuAction(Loc.T("hist.findFolder"), () => FindInFolder(store), enabled: enabled, tip: Loc.T("hist.findFolder.tip")));
+                list.Add(new Separator());
+            }
             list.Add(MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled && free));
             list.Add(MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")));
             list.Add(MenuAction(Loc.T("menu.duplicate"), () => DuplicateClips(boxed), Shortcuts.Label("duplicate"), enabled));
@@ -1014,7 +1027,7 @@ public partial class MainWindow
         if (!track.Track.IsMidi) list.Add(TrackLockItem(track, enabled));
         list.Add(new Separator());
         if (track.Track.IsMidi)
-            list.Add(new MenuItem { Header = MenuHeader(Loc.T("vst.menu", track.Track.Instrument?.Name ?? Loc.T("vst.testTone")), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }),
+            list.Add(new MenuItem { Header = MenuHeader(Loc.T("vst.menu", InstrumentName(track.Track)), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }),
                 ItemsSource = InstrumentItems(track, enabled) });
         if (track.Track.IsMidi)
         {

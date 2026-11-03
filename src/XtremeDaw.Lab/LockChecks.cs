@@ -4,7 +4,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab proyecto verificar-bloqueo: the lock rule (<see cref="ClipEditing.IsLocked"/>) on a project in memory. A
+/// xtlab proyecto verificar-bloqueo: the lock rule (<see cref="ClipEditing.IsLocked"/>) on a project in memory. A
 /// locked clip, or one of a locked track, refuses a new place, a trim, a split, being deleted or carried off; its
 /// gain still changes; the edits over a range skip it (closing the gap leaves its track alone); a take recorded
 /// over it goes to a new track; and the lock is saved and read back.

@@ -80,4 +80,7 @@ public static class PluginScan
 
     /// <summary>The folders changed: nothing to reload until the next scan, but the page shows them again.</summary>
     public static void FoldersChanged() => Changed?.Invoke();
+
+    /// <summary>A plugin got its picture: the same, for the rows that show it.</summary>
+    public static void ThumbsChanged() => Changed?.Invoke();
 }

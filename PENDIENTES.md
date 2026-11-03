@@ -35,7 +35,7 @@ _Ideas y mejoras para la nativa._
   proyecto o por pista? ¿se elige con clic derecho en la perilla, en Configuración o en los dos? ¿qué hace sin destino
   (apagada con aviso, o agrega el efecto)? Lo mismo serviría para MIDI learn.
 - [ ] **Buses que mandan a otros buses** (sacado el 2026-10-26 a pedido del usuario: el circuito no quedaba claro).
-  El motor y `wtlab` ya lo soportan; falta una forma de verlo y editarlo que se entienda (un diagrama del ruteo, o
+  El motor y `xtlab` ya lo soportan; falta una forma de verlo y editarlo que se entienda (un diagrama del ruteo, o
   solo una salida por bus sin envíos) antes de volver a abrirlo.
 - …y más: ir sumando acá
 
@@ -49,23 +49,21 @@ _Ideas y mejoras para la nativa._
   - [ ] **Monitorear a través de la cadena**: hoy el monitoreo por software es la entrada cruda; para grabar una guitarra
     directa escuchando un amp sim, la pista armada tendría que pasar su entrada por sus slots (con la latencia de un
     bloque más la del plugin, sin PDC para ella).
-  - [ ] La imagen y el cabezal no se atrasan con la PDC: con un plugin de mucha latencia el video se adelanta a lo que
-    se oye. Correr `PositionSec` lo que atrasa el master mientras suena.
-  - [ ] Clear (Supertone) informa 9406 muestras de latencia pero atrasa 1470 (medido con `wtlab vst efecto`): la PDC
+  - [ ] Con la PDC, lo que se hace "en el cabezal" mientras suena (marcador, dividir, insertar) cae en `PositionSec`, adelante de lo que se ve y se oye por lo que atrasa el master. Se dejó así a propósito (solo se atrasa lo que se ve): decidir si esas acciones pasan a `HeardSec`.
+  - [ ] Al llegar al final de la canción el motor para y se pierde lo que atrasa la PDC: los últimos ms no se oyen. Seguir hasta `endFrame + PdcFrames`.
+  - [ ] Un plugin que recién termina de cargar en medio de una toma (o uno agregado mientras se graba) atrasa la mezcla más que lo que la toma tomó en cuenta: `Steady` cubre los bloques tarde y `minMaster` que un plugin se vaya, pero subir la demora no se puede frenar sin dejar ese plugin fuera de tiempo. Ver si conviene apagar esos slots hasta que pare la toma.
+  - [ ] Clear (Supertone) informa 9406 muestras de latencia pero atrasa 1470 (medido con `xtlab vst efecto`): la PDC
     usa lo que dice el plugin. Ver si otro momento para preguntarla (después de procesar) le da el número bueno.
-  - [ ] VST2: la ventana del plugin no se escala con la pantalla (a 150 % sale chica) y no se puede estirar; `wtvsthost` no le pasa una escala porque el formato no la tiene. Ver si conviene un modo DPI mixto para esa ventana.
+  - [ ] VST2: la ventana del plugin no se escala con la pantalla (a 150 % sale chica) y no se puede estirar; `xtvsthost` no le pasa una escala porque el formato no la tiene. Ver si conviene un modo DPI mixto para esa ventana.
   - [ ] VST2: probar con plugins de 32 bits reales y un shell de Waves (hasta ahora, un VST2 propio de prueba en 32 y 64 bits y Padness 2 Jr).
   - [ ] Un efecto apagado sigue procesando (así prenderlo no corta): ver si conviene pausarlo para ahorrar CPU.
   - [ ] La cola de una reverb VST3 en la exportación: la duración sale de los clips, sin contar cuánto suena el plugin
     después (`--cola` lo mide en el master; probarlo con Supermassive).
-  - [ ] Que el loop mande las notas de después de A a tiempo (hoy el primer bloque después del salto puede salir tarde).
-  - [ ] Un efecto VST3 que llega siempre un poco tarde pierde todos sus bloques (`VstInsert`, `TrySend`/`TryTake`):
-    que tome el bloque atrasado, como ya hace el instrumento en `VstBridge.Exchange`.
   - [ ] Elegir el preset del plugin desde la app y mostrar su carga de CPU. El "DSP %" de la barra de título mide solo
     el callback de ASIO, no el proceso de cada plugin; el comando `stats` del host ya da su tiempo por bloque.
   - [ ] Si vuelven callbacks de 4 ms con el transporte parado (2026-10-31, una vez: 90 en 5 minutos, sin GC, con Splice
     INSTRUMENT y un host anunciando 8192): `audio-cortes.log` ahora dice en qué tramo fue (entrada, pistas, resto). No
-    se pudo reproducir en `wtlab` y no se explica cómo el bloque anunciado alargaría el callback de la app.
+    se pudo reproducir en `xtlab` y no se explica cómo el bloque anunciado alargaría el callback de la app.
   - [ ] El hilo de audio del host es TIME_CRITICAL sin MMCSS, y a veces queda esperando un hilo del plugin (Windows sube
     ese hilo a prioridad 15): ver si pasarlo a MMCSS "Pro Audio" reduce los bloques perdidos.
   - [ ] Un GC de la UI frena el callback 6 a 8 ms cada unos 8 s con el motor parado (`audio-cortes.log`): ver qué asigna.
@@ -94,30 +92,27 @@ Etapas (cada una sirve sola):
 - [x] **Etapa 1: pistas y clips MIDI con piano roll** (hecho, ver [HECHO.md](HECHO.md)). Lo que anotó el usuario al
   probarla (2026-10-28):
   - [x] Varios clips MIDI a la vez, el piano roll después de Timeline y su grilla (hechos, ver [HECHO.md](HECHO.md)).
-  - [ ] Le falta: que los clips MIDI entren en las herramientas (dividir, borrar, escuchar) y en el rango; que la nota
-    que suena al tocar el piano roll pase por la cadena de la pista.
   - [ ] Más cosas en el piano roll (pedido del usuario, 2026-10-28, "bends y eso"): pitch bend y otras curvas por clip
     (modulación, sustain, expresión), dibujadas en carriles como la franja de velocidad. Con el tono de prueba se
     pueden oír los bends; lo demás tiene sentido con el sampler y los VST3, que las reciben como eventos MIDI.
-- [ ] **Etapa 2: sampler.** Un WAV por nota (kit de batería) o uno melódico que se transpone. Voces preasignadas en el
-  hilo de audio, y el mismo camino en la reproducción y en la exportación.
+- [x] **Etapa 2: sampler** (hecho, ver [HECHO.md](HECHO.md)), con un sample por pista (decisión del usuario, 2026-11-02: "más adelante vemos"). Lo que quedó:
+  - [ ] Varios samples: uno por nota (kit de batería) o por zonas de teclado y velocidad.
 - [ ] **Etapa 3: instrumentos VST3** con el puente del punto 2.
 - [x] **Etapa 4: entradas MIDI** (hecho, ver [HECHO.md](HECHO.md)). Lo que quedó para después:
   - [ ] Probarlo con un teclado de verdad: la latencia al tocar un VST3 (buffer + el bloque del puente) y si las notas
     grabadas caen donde se tocaron (`midiLatencyFrames`); en esta máquina no había ninguna entrada MIDI.
-  - [ ] Que una toma MIDI sobreviva si el programa se muere a la mitad (hoy las notas viven en memoria hasta parar;
-    las tomas de audio tienen su diario).
-  - [ ] Pasarle al VST3 el pedal, el pitch bend y la modulación como eventos (el puente solo lleva notas: el pedal se
-    resuelve antes, en `LiveNotes`), junto con los carriles de curvas del piano roll.
+  - [ ] Pasarle al plugin el pedal, el pitch bend y la modulación del teclado en vivo (el puente ya lleva pitch bend y
+    CC, los de las notas escritas: slide, porta, paneo, Mod X/Y; del teclado llegan solo notas y el pedal se resuelve
+    antes, en `LiveNotes`), junto con los carriles de curvas del piano roll.
   - [ ] Salidas MIDI (synths de hardware, clock hacia afuera) y Windows MIDI Services (varias apps con el mismo
     teclado a la vez).
-- [ ] Después: importar y exportar .mid.
+- [ ] Carriles de curvas por clip, con el LFO de las herramientas sobre ellos (hoy el LFO escribe los valores por nota).
 - [ ] Importar proyectos de FL Studio (.flp) (pedido del usuario, 2026-11-01): una sola vía, crea un proyecto nuevo y
   avisa lo que no entró. Trae tempo y compás, notas de los patterns (pistas MIDI), colocación de la playlist, clips de
   audio y samples (copiados a `media/`), nombres, colores, volumen y paneo. Los plugins propios de FL no se pueden traer
   (la pista queda con sus notas); el ruteo entre inserts no entra entero porque un bus sale solo al Master; los VST de
   terceros están por ver, y las automatizaciones quedan fuera de la primera etapa. Lector propio en C# en
-  `XtremeDaw.Projects`, sin dependencias, con su comando de `wtlab`. El formato no está documentado y cambia con cada
+  `XtremeDaw.Projects`, sin dependencias, con su comando de `xtlab`. El formato no está documentado y cambia con cada
   versión de FL: PyFLP (GPL v3) sirve como referencia, sin copiar su código. Hacen falta `.flp` reales del usuario para
   probarlo.
 
@@ -165,7 +160,7 @@ Etapas (cada una sirve sola):
 Sobre la toma, no en vivo, y solo monofónico (voz, punteo, bajo; un rasgueo no se separa nota por nota). Es un editor
 opcional que se abre desde el clip, como el piano roll: no suma pasos a "grabo, mezclo y exporto". Base que ya hay:
 `PitchShifter` (no cambia el largo, los ataques quedan en su lugar), `TransposeCache` (render en segundo plano a
-`cache/`, el media no se toca) y el YIN de `PitchTap`. Cada etapa se ejercita desde `wtlab`.
+`cache/`, el media no se toca) y el YIN de `PitchTap`. Cada etapa se ejercita desde `xtlab`.
 - [ ] **Etapa 1: detectar notas.** YIN sobre toda la toma → curva de pitch → "gotas" (una por nota) dibujadas sobre el
   audio, tipo piano roll. Sin corregir todavía: sirve para ver si la detección anda con tomas reales.
 - [ ] **Etapa 2: corregir.** `PitchShifter` con una relación de tono por cuadro (hoy una sola para toda la toma).
@@ -251,7 +246,7 @@ La etapa 1 está hecha (ver [HECHO.md](HECHO.md)). Falta:
 
 - [ ] El instalador no lleva `lib\demucs-graphs` (fuera de git): hay que llevarlos a GitHub Actions, por repo o release, ya que sin ellos stems dice que la conversión no está incluida. Se regeneran con `tools\make-demucs-templates.py`.
 
-- [ ] Probar la separación en una placa NVIDIA (`wtlab separar`): solo se probó en una RX 6800 XT. Si falla, sigue en la
+- [ ] Probar la separación en una placa NVIDIA (`xtlab separar`): solo se probó en una RX 6800 XT. Si falla, sigue en la
   CPU sola, sin dar audio equivocado.
 
 ### Sugerencias (para decidir)
@@ -298,17 +293,21 @@ de video y normalización ya están anotados arriba; el análisis amplía su alc
 
 ## Notas
 
-- Lo que quedó del nombre viejo (2026-10-29, ver HECHO): la carpeta `D:\Programacion\GuitarCamNative` (la memoria
-  de Claude va por esa ruta: moverla también; no crear nunca otro repo `GuitarCamNative` en GitHub, rompe la
-  redirección) y el archivo `guitarcam.json` de cada proyecto (renombrarlo pide migrar al abrir y
-  que las versiones viejas no lo vean). Antes de publicar con el nombre nuevo, buscarlo en las oficinas de marcas
-  (USPTO, INPI). El botón de descarga del README apunta a `XTreme-Setup.exe`: anda recién con el próximo release.
+- Del nombre viejo: no crear nunca otro repo `GuitarCamNative` en GitHub, rompe la redirección. Antes de publicar con
+  el nombre nuevo, buscarlo en las oficinas de marcas (USPTO, INPI). El botón de descarga del README apunta a
+  `XTreme-Setup.exe`: anda recién con el próximo release.
 - Firma del instalador: falta pedirla a SignPath Foundation (gratis para código abierto; el README ya tiene la
   política de firma que piden). Hasta entonces el workflow arma el instalador sin firmar y Windows SmartScreen avisa
   al instalarlo. Con la cuenta: proyecto `XTreme` (el slug por defecto del workflow) con el repo
   `xtrimdr/XTreme`, política `release-signing`, el secreto `SIGNPATH_API_TOKEN` y la variable
   `SIGNPATH_ORGANIZATION_ID` en GitHub; la firma se prende sola.
 - `AudioGapLog` es un diagnóstico provisorio: sacarlo (o dejarlo detrás de una opción) cuando el audio esté confirmado.
+- Dudas de la revisión del audio en vivo (2026-11-02, leyendo el código, sin ASIO):
+  - [ ] Un plugin que termina de cargar en medio de una toma sube el PDC por encima del de la toma (`recPdcFrames`, que solo sirve de piso): la mezcla se atrasa y la toma queda corrida eso. ¿Se deja cargarlo en silencio hasta el final, o se avisa?
+  - [ ] Una toma recuperada después de un cierre inesperado entra sin el PDC: el diario guarda `SyncMs` antes de arrancar (`GetLatencyInfo` no lo cuenta y todavía no se sabe). Parar normal sí lo suma. El diario se podría reescribir una vez arrancada.
+  - [ ] Al llegar al final del tema (sin bucle) con PDC, los últimos `PdcFrames` quedan en las líneas de retardo y no se oyen, y el cabezal salta esos cuadros. Son milisegundos.
+  - [ ] El primer Play después de una toma, o de un plugin atrasado, baja la latencia del slot enseguida pero el resto de la mezcla recién en el próximo tick (`UpdateLatency`): hasta 16 ms desalineados al arrancar.
+  - [ ] `UpdateLatency` asigna un cierre chico en cada tick aunque no cambie nada (`Index` lo usan lambdas, y C# lo crea al entrar). Moverlo a un método aparte lo evita. `RefreshClearButtons` y el `videoFade` de `Tick` también asignan por tick.
 
 - Puntitos en la preview (resuelto): con la ventana permitiendo transparencia, algunos píxeles oscuros
   del video dejaban ver la ventana de atrás. `TransparencyLevelHint="None"` lo corta, y con el video

@@ -5,14 +5,14 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// The project chip's menu (asked by the user): the projects manager, and "Volver a una versión guardada" with the
-/// snapshots of historial/ (<see cref="ProjectStore.Snapshots"/>), which before could only be restored from wtlab; the
+/// snapshots of historial/ (<see cref="ProjectStore.Snapshots"/>), which before could only be restored from xtlab; the
 /// same versions, with their names, are in Historial → Versiones (MainWindow.Steps.cs), which goes back through here.
 /// Going back saves the current state as one more snapshot first, so it is undone from the same list; the undo
 /// steps are dropped, since they belong to the state that was left.
 /// </summary>
 public partial class MainWindow
 {
-    /// <summary>Newest snapshots listed: older ones stay in historial/ and in wtlab.</summary>
+    /// <summary>Newest snapshots listed: older ones stay in historial/ and in xtlab.</summary>
     const int MaxVersionsShown = 20;
 
     async Task ShowSessionMenu()

@@ -4,7 +4,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab comprobar-dsp, the lanes (<see cref="Automations"/>) through the export's mix: a flat lane changes nothing, and
+/// xtlab comprobar-dsp, the lanes (<see cref="Automations"/>) through the export's mix: a flat lane changes nothing, and
 /// the fader, the pan, the mute, a send that starts at nothing and a native effect's knob each move the sound to the
 /// value their law says; closing a gap keeps both sides, and a lane survives being saved. A steady signal (0.5 on both
 /// sides) makes every gain readable off one sample.

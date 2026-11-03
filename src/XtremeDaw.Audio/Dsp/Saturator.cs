@@ -1,7 +1,7 @@
 namespace XtremeDaw.Audio.Dsp;
 
 /// <summary>
-/// Port of gc-saturator (GuitarCam/src/audio/fxWorklet.ts). tanh waveshaper with first-order ADAA on the
+/// Port of gc-saturator (the web app's fxWorklet.ts). tanh waveshaper with first-order ADAA on the
 /// residual only (curve minus its straight line, then a DC blocker), so the dry signal passes untouched.
 ///   tube: biased curve -> even harmonics. tape: symmetric, soft high cut + head bump at 90 Hz.
 /// </summary>

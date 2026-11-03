@@ -21,7 +21,7 @@ static class DetailCommands
         var fx = new ExportVideoFxSpec(Sharpness: a.Double("nitidez", 60), Clarity: a.Double("claridad", 60), Glow: a.Double("resplandor", 0));
         var look = new ExportColorSpec(Look: a.Get("look", "none"), Amount: a.Double("intensidad", 100));
         var amounts = VideoDetail.For(look, fx);
-        string dir = a.Get("carpeta") ?? Path.Combine(Path.GetTempPath(), "wtlab-nitidez");
+        string dir = a.Get("carpeta") ?? Path.Combine(Path.GetTempPath(), "xtlab-nitidez");
         Directory.CreateDirectory(dir);
 
         // the frame: from a video, or a pattern with edges, gradients and fine lines

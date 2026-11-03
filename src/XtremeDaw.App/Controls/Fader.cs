@@ -8,7 +8,7 @@ using Avalonia.Media.Immutable;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// Port of Fader in GuitarCam/src/components/Mixer.tsx: a vertical fader with a square-root travel so unity (100%)
+/// Port of Fader in the web app's Mixer.tsx: a vertical fader with a square-root travel so unity (100%)
 /// sits around 80% of the throw, like a console. Drag (Shift = fine), wheel (Shift = fine), double-click = 0 dB.
 /// The cap is a console's (asked by the user: big and easy to grab with the mouse): a grey shaded body with grooves and
 /// a white line at the level, the one shading and shadow in the window, made once and shared by every fader.

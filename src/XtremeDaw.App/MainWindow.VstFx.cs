@@ -13,7 +13,7 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// VST3 effects in the slots of tracks and buses (<see cref="InsertSlot.VstKind"/>), one more kind of slot mixed with the
-/// built-in ones. Each slot's plugin runs in its own wtvsthost.exe (<see cref="VstBridge"/>), loaded in the background
+/// built-in ones. Each slot's plugin runs in its own xtvsthost.exe (<see cref="VstBridge"/>), loaded in the background
 /// after every edit that may add or take one away (<see cref="SyncEffects"/>), and the live engine finds it by owner and
 /// slot (<see cref="LiveVst"/>); until it is up, or if it can't be opened, the slot lets the sound through and a toast says
 /// why. What the user changes in the plugin's window is kept in the slot's <see cref="PluginRef.State"/> (outside the
@@ -178,7 +178,7 @@ public partial class MainWindow
 
     void EffectSaid(string key, LoadedEffect loaded, string line)
     {
-        if (!effects.TryGetValue(key, out var current) || current != loaded || PluginKeySaid(line)) return;
+        if (!effects.TryGetValue(key, out var current) || current != loaded || PluginKeySaid(line) || PluginThumbSaid(loaded.Bridge, loaded.Plugin, line)) return;
         if (line == "toolbar listen")
         {
             if (tracks.FirstOrDefault(t => t.Track.Id == loaded.Owner) is { } track) ToggleLaneListen(loaded.Bridge, track, id => AutoTarget.Vst(loaded.Slot, id));
@@ -269,12 +269,14 @@ public partial class MainWindow
         if (effects.TryGetValue(EffectKey(owner, slotId), out var loaded))
         {
             DressPluginWindow(loaded.Bridge, loaded.Bridge.Name);
-            // a bus's effect has no bar: it can't have lanes
+            // a bus's effect can't have lanes: its bar only has the picture
             if (tracks.FirstOrDefault(t => t.Track.Id == owner) is { } track)
             {
-                loaded.Bridge.Command($"toolbar {ListenBarButton}");
+                string listen = ListenBarButton;
+                loaded.Bridge.Command($"toolbar {(listen.Length > 0 ? listen + "|-|" : "")}{ThumbBarButton}");
                 TellPluginTrack(loaded.Bridge, loaded.Bridge.Name, track.Track);
             }
+            else loaded.Bridge.Command($"toolbar {ThumbBarButton}");
             loaded.Bridge.OpenEditor(TryGetPlatformHandle()?.Handle ?? 0);
         }
         else if (EffectSlot(owner, slotId)?.Vst?.Plugin is { } plugin)
@@ -364,7 +366,7 @@ public partial class MainWindow
             FxIcon.SetColor(icon, Palette.Accent);
             var item = new MenuItem { Header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
                 Children = { icon, new TextBlock { Text = label, FontSize = 12, VerticalAlignment = VerticalAlignment.Center } } } };
-            if (p.Categories.Length > 0)
+            if (!PluginThumbView.AddTip(item, p) && p.Categories.Length > 0)
             {
                 ToolTip.SetTip(item, p.Categories.Replace("|", " · "));
                 ToolTip.SetShowDelay(item, (int)MenuTipDelay.TotalMilliseconds);

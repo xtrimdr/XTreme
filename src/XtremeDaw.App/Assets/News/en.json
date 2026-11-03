@@ -1,6 +1,117 @@
 {
   "releases": [
     {
+      "version": "0.9.13",
+      "items": [
+        {
+          "icon": "E8C6",
+          "title": "Tools on MIDI clips",
+          "text": "Split, Delete, Listen and Range now work on MIDI clips. Splitting doesn't change what sounds. Piano roll notes go through the track's effects.",
+          "topic": "split-copy"
+        },
+        {
+          "icon": "E8C8",
+          "title": "Linked files",
+          "text": "Copy a linked take into the project from the Library. If a file moved, choose it or search a folder and its clips play again.",
+          "topic": "import"
+        },
+        {
+          "icon": "E74E",
+          "title": "Safer MIDI takes",
+          "text": "Notes are written to disk as you record. If the program shuts down suddenly, they come back when you open the project.",
+          "topic": "midi-keyboard"
+        },
+        {
+          "icon": "E9D9",
+          "title": "Steadier VST effects and instruments",
+          "text": "An effect that runs late no longer cuts out: it plays one block later. In a loop, an instrument's first beat of each lap lands right on A. The picture and the playhead follow what you hear even with a high-latency plugin, and a plugin that falls behind no longer shifts a take."
+        },
+        {
+          "icon": "E8A7",
+          "title": "New project format",
+          "text": "Projects are saved as xtreme_project.json. Projects and settings from earlier versions no longer open."
+        },
+        {
+          "icon": "E90F",
+          "title": "Piano roll tools",
+          "text": "Arpeggiate, strum, chop, Riff Machine, chord progressions, advanced quantize, groove and more, with the result playing as you move the values.",
+          "topic": "piano-tools"
+        },
+        {
+          "icon": "E8D6",
+          "title": "Slides and per-note expression",
+          "text": "Each note can slide and have portamento, pan, release and modulation. Double-click the note.",
+          "topic": "piano-tools"
+        },
+        {
+          "icon": "E8E5",
+          "title": ".mid files and score",
+          "text": "Import and export .mid, and get the clip as a PDF on staves.",
+          "topic": "piano-tools"
+        },
+        {
+          "icon": "F0E2",
+          "title": "Several instruments in a pattern",
+          "text": "Add instruments to a pattern from the piano roll: each goes on its own track, and the others' notes show behind as ghost notes.",
+          "topic": "patterns"
+        },
+        {
+          "icon": "EC4F",
+          "title": "Sampler",
+          "text": "Drag a sound onto a MIDI track and play it across the keyboard. It detects its note and tunes it, with loop, envelopes, filters and LFO. It hears each note's slide and pan, and its knobs can be automated.",
+          "topic": "sampler"
+        },
+        {
+          "icon": "E740",
+          "title": "Maximize a panel",
+          "text": "Enter gives the whole window to the panel you're using: video, timeline, piano roll, mixer or mastering. Enter again and everything goes back as it was.",
+          "topic": "window"
+        },
+        {
+          "icon": "E765",
+          "title": "Keys from other DAWs",
+          "text": "In Settings → Keyboard shortcuts, switch to the keys of Cubase, Logic Pro, FL Studio, Reaper or Studio Pro with one click.",
+          "topic": "shortcuts"
+        },
+        {
+          "icon": "E71B",
+          "title": "Copy or link on import",
+          "text": "When importing, choose whether the file is copied into the project or used where it is, without duplicating it. Also in Settings.",
+          "topic": "import"
+        },
+        {
+          "icon": "E8D6",
+          "title": "Scale from the plugin",
+          "text": "The virtual keyboard's scale and chords can now be chosen in the plugin's window too.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E8A7",
+          "title": "Keyboard in its own window",
+          "text": "Move the virtual keyboard to a separate window with the button at the end of its settings.",
+          "topic": "virtual-keyboard"
+        },
+        {
+          "icon": "E722",
+          "title": "Plugin thumbnails",
+          "text": "Each plugin takes its thumbnail the first time you open its window. It shows in Settings and when you hover over the plugin menus.",
+          "topic": "plugins"
+        },
+        {
+          "icon": "E8A7",
+          "title": "Close the active view",
+          "text": "Press Piano roll, Mixer or Mastering again to go back to the timeline.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "E767",
+          "title": "Instruments stay silent on opening",
+          "text": "A newly opened instrument no longer sounds until you play it.",
+          "topic": "plugins"
+        }
+      ]
+    },
+    {
       "version": "0.9.12",
       "items": [
         {

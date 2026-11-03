@@ -235,7 +235,7 @@ public sealed class ExportException : Exception
 }
 
 /// <summary>
-/// Port of the MP4 export pipeline (<c>GuitarCam/server/index.js</c>, <c>src/session/exportApi.ts</c>,
+/// Port of the MP4 export pipeline (the web app's <c>index.js</c>, <c>src/session/exportApi.ts</c>,
 /// <c>src/components/ExportDialog.tsx</c>, <c>src/shared/panelLayout.js</c>, <c>src/shared/colorGrade.js</c>,
 /// and <c>src/shared/videoFx.js</c>):
 /// renders the audio mix offline via <see cref="MixRenderer"/> (same DSP graph as live playback, without

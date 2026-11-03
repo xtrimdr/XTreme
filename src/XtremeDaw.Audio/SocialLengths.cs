@@ -2,7 +2,7 @@ namespace XtremeDaw.Audio;
 
 /// <summary>How long a video can be on a network. <c>Repeats</c>: past the limit the video is cut into several
 /// (stories), so the mark comes back every <c>Sec</c>. The window shows <c>Label</c> through <c>Loc</c>
-/// ("social.{id}"); here it is what wtlab prints.</summary>
+/// ("social.{id}"); here it is what xtlab prints.</summary>
 public sealed record SocialLength(string Id, string Label, double Sec, bool Repeats = false);
 
 /// <summary>

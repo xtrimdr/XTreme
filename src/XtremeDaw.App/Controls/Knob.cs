@@ -8,7 +8,7 @@ using Avalonia.Media.Immutable;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// Port of Knob in GuitarCam/src/components/ui.tsx (the mixer's knobs): a 270° arc lit from the reset value to the
+/// Port of Knob in the web app's ui.tsx (the mixer's knobs): a 270° arc lit from the reset value to the
 /// current one, drag up/down (relative, Shift = fine), wheel (50 steps over the range, Shift = fine) and double-click
 /// to reset.
 /// The cap is a console's, like the <see cref="Fader"/>'s (asked by the user): a ridged skirt, a shaded top, a shadow

@@ -62,6 +62,22 @@ static class ImportChecks
             Check(t2 != empty && p.Tracks.Count == 2 && t2.Clips[0].AtSec == 0, "con la pista ocupada crea una nueva; nunca antes de 0");
             Check(p.Log.Last().Type == "audio-imported", "queda en la actividad");
 
+            int copies = Directory.GetFiles(Path.Combine(proj, "media")).Length;
+            var linked = AudioImport.LinkIn(proj, src);
+            Check(linked.RelativePath == Path.GetFullPath(src) && Directory.GetFiles(Path.Combine(proj, "media")).Length == copies, "vincular deja el archivo donde está y no copia nada");
+            var lt = AudioImport.AddClip(p, linked, 0);
+            var lm = p.FindMedia(lt.Clips[0].MediaId)!;
+            Check(lm.Linked && !p.FindMedia(t.Clips[0].MediaId)!.Linked && lm.Audio == Path.GetFullPath(src), "el medio queda vinculado, con su ruta entera");
+            var saved = ProjectLibrary.Clone(p);
+            Check(saved.FindMedia(lm.Id)?.Audio == lm.Audio, "la ruta sobrevive al guardado");
+            var (gone, bytes, failure) = ProjectHistory.TrashMedia(proj, [lm]);
+            Check(gone.Count == 1 && bytes == 0 && failure == null && File.Exists(src), "borrar la toma vinculada no toca el archivo ni dice que libera lugar");
+            var soundless = new AudioLoader.LoadedAudio(new float[4800], new float[4800], 48000, 48000, 2, Converted: true);
+            var wav = AudioImport.LinkIn(proj, src, soundless);
+            Check(!Path.IsPathRooted(wav.RelativePath) && wav.RelativePath.EndsWith(".wav") && File.Exists(Path.Combine(proj, wav.RelativePath)), "lo que solo lee FFmpeg entra como WAV aunque se vincule");
+            var picture = AudioImport.LinkVideoIn(src, wav);
+            Check(picture.Video == Path.GetFullPath(src) && !Path.IsPathRooted(picture.RelativePath), "la imagen se vincula aunque su sonido sea un WAV");
+
             string bad = Path.Combine(tmp, "roto.mp3");
             File.WriteAllBytes(bad, [1, 2, 3, 4, 5, 6, 7, 8]);
             int before = Directory.GetFiles(Path.Combine(proj, "media")).Length;

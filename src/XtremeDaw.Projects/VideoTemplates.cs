@@ -18,7 +18,7 @@ public sealed class VideoTemplate
 }
 
 /// <summary>
-/// Video templates, program-wide like the theme. Port of TemplatesSection in GuitarCam/src/components/ColorPanel.tsx:
+/// Video templates, program-wide like the theme. Port of TemplatesSection in the web app's ColorPanel.tsx:
 /// same name (any case) updates that template, the list keeps its order. Stored in
 /// %APPDATA%\XTreme\plantillas-video.json instead of localStorage (gc.videoTemplates).
 /// </summary>

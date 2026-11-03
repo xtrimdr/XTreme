@@ -61,7 +61,7 @@ static class RangeChecks
         Row("Rango: muy corto no exporta", ExportRange.Fit(new ExportRange(3.8, 9), 4) is null ? "nada" : "algo", "nada", ExportRange.Fit(new ExportRange(3.8, 9), 4) is null);
 
         // 4. the takes: one over A (cut there), one past B (out), one inside with its fade; panels renumbered
-        string tmp = Path.Combine(Path.GetTempPath(), $"wtlab-rango-{Guid.NewGuid():N}");
+        string tmp = Path.Combine(Path.GetTempPath(), $"xtlab-rango-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tmp);
         try
         {

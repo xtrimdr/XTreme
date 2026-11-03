@@ -181,6 +181,7 @@ public partial class MainWindow : Window
         InitSidebarToggles();
         InitMixer();
         InitLayout();
+        InitMaxPanel();
         InitTopBar();
         InitUpdates();
         InitMeters();
@@ -447,6 +448,7 @@ public partial class MainWindow : Window
         takePreview.Stop();
         StopSample();
         DropAllInstruments();
+        DropAllSamplers();
         DropAllEffects();
         historyConfirmPurge = false;
         historyDeletingExport = null;
@@ -533,7 +535,7 @@ public partial class MainWindow : Window
             return p.Tracks.Select(t => new LiveTrack(t, t.Clips.Select(c =>
             {
                 var m = p.FindMedia(c.MediaId);
-                return new LiveClip(c, m, m == null ? null : AudioOf(m)) { VideoPath = st.Resolve(m?.Video) };
+                return new LiveClip(c, m, m == null ? null : AudioOf(m)) { AudioPath = st.Resolve(m?.Audio), VideoPath = st.Resolve(m?.Video) };
             }).ToList(), PlaybackEngine.SampleRate)).ToList();
         });
         var previous = tracks;
@@ -544,6 +546,7 @@ public partial class MainWindow : Window
         foreach (var t in list) t.SetMidi(p.Settings.Bpm);
         engine.SetTracks(list, p.Settings);
         SyncInstruments();
+        SyncSamplers();
         SyncEffects();
         RefreshTranspose();
         SessionName.Text = p.Name;
@@ -600,7 +603,7 @@ public partial class MainWindow : Window
         [
             (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"), (NewTrackButton, Loc.T("timeline.newTrack"), "newTrack"), (VirtualKeysButton, Loc.T("sc.virtualKeys"), "virtualKeys"),
             (ToStartButton, Loc.T("transport.start.tip"), "toStart"), (LoopToggle, Loc.T("transport.loop.tip"), "loop"),(CountInToggle, Loc.T("transport.countin.tip"), "countIn"),
-            (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (FitButton, Loc.T("transport.fit.tip"), "fit"), (HelpButton, Loc.T("help.title"), "help"),
+            (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (MaxPanelButton, Loc.T("sc.maximize"), "maximize"), (FitButton, Loc.T("transport.fit.tip"), "fit"), (HelpButton, Loc.T("help.title"), "help"),
         ]);
         ApplyShortcutTips();
         Shortcuts.Changed += ApplyShortcutTips;
@@ -647,6 +650,7 @@ public partial class MainWindow : Window
         TellTimelineKeys(e, down: true);
         if (Unsaved.HandleKey(e)) return;
         if (TempoAsk.HandleKey(e)) return;
+        if (ImportAsk.HandleKey(e)) return;
         if (Feedback.HandleKey(e)) return;
         if (News.HandleKey(e)) return;
         if (Stems.HandleKey(e)) return;
@@ -685,7 +689,7 @@ public partial class MainWindow : Window
         if (VirtualKeyDown(e)) { e.Handled = true; return; }
         if (restoring) { e.Handled = true; return; }
         if (RecordingBusy && await RecordingKey(e)) return;
-        if (PianoShown && pianoRoll.HandleKey(e)) { e.Handled = true; return; }
+        if (PianoShown && !ViewsCovered && pianoRoll.HandleKey(e)) { e.Handled = true; return; }
         if (e.Key == Key.Escape)
         {
             Timeline.CancelGesture();
@@ -792,8 +796,7 @@ public partial class MainWindow : Window
                 await PasteClips();
                 break;
             case "mixer":
-                if (mixerView && !masteringView && !pianoView) SetMixerView(false);
-                else ShowBottomView(mastering: false);
+                ToggleMixer();
                 break;
             case "click":
                 ClickToggle.IsChecked = ClickToggle.IsChecked != true;
@@ -825,6 +828,12 @@ public partial class MainWindow : Window
                 break;
             case "rightPanel":
                 SetProjectBarCollapsed(projectBarExpanded.IsVisible);
+                break;
+            // an open list takes Enter to pick
+            case "maximize" when e.Source is Control list && list.FindAncestorOfType<ComboBox>(true) is { IsDropDownOpen: true }:
+                return;
+            case "maximize":
+                ToggleMaxPanel();
                 break;
             case "fullScreen":
                 ToggleFullScreen();
@@ -859,7 +868,8 @@ public partial class MainWindow : Window
 
     void Tick()
     {
-        double pos = engine.PositionSec;
+        // what is shown goes with what is heard; the lanes on the native effects, with the tracks (FollowLanes)
+        double pos = engine.HeardSec;
         bool videoFade = Preview.Playhead != pos && tracks.Any(t => t.Clips.Any(c => c.Clip.FadeInSec > 0 || c.Clip.FadeOutSec > 0 || c.Clip.VideoFadeInSec > 0 || c.Clip.VideoFadeOutSec > 0));
         Preview.Playhead = pos;
         bool timed = engine.Playing || RecordingBusy;
@@ -877,7 +887,7 @@ public partial class MainWindow : Window
             t.GrPeak = gr;
             t.GrShow = gr < t.GrShow ? gr : t.GrShow + (gr - t.GrShow) * 0.12;
         }
-        FollowLanes(pos);
+        FollowLanes(engine.PositionSec);
         TickListen();
         Timeline.SetPlayhead(pos, engine.Playing);
         pianoRoll.SetPlayhead(pos);
@@ -1013,7 +1023,9 @@ public partial class MainWindow : Window
         if (restoring || RecordingBusy || store == null || store.ReadOnly || Projects.IsVisible) return;
         var st = store;
         string? selected = sel?.Track.Id;
+        var places = st.Project.Media.ToDictionary(m => m.Id, m => (m.Audio, m.Video));
         if (!move(st.Project)) return;
+        ForgetFileFacts(st.Project.Media.Where(m => places[m.Id] != (m.Audio, m.Video)).Select(m => m.Id));
         restoring = true;
         MarkDirty();
         saveTimer.Stop();
@@ -1021,7 +1033,7 @@ public partial class MainWindow : Window
         UpdateUndoButtons();
         try
         {
-            bool sameClips = tracks.Count == st.Project.Tracks.Count && tracks.Select((t, i) =>
+            bool sameClips = !tracks.Any(t => t.Clips.Any(c => FilesMoved(st, c))) && tracks.Count == st.Project.Tracks.Count && tracks.Select((t, i) =>
             {
                 var restored = st.Project.Tracks[i];
                 return t.Track.Id == restored.Id && t.Track.Video == restored.Video
@@ -1076,6 +1088,7 @@ public partial class MainWindow : Window
             RefreshTranspose();
             MarkDirty();
             UpdateUndoButtons();
+            RefreshHistory();
         }
     }
 

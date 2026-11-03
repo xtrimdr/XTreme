@@ -477,6 +477,7 @@ public partial class MainWindow
             {
                 items.Add(MenuAction(Loc.T("smp.menu.insertAudio"), () => ImportAudio([f.Path], engine.PositionSec, sel?.Track.Id, false)));
             }
+            items.Add(MenuAction(Loc.T("smp.menu.sampler"), () => SampleToSampler(f.Path)));
             items.Add(MenuAction(Loc.T(samples.IsFavorite(f) ? "smp.menu.unfavorite" : "smp.menu.favorite"), () => { ToggleSampleFavorite(f); return Task.CompletedTask; }, icon: ""));
             items.Add(new Separator());
             items.Add(MenuAction(Loc.T("hist.reveal"), () => { RevealInExplorer(null, f.Path); return Task.CompletedTask; }, icon: ""));

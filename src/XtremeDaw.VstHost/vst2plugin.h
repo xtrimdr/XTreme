@@ -1,4 +1,4 @@
-// One VST2 plugin inside wtvsthost: what Host (main.cpp) needs from it, so the shared memory, the commands and the
+// One VST2 plugin inside xtvsthost: what Host (main.cpp) needs from it, so the shared memory, the commands and the
 // window stay the same for both formats. A parameter's id is its index. One process hosts one plugin, so the host
 // callback finds it through Vst2Plugin::current (a plugin calls back before its Effect exists).
 #pragma once
@@ -146,7 +146,31 @@ public:
         e.deltaFrames = offset;
         e.data[0] = on ? 0x90 : 0x80;
         e.data[1] = static_cast<uint8_t>(pitch);
-        e.data[2] = on ? static_cast<uint8_t>(std::clamp(static_cast<int>(velocity * 127 + 0.5f), 1, 127)) : 0;
+        e.data[2] = static_cast<uint8_t>(std::clamp(static_cast<int>(velocity * 127 + 0.5f), on ? 1 : 0, 127));
+    }
+
+    /// A CC, or the pitch bend in its 14 bits.
+    void AddControl(int32_t offset, int controller, float value)
+    {
+        if (eventList.count >= MaxEvents) return;
+        auto& e = eventData[eventList.count++];
+        e = {};
+        e.type = vst2::MidiEventType;
+        e.byteSize = sizeof(vst2::MidiEvent);
+        e.deltaFrames = offset;
+        if (controller == gcvst::ControlBend)
+        {
+            int bend = std::clamp(static_cast<int>(value * 16383 + 0.5f), 0, 16383);
+            e.data[0] = 0xE0;
+            e.data[1] = static_cast<uint8_t>(bend & 0x7F);
+            e.data[2] = static_cast<uint8_t>(bend >> 7);
+        }
+        else
+        {
+            e.data[0] = 0xB0;
+            e.data[1] = static_cast<uint8_t>(controller);
+            e.data[2] = static_cast<uint8_t>(std::clamp(static_cast<int>(value * 127 + 0.5f), 0, 127));
+        }
     }
 
     /// One piece of a block; the notes added since <see cref="ClearNotes"/> go with it. A plugin with one output is heard on both sides.

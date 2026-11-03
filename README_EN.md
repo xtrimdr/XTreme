@@ -29,8 +29,6 @@ It also makes **videos**: if you record with a camera, every take keeps its pict
 one panel per take, with color grading and formats for social media. It is an extra for when you need it; without a
 camera, it works like any other DAW.
 
-It used to be called **GuitarCam Studio Native**: when you update, your settings and projects are still there.
-
 <details>
 <summary><b>Before installing</b></summary>
 
@@ -148,13 +146,13 @@ XTreme is **under constant development**. The goal is to take it to a level that
 for people just starting out who want to make music quickly and without complications, and for professionals
 who want to make music seriously.
 
-MIDI tracks with a piano roll and VST3 instruments and effects are in; next up are knobs of your own for the plugins'
-parameters, a built-in sampler and more studio tools. What is planned and what is missing is
+MIDI tracks with a piano roll, a built-in sampler and VST3 instruments and effects are in; next up are knobs of your
+own for the plugins' parameters and more studio tools. What is planned and what is missing is
 in [PENDIENTES.md](PENDIENTES.md) (in Spanish).
 
 ## More information
 
-[DETALLES_EN.md](DETALLES_EN.md): requirements, how to build, keyboard shortcuts, how it is built and `wtlab`.
+[DETALLES_EN.md](DETALLES_EN.md): requirements, how to build, keyboard shortcuts, how it is built and `xtlab`.
 
 ## Contributing and license
 

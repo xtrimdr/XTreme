@@ -10,7 +10,7 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// Instrument plugins on MIDI tracks (native only, stage 3 of the MIDI editor, the user's order: instruments first):
-/// each track's <see cref="Track.Instrument"/> runs in its own wtvsthost.exe (<see cref="VstBridge"/>), loaded in the
+/// each track's <see cref="Track.Instrument"/> runs in its own xtvsthost.exe (<see cref="VstBridge"/>), loaded in the
 /// background after every edit that may change them (<see cref="SyncInstruments"/>), and plays through the track's
 /// <see cref="LiveTrack.Instrument"/>; until it is up and sounding (<see cref="InstrumentWarmup"/>), or if it can't be
 /// opened, the track plays the test tone and a toast says why. What the user changes in the plugin's window is saved in the project: when it says "dirty" or its
@@ -56,6 +56,9 @@ public partial class MainWindow
     TimelineView.InstrumentState InstrumentStateOf(string trackId)
     {
         if (instruments.ContainsKey(trackId)) return TimelineView.InstrumentState.Ready;
+        if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Sampler != null)
+            return !samplers.TryGetValue(trackId, out var sampler) || sampler.Loading ? TimelineView.InstrumentState.Loading
+                : sampler.Missing ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Ready;
         var plugin = tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Instrument;
         if (plugin == null) return TimelineView.InstrumentState.TestTone;
         return instrumentFailed.Contains(FailKey(trackId, plugin)) ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Loading;
@@ -194,7 +197,7 @@ public partial class MainWindow
 
     void InstrumentSaid(string trackId, LoadedInstrument loaded, string line)
     {
-        if (!instruments.TryGetValue(trackId, out var current) || current != loaded || PluginKeySaid(line)) return;
+        if (!instruments.TryGetValue(trackId, out var current) || current != loaded || PluginKeySaid(line) || PluginThumbSaid(loaded.Bridge, loaded.Plugin, line)) return;
         VirtualEditorSaid(trackId, loaded.Bridge.ProcessId, line);
         if (line == "editor-closed") StopLaneListen(loaded.Bridge);
         if (line is "dirty" or "editor-closed")
@@ -250,17 +253,19 @@ public partial class MainWindow
         {
             if (p.Tracks.Find(t => t.Id == id) is not { } t) return null;
             t.Instrument = plugin == null ? null : PluginCatalog.Ref(plugin);
+            t.Sampler = null;
             return id;
         }, "instrument-set");
     }
 
     void OpenInstrumentWindow(LiveTrack track)
     {
-        if (instruments.TryGetValue(track.Track.Id, out var loaded))
+        if (track.Track.Sampler != null) OpenSamplerWindow(track.Track.Id);
+        else if (instruments.TryGetValue(track.Track.Id, out var loaded))
         {
             DressPluginWindow(loaded.Bridge, loaded.Plugin.Name);
             string listen = ListenBarButton;
-            loaded.Bridge.Command($"toolbar {(listen.Length > 0 ? listen + "|-|" : "")}keys=\uE765:{Loc.T("vst.bar.keys")}|-|mute=:M|solo=:S|-|panic=\uE71A:{Loc.T("vst.bar.panic")}");
+            loaded.Bridge.Command($"toolbar {(listen.Length > 0 ? listen + "|-|" : "")}keys=\uE765:{Loc.T("vst.bar.keys")}|-|mute=:M|solo=:S|-|panic=\uE71A:{Loc.T("vst.bar.panic")}|-|{ThumbBarButton}");
             TellPluginTrack(loaded.Bridge, loaded.Plugin.Name, track.Track);
             pluginBars.Remove(track.Track.Id);
             TellPluginPanel(loaded.Bridge);
@@ -269,12 +274,15 @@ public partial class MainWindow
         else if (track.Track.Instrument is { } plugin) Toast(Loc.T(instrumentLoads.ContainsKey(track.Track.Id) ? "vst.stillLoading" : "vst.notLoaded", plugin.Name));
     }
 
-    /// <summary>The piano roll's key through the track's instrument, or the test tone without one.</summary>
+    /// <summary>The piano roll's key through the track's instrument, or the test tone without one: always through its chain.</summary>
     void Audition(string? trackId, int pitch, int velocity)
     {
-        if (trackId != null && instruments.TryGetValue(trackId, out var loaded))
+        if (trackId != null && samplers.TryGetValue(trackId, out var sampler))
+            sampler.Player.Audition(pitch, velocity, (int)(AuditionSec * PlaybackEngine.SampleRate));
+        else if (trackId != null && instruments.TryGetValue(trackId, out var loaded))
             loaded.Player.Audition(pitch, velocity, (int)(AuditionSec * PlaybackEngine.SampleRate));
-        else engine.PreviewNote(XtremeDaw.Audio.Dsp.NoteSynth.Audition(pitch, velocity, PlaybackEngine.SampleRate));
+        else if (tracks.Find(t => t.Track.Id == trackId) is { } track)
+            track.Preview.Post(XtremeDaw.Audio.Dsp.NoteSynth.Audition(pitch + track.Track.Transpose, velocity, PlaybackEngine.SampleRate));
     }
 
     /// <summary>Looks for new or changed plugins (in the background, with a toast that says what it found).</summary>
@@ -327,7 +335,14 @@ public partial class MainWindow
         var current = track.Track.Instrument;
         MenuItem Pick(VstPluginInfo? p, string label, string? tip = null)
         {
-            var item = MenuCheck(label, () => p == null ? track.Track.Instrument == null : SamePlugin(track.Track.Instrument, p), () => _ = SetInstrument(track, p), refresh, tip: tip);
+            var item = MenuCheck(label, () => p == null ? track.Track.Instrument == null && track.Track.Sampler == null : SamePlugin(track.Track.Instrument, p), () => _ = SetInstrument(track, p), refresh, tip: tip);
+            item.IsEnabled = enabled;
+            if (p != null) PluginThumbView.AddTip(item, p);
+            return item;
+        }
+        MenuItem Native()
+        {
+            var item = MenuCheck(Loc.T("sampler.name"), () => track.Track.Sampler != null, () => _ = SetSampler(track), refresh, tip: Loc.T("sampler.tip"));
             item.IsEnabled = enabled;
             return item;
         }
@@ -335,6 +350,7 @@ public partial class MainWindow
         {
             MenuGroup(Loc.T("vst.group.native")),
             Pick(null, Loc.T("vst.testTone"), Loc.T("vst.testTone.tip")),
+            Native(),
             new Separator(),
             MenuGroup(Loc.T("vst.group.vst")),
         };
@@ -355,9 +371,9 @@ public partial class MainWindow
         items.Add(MenuAction(Loc.T(found.Count == 0 ? "vst.scan.first" : "vst.scan"), ScanPlugins,
             enabled: !PluginScan.Running, tip: Loc.T("vst.scan.tip")));
         items.Add(MenuAction(Loc.T("vst.manage.menu"), () => { Settings.Show("plugins"); return Task.CompletedTask; }, tip: Loc.T("vst.manage.tip")));
-        if (current != null)
-            items.Add(MenuAction(Loc.T("vst.open", current.Name), () => { OpenInstrumentWindow(track); return Task.CompletedTask; },
-                enabled: instruments.ContainsKey(track.Track.Id), icon: ""));
+        if (current != null || track.Track.Sampler != null)
+            items.Add(MenuAction(Loc.T("vst.open", InstrumentName(track.Track)), () => { OpenInstrumentWindow(track); return Task.CompletedTask; },
+                enabled: track.Track.Sampler != null || instruments.ContainsKey(track.Track.Id), icon: ""));
         return items;
     }
 }
@@ -423,7 +439,7 @@ public partial class MainWindow
         if (sel is not { Track.IsMidi: true } t) return;
         var plugin = t.Track.Instrument;
         var state = InstrumentStateOf(t.Track.Id);
-        midiNow.Text = plugin?.Name ?? Loc.T("vst.testTone");
+        midiNow.Text = InstrumentName(t.Track);
         midiNow.Foreground = state == TimelineView.InstrumentState.Ready ? Palette.Accent : Palette.Fg;
         midiNowKind.Text = Loc.T(plugin == null ? "vst.kind.native" : "vst.group.vst");
         midiNowInfo.Text = state switch
@@ -434,8 +450,15 @@ public partial class MainWindow
             _ => Loc.T("vst.testTone.tip"),
         };
         midiNowInfo.Text = PluginScan.Running ? Loc.T("vst.scanning") : midiNowInfo.Text;
+        if (t.Track.Sampler != null && store != null)
+            midiNowInfo.Text = state switch
+            {
+                TimelineView.InstrumentState.Failed => Loc.T("sampler.missing"),
+                TimelineView.InstrumentState.Loading => Loc.T("sampler.reading"),
+                _ => SamplerMedia.Of(store.Project, t.Track)?.Name ?? Loc.T("sampler.none"),
+            };
         midiPick.IsEnabled = store is { ReadOnly: false };
-        midiOpen.IsVisible = plugin != null;
+        midiOpen.IsVisible = plugin != null || t.Track.Sampler != null;
         midiOpen.IsEnabled = state == TimelineView.InstrumentState.Ready;
     }
 

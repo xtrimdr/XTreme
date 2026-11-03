@@ -392,7 +392,7 @@ static class DspCommands
         var env = CompPresets.Analyze(ch, sr);
         var tube30 = SatParams.From(true, SatMode.Tube, 0.3, rms);
         // Its own folder: another run at the same time would have these files open
-        string tmp = Path.Combine(Path.GetTempPath(), $"wtlab-verify-{Guid.NewGuid():N}");
+        string tmp = Path.Combine(Path.GetTempPath(), $"xtlab-verify-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tmp);
         bool allOk = true;
 
@@ -427,7 +427,7 @@ static class DspCommands
 
         // Nitidez, Claridad y Resplandor (VideoDetail): a flat frame stays as it is, an edge gets its overshoot on both
         // sides, a light in the dark spreads a halo while the dark stays, the looks add their share only with the filter on,
-        // and the export's chain carries the filters only when they're on ("wtlab nitidez" compares them with FFmpeg)
+        // and the export's chain carries the filters only when they're on ("xtlab nitidez" compares them with FFmpeg)
         {
             const int dw = 64, dh = 48;
             var on = VideoDetail.For(null, new ExportVideoFxSpec(Sharpness: 100, Clarity: 100));
@@ -648,6 +648,7 @@ static class DspCommands
         allOk &= ToMidiChecks.Check();
         allOk &= StemChecks.Check();
         allOk &= SampleChecks.Check();
+        allOk &= SamplerChecks.Check();
         try { Directory.Delete(tmp, true); } catch (IOException) { }
 
         Console.WriteLine();
@@ -657,7 +658,7 @@ static class DspCommands
         return allOk ? 0 : 3;
     }
 
-    /// <summary>wtlab lufs: the integrated loudness of a file, measured like the master's LUFS cell.</summary>
+    /// <summary>xtlab lufs: the integrated loudness of a file, measured like the master's LUFS cell.</summary>
     /// <summary>
     /// The master on a WAV, like the window's Mastering view: runs <see cref="MasterChain"/> and the limiter with these
     /// settings and tells what each band reduced (on average and at most), what the limiter took and how loud it came
@@ -792,7 +793,7 @@ static class DspCommands
         return 0;
     }
 
-    /// <summary>wtlab afinar: what the tuner hears at a moment of a file (its first 4096 samples from --en), with the
+    /// <summary>xtlab afinar: what the tuner hears at a moment of a file (its first 4096 samples from --en), with the
     /// window's sensitivity (--umbral, the level gate in dB).</summary>
     public static int Tune(Args a)
     {
@@ -869,7 +870,7 @@ static class DspCommands
 
         if (testMode)
         {
-            tempTestDir = Path.Combine(Path.GetTempPath(), $"wtlab-export-{Guid.NewGuid():N}"[..24]);
+            tempTestDir = Path.Combine(Path.GetTempPath(), $"xtlab-export-{Guid.NewGuid():N}"[..24]);
             targetDir = BuildSyntheticExportProject(tempTestDir);
             Console.WriteLine($"Proyecto de prueba generado en: {targetDir}");
         }

@@ -6,7 +6,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab's side of the buses and the routing: <c>proyecto buses</c> lists and edits the buses (like the mixer's bus
+/// xtlab's side of the buses and the routing: <c>proyecto buses</c> lists and edits the buses (like the mixer's bus
 /// strips), <c>proyecto envios</c> the output and sends of a track, a folder or a bus (like the Salida selector, the
 /// send panels and their PRE chip), and <see cref="Check"/> (part of <c>comprobar-dsp</c>) verifies that a folder is a
 /// plain sum, that a pre-fader send ignores the fader, that the live classes block by block sound like the export
@@ -20,7 +20,7 @@ static class BusCommands
     /// <summary>A new project's buses ("Reverb" first, then "Delay") as the export takes them, for mixes without a project.</summary>
     public static MixBusSpec DefaultBus(double bpm) => ChannelDsp.Bus(new Project { Settings = new ProjectSettings { Bpm = bpm } });
 
-    /// <summary>wtlab proyecto buses carpeta [agregar [nombre] [--tipo reverb|delay|vacio] | quitar n | renombrar n nombre | volumen n x | paneo n x | mute n]</summary>
+    /// <summary>xtlab proyecto buses carpeta [agregar [nombre] [--tipo reverb|delay|vacio] | quitar n | renombrar n nombre | volumen n x | paneo n x | mute n]</summary>
     public static int Buses(string dir, Args a)
     {
         using var store = ProjectStore.Open(dir);
@@ -102,7 +102,7 @@ static class BusCommands
     }
 
     /// <summary>
-    /// wtlab proyecto envios carpeta quien [bus [nivel] [--pre|--post] [--apagar|--prender] [--quitar|--sumar]] [--salida bus|master]:
+    /// xtlab proyecto envios carpeta quien [bus [nivel] [--pre|--post] [--apagar|--prender] [--quitar|--sumar]] [--salida bus|master]:
     /// quien es una pista (número o id), «carpeta:n» o «bus:n». --quitar saca el bus de su lista (apagado y escondido,
     /// con su nivel guardado) y --sumar lo vuelve a poner, como el + y "Quitar" del mixer.
     /// </summary>

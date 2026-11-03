@@ -5,7 +5,7 @@ using XtremeDaw.Audio;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// <c>wtlab componentes</c>: the state of the optional components, installing one (<c>--url</c> points the stems at a
+/// <c>xtlab componentes</c>: the state of the optional components, installing one (<c>--url</c> points the stems at a
 /// test server) and, with <c>comprobar</c>, the download itself against a local server that cuts the connection.
 /// </summary>
 static class ComponentCommands
@@ -46,7 +46,7 @@ static class ComponentCommands
 
     static int Check()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "wtlab-descarga-" + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "xtlab-descarga-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var data = new byte[3_000_000];
         new Random(1).NextBytes(data);

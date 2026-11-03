@@ -1,7 +1,7 @@
 namespace XtremeDaw.Audio.Dsp;
 
 /// <summary>
-/// Port of <c>GuitarCam/src/shared/clip.js</c>: clip timeline window, fade lengths and fade gain envelope
+/// Port of the web app's <c>clip.js</c>: clip timeline window, fade lengths and fade gain envelope
 /// shared by playback, timeline and offline export render.
 /// </summary>
 public static class ClipEnvelope

@@ -4,7 +4,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab proyecto verificar-ab: the mix's A/B (<see cref="MixCompare"/>) on a project in memory. The first switch
+/// xtlab proyecto verificar-ab: the mix's A/B (<see cref="MixCompare"/>) on a project in memory. The first switch
 /// copies, the two mixes go back and forth, mute and solo stay, a track or a bus made later is left alone, a bus that
 /// is gone drops its sends, the slots keep their ids, and it is saved, undone and forgotten.
 /// </summary>

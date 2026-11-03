@@ -61,7 +61,7 @@ public static class CameraDevices
         return VideoLine.Matches(err).Select(m => m.Groups["name"].Value).Distinct().ToArray();
     }
 
-    /// <summary>The formats a camera offers, as FFmpeg prints them (for wtlab).</summary>
+    /// <summary>The formats a camera offers, as FFmpeg prints them (for xtlab).</summary>
     public static string[] Options(string device)
     {
         string err = RunFfmpeg(["-hide_banner", "-list_options", "true", "-f", "dshow", "-i", $"video={device}"]);

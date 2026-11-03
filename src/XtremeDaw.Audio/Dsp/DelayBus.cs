@@ -1,7 +1,7 @@
 namespace XtremeDaw.Audio.Dsp;
 
 /// <summary>
-/// Port of <c>gc-ducker</c> (<c>GuitarCam/src/audio/fxWorklet.ts</c>): side-chained ducker for the delay
+/// Port of <c>gc-ducker</c> (the web app's <c>fxWorklet.ts</c>): side-chained ducker for the delay
 /// return. Drops the repeats up to <c>24 * Amount</c> dB while the dry signal plays and brings them back
 /// up in the gaps. Zero latency.
 /// </summary>
@@ -60,7 +60,7 @@ public sealed class Ducker
 public enum DelayMode { Stereo, PingPong }
 
 /// <summary>
-/// Port of <c>DelaySettings</c> in <c>GuitarCam/src/types.ts</c>.
+/// Port of <c>DelaySettings</c> in the web app's <c>types.ts</c>.
 /// </summary>
 public readonly record struct DelayParams(
     DelayMode Mode,
@@ -111,7 +111,7 @@ public sealed record DelayPresetDef(
     double Duck);
 
 /// <summary>
-/// Port of the delay bus in <c>GuitarCam/src/audio/mixGraph.ts</c> and presets in <c>Mixer.tsx</c>:
+/// Port of the delay bus in the web app's <c>mixGraph.ts</c> and presets in <c>Mixer.tsx</c>:
 /// two delay lines (L/R) with high-pass + low-pass inside the feedback loop (so every repeat gets darker),
 /// stereo or ping-pong routing, width matrix, side-chained <see cref="Ducker"/> and return gain.
 /// </summary>
@@ -145,7 +145,7 @@ public sealed class DelayBus
             DelayMode.PingPong, true, "1/4.", 375, 0.5, 2500, 300, 1, 0.5),
     ];
 
-    /// <summary>Port of <c>delayTimeSec</c> in <c>GuitarCam/src/types.ts</c>.</summary>
+    /// <summary>Port of <c>delayTimeSec</c> in the web app's <c>types.ts</c>.</summary>
     public static double DelayTimeSec(DelayParams d, double bpm)
     {
         var div = Divisions[4]; // "1/8."

@@ -14,7 +14,7 @@ namespace XtremeDaw.Audio;
 /// and palm-muted chugs come out. On top of that a doubled onset is one attack (<c>Echo</c> in <see cref="Decode"/>),
 /// the ghosts the model hears under a ringing low string are dropped (<see cref="WithoutGhosts"/>), and
 /// <see cref="Mode.Melody"/> keeps one note at a time (the strongest), for solos and riffs where an overtone would
-/// otherwise add notes. <c>wtlab extraer-midi --verdad</c> scores it against known notes.
+/// otherwise add notes. <c>xtlab extraer-midi --verdad</c> scores it against known notes.
 /// Offline only (allocates, runs on a worker thread); the model is loaded once and shared.
 /// </summary>
 public static class AudioToMidi

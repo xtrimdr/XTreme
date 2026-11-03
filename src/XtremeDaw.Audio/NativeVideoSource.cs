@@ -15,7 +15,7 @@ public sealed unsafe class NativeVideoSource : IVideoFrameSource
     /// <summary>AVERROR(EAGAIN): the decoder needs another packet before it can give a frame.</summary>
     const int EAgain = -11;
     /// <summary>
-    /// Pictures up to this many pixels (1080p) decode on the processor: measured with wtlab leer-video, a 720p take
+    /// Pictures up to this many pixels (1080p) decode on the processor: measured with xtlab leer-video, a 720p take
     /// reads 5× faster there than copying each frame off the card, and seeks about as fast. Bigger ones (a phone's
     /// 4K, HEVC) go to the card, where the processor would fall behind with several tracks.
     /// </summary>
@@ -83,7 +83,7 @@ public sealed unsafe class NativeVideoSource : IVideoFrameSource
         }
     }
 
-    /// <summary>The FFmpeg version the DLLs report, for wtlab and the about box; null when they aren't there.</summary>
+    /// <summary>The FFmpeg version the DLLs report, for xtlab and the about box; null when they aren't there.</summary>
     public static string? Version => Available ? ffmpeg.av_version_info() : null;
 
     /// <summary>Opens a file at most <paramref name="maxWidth"/> pixels wide; on the processor if the card can't. Null if it can't be read.</summary>

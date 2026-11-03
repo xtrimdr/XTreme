@@ -4,7 +4,7 @@
              x:Class="XtremeDaw.App.Controls.ProjectsDialog"
              Background="#F20b0b0d" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
 
-  <!-- Same structure, sizes and texts as SessionPicker in the web app (GuitarCam/src/components/SessionPicker.tsx) -->
+  <!-- Same structure, sizes and texts as SessionPicker in the web app (SessionPicker.tsx) -->
   <UserControl.Styles>
     <!-- project rows: the time ago swaps for the actions on hover / focus -->
     <Style Selector="Border.row">

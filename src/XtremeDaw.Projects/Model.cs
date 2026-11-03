@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace XtremeDaw.Projects;
 
 /// <summary>
-/// A project, as saved in guitarcam.json. Three layers:
+/// A project, as saved in xtreme_project.json. Three layers:
 /// <see cref="Media"/> (recordings and imported files, never modified), <see cref="Track"/> (the channel
 /// strip and whether it gets a video panel) and <see cref="Clip"/> (a piece of a media placed on a track).
 /// Timeline times are in seconds; latency-type corrections stay in ms, like in the web app.
@@ -14,7 +14,7 @@ namespace XtremeDaw.Projects;
 /// </summary>
 public sealed class Project
 {
-    public const string FormatId = "guitarcam-project";
+    public const string FormatId = "xtreme-project";
     /// <summary>
     /// 2: the channel's effects are insert slots (<see cref="Channel.Inserts"/>) instead of fixed sat/comp/eq.
     /// 3: the fixed reverb and delay and the extra returns became buses (<see cref="ProjectSettings.Buses"/>), every
@@ -482,6 +482,13 @@ public sealed class Media
     public double SyncMs { get; set; }
     /// <summary>Camera latency: positive trims the start of the video.</summary>
     public double VideoOffsetMs { get; set; } = 80;
+    /// <summary>Linked on import: a file of it was left where it was, so it needs that place and isn't the project's to delete.</summary>
+    [JsonIgnore] public bool Linked => Path.IsPathRooted(Audio) || Path.IsPathRooted(Video);
+    /// <summary>Sizes of its files when they were linked or found again, how <see cref="LinkedMedia.Search"/> tells them from others of the same name; 0 = not known.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long AudioBytes { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long VideoBytes { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
@@ -533,6 +540,8 @@ public sealed class Track
     public List<MidiClip>? MidiClips { get; set; }
     /// <summary>The instrument plugin a MIDI track plays its notes with (<see cref="PluginRef"/>); null = the test tone. Native only.</summary>
     public PluginRef? Instrument { get; set; }
+    /// <summary>The native sampler a MIDI track plays with (<see cref="SamplerSettings"/>), never along with <see cref="Instrument"/>; null = none. Native only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SamplerSettings? Sampler { get; set; }
     /// <summary>
     /// The MIDI input a MIDI track plays and records from: a device's key from Configuración → MIDI; null = all of
     /// them. Native only.
@@ -540,6 +549,10 @@ public sealed class Track
     public string? MidiInput { get; set; }
     /// <summary>The channel it takes from that input, 1..16; 0 = all (not written, so other tracks' files don't change). Native only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int MidiChannel { get; set; }
+    /// <summary>Its arpeggiator for what the keyboard plays; null = off. Native only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ArpSettings? Arp { get; set; }
+    /// <summary>Names of its keys on the piano roll ("Bombo", "Caja"), by pitch; null = none. Native only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Dictionary<int, string>? KeyNames { get; set; }
     /// <summary>Its automated parameters (<see cref="Automations"/>), each a lane under it in the timeline; null = none. Native only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<AutomationLane>? Automation { get; set; }
     /// <summary>Its lanes are folded under it (they keep playing). A view setting, like a folder's fold.</summary>
@@ -563,15 +576,23 @@ public sealed class Track
             MidiClips.RemoveAll(c => c == null);
             foreach (var c in MidiClips) c.Normalize();
             if (Instrument != null && !Instrument.Normalize()) Instrument = null;
+            Sampler?.Normalized();
+            if (Instrument != null) Sampler = null;
             MidiInput = string.IsNullOrWhiteSpace(MidiInput) ? null : MidiInput.Trim();
             MidiChannel = Math.Clamp(MidiChannel, 0, 16);
+            Arp?.Normalize();
+            KeyNames = KeyNames?.Where(k => k.Key is >= MidiNote.MinPitch and <= MidiNote.MaxPitch && !string.IsNullOrWhiteSpace(k.Value)).ToDictionary(k => k.Key, k => k.Value.Trim());
+            if (KeyNames?.Count == 0) KeyNames = null;
         }
         else
         {
             MidiClips = null;
             Instrument = null;
+            Sampler = null;
             MidiInput = null;
             MidiChannel = 0;
+            Arp = null;
+            KeyNames = null;
         }
         Input = XtremeDaw.Audio.InputRoute.Parse(Input)?.Key;
         Icon = string.IsNullOrWhiteSpace(Icon) || Icon.Length > 64 ? null : Icon.Trim();

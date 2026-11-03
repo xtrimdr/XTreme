@@ -29,6 +29,7 @@ static class Program
                 "comprobar-dsp" => DspCommands.Check(a),
                 "tiempos-carga" => ImportChecks.Times(a),
                 "samples" => SampleChecks.Run(a),
+                "sampler" => SamplerChecks.Run(a),
                 "colas" => TailCommands.Run(a),
                 "espectro" => DspCommands.Spectrum(a),
                 "lufs" => DspCommands.Lufs(a),
@@ -49,6 +50,7 @@ static class Program
                 "version" => VersionCommands.Run(a),
                 "reporte" => IssueCommands.Run(a),
                 "lista" => TestListCommands.Run(a),
+                "atajos" => KeyLayoutCommands.Run(a),
                 "proyecto" => ProjectCommands.Run(a),
                 "midi" => MidiCommands.Run(a),
                 "vst" => VstCommands.Run(a),
@@ -66,7 +68,7 @@ static class Program
     static int Help()
     {
         Console.WriteLine("""
-            wtlab: pruebas del motor de audio de XTreme en .NET
+            xtlab: pruebas del motor de audio de XTreme en .NET
 
               dispositivos                 lista los drivers ASIO y los dispositivos WASAPI
               panel     [--driver X]       abre el panel del driver ASIO (tamaño de buffer)
@@ -197,6 +199,7 @@ static class Program
               lista [ver | agregar "qué probar" | arreglado número [--texto t]] --archivo pruebas\lista.json [--copia nombre]
                                            la lista "Para probar" de las copias de prueba (lo usa tools\probar.ps1)
               lista comprobar              comprueba la lista sobre un archivo temporal
+              atajos comprobar             ninguna distribución de otro DAW repite una tecla
               proyecto abrir    carpeta    abre un proyecto nativo y muestra pistas, avisos e historial
               proyecto versiones carpeta   lista las versiones guardadas, de más nueva a más vieja
               proyecto volver   carpeta n  restaura la versión n y conserva el estado actual en el historial (tomas y exportaciones quedan)
@@ -250,8 +253,13 @@ static class Program
               proyecto verificar-ab        el A/B de la mezcla: ida y vuelta, mute y solo quietos, pistas y buses nuevos, deshacer
               proyecto editar carpeta ganancia clip dB | curva clip "seg:dB,..."   volumen del clip y su curva (seg desde el inicio de la toma)
               proyecto verificar-tomas     verifica a qué pista va una toma nueva, su nombre y su canal
-              proyecto importar-audio carpeta archivo [--en segundos] [--pista id]   copia un audio de afuera a media/ y lo pone en una pista
+              proyecto importar-audio carpeta archivo [--en segundos] [--pista id] [--vincular]   copia un audio de afuera a media/ (o lo deja donde está) y lo pone en una pista
               proyecto verificar-importar  verifica la importación de audio (formato, nombres, archivos rotos)
+              proyecto verificar-vinculados copiar al proyecto, archivo movido, reencontrar y morir a mitad de copia
+              proyecto vinculados carpeta   lista las tomas y dónde están sus archivos
+              proyecto copiar-vinculado carpeta medio   copia a media/ lo que la toma tiene afuera
+              proyecto reencontrar carpeta medio --archivo X | carpeta [medio] --buscar-en Y   vuelve a encontrar lo que falta
+              proyecto cortar-copia carpeta medio [--al-final]   copia y mata el proceso a la mitad (o al terminar, sin guardar)
               proyecto insertos carpeta pista [agregar vida|comp|eq|puerta|reverb|delay|limpieza|multibanda|color|cinta|ancho|softclip|limitador|chorus|flanger|phaser|tremolo [--en n] | agregar vst --plugin "nombre" | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n]
                                            los slots de efectos de la pista (número o id), en el orden en que suenan; sin
                                            operación, los lista. Como el menú de cada efecto en la tira ancha del mixer;
@@ -287,8 +295,15 @@ static class Program
               midi escala carpeta [--raiz C4] [--escala minor]   la escala del proyecto; sin --escala, ninguna
               midi ajustar-escala carpeta --clip id   lleva a la escala del proyecto las notas que quedaron afuera
               midi quitar carpeta --clip id    saca el clip MIDI
+              midi exportar-mid carpeta --clip id --a x.mid   el clip como archivo MIDI (tipo 1, al tempo del proyecto)
+              midi importar-mid carpeta --de x.mid [--pista n|id] [--en segundos]
+                                           con --pista, todo en un clip de esa pista MIDI; sin ella, una pista nueva
+                                           por cada pista del archivo
+              midi partitura carpeta --clip id --a x.pdf   el clip como partitura en PDF (doble pentagrama, 4/4, armadura
+                                           de la escala del proyecto)
               midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]   hace del clip un patrón; --repetir, cuántas vueltas dura
               midi patron-insertar carpeta --clip id --pista n [--en segundos]   un clip más del patrón de ese clip
+              midi patron-instrumento carpeta --clip id --pista n   suma al patrón un instrumento en esa pista (con --quitar, saca el del clip)
               midi patron-unico carpeta --clip id   saca el clip del patrón (suena igual)
               midi patron-disolver carpeta --clip id   termina el patrón de ese clip: todos sus clips quedan únicos
               midi patron-borrar carpeta --clip id   borra el patrón de ese clip con todos sus clips
@@ -301,15 +316,20 @@ static class Program
                                            mueve cada velocidad al azar hasta ± cantidad
               midi entradas                los teclados y controladores MIDI que ve Windows, con sus ajustes de
                                            Configuración → MIDI (también los que están desconectados)
+              midi cortar carpeta                     graba una toma MIDI de prueba y mata el proceso a la mitad
               midi escuchar [--entrada nombre] [--segundos 10]
                                            abre las entradas como la ventana e imprime lo que llega, y lo que toma
                                            el motor (después del canal y la curva de velocidad)
               midi instrumento carpeta [--pista n] --plugin "nombre" | --quitar
+              midi sampler carpeta [--pista n] --sample archivo | --quitar
+                                           la pista toca ese archivo con el sampler nativo
+              sampler archivo [--nota 60] [--raiz n] [--segundos 2] [--filtro lp24] [--corte 2000] [--salida x.wav]
+                                           toca un archivo con el sampler, en una nota
                                            el instrumento VST3 que toca la pista (de vst escanear); --quitar vuelve al
-                                           tono de prueba. wtlab mezclar lo renderiza con el plugin
+                                           tono de prueba. xtlab mezclar lo renderiza con el plugin
               midi comprobar               verifica el sonido de las notas (bloques, release, exportación, tempo) y el
                                            teclado (suena como la nota escrita, pedal, tomas, cuantizar, velocidad)
-                                           (wtlab mezclar carpeta renderiza el proyecto con sus pistas MIDI)
+                                           (xtlab mezclar carpeta renderiza el proyecto con sus pistas MIDI)
               vst escanear [--todo] [--carpeta X] [--archivo X]
                                            busca los plugins VST3 en las carpetas de vst carpetas (los guarda en
                                            plugins.json; --todo los abre todos de nuevo, --archivo reintenta uno solo)
@@ -320,11 +340,16 @@ static class Program
               vst probar "nombre" [--segundos 4] [--salida x.wav] [--ventana]
                                            toca un acorde con ese plugin a un WAV, como la exportación (--ventana abre
                                            antes su ventana y usa lo que dejes)
-              vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado]
+              vst bucle "nombre" [--bloque 256] [--vueltas 4]
+                                           un bucle en un instrumento: el primer tiempo de cada vuelta tiene que sonar a
+                                           tiempo, y una nota que cruza B no queda prendida
+              vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--tarde] [--toma] [--salida x.wav] [--apagado]
               vst estado "nombre"          carga el estado del plugin en una copia nueva y comprueba que vuelve igual
               vst parametros "nombre" [--mover "parámetro"] [--segundos 2]
                                            pasa audio (o acordes de prueba) por un efecto como la exportación y en vivo
                                            en bloques del driver; comprueba que en vivo llega justo un bloque después
+                                           (--tarde: el plugin siempre llega tarde; sale entero, un bloque más tarde)
+                                           (--toma: como durante una grabación: empieza con el bloque extra y la demora no se mueve)
               proyectos lista|plantillas [--raiz X]
               proyectos nuevo "Nombre" [--plantilla id] | renombrar carpeta "Nombre" | duplicar carpeta
               proyectos borrar carpeta | guardar-plantilla carpeta "Nombre"

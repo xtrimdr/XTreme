@@ -88,7 +88,7 @@ public static class VideoEncoders
     };
 
     /// <summary>The encoder an export with <paramref name="preference"/> uses here. A named card is used even if the probe
-    /// did not find it (wtlab, to see FFmpeg's error); "auto" falls back to the processor.</summary>
+    /// did not find it (xtlab, to see FFmpeg's error); "auto" falls back to the processor.</summary>
     public static VideoEncoderKind Resolve(string? preference, FfmpegCaps found) => ParsePreference(preference) switch
     {
         CpuId => VideoEncoderKind.Cpu,

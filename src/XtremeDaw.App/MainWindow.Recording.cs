@@ -10,7 +10,7 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// Recording a take from the window: port of handleStartRecordingSequence, handleStopRecording,
-/// discardRecording and cancelCountIn (GuitarCam/src/App.tsx) with the record buttons of TransportBar.tsx.
+/// discardRecording and cancelCountIn (the web app's App.tsx) with the record buttons of TransportBar.tsx.
 /// The camera's video records next to the WAV (<see cref="VideoTakeWriter"/>, its frames counted from the
 /// audio's first sample) with the camera latency and the mirror of the moment. Same as the web except: without
 /// a camera (or with one that sends nothing) the take is audio only (the web refuses to record without one),
@@ -245,7 +245,7 @@ public partial class MainWindow
         try
         {
             foreach (var t in takes) store.BeginRecording(t.Journal);
-            BeginMidiTakes(midiTargets);
+            BeginMidiTakes(midiTargets, startSec);
             engine.StartRecording(targets.Select((t, i) => (InputRoute.Parse(t?.Input), store.Resolve(takes[i].Journal.Audio)!)).ToList(), countIn,
                 startSec: startSec, notesOnly: midiTargets.Count > 0);
         }
@@ -311,7 +311,7 @@ public partial class MainWindow
         (recVideo, recCamera) = (null, null);
         RecordedTakeResult?[] res = [];
         VideoTakeResult? vres = null;
-        List<(string TrackId, List<(double Sec, double LengthSec, int Pitch, int Velocity)> Notes)> played = [];
+        List<(string TrackId, string ClipId, List<(double Sec, double LengthSec, int Pitch, int Velocity)> Notes)> played = [];
         try
         {
             (res, vres) = await Task.Run(() =>
@@ -382,8 +382,8 @@ public partial class MainWindow
             await EditTimeline(p =>
             {
                 foreach (var (t, r) in kept) trackIds.Add(TakeRecording.AddTake(p, t.Journal, r.DurationSec, r.SampleRate, 2, t.Number).Id);
-                foreach (var (id, notes) in played)
-                    if (p.Tracks.Find(x => x.Id == id) is { IsMidi: true } mt && MidiEditing.AddRecorded(p, id, startSec, endSec, notes, grid) is { } clip)
+                foreach (var (id, clipId, notes) in played)
+                    if (p.Tracks.Find(x => x.Id == id) is { IsMidi: true } mt && MidiEditing.AddRecorded(p, id, startSec, endSec, notes, grid, clipId) is { } clip)
                     {
                         noteCount += clip.Notes.Count;
                         noteTracks.Add(mt.Name);
@@ -395,7 +395,11 @@ public partial class MainWindow
                 string.Join(", ", noteTracks.Select(n => $"\"{n}\"")), PianoSnapLabel());
             if (kept.Count == 0)
             {
-                if (st == store) await FlushProjectOperation();
+                if (st == store)
+                {
+                    await FlushProjectOperation();
+                    EndMidiJournals(st, played.Select(x => x.ClipId));
+                }
                 Toast(problem ?? notesDone ?? Loc.T("midi.rec.nothing"));
                 return;
             }
@@ -415,6 +419,7 @@ public partial class MainWindow
                 }
             await FlushProjectOperation();
             foreach (var (t, _) in kept) st.EndRecording(t.Journal.MediaId);
+            EndMidiJournals(st, played.Select(x => x.ClipId));
             Toast(problem ?? (kept.Count == 1
                 ? Loc.T("rec.saved.one", kept[0].Take.Journal.Name, $"{kept[0].Res.DurationSec:0.0}")
                 : Loc.T("rec.saved.many", kept.Count, string.Join(", ", kept.Select(k => $"\"{k.Take.Journal.Name}\"")), $"{kept[0].Res.DurationSec:0.0}")));

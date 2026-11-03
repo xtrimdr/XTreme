@@ -12,7 +12,7 @@ public sealed record GpuStats(double Load, long VramUsed, long VramTotal, string
 public sealed record SystemStatsSample(double Cpu, int Cores, long RamUsed, long RamTotal, GpuStats? Gpu);
 
 /// <summary>
-/// Port of GuitarCam/server/systemStats.js: CPU and RAM straight from the system, GPU from the Windows
+/// Port of the web app's systemStats.js: CPU and RAM straight from the system, GPU from the Windows
 /// "GPU Engine" / "GPU Adapter Memory" performance counters. Task Manager's GPU % is the busiest engine, where an
 /// engine's load is the sum over the processes using it; the VRAM total comes from the driver's registry key.
 /// Same as the web except it reads the counters through PDH on a background thread instead of a PowerShell

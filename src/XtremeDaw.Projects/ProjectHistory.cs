@@ -21,12 +21,12 @@ public static class ProjectHistory
 
     static readonly HashSet<string> TakeEvents = ["take-recorded", "take-removed", "take-restored"];
 
-    /// <summary>Editing entries the window and wtlab log for their own sake (clip-moved, track-added…); the web has no line for them.</summary>
+    /// <summary>Editing entries the window and xtlab log for their own sake (clip-moved, track-added…); the web has no line for them.</summary>
     static bool Silent(string type) =>
         type.StartsWith("clip-") || type.StartsWith("track") || type.StartsWith("timeline-") || type.StartsWith("format-")
-        || type.StartsWith("wtlab-") || type == "test";
+        || type.StartsWith("xtlab-") || type.StartsWith("linked-") || type == "test";
 
-    public static HashSet<string> UsedMediaIds(Project p) => p.Tracks.SelectMany(t => t.Clips).Select(c => c.MediaId).ToHashSet();
+    public static HashSet<string> UsedMediaIds(Project p) => p.Tracks.SelectMany(t => t.Clips).Select(c => c.MediaId).Concat(SamplerMedia.Used(p)).ToHashSet();
 
     /// <summary>Which media are in the timeline, the baseline <see cref="LogTimelineChanges"/> compares against.</summary>
     public static Dictionary<string, bool> TimelineState(Project p)
@@ -63,8 +63,16 @@ public static class ProjectHistory
         }
     }
 
-    /// <summary>Bytes on disk of a take (audio + video); a missing file counts 0.</summary>
-    public static long MediaBytes(string projectDir, Media m) => FileBytes(Resolve(projectDir, m.Audio)) + FileBytes(Resolve(projectDir, m.Video));
+    /// <summary>Bytes a take takes in the project (audio + video): a missing or linked file counts 0, deleting it frees nothing.</summary>
+    public static long MediaBytes(string projectDir, Media m) => OwnBytes(projectDir, m.Audio) + OwnBytes(projectDir, m.Video);
+
+    static long OwnBytes(string projectDir, string? rel) => Resolve(projectDir, rel) is { } full && IsOwn(projectDir, full) ? FileBytes(full) : 0;
+
+    internal static bool IsOwn(string projectDir, string full)
+    {
+        string dir = Path.GetFullPath(projectDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        return Path.GetFullPath(full).StartsWith(dir, StringComparison.OrdinalIgnoreCase);
+    }
 
     static string? Resolve(string dir, string? rel) => string.IsNullOrEmpty(rel) ? null : Path.IsPathRooted(rel) ? rel : Path.Combine(dir, rel);
 
@@ -163,9 +171,7 @@ public static class ProjectHistory
     /// <summary>Only files inside the project folder: an imported file left where it was belongs to the user.</summary>
     static void Trash(string projectDir, string? rel)
     {
-        if (Resolve(projectDir, rel) is not { } full || !File.Exists(full)) return;
-        string dir = Path.GetFullPath(projectDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (!Path.GetFullPath(full).StartsWith(dir, StringComparison.OrdinalIgnoreCase)) return;
+        if (Resolve(projectDir, rel) is not { } full || !File.Exists(full) || !IsOwn(projectDir, full)) return;
         ToRecycleBin(full);
     }
 

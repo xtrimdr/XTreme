@@ -7,7 +7,7 @@ namespace XtremeDaw.Projects;
 
 /// <summary>
 /// Project templates: the tracks a new project starts with (empty, with their channel strip) plus project
-/// settings. Port of GuitarCam/src/session/projectTemplates.ts: same factory templates; the user's are
+/// settings. Port of the web app's projectTemplates.ts: same factory templates; the user's are
 /// program-wide (%APPDATA%\XTreme\plantillas.json instead of localStorage).
 /// </summary>
 public sealed class ProjectTemplate

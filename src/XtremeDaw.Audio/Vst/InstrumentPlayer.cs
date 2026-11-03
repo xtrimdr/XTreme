@@ -7,11 +7,17 @@ namespace XtremeDaw.Audio.Vst;
 /// A MIDI track's notes played by an instrument plugin (<see cref="VstBridge"/>), live. The plugin is heard one block
 /// late plus its own latency (<see cref="VstBridge.Exchange"/>), so the notes go that much early: when the playhead is
 /// at <c>pos</c>, the notes sent are the ones from <c>pos + block + latency</c>, and they sound right on the timeline
-/// with nothing else delayed. A jump (seek, loop) or a stop turns every note off first; the notes between where it lands
+/// with nothing else delayed. A jump (a seek) or a stop turns every note off first; the notes between where it lands
 /// and that lookahead (the first beat of the song, when it starts from 0) go right away, at the start of the first block,
-/// late by the lookahead instead of lost; so do the ones that began less than a block before it (a loop lands that much
-/// past its start) and the ones the playhead lands in the middle of, which start over from there (a long chord would
-/// stay silent until the next note otherwise).
+/// late by the lookahead instead of lost; so do the ones that began less than a block before it and the ones the playhead
+/// lands in the middle of, which start over from there (a long chord would stay silent until the next note otherwise).
+/// <para>
+/// A loop is not a jump: the lookahead knows it is coming and gets to B before the playhead does, so the end of the lap
+/// and the start of the next one go in the same block, each on its frame, and the first beat of every lap sounds on its
+/// sample. At the turn (<see cref="Turn"/>) only the notes that cross B end, and the keyboard's stay held. It needs a
+/// lap longer than the lookahead and its block; a shorter one jumps. If the playhead doesn't turn after all (the loop
+/// went off, it moved), its position gives it away and that counts as a jump.
+/// </para>
 /// <para>
 /// While stopped (<see cref="Idle"/>) it keeps running, silent, so the piano roll's keys (<see cref="Audition"/>) and
 /// what the plugin plays on its own (the keys in its window) sound through the instrument: its output opens with the
@@ -22,6 +28,11 @@ namespace XtremeDaw.Audio.Vst;
 /// The keys of a MIDI keyboard (<see cref="LiveNotes"/>) go at the start of the block they arrive in, playing or not;
 /// after an "all notes off" (a jump, the song starting) the ones still held are sent again, so a chord held while the
 /// song starts keeps sounding.
+/// </para>
+/// <para>
+/// The notes' controllers (<see cref="NoteSequence.Controls"/>) go the same way, in their block; a jump first puts the
+/// bend at the centre and then sends each controller's last value before where it lands, and a stop leaves the bend
+/// centred for what is played next.
 /// </para>
 /// </summary>
 public sealed class InstrumentPlayer(VstBridge bridge)
@@ -48,8 +59,9 @@ public sealed class InstrumentPlayer(VstBridge bridge)
     /// <summary>The output while stopped: 0 (shut after a stop) to 1 (open since an audition).</summary>
     float gate;
     const float GateStep = 1f / 240; // 5 ms at 48 kHz
-    /// <summary>What it plays after a stop is still the song's tail, until it goes quiet.</summary>
-    bool tail;
+    /// <summary>What it plays after a stop is still the song's tail, until it goes quiet. It starts that way: what a
+    /// just opened plugin plays is what <see cref="InstrumentWarmup"/>'s key left, not someone playing it.</summary>
+    bool tail = true;
     /// <summary>Below this (-80 dB), it is not playing.</summary>
     const float Quiet = 1e-4f;
     int quietFor;
@@ -60,6 +72,10 @@ public sealed class InstrumentPlayer(VstBridge bridge)
     readonly (int Pitch, int Velocity, int Frames)[] ring = new (int, int, int)[64];
     int ringHead, ringTail;
     readonly int[] offIn = new int[128];
+
+    readonly NoteControl[] chased = new NoteControl[NoteControl.Count];
+    /// <summary>The plugin may have the bend off centre: what the notes sent last.</summary>
+    bool bent;
 
     int panic;
     /// <summary>Every note it holds goes off on the next block, whoever played it. Any thread.</summary>
@@ -77,29 +93,53 @@ public sealed class InstrumentPlayer(VstBridge bridge)
     /// <summary>
     /// While playing: adds the instrument's sound for frames <c>[pos .. pos + n)</c> to <paramref name="l"/> /
     /// <paramref name="r"/> and sends the notes that start or end a block and a latency later.
+    /// <paramref name="loopEnd"/> above <paramref name="loopStart"/>: the loop the engine is turning on (0 = none).
     /// </summary>
-    public void Play(long pos, int n, Span<float> l, Span<float> r, LiveNotes? keys = null)
+    public void Play(long pos, int n, Span<float> l, Span<float> r, LiveNotes? keys = null, long loopStart = 0, long loopEnd = 0)
     {
         int flags = VstBridge.FlagPlaying;
-        if (pos != expected || idle || Interlocked.Exchange(ref panic, 0) != 0)
+        bool jumped = pos != expected || idle || Interlocked.Exchange(ref panic, 0) != 0;
+        if (jumped)
         {
             flags |= VstBridge.FlagAllNotesOff;
             if (!carried) count = 0;
         }
         idle = false;
-        expected = pos + n;
+        long ahead = pos + n + Bridge.Latency, lap = loopEnd - loopStart;
+        bool laps = pos < loopEnd && lap > ahead - pos + n;
+        expected = laps && LoopSplice.Turned(pos, pos + n, loopStart, loopEnd, out long turned) ? turned : pos + n;
         BeginBlock();
-        long from = pos + n + Bridge.Latency;
+        // past B the lookahead is already in the next lap; the block that reaches B has both
+        long from = laps && ahead > loopEnd ? ahead - lap : ahead;
+        int turn = laps && ahead <= loopEnd && ahead + n > loopEnd ? (int)(loopEnd - ahead) : -1;
         if (notes is { } seq)
         {
-            if ((flags & VstBridge.FlagAllNotesOff) != 0) CatchUp(seq, pos, from, n);
-            AddNotes(seq, from, from + n);
+            if (jumped)
+            {
+                ChaseControls(seq, from, 0);
+                // a seek to the very end of a lap lands with the lookahead already past B
+                CatchUp(seq, from < pos ? loopStart : pos - n, from, n);
+            }
+            if (turn < 0)
+            {
+                AddControls(seq, from, from + n, 0);
+                AddNotes(seq, from, from + n, 0);
+            }
+            else
+            {
+                AddControls(seq, from, loopEnd, 0);
+                AddNotes(seq, from, loopEnd, 0);
+                Turn(seq, loopStart, loopEnd, turn);
+                AddControls(seq, loopStart, loopStart + n - turn, turn);
+                AddNotes(seq, loopStart, loopStart + n - turn, turn);
+            }
         }
+        else if (jumped) Recentre(0);
         Auditions(n);
         Keys(keys, flags);
         if (curves is { } c)
         {
-            if ((flags & VstBridge.FlagAllNotesOff) != 0) c.Resend();
+            if (jumped) c.Resend();
             c.Push(Bridge, from);
         }
         Send(n, from, flags, l, r);
@@ -126,17 +166,17 @@ public sealed class InstrumentPlayer(VstBridge bridge)
     }
 
     /// <summary>
-    /// After a jump: the notes that start between the playhead and the lookahead (they can't be early any more) and the
-    /// ones still sounding past it (the playhead landed in their middle) go at the start of the block, with their own
-    /// length when they also end before the lookahead; the end of the others comes in its own block.
+    /// After a jump: the notes that start between <paramref name="since"/> and the lookahead (they can't be early any
+    /// more) and the ones still sounding past it (the playhead landed in their middle) go at the start of the block, with
+    /// their own length when they also end before the lookahead; the end of the others comes in its own block. It looks
+    /// a block back from the playhead: a loop too short to go ahead of lands a little past its start, and the notes right
+    /// at the start would be lost.
     /// </summary>
-    void CatchUp(NoteSequence seq, long pos, long from, int n)
+    void CatchUp(NoteSequence seq, long since, long from, int n)
     {
         var all = seq.Notes;
         int lo = 0, hi = all.Length;
-        // a loop lands a little past its start (what the last block ran over the end): the notes right at the start
-        // began up to a block before the playhead and are played too, or the first beat of every lap was lost
-        long since = pos - n, earliest = since - seq.MaxSpan;
+        long earliest = since - seq.MaxSpan;
         while (lo < hi)
         {
             int mid = (lo + hi) >> 1;
@@ -148,8 +188,65 @@ public sealed class InstrumentPlayer(VstBridge bridge)
             long end = e.Start + e.Length;
             if (e.Start < since && end < from) continue; // over already
             Add(0, VstNote.On, e.Pitch, e.Velocity);
-            if (end < from) Add((int)Math.Clamp(e.Length, 1, n - 1), VstNote.Off, e.Pitch, e.Velocity);
+            // a block can be a single frame (the end of a count-in): the host brings the offset back inside it
+            if (end < from) Add((int)Math.Clamp(e.Length, 1, Math.Max(1, n - 1)), VstNote.Off, e.Pitch, e.Release);
         }
+    }
+
+    /// <summary>
+    /// The lap turns at <paramref name="offset"/> of the block: what sounds at B ends, what sounds at A (it began before
+    /// it) starts over, and the controllers go where they were at A. Nothing else stops, so nothing else is cut.
+    /// </summary>
+    void Turn(NoteSequence seq, long start, long end, int offset)
+    {
+        var all = seq.Notes;
+        for (int k = FirstAround(seq, end); k < all.Length && all[k].Start < end; k++)
+            if (all[k].Start + all[k].Length >= end) Add(offset, VstNote.Off, all[k].Pitch, all[k].Release);
+        ChaseControls(seq, start, offset);
+        for (int k = FirstAround(seq, start); k < all.Length && all[k].Start < start; k++)
+            if (all[k].Start + all[k].Length > start) Add(offset, VstNote.On, all[k].Pitch, all[k].Velocity);
+    }
+
+    /// <summary>The first note that can still be sounding at <paramref name="frame"/>.</summary>
+    static int FirstAround(NoteSequence seq, long frame)
+    {
+        var all = seq.Notes;
+        int lo = 0, hi = all.Length;
+        long earliest = frame - seq.MaxSpan;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (all[mid].Start < earliest) lo = mid + 1; else hi = mid;
+        }
+        return lo;
+    }
+
+    /// <summary>A jump: the bend goes back to the centre, then every controller to where it was just before <paramref name="landing"/>.</summary>
+    void ChaseControls(NoteSequence seq, long landing, int offset)
+    {
+        if (seq.Controls.Length > 0) bent = true;
+        Recentre(offset);
+        int k = seq.LastValues(landing, chased);
+        for (int i = 0; i < k; i++) AddControl(offset, chased[i]);
+    }
+
+    void Recentre(int offset)
+    {
+        if (bent) AddControl(offset, new NoteControl(0, NoteControl.Bend, NoteControl.Centre));
+    }
+
+    void AddControl(int offset, in NoteControl c)
+    {
+        if (count >= buf.Length) return;
+        buf[count++] = new VstNote { Offset = offset, Type = VstNote.Control, Pitch = c.Controller, Velocity = c.Value };
+        if (c.Controller == NoteControl.Bend) bent = c.Value != NoteControl.Centre;
+    }
+
+    /// <summary>The controls in <c>[from .. to)</c>, with <c>from</c> at <paramref name="at"/> of the block.</summary>
+    void AddControls(NoteSequence seq, long from, long to, int at)
+    {
+        var all = seq.Controls;
+        for (int k = seq.ControlAt(from); k < all.Length && all[k].Frame < to; k++) AddControl((int)(all[k].Frame - from) + at, all[k]);
     }
 
     /// <summary>
@@ -172,6 +269,7 @@ public sealed class InstrumentPlayer(VstBridge bridge)
         }
         expected = -1;
         BeginBlock();
+        if ((flags & VstBridge.FlagAllNotesOff) != 0) Recentre(0);
         bool auditioned = Auditions(n);
         auditioned |= Keys(keys, flags);
         l.Clear();
@@ -207,7 +305,7 @@ public sealed class InstrumentPlayer(VstBridge bridge)
 
     void Send(int n, long time, int flags, Span<float> l, Span<float> r)
     {
-        SortByOffset();
+        VstNote.Sort(buf.AsSpan(0, count));
         Span<float> none = default;
         carried = !Bridge.Exchange(buf.AsSpan(0, count), n, time, Tempo, flags, l.IsEmpty ? none : l, r.IsEmpty ? none : r);
         if (!carried) count = 0;
@@ -219,23 +317,16 @@ public sealed class InstrumentPlayer(VstBridge bridge)
         buf[count++] = new VstNote { Offset = offset, Type = type, Pitch = pitch, Velocity = velocity / 127f };
     }
 
-    /// <summary>Notes that start or end in <c>[from .. to)</c>, by binary search over the sorted sequence.</summary>
-    void AddNotes(NoteSequence seq, long from, long to)
+    /// <summary>Notes that start or end in <c>[from .. to)</c>, with <c>from</c> at <paramref name="at"/> of the block.</summary>
+    void AddNotes(NoteSequence seq, long from, long to, int at)
     {
         var all = seq.Notes;
-        int lo = 0, hi = all.Length;
-        long earliest = from - seq.MaxSpan;
-        while (lo < hi)
-        {
-            int mid = (lo + hi) >> 1;
-            if (all[mid].Start < earliest) lo = mid + 1; else hi = mid;
-        }
-        for (int k = lo; k < all.Length && all[k].Start < to; k++)
+        for (int k = FirstAround(seq, from); k < all.Length && all[k].Start < to; k++)
         {
             var e = all[k];
-            if (e.Start >= from) Add((int)(e.Start - from), VstNote.On, e.Pitch, e.Velocity);
+            if (e.Start >= from) Add((int)(e.Start - from) + at, VstNote.On, e.Pitch, e.Velocity);
             long end = e.Start + e.Length;
-            if (end >= from && end < to) Add((int)(end - from), VstNote.Off, e.Pitch, e.Velocity);
+            if (end >= from && end < to) Add((int)(end - from) + at, VstNote.Off, e.Pitch, e.Release);
         }
     }
 
@@ -262,22 +353,6 @@ public sealed class InstrumentPlayer(VstBridge bridge)
         }
         Volatile.Write(ref ringTail, tail);
         return any;
-    }
-
-    /// <summary>Plugins want events in time order; at one frame, offs before ons (a note retriggered right where it ends).</summary>
-    void SortByOffset()
-    {
-        for (int i = 1; i < count; i++)
-        {
-            var x = buf[i];
-            int j = i - 1;
-            while (j >= 0 && (buf[j].Offset > x.Offset || buf[j].Offset == x.Offset && buf[j].Type < x.Type))
-            {
-                buf[j + 1] = buf[j];
-                j--;
-            }
-            buf[j + 1] = x;
-        }
     }
 }
 
@@ -338,6 +413,7 @@ public sealed class InstrumentRender : IDisposable
     readonly NoteSequence? notes;
     readonly double tempo;
     readonly VstNote[] buf = new VstNote[VstBridge.MaxEvents];
+    readonly NoteControl[] chased = new NoteControl[NoteControl.Count];
     readonly int sampleRate;
     bool started;
 
@@ -382,6 +458,14 @@ public sealed class InstrumentRender : IDisposable
                 var all = seq.Notes;
                 // the first block also takes what starts before its plugin latency (the first beat, with a latent plugin)
                 long first = started ? from : Math.Min(from, pos + off);
+                // the render may start in the middle of the song: its controllers land where they were by then
+                if (!started)
+                {
+                    int was = seq.LastValues(from, chased);
+                    for (int k = 0; k < was && count < buf.Length; k++) buf[count++] = Control(0, chased[k]);
+                }
+                for (int k = seq.ControlAt(from); k < seq.Controls.Length && seq.Controls[k].Frame < from + len && count < buf.Length; k++)
+                    buf[count++] = Control((int)(seq.Controls[k].Frame - from), seq.Controls[k]);
                 for (int k = 0; k < all.Length && all[k].Start < from + len; k++)
                 {
                     var e = all[k];
@@ -389,9 +473,9 @@ public sealed class InstrumentRender : IDisposable
                         buf[count++] = new VstNote { Offset = 0, Type = VstNote.On, Pitch = e.Pitch, Velocity = e.Velocity / 127f };
                     if (e.Start >= from && count < buf.Length) buf[count++] = new VstNote { Offset = (int)(e.Start - from), Type = VstNote.On, Pitch = e.Pitch, Velocity = e.Velocity / 127f };
                     long end = e.Start + e.Length;
-                    if (end >= from && end < from + len && count < buf.Length) buf[count++] = new VstNote { Offset = (int)(end - from), Type = VstNote.Off, Pitch = e.Pitch };
+                    if (end >= from && end < from + len && count < buf.Length) buf[count++] = new VstNote { Offset = (int)(end - from), Type = VstNote.Off, Pitch = e.Pitch, Velocity = e.Release / 127f };
                 }
-                Array.Sort(buf, 0, count, Comparer<VstNote>.Create((a, b) => a.Offset != b.Offset ? a.Offset.CompareTo(b.Offset) : b.Type.CompareTo(a.Type)));
+                VstNote.Sort(buf.AsSpan(0, count));
             }
             int flags = VstBridge.FlagPlaying | (started ? 0 : VstBridge.FlagAllNotesOff);
             started = true;
@@ -399,6 +483,8 @@ public sealed class InstrumentRender : IDisposable
             bridge.Render(buf.AsSpan(0, count), len, from, tempo, flags, l.Slice(off, len), r.Slice(off, len));
         }
     }
+
+    static VstNote Control(int offset, in NoteControl c) => new() { Offset = offset, Type = VstNote.Control, Pitch = c.Controller, Velocity = c.Value };
 
     public void Dispose() => bridge.Dispose();
 }

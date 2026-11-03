@@ -61,7 +61,7 @@ namespace XtremeDaw.App.Controls;
 /// It edits a working copy of the clip's notes and hands the whole list to the window when a gesture ends
 /// (<see cref="NotesCommitted"/>), which makes it one undo step; the control never touches the project or the engine.
 /// </summary>
-public sealed class PianoRollView : Control
+public sealed partial class PianoRollView : Control
 {
     /// <summary>
     /// How <see cref="SetClip"/> frames the view: as it was, the clip filling the width, the clip scrolled into sight
@@ -117,6 +117,8 @@ public sealed class PianoRollView : Control
     readonly HashSet<MidiNote> selected = [];
     /// <summary>The track's other clips (the project's, only read to draw them and to pick one).</summary>
     readonly List<MidiClip> others = [];
+    /// <summary>The ghost notes: what the pattern's other instruments play, each in its track's color. Only read to draw them.</summary>
+    readonly List<(List<MidiNote> Notes, Color Tint)> ghostParts = [];
 
     double rowH = DefaultRowH, beatW = 40, scrollX, scrollY;
     double velH = DefaultVelH;
@@ -241,13 +243,18 @@ public sealed class PianoRollView : Control
     /// clips around it or, on a pattern's clip, the pattern's clips, which aren't drawn. The same clip again (after an
     /// edit or an undo) keeps the selection where it can; <paramref name="frame"/> says how the view moves (a view never
     /// framed yet fits the clip). A pattern fits when it comes on screen, and its clips all show the same, so moving
-    /// between them keeps the view.
+    /// between them keeps the view. <paramref name="ghosts"/> = the notes of the pattern's other instruments, to see and
+    /// not to touch.
     /// </summary>
-    public void SetClip(MidiClip? clip, IEnumerable<MidiClip>? family, string? trackName, Color? trackColor, double tempo, Frame frame = Frame.Keep)
+    public void SetClip(MidiClip? clip, IEnumerable<MidiClip>? family, string? trackName, Color? trackColor, double tempo, Frame frame = Frame.Keep,
+        IEnumerable<(List<MidiNote> Notes, Color? Color)>? ghosts = null)
     {
+        ghostParts.Clear();
+        foreach (var (list, tint) in ghosts ?? []) ghostParts.Add((list, tint ?? Palette.AccentColor));
         if (clip?.PatternId is { } id) frame = id != patternId || frame == Frame.Clip ? Frame.Clip : Frame.Keep;
         else if (clip != null && patternId != null && frame == Frame.Keep) frame = Frame.Clip;
         bool same = clip != null && clip.Id == clipId;
+        if (toolBase != null && !same) ToolInterrupted?.Invoke();
         var keep = same ? selected.Select(n => (n.Pitch, n.Beat, n.Beats)).ToHashSet() : [];
         CancelGesture();
         clipId = clip?.Id;
@@ -455,12 +462,16 @@ public sealed class PianoRollView : Control
                 if (p % 12 == 0) ctx.DrawLine(line, new Point(KeyW, y + rowH - 0.5), new Point(W, y + rowH - 0.5));
             }
             DrawColumns(ctx, RulerH, gb, W);
+            DrawBackWave(ctx, gb, W);
             DrawRegions(ctx, gb, W);
+            DrawShadows(ctx, gb, W);
             foreach (var c in others) DrawFaintNotes(ctx, c.Notes, StartBeat(c, bpm), c.CellBeats, c.LengthBeats, W, gb);
+            foreach (var (list, tint) in ghostParts) DrawFaintNotes(ctx, list, 0, clipBeats, clipBeats, W, gb, Palette.Alpha(tint, 0.28));
             foreach (var n in notes) DrawNote(ctx, n, W, gb);
             if (gesture == "box" && moved)
                 ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.08), Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.7)), BoxRect());
             DrawGhost(ctx, W);
+            DrawToolGesture(ctx);
             DrawPlayhead(ctx, RulerH, gb);
             SyncChordBar();
             if (gesture == null) DrawChordBar(ctx);
@@ -552,11 +563,13 @@ public sealed class PianoRollView : Control
         if (r.Right < KeyW || r.X > W || r.Bottom < RulerH || r.Y > gb) return;
         bool sel = selected.Contains(n);
         bool past = n.Beat >= clipBeats;
-        double a = (0.55 + 0.45 * n.Velocity / 127.0) * (past ? 0.35 : 1);
+        double a = (0.55 + 0.45 * n.Velocity / 127.0) * (past ? 0.35 : 1) * (n.Muted ? MutedAlpha : 1);
         double rad = NoteRadius(r);
         // out of the scale: hollow, so it reads as a question and not as an error
         bool outside = scale != null && !scale.Contains(n.Pitch);
-        ctx.DrawRectangle(Palette.Alpha(color, outside ? a * 0.25 : a), sel ? Palette.Pen(Palette.Fg, 1.5) : outside ? Palette.Pen(Palette.Alpha(color, 0.9)) : Palette.Pen(Palette.Alpha(Palette.AppColor, 0.6)), r, rad, rad);
+        var tint = n.Color > 0 ? GroupColors[n.Color - 1] : color;
+        ctx.DrawRectangle(Palette.Alpha(tint, outside ? a * 0.25 : a), sel ? Palette.Pen(Palette.Fg, 1.5) : outside ? Palette.Pen(Palette.Alpha(tint, 0.9)) : Palette.Pen(Palette.Alpha(Palette.AppColor, 0.6)), r, rad, rad);
+        DrawNoteMarks(ctx, n, r);
         // the velocity at a glance (asked by the user): a gauge along the bottom, full at 127
         if (r.Width >= 10 && r.Height >= 8)
         {
@@ -571,11 +584,12 @@ public sealed class PianoRollView : Control
     // --- chords -----------------------------------------------------------------------------------
 
     /// <summary>"Sol m7": a chord's name.</summary>
-    static string ChordLabel(int root, ChordKind kind) => Loc.T("piano.chord.name", TunerView.NoteName((root % 12 + 12) % 12), kind.Suffix).TrimEnd();
+    internal static string ChordLabel(int root, ChordKind kind) => Loc.T("piano.chord.name", TunerView.NoteName((root % 12 + 12) % 12), kind.Suffix).TrimEnd();
 
     /// <summary>The chord tool's notes on this root, in the last inversion (or the highest it has); none that leave MIDI's range.</summary>
     int[] ChordOn(int root)
     {
+        if (MidiStamps.Find(chordKind) is { } stamp) return [.. MidiStamps.Notes(stamp, root, 0, scale, lastVelocity).Select(n => n.Pitch).Distinct()];
         int[] rootPosition = Chords.Build(chordKind, root, scale);
         int inversion = Math.Min(chordInversion, rootPosition.Length - 1);
         return [.. Chords.Invert(rootPosition, inversion).Where(p => p is >= MidiNote.MinPitch and <= MidiNote.MaxPitch)];
@@ -711,10 +725,10 @@ public sealed class PianoRollView : Control
     /// Notes only there to see, faint and without their names: another clip of the track, with its repeats.
     /// <paramref name="start"/> is where the clip starts, in timeline beats.
     /// </summary>
-    void DrawFaintNotes(DrawingContext ctx, List<MidiNote> list, double start, double cell, double length, double W, double gb)
+    void DrawFaintNotes(DrawingContext ctx, List<MidiNote> list, double start, double cell, double length, double W, double gb, IBrush? tint = null)
     {
         if (XA(start + length) < KeyW || XA(start) > W) return;
-        var fill = Palette.Alpha(color, 0.28);
+        var fill = tint ?? Palette.Alpha(color, 0.28);
         for (int pass = 0; pass * cell < length - 1e-9 && XA(start + pass * cell) <= W; pass++)
         {
             if (XA(start + (pass + 1) * cell) < KeyW) continue;
@@ -758,6 +772,11 @@ public sealed class PianoRollView : Control
             bool inScale = scale == null || scale.Contains(p);
             if (!inScale && !lit) ctx.FillRectangle(Palette.Alpha(Palette.AppColor, 0.6), new Rect(0, y, KeyW, rowH));
             if (scale != null && scale.IsRoot(p)) ctx.FillRectangle(Palette.Accent, new Rect(KeyW - 4, y, 4, rowH));
+            if (keyNames?.ContainsKey(p) == true && rowH >= 9)
+            {
+                DrawKeyName(ctx, p, y);
+                continue;
+            }
             if (rowH >= 9 && (scale == null ? p % 12 == 0 : inScale && rowH >= 11 || scale.IsRoot(p)))
                 ctx.DrawText(PitchNames[p], 9.5, MidiNote.IsBlack(p) && scale != null ? Palette.Fg : Palette.App, new Point(KeyW - 28, y + (rowH - 12) / 2), Palette.Ui);
         }
@@ -812,7 +831,7 @@ public sealed class PianoRollView : Control
         // the bar's handle, lit while it is grabbed or under the pointer
         bool hot = gesture == "velsize" || gesture == null && OnVelSplit(lastPointer);
         ctx.DrawRectangle(hot ? Palette.Accent : Palette.Faint, null, new Rect(W / 2 - 16, top - VelGap / 2 - 1.5, 32, 3), 1.5, 1.5);
-        ctx.DrawText(Loc.T("piano.velocity"), 10, Palette.Faint, new Point(6, top + 4), Palette.UiBold);
+        ctx.DrawText(LaneTitle, 10, Palette.Faint, new Point(6, top + 4), Palette.UiBold);
         double h = H - top - 6;
         // the scale: a label for each mark that has room, right against the lane
         double lastLabel = double.NegativeInfinity;
@@ -851,7 +870,7 @@ public sealed class PianoRollView : Control
                     if (!c.Heard(n, pass, out double from, out _)) continue;
                     double x = XA(start + from);
                     if (x < KeyW - 4 || x > W) continue;
-                    double bh = Math.Max(2, h * n.Velocity / 127.0);
+                    double bh = Math.Max(2, h * LaneOf(n) / 127.0);
                     ctx.FillRectangle(faint, new Rect(Math.Round(x), H - 3 - bh, 3, bh));
                 }
         }
@@ -859,7 +878,7 @@ public sealed class PianoRollView : Control
         {
             double x = X(n.Beat);
             if (x < KeyW - 4 || x > W) continue;
-            double bh = Math.Max(2, h * n.Velocity / 127.0);
+            double bh = Math.Max(2, h * LaneOf(n) / 127.0);
             var brush = selected.Contains(n) || velGroup.Contains(n) ? Palette.Accent : Palette.Alpha(color, 0.8);
             ctx.FillRectangle(brush, new Rect(Math.Round(x), H - 3 - bh, 3, bh));
             ctx.FillRectangle(brush, new Rect(Math.Round(x) - 2, H - 3 - bh, 7, 2));
@@ -911,6 +930,13 @@ public sealed class PianoRollView : Control
         modifiers = e.KeyModifiers;
         var props = e.GetCurrentPoint(this).Properties;
         moved = changed = false;
+        // a click on the notes settles what the tools panel is showing, and does only that
+        if (toolBase != null && p.Y >= RulerH)
+        {
+            ToolInterrupted?.Invoke();
+            e.Handled = true;
+            return;
+        }
         downScrollX = scrollX;
         downScrollY = scrollY;
         if (props.IsMiddleButtonPressed) { Start("pan", e); return; }
@@ -941,6 +967,12 @@ public sealed class PianoRollView : Control
             if (p.Y < RulerH && p.X >= KeyW)
             {
                 GridMenuRequested?.Invoke();
+                e.Handled = true;
+                return;
+            }
+            if (p.X < KeyW && p.Y >= RulerH && p.Y < GridBottom)
+            {
+                KeyMenuRequested?.Invoke(PitchAt(p.Y));
                 e.Handled = true;
                 return;
             }
@@ -990,7 +1022,7 @@ public sealed class PianoRollView : Control
             if (VelocityTool == VelTool.Line)
             {
                 velBase.Clear();
-                foreach (var n in notes) velBase[n] = n.Velocity;
+                foreach (var n in notes) velBase[n] = LaneOf(n);
                 velGroup.Clear();
                 Start("velline", e);
                 shownVel = VelAt(p.Y);
@@ -1011,9 +1043,32 @@ public sealed class PianoRollView : Control
         }
         var hit = NoteAt(p);
         bool ctrl = (modifiers & KeyModifiers.Control) != 0;
+        if (hit != null && !ctrl && e.ClickCount == 2)
+        {
+            NoteDetailsRequested?.Invoke(hit);
+            e.Handled = true;
+            return;
+        }
         if (hit == null && ctrl)
         {
-            Start("box", e);
+            bool shape = (modifiers & KeyModifiers.Alt) != 0;
+            if (shape) StartLasso();
+            Start(shape ? "lasso" : "box", e);
+            return;
+        }
+        if (!ctrl && WriteTool == PianoTool.Slice)
+        {
+            Start("slice", e);
+            return;
+        }
+        if (!ctrl && hit == null && WriteTool == PianoTool.Paint)
+        {
+            double painted = Beat(p.X);
+            if (painted < 0 || painted >= clipBeats) return;
+            selected.Clear();
+            paintFrom = -1;
+            Start("paint", e);
+            PaintAt(p);
             return;
         }
         if (hit == null)
@@ -1030,7 +1085,15 @@ public sealed class PianoRollView : Control
             double beat = Math.Max(0, Snap(at, floor: true));
             selected.Clear();
             changed = true;
-            if (chordTool && ChordOn(WritePitch(p.Y)) is { Length: > 0 } chord)
+            if (chordTool && MidiStamps.Find(chordKind) is { } stamp)
+            {
+                var added = MidiStamps.Notes(stamp, WritePitch(p.Y), beat, scale, lastVelocity).Where(n => n.Beat < clipBeats - 1e-9).ToList();
+                notes.AddRange(added);
+                selected.UnionWith(added);
+                if (added.Count == 0) { changed = false; return; }
+                hit = added[0];
+            }
+            else if (chordTool && ChordOn(WritePitch(p.Y)) is { Length: > 0 } chord)
             {
                 // the chord is selected, so it moves as one and its bar comes up as soon as it lands
                 var added = chord.Order().Select(pitch => new MidiNote { Pitch = pitch, Beat = beat, Beats = lastBeats, Velocity = lastVelocity }).ToList();
@@ -1056,6 +1119,7 @@ public sealed class PianoRollView : Control
             selected.Clear();
             selected.Add(hit);
         }
+        WithGroups();
         held = hit;
         lastBeats = hit.Beats;
         lastVelocity = hit.Velocity;
@@ -1153,6 +1217,8 @@ public sealed class PianoRollView : Control
                 break;
             case "resize": DragResize(); break;
             case "erase": EraseAt(lastPointer); break;
+            case "paint": PaintAt(lastPointer); break;
+            case "lasso": lasso.Add(lastPointer); break;
             case "velocity": VelPaint(VelAt(lastPointer.Y)); break;
             case "velreset": VelPaint(MidiNote.DefaultVelocity); break;
             case "velline": VelLine(); break;
@@ -1282,14 +1348,15 @@ public sealed class PianoRollView : Control
             if (x < a || x > b || velNote != null && !velGroup.Contains(n) && Math.Abs(n.Beat - velNote.Beat) < 1e-9) continue;
             any |= SetVel(n, v);
         }
-        if (any && gesture != "velreset") lastVelocity = v;
+        if (any && gesture != "velreset" && lane == NoteLane.Velocity) lastVelocity = v;
         InvalidateVisual();
     }
 
     bool SetVel(MidiNote n, int v)
     {
-        if (n.Velocity == v) return false;
-        n.Velocity = v;
+        if (gesture == "velreset") NoteLanes.Reset(n, lane);
+        else if (LaneOf(n) == v) return false;
+        else NoteLanes.Set(n, lane, v);
         changed = true;
         return true;
     }
@@ -1299,16 +1366,16 @@ public sealed class PianoRollView : Control
     {
         int v0 = VelAt(down.Y), v1 = VelAt(lastPointer.Y);
         shownVel = v1;
-        foreach (var (n, v) in velBase) n.Velocity = v;
+        foreach (var (n, v) in velBase) NoteLanes.Set(n, lane, v);
         double x0 = down.X, x1 = lastPointer.X, lo = Math.Min(x0, x1) - 2, hi = Math.Max(x0, x1) + 2;
         foreach (var n in VelTargets)
         {
             double x = X(n.Beat) + 1.5;
             if (x < lo || x > hi) continue;
             double t = Math.Abs(x1 - x0) < 1 ? 1 : Math.Clamp((x - x0) / (x1 - x0), 0, 1);
-            n.Velocity = SnapVel(Math.Clamp((int)Math.Round(v0 + (v1 - v0) * t), 1, 127));
+            NoteLanes.Set(n, lane, SnapVel(Math.Clamp((int)Math.Round(v0 + (v1 - v0) * t), 1, 127)));
         }
-        changed = velBase.Any(kv => kv.Key.Velocity != kv.Value);
+        changed = velBase.Any(kv => LaneOf(kv.Key) != kv.Value);
     }
 
     Rect BoxRect() => new(new Point(Math.Min(down.X, lastPointer.X), Math.Min(down.Y, lastPointer.Y)),
@@ -1323,7 +1390,10 @@ public sealed class PianoRollView : Control
             if ((modifiers & KeyModifiers.Shift) == 0 && (modifiers & KeyModifiers.Control) == 0) selected.Clear();
             var box = BoxRect();
             foreach (var n in notes) if (box.Intersects(NoteRect(n))) selected.Add(n);
+            WithGroups();
         }
+        if (gesture == "lasso") EndLasso();
+        if (gesture == "slice") Slice();
         bool resized = gesture == "velsize" && moved;
         EndGesture(e.Pointer);
         if (changed) Commit();
@@ -1355,6 +1425,7 @@ public sealed class PianoRollView : Control
         shownVel = -1;
         heardPitch = -1;
         from.Clear();
+        lasso.Clear();
         pointer?.Capture(null);
         InvalidateVisual();
     }
@@ -1523,9 +1594,17 @@ public sealed class PianoRollView : Control
     {
         if (clipId == null || !IsKeyboardFocusWithin) return false;
         bool ctrl = (e.KeyModifiers & KeyModifiers.Control) != 0;
+        if (toolBase != null && e.Key is Key.Enter or Key.Escape)
+        {
+            ToolKeyPressed?.Invoke(e.Key == Key.Enter ? "tool-accept" : "tool-cancel");
+            return true;
+        }
         // used even with nothing to do: let through, they would copy or duplicate the timeline's selection
         switch (gesture == null ? Shortcuts.Find(e) : null)
         {
+            case { } id when id.StartsWith(Shortcuts.PianoPrefix):
+                ToolKeyPressed?.Invoke(id[Shortcuts.PianoPrefix.Length..]);
+                return true;
             case "copy" or "cut":
                 if (selected.Count == 0) return true;
                 clipboard.Clear();

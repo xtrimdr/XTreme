@@ -2,7 +2,7 @@ using XtremeDaw.Projects;
 
 namespace XtremeDaw.Lab;
 
-/// <summary>wtlab reporte: the link "Enviar comentarios" opens (<see cref="IssueReport"/>), without opening anything.</summary>
+/// <summary>xtlab reporte: the link "Enviar comentarios" opens (<see cref="IssueReport"/>), without opening anything.</summary>
 static class IssueCommands
 {
     public static int Run(Args a)

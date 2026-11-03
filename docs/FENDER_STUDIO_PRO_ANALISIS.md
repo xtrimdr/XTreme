@@ -127,12 +127,12 @@ En nuestra app protegería una toma cuyo audio y encuadre ya están listos.
 
 Empezaría con una acción de contexto **“Bloquear edición”**, reversible y visible. Debe cubrir mover,
 recortar, borrar y reemplazar al grabar; conviene permitir seguir mezclando. La protección tiene que
-vivir también en `Projects`, para que los comandos de `wtlab` y futuras herramientas respeten la regla.
+vivir también en `Projects`, para que los comandos de `xtlab` y futuras herramientas respeten la regla.
 
 ### 8. Historial de versiones accesible
 
 El manual expone guardar una versión y restaurarla desde la interfaz. Nuestro equivalente ya existe
-en `ProjectStore` y `wtlab`, y `PENDIENTES.md` reconoce que falta dónde tocarlo en la ventana.
+en `ProjectStore` y `xtlab`, y `PENDIENTES.md` reconoce que falta dónde tocarlo en la ventana.
 Recomiendo un bloque **“Versiones guardadas”** en Historial, con fecha, nombre opcional y restauración
 conservando el estado anterior, como hace el almacenamiento actual.
 [Fuente: Saving Options](https://fenderstudiopromanual.fender.com/en/Content/Saving%2C%20Import%20and%20Export/Saving%20Options.htm).
@@ -202,6 +202,6 @@ La idea ya anotada de tablatura en pantalla puede abordarse sin construir un edi
    puede adelantarse si ya hay una pedalera disponible para probar.
 5. **Dar forma al resultado:** automatización de mezcla y del director de video, e importación del celular.
 
-Todo cambio de motor o proyecto debería poder ejercitarse desde `wtlab`, compartir comportamiento
+Todo cambio de motor o proyecto debería poder ejercitarse desde `xtlab`, compartir comportamiento
 entre reproducción y exportación y conservar medios originales. No se asignan plazos: la dificultad
 indicada es relativa y todavía no hay un diseño técnico completo de cada función.

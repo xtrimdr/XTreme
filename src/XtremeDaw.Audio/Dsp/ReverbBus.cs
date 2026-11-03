@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace XtremeDaw.Audio.Dsp;
 
 /// <summary>
-/// Port of <c>ReverbSettings</c> in <c>GuitarCam/src/types.ts</c>.
+/// Port of <c>ReverbSettings</c> in the web app's <c>types.ts</c>.
 /// </summary>
 public readonly record struct ReverbParams(
     double Decay,
@@ -36,7 +36,7 @@ public sealed record ReverbPresetDef(
     double Width);
 
 /// <summary>
-/// Port of the reverb bus in <c>GuitarCam/src/audio/mixGraph.ts</c> and presets in <c>Mixer.tsx</c>:
+/// Port of the reverb bus in the web app's <c>mixGraph.ts</c> and presets in <c>Mixer.tsx</c>:
 /// <c>lowCut</c> (high-pass) → <c>preDelay</c> → stereo convolution with the seeded synthetic impulse
 /// (<see cref="MakeImpulse"/>) → <c>returnGain</c>.
 /// Uses zero-latency multi-stage partitioned convolution (128-tap SIMD head + 128-sample short FFT tail +
@@ -100,7 +100,7 @@ public sealed class ReverbBus
     }
 
     /// <summary>
-    /// Port of <c>makeImpulse</c> in <c>GuitarCam/src/audio/mixGraph.ts</c>: seeded synthetic stereo room
+    /// Port of <c>makeImpulse</c> in the web app's <c>mixGraph.ts</c>: seeded synthetic stereo room
     /// with RT60 exponential decay, high-frequency damping over time, width scaling and unity power gain.
     /// </summary>
     public static (float[] Left, float[] Right) MakeImpulse(int sampleRate, ReverbParams r)

@@ -4,7 +4,7 @@ namespace XtremeDaw.Projects;
 
 /// <summary>
 /// The song's named markers and the A–B loop range (native only, asked by the user), shared by the window and
-/// wtlab. Markers live in <see cref="Project.Markers"/>, always in time order (every edit sorts them again), and go
+/// xtlab. Markers live in <see cref="Project.Markers"/>, always in time order (every edit sorts them again), and go
 /// back with undo like the tracks; the loop range is transport state in <see cref="ProjectSettings"/>, like the tempo.
 /// </summary>
 public static class ProjectMarkers

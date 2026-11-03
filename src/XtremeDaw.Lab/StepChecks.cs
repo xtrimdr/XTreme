@@ -86,7 +86,7 @@ static class StepChecks
             if (!ok) throw new InvalidOperationException($"Versiones: {text}");
             n++;
         }
-        string dir = Path.Combine(Path.GetTempPath(), $"wtlab-versiones-{Guid.NewGuid():N}");
+        string dir = Path.Combine(Path.GetTempPath(), $"xtlab-versiones-{Guid.NewGuid():N}");
         try
         {
             var a = new Media { Name = "Toma 1", Audio = "media/a.wav", DurationSec = 3 };

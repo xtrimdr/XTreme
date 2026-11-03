@@ -3,11 +3,13 @@ using System.Text.Json;
 namespace XtremeDaw.Projects;
 
 /// <summary>
-/// Port of the editable snapshots in GuitarCam/src/App.tsx: lanes, layout, aspect and bus/video settings,
+/// Port of the editable snapshots in the web app's App.tsx: lanes, layout, aspect and bus/video settings,
 /// plus the native project mode (video / solo audio), track folders, the extra returns, markers and the mix's A/B (the A–B loop range is transport
 /// state and stays out, like the tempo).
 /// Mutable native objects are serialized for isolation; media, exports, log, tempo and project identity
-/// stay outside undo, like the web. Same 200-step limit and 800 ms coalescing per nonempty key.
+/// stay outside undo, like the web. Of a take, only where its files are comes back (<see cref="Place"/>, native only:
+/// <see cref="LinkedMedia"/> changes that); a take never leaves or returns by undo. Same 200-step limit and 800 ms
+/// coalescing per nonempty key.
 /// Native only: every step keeps when it was made, Historial → Pasos lists them with a name (<see cref="Steps"/>, named
 /// by <see cref="EditSteps"/> from the states on both sides) and a click goes straight to any of them (<see cref="JumpTo"/>).
 /// </summary>
@@ -30,9 +32,11 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
     sealed record Entry(string Json, DateTime At, EditSteps.Label? Label);
 
     /// <summary>Only the editable state; serialized before every edit, never the immutable recordings.</summary>
+    sealed record Place(string Id, string? Audio, string? Video, long AudioBytes, long VideoBytes);
+
     sealed record Editable(List<Track> Tracks, string Layout, string Aspect, ColorGrade Color, VideoFx VideoFx,
         string? Mode = null, List<Folder>? Folders = null, List<Marker>? Markers = null, List<Bus>? Buses = null,
-        MixCompareState? Compare = null, List<ChordMarker>? ChordMarkers = null, double TimeScale = 1, double Bpm = 0);
+        MixCompareState? Compare = null, List<ChordMarker>? ChordMarkers = null, double TimeScale = 1, double Bpm = 0, List<Place>? Places = null);
 
     public bool CanUndo => undo.Count > 0;
     public bool CanRedo => redo.Count > 0;
@@ -153,13 +157,21 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
         TempoFollow.Rescale(project, speed);
         // what a change of grid moved (only the MIDI clips) isn't in the time scale
         if (state.Bpm > 0) TempoFollow.Regrid(project, state.Bpm / s.Bpm / speed);
+        // a take recorded after that state has no line here and stays as it is
+        if (state.Places != null)
+        {
+            var media = project.Media.ToDictionary(m => m.Id);
+            foreach (var at in state.Places)
+                if (media.TryGetValue(at.Id, out var m)) (m.Audio, m.Video, m.AudioBytes, m.VideoBytes) = (at.Audio, at.Video, at.AudioBytes, at.VideoBytes);
+        }
         project.Normalize();
         lastKey = "";
         Version++;
     }
 
     static string Capture(Project p) => JsonSerializer.Serialize(new Editable(p.Tracks, p.Settings.Layout,
-        p.Settings.Aspect, p.Settings.Color, p.Settings.VideoFx, p.Settings.Mode, p.Folders, p.Markers, p.Settings.Buses, p.Settings.Compare, p.ChordMarkers, p.Settings.TimeScale, p.Settings.Bpm), ProjectStore.Json);
+        p.Settings.Aspect, p.Settings.Color, p.Settings.VideoFx, p.Settings.Mode, p.Folders, p.Markers, p.Settings.Buses, p.Settings.Compare, p.ChordMarkers, p.Settings.TimeScale, p.Settings.Bpm,
+        [.. p.Media.Select(m => new Place(m.Id, m.Audio, m.Video, m.AudioBytes, m.VideoBytes))]), ProjectStore.Json);
 
     public void Clear()
     {

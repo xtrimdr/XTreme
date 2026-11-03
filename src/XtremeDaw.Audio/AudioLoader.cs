@@ -4,8 +4,8 @@ namespace XtremeDaw.Audio;
 
 /// <summary>
 /// Loads audio files into stereo float32 planar buffers at the engine's sample rate (48 kHz by default),
-/// matching Web Audio's <c>decodeAudioData</c> behavior in <c>GuitarCam/src/audio/mixGraph.ts</c>.
-/// Used by both live playback (<c>MediaAudio</c> / <c>LiveTrack</c>) and offline rendering (<c>wtlab mezclar</c>
+/// matching Web Audio's <c>decodeAudioData</c> behavior in the web app's <c>mixGraph.ts</c>.
+/// Used by both live playback (<c>MediaAudio</c> / <c>LiveTrack</c>) and offline rendering (<c>xtlab mezclar</c>
 /// and export).
 /// <para>
 /// Known difference vs. the web app: when a source file is not at <c>targetSampleRate</c> (e.g. 44.1 kHz

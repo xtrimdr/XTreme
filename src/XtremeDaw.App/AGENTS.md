@@ -66,7 +66,7 @@ seleccionado, borde 0,45 / 0,9). Los colores de pista son datos del usuario, no 
 - UI: **Segoe UI Variable Text** (fallback Segoe UI). Números y tiempos: **Cascadia Mono** (fallback Consolas).
   **Todo valor numérico va en mono** (`Classes="dim mono"`), alineado a la derecha de su etiqueta.
 - Íconos: **Segoe Fluent Icons** (fallback Segoe MDL2 Assets), `TextBlock` con clase `icon` y el glifo en `Text`. Sin
-  paquetes de íconos ni imágenes. Excepciones: los efectos (Vida, compresor, EQ, reverb, delay, transponer) siempre con `FxIcon`
+  paquetes de íconos ni imágenes (las miniaturas de plugins son contenido, como las de video). Excepciones: los efectos (Vida, compresor, EQ, reverb, delay, transponer) siempre con `FxIcon`
   (trazos de lucide), en todo lugar que muestre un efecto; los instrumentos de las pistas con `TrackIcons` (rellenos:
   Fluent Emoji High Contrast y lo que le falta de otros sets libres; licencias en `Assets/Icons/LICENSES.txt`,
   generados con `tools/make-track-icons.py`).
@@ -140,6 +140,10 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 
 - Son configurables: la tabla de acciones y sus teclas por defecto es `Shortcuts.cs` (la lista para el usuario está en
   DETALLES.md); Configuración → "Atajos de teclado" las cambia y se guardan en `config.json` ("shortcuts").
+- **Distribuciones de teclas** (pedido del usuario): `KeyLayouts` (en `XtremeDaw.Projects`, como texto, para que `xtlab atajos
+  comprobar` las revise) cambia la tabla base por la de otro DAW ("shortcutLayout"); solo lista lo que difiere: lo demás sigue
+  con la tecla de XTreme, salvo que esa tecla quede para otra acción. Los cambios del usuario van sobre la distribución
+  activa y cada una guarda los suyos ("shortcuts.cubase"…). Un atajo nuevo suma su tecla en cada DAW que lo tenga.
 - Un atajo nuevo se agrega a `Shortcuts.All` y se atiende en el `switch` de `MainWindow.OnKey` (evento en túnel, vía
   `Shortcuts.Find`) por su id, nunca comparando `Key` a mano. Esc no se configura: siempre cancela.
 - Los modificadores de la ruedita en el timeline (zoom, costados, altura) también son configurables: `Shortcuts.Wheel`,

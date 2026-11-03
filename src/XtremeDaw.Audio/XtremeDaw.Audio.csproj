@@ -38,32 +38,32 @@
     <None Include="..\..\lib\demucs\*.onnx" Link="demucs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
-  <!-- wtvsthost.exe and wtvsthost32.exe, the plugin host (src/XtremeDaw.VstHost, C++) for 64 and 32 bits: built here with
+  <!-- xtvsthost.exe and xtvsthost32.exe, the plugin host (src/XtremeDaw.VstHost, C++) for 64 and 32 bits: built here with
        Visual Studio's MSBuild when the C++ tools, the Windows SDK and lib/vst3sdk (tools/get-vst3sdk.ps1) are there, and
-       copied next to the app and wtlab. Without them the build goes on and the app plays MIDI tracks with the test tone only. -->
+       copied next to the app and xtlab. Without them the build goes on and the app plays MIDI tracks with the test tone only. -->
   <PropertyGroup>
-    <WtVstHostDir>$(MSBuildThisFileDirectory)..\XtremeDaw.VstHost\</WtVstHostDir>
-    <WtVstHostExe>$(WtVstHostDir)bin\Release\wtvsthost.exe</WtVstHostExe>
-    <WtVstHost32Exe>$(WtVstHostDir)bin\Release\wtvsthost32.exe</WtVstHost32Exe>
+    <XtVstHostDir>$(MSBuildThisFileDirectory)..\XtremeDaw.VstHost\</XtVstHostDir>
+    <XtVstHostExe>$(XtVstHostDir)bin\Release\xtvsthost.exe</XtVstHostExe>
+    <XtVstHost32Exe>$(XtVstHostDir)bin\Release\xtvsthost32.exe</XtVstHost32Exe>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="$(WtVstHostExe)" Link="wtvsthost.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(WtVstHostExe)')" />
-    <None Include="$(WtVstHost32Exe)" Link="wtvsthost32.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(WtVstHost32Exe)')" />
+    <None Include="$(XtVstHostExe)" Link="xtvsthost.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(XtVstHostExe)')" />
+    <None Include="$(XtVstHost32Exe)" Link="xtvsthost32.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(XtVstHost32Exe)')" />
   </ItemGroup>
   <Target Name="BuildVstHost" BeforeTargets="BeforeBuild" Condition="'$(OS)' == 'Windows_NT' And Exists('$(MSBuildThisFileDirectory)..\..\lib\vst3sdk\pluginterfaces\base') And Exists('$(MSBuildProgramFiles32)\Windows Kits\10\Include')">
     <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find MSBuild\**\Bin\amd64\MSBuild.exe" ConsoleToMSBuild="true" StandardOutputImportance="low" ContinueOnError="true" Condition="Exists('$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe')">
-      <Output TaskParameter="ConsoleOutput" PropertyName="WtVsMsBuild" />
+      <Output TaskParameter="ConsoleOutput" PropertyName="XtVsMsBuild" />
     </Exec>
-    <Message Importance="normal" Text="Sin MSBuild de Visual Studio con C++: no compilo wtvsthost.exe (las pistas MIDI suenan con el tono de prueba)." Condition="'$(WtVsMsBuild)' == '' Or !Exists('$(WtVsMsBuild)')" />
-    <Exec Command="&quot;$(WtVsMsBuild)&quot; &quot;$(WtVstHostDir)XtremeDaw.VstHost.vcxproj&quot; -p:Configuration=Release -p:Platform=x64 -nologo -v:quiet -m" Condition="'$(WtVsMsBuild)' != '' And Exists('$(WtVsMsBuild)')" />
-    <Exec Command="&quot;$(WtVsMsBuild)&quot; &quot;$(WtVstHostDir)XtremeDaw.VstHost.vcxproj&quot; -p:Configuration=Release -p:Platform=Win32 -nologo -v:quiet -m" Condition="'$(WtVsMsBuild)' != '' And Exists('$(WtVsMsBuild)')" />
-    <ItemGroup Condition="Exists('$(WtVstHostExe)')">
-      <None Remove="$(WtVstHostExe)" />
-      <None Include="$(WtVstHostExe)" Link="wtvsthost.exe" CopyToOutputDirectory="PreserveNewest" />
+    <Message Importance="normal" Text="Sin MSBuild de Visual Studio con C++: no compilo xtvsthost.exe (las pistas MIDI suenan con el tono de prueba)." Condition="'$(XtVsMsBuild)' == '' Or !Exists('$(XtVsMsBuild)')" />
+    <Exec Command="&quot;$(XtVsMsBuild)&quot; &quot;$(XtVstHostDir)XtremeDaw.VstHost.vcxproj&quot; -p:Configuration=Release -p:Platform=x64 -nologo -v:quiet -m" Condition="'$(XtVsMsBuild)' != '' And Exists('$(XtVsMsBuild)')" />
+    <Exec Command="&quot;$(XtVsMsBuild)&quot; &quot;$(XtVstHostDir)XtremeDaw.VstHost.vcxproj&quot; -p:Configuration=Release -p:Platform=Win32 -nologo -v:quiet -m" Condition="'$(XtVsMsBuild)' != '' And Exists('$(XtVsMsBuild)')" />
+    <ItemGroup Condition="Exists('$(XtVstHostExe)')">
+      <None Remove="$(XtVstHostExe)" />
+      <None Include="$(XtVstHostExe)" Link="xtvsthost.exe" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
-    <ItemGroup Condition="Exists('$(WtVstHost32Exe)')">
-      <None Remove="$(WtVstHost32Exe)" />
-      <None Include="$(WtVstHost32Exe)" Link="wtvsthost32.exe" CopyToOutputDirectory="PreserveNewest" />
+    <ItemGroup Condition="Exists('$(XtVstHost32Exe)')">
+      <None Remove="$(XtVstHost32Exe)" />
+      <None Include="$(XtVstHost32Exe)" Link="xtvsthost32.exe" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>
 

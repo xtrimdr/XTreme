@@ -8,7 +8,7 @@ namespace XtremeDaw.Lab;
 /// <summary>
 /// VST3 and VST2 plugins without the window: scan them (the same catalog the app uses), list them, manage what Configuración →
 /// Plugins manages (the folders to look in, the plugins hidden from the lists), and play one offline through
-/// wtvsthost.exe to a WAV, the way the export does, to hear that the bridge works. An effect (<c>vst efecto</c>) goes
+/// xtvsthost.exe to a WAV, the way the export does, to hear that the bridge works. An effect (<c>vst efecto</c>) goes
 /// through a slot both ways, the export's and live (paced like the driver), to check that live comes exactly one block
 /// later than the export, which is what the plugin delay compensation counts on.
 /// </summary>
@@ -66,10 +66,39 @@ static class VstCommands
                 return StateCheck(a);
             case "vivo":
                 return LivePlay(a);
+            case "bucle":
+                return LoopPlay(a);
+            case "miniatura":
+                return Thumbnail(a);
             default:
-                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--salida x.wav] [--apagado] | parametros \"nombre\" [--mover \"parámetro\"] [--segundos 2] | estado \"nombre\"");
+                throw new ArgumentException("vst escanear [--todo] [--carpeta X] [--archivo X] | lista | carpetas [--agregar X] [--sacar X] | ocultar \"nombre\" | mostrar \"nombre\" | probar \"nombre\" [--segundos 4] [--salida x.wav] [--ventana] | vivo \"nombre\" [--segundos 4] [--bloque 256] [--espera 0] [--desde 0] [--sin-carga] [--apuro 1] [--estado archivo] [--tope 192] [--prioridad] [--mmcss] [--ventana] [--salida x.wav] | bucle \"nombre\" [--bloque 256] [--vueltas 4] | efecto \"nombre\" [--entrada x.wav] [--segundos 4] [--bloque 256] [--tarde] [--salida x.wav] [--apagado] | parametros \"nombre\" [--mover \"parámetro\"] [--segundos 2] | estado \"nombre\" | miniatura \"nombre\" [--salida x.png] [--ya]");
         }
     }
+
+    /// <summary>Opens the plugin's window and takes its picture the way the app does: waiting for it to settle, or at once with --ya.</summary>
+    static int Thumbnail(Args a)
+    {
+        string name = a.Positional.Skip(1).FirstOrDefault() ?? throw new ArgumentException("vst miniatura \"nombre del plugin\"");
+        var plugin = PluginCatalog.Find(PluginCatalog.Plugins(PluginCatalog.Load()), name)
+            ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con vst escanear.");
+        string output = a.Get("salida") is { } file ? Path.GetFullPath(file) : PluginThumbs.Prepare(plugin.Path, plugin.ClassId);
+        using var live = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, 48000, offline: false);
+        var answer = new TaskCompletionSource<bool>();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        live.Message += line =>
+        {
+            if (line == "editor-open") live.Command($"{(a.Flag("ya") ? "snapshot-now" : "snapshot")} {output}");
+            else if (line == "snapshot-done") answer.TrySetResult(true);
+            else if (line == "snapshot-failed") answer.TrySetResult(false);
+        };
+        live.OpenEditor(0);
+        bool saved = answer.Task.Wait(TimeSpan.FromSeconds(ThumbWaitSec)) && answer.Task.Result;
+        Console.WriteLine(saved ? $"{plugin.Name}: miniatura en {sw.Elapsed.TotalSeconds:0.0} s, {new FileInfo(output).Length / 1024} KB: {output}" : $"{plugin.Name}: sin miniatura (la ventana quedó vacía).");
+        return saved ? 0 : 1;
+    }
+
+    /// <summary>More than the 12 s the host looks at a window for.</summary>
+    const int ThumbWaitSec = 20;
 
     /// <summary>The plugin's saved sound survives: its state, loaded into a new copy, comes back the same (what reopening a project does).</summary>
     static int StateCheck(Args a)
@@ -286,9 +315,108 @@ static class VstCommands
     }
 
     /// <summary>
+    /// A loop on an instrument, as the engine turns it (<see cref="LoopSplice.Turned"/>) in driver blocks at the speed of
+    /// real time: when the first note of each lap sounds, with the loop known ahead and as a plain jump, and on an
+    /// instrument that sustains, that a note crossing B doesn't stay on and one that began before A sounds in the next lap.
+    /// </summary>
+    static int LoopPlay(Args a)
+    {
+        string name = a.Positional.Skip(1).FirstOrDefault() ?? throw new ArgumentException("vst bucle \"nombre del plugin\"");
+        var plugin = PluginCatalog.Find(PluginCatalog.Plugins(PluginCatalog.Load()), name)
+            ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con vst escanear.");
+        const int sr = 48000, tenth = sr / 10;
+        const long A = sr / 2, B = A + sr;
+        int block = Math.Clamp(a.Int("bloque", 256), 32, VstBridge.MaxBlock), laps = Math.Clamp(a.Int("vueltas", 4), 2, 20);
+        using var bridge = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, sr, offline: false, block);
+        var player = new InstrumentPlayer(bridge) { Tempo = 120 };
+        if (!InstrumentWarmup.Run(bridge, 60, 120, sr, 5)) Console.WriteLine("No sonó en 5 s.");
+
+        // what it plays, with the loop known ahead (end = B) or not (0), and the block of the output where each lap turned
+        (float[] Heard, List<long> Turns) Run(NoteEvent[] notes, long end)
+        {
+            player.Notes = new NoteSequence(notes, sr);
+            // ends before the turn after the last one
+            var heard = new float[(laps + 1) * sr + tenth - 2 * block];
+            var other = new float[heard.Length];
+            var turns = new List<long>();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            long pos = A - tenth;
+            for (int at = 0, k = 0; at + block <= heard.Length; at += block, k++)
+            {
+                player.Play(pos, block, heard.AsSpan(at, block), other.AsSpan(at, block), null, A, end);
+                long next = pos + block;
+                if (LoopSplice.Turned(pos, next, A, B, out long to))
+                {
+                    turns.Add(at + (B - pos));
+                    next = to;
+                }
+                pos = next;
+                double due = (k + 1) * block / (double)sr;
+                while (sw.Elapsed.TotalSeconds < due) Thread.Yield();
+            }
+            // the notes go off, and what they leave goes out
+            for (int k = 0; k < 30; k++)
+            {
+                player.Idle(block, other.AsSpan(0, block), other.AsSpan(block, block));
+                Thread.Sleep(10);
+            }
+            return (heard, turns);
+        }
+
+        // where the note starts: the first frame over 5 % of its peak, from where A is heard
+        int Onset(float[] x, long from)
+        {
+            float peak = 0;
+            for (int i = (int)from; i < from + tenth && i < x.Length; i++) peak = Math.Max(peak, Math.Abs(x[i]));
+            for (int i = (int)from; i < from + tenth && i < x.Length; i++) if (Math.Abs(x[i]) > peak * 0.05f) return (int)(i - from);
+            return tenth;
+        }
+        // how late the first note of each lap comes after the same note the first time through
+        (int Worst, int Misses) Lateness(long end)
+        {
+            int missed = bridge.Misses;
+            NoteEvent[] beat = [new(A, tenth, 0, 0, 60, 110), new(A + 5 * tenth, tenth, 0, 0, 67, 110)];
+            var (heard, turns) = Run(beat, end);
+            int first = Onset(heard, tenth), worst = 0;
+            foreach (long t in turns) worst = Math.Max(worst, Math.Abs(Onset(heard, t) - first));
+            return (worst, bridge.Misses - missed);
+        }
+
+        var (plain, plainMisses) = Lateness(0);
+        Console.WriteLine($"{plugin.Name}, bloques de {block}, latencia {bridge.Latency}: como un salto, el primer tiempo de la vuelta llega {plain} muestras corrido ({plainMisses} bloques perdidos)");
+        var (ahead, aheadMisses) = Lateness(B);
+        Console.WriteLine($"Con el bucle sabido de antes: {ahead} muestras corrido ({aheadMisses} bloques perdidos)");
+
+        // one note crosses B, another began before A: the first ends at the turn, the second comes in on every lap
+        NoteEvent[] held = [new(A - tenth, 4 * tenth, 0, 0, 60, 110), new(A + 9 * tenth, 4 * tenth, 0, 0, 67, 110)];
+        var (sound, marks) = Run(held, B);
+        double quiet = 0, landed = 1;
+        foreach (long t in marks)
+        {
+            if (t + sr >= sound.Length) continue;
+            float inNote = 0, between = 0;
+            for (long i = t + tenth; i < t + 2 * tenth; i++) inNote = Math.Max(inNote, Math.Abs(sound[i]));
+            for (long i = t + 7 * tenth; i < t + 8 * tenth + tenth / 2; i++) between = Math.Max(between, Math.Abs(sound[i]));
+            quiet = Math.Max(quiet, between);
+            landed = Math.Min(landed, inNote);
+        }
+        Console.WriteLine($"Nota que cruza B: entre notas queda en {Palette((float)quiet)}. Nota que empezó antes de A: suena en {Palette((float)landed)}");
+        bool ok = ahead <= LoopTolerance && quiet < 0.1 * landed;
+        Console.WriteLine(ok ? "ok" : "DISTINTO");
+        return ok ? 0 : 3;
+    }
+
+    /// <summary>
+    /// 2.7 ms: what the same note moves by itself. Plugins start notes at the edges of their own small blocks (Surge, 32)
+    /// and an oscillator's free phase moves where it crosses the threshold (measured: 20 to 80 frames, whatever the driver's block).
+    /// </summary>
+    const int LoopTolerance = 128;
+
+    /// <summary>
     /// An effect in a slot (<see cref="VstInsert"/>), offline as the export runs it and live in driver blocks of
     /// <c>--bloque</c> at the speed of real time: writes both and checks that the live one is the same sound one block
-    /// later (a plugin that changes with time, like a modulated reverb, only lines up roughly).
+    /// later (a plugin that changes with time, like a modulated reverb, only lines up roughly). <c>--tarde</c> calls back
+    /// as soon as the block before is done, so no block is ever ready on time: it has to come out whole, one block later.
     /// </summary>
     /// <summary>
     /// What a plugin lets a host automate; with --mover, a lane on that parameter from 0 to 1 over the sound, the way the
@@ -391,9 +519,10 @@ static class VstCommands
         // live: the window's process, blocks of the driver's size at the speed of real time, never waiting for it
         using var bridge = VstBridge.Start(plugin.Path, plugin.ClassId, plugin.Name, sr, offline: false, block);
         VstInsert.LiveBlock = block;
+        VstInsert.Steady = a.Flag("toma");
         var live = new VstInsert(sr);
         live.Set(new VstSlotSpec(instance, on) { Live = bridge }, 120);
-        int expected = live.LatencySamples - pluginLatency;
+        bool late = a.Flag("tarde");
         var liveL = (float[])inL.Clone();
         var liveR = (float[])inR.Clone();
         sw.Restart();
@@ -401,18 +530,26 @@ static class VstCommands
         {
             int len = Math.Min(block, n - at);
             live.Process(liveL.AsSpan(at, len), liveR.AsSpan(at, len));
+            if (late)
+            {
+                // the next callback comes as soon as the block before this one is done: this one is never ready for it
+                var wait = System.Diagnostics.Stopwatch.StartNew();
+                while (bridge.Finished < bridge.Published - 1 && wait.ElapsedMilliseconds < 1000) Thread.SpinWait(20);
+                continue;
+            }
             // the driver calls back once per block, evenly: wait for the next one spinning (a Sleep(1) lasts up to
             // 15 ms on Windows, and the blocks it put off would then come back to back, with no time for the plugin)
             double due = (k + 1) * block / (double)sr;
             while (sw.Elapsed.TotalSeconds < due) Thread.Yield();
         }
-        Console.WriteLine($"En vivo, bloques de {block}: {live.Misses} bloques que no llegó a tiempo; se oye {live.LatencySamples} muestras tarde ({live.LatencySamples * 1000.0 / sr:0.0} ms)");
+        int expected = live.LatencySamples - pluginLatency;
+        Console.WriteLine($"En vivo{(VstInsert.Steady ? ", como en una toma" : "")}{(late ? ", siempre un bloque atrasado" : "")}, bloques de {block}: {live.Misses} bloques que no llegó a tiempo; se oye {live.LatencySamples} muestras tarde ({live.LatencySamples * 1000.0 / sr:0.0} ms)");
 
         // where the live sound lines up with the export's: one block later
         int best = 0;
         double bestErr = double.MaxValue;
-        int from = Math.Min(n / 4, sr), to = n - 2 * block - 64;
-        for (int lag = 0; lag <= 2 * block + 64; lag++)
+        int reach = 3 * block + 64, from = Math.Min(n / 4, sr), to = n - reach;
+        for (int lag = 0; lag <= reach; lag++)
         {
             double e = 0;
             for (int i = from; i < to; i += 7) e += Math.Abs(liveL[i + lag] - expL[i]);
@@ -431,7 +568,9 @@ static class VstCommands
         string liveOut = Path.Combine(Path.GetDirectoryName(output)!, Path.GetFileNameWithoutExtension(output) + " en vivo.wav");
         Wav.Write(liveOut, liveL, liveR, sr);
         Console.WriteLine($"Escritos: {output} y {liveOut}");
-        return best == expected ? 0 : 3;
+        // the same sound, with no block lost: only a plugin that doesn't change with time gets this far
+        bool whole = !late || level > 0 && diff < level * 0.01;
+        return best == expected && whole ? 0 : 3;
     }
 
     const int ThreadPriorityTimeCritical = 15, AvrtPriorityCritical = 2;

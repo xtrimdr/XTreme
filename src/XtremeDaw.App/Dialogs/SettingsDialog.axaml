@@ -5,7 +5,7 @@
              AutomationProperties.Name="{loc:T settings.title}"
              Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
 
-  <!-- Port of SettingsDialog from GuitarCam/src/components/SettingsDialog.tsx; "Atajos de teclado" and "Idioma" are native only -->
+  <!-- Port of SettingsDialog from the web app's SettingsDialog.tsx; "Atajos de teclado" and "Idioma" are native only -->
   <UserControl.Styles>
     <Style Selector="Button.nav">
       <Setter Property="Height" Value="36" />

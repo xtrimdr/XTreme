@@ -5,7 +5,7 @@ namespace XtremeDaw.Projects;
 
 /// <summary>
 /// Turns a <see cref="Channel"/>'s insert slots into what the engine takes (<see cref="InsertSpec"/>). One place for
-/// the live engine, the export and wtlab, so the three hear the same chain. Slots of a kind this version doesn't know
+/// the live engine, the export and xtlab, so the three hear the same chain. Slots of a kind this version doesn't know
 /// are left out. Also the mix's nodes (<see cref="Nodes"/>: the folders, then the buses in <see cref="ProjectBuses.Order"/>),
 /// where each track goes (<see cref="TrackOutput"/>) and what it sends (<see cref="Sends"/>), and the whole bus side of
 /// the export (<see cref="Bus"/>).
@@ -14,13 +14,13 @@ public static class ChannelDsp
 {
     /// <summary>
     /// The level a bus's Vida is measured against: a bus has no take of its own, so it is the same as a track with no
-    /// audio. Fixed, so the live engine, the export and wtlab drive it the same.
+    /// audio. Fixed, so the live engine, the export and xtlab drive it the same.
     /// </summary>
     public const double BusRmsDb = -24;
 
     /// <param name="rmsDb">The take's level, which the Vida drive is measured against (-24 without audio).</param>
     /// <param name="live">Live: the running process of each VST3 slot (null while it loads); without it (the export,
-    /// wtlab), each VST3 slot opens its own.</param>
+    /// xtlab), each VST3 slot opens its own.</param>
     public static InsertSpec[] Specs(Channel ch, double rmsDb, double bpm = 120, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) =>
         Specs(ch.Slots, rmsDb, bpm, live, bypass);
 
@@ -69,7 +69,7 @@ public static class ChannelDsp
     }
 
     /// <summary>A track as the export renders it, with its clips and the level its Vida is measured against.</summary>
-    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb)
+    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb, SamplerRig? sampler = null)
     {
         var ch = t.Channel;
         var automator = InsertAutomator.Create(t, rmsDb, p.Settings.Bpm);
@@ -79,6 +79,7 @@ public static class ChannelDsp
             Clips = clips,
             Notes = Notes(t, p.Settings.Bpm, MidiSampleRate),
             Instrument = t.Instrument is { } i ? Instance(i) : null,
+            Sampler = sampler,
             Tempo = p.Settings.Bpm,
             Volume = ch.Volume,
             Pan = ch.Pan,
@@ -100,30 +101,31 @@ public static class ChannelDsp
     /// A MIDI track's notes as the engine plays them (<see cref="NoteSynth"/>), in frames at <paramref name="sampleRate"/>
     /// with the tempo turning beats into time; null for an audio track or one without notes. A note that runs past its
     /// clip's end (or its pattern's pass) is cut there and one that starts past it is left out; a pattern's clip plays
-    /// its pass again until it ends.
+    /// its pass again until it ends. A muted note isn't heard. What notes express (slides, porta, pan, modulation) comes
+    /// out of <see cref="NoteExpression"/>; pitch bend is per channel, so a chord bends together.
     /// </summary>
     public static NoteSequence? Notes(Track t, double bpm, int sampleRate)
     {
         if (!t.IsMidi || t.MidiClips is not { Count: > 0 } clips) return null;
         double beatSec = 60 / Math.Max(1, bpm);
-        var list = new List<NoteEvent>();
+        var list = new List<NoteExpression.Heard>();
         foreach (var c in clips)
             for (int pass = 0; pass < c.Passes; pass++)
                 foreach (var n in c.Notes)
                 {
-                    if (!c.Heard(n, pass, out double beat, out double endBeat)) continue;
+                    if (n.Muted || !c.Heard(n, pass, out double beat, out double endBeat)) continue;
                     double start = c.AtSec + beat * beatSec;
                     double end = c.AtSec + endBeat * beatSec;
                     long from = (long)Math.Round(start * sampleRate);
                     long len = Math.Max(1, (long)Math.Round(end * sampleRate) - from);
                     // a plugin takes whole semitones: the Transponer's cents only reach the test tone
                     int pitch = Math.Clamp(n.Pitch + (int)Math.Round(t.Transpose), MidiNote.MinPitch, MidiNote.MaxPitch);
-                    list.Add(new NoteEvent(from, len, NoteSynth.Hz(n.Pitch + t.Transpose), NoteSynth.Gain(n.Velocity), pitch, n.Velocity));
+                    list.Add(new(from, len, pitch, n.Pitch + t.Transpose, n));
                 }
-        return list.Count == 0 ? null : new NoteSequence([.. list], sampleRate);
+        return new NoteExpression(beatSec, sampleRate).Build(list);
     }
 
-    /// <summary>The bus side of the mix (the folders and buses as nodes, and the master), for the export and wtlab.</summary>
+    /// <summary>The bus side of the mix (the folders and buses as nodes, and the master), for the export and xtlab.</summary>
     public static MixBusSpec Bus(Project p)
     {
         var nodes = Nodes(p);

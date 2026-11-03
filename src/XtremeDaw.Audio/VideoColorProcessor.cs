@@ -8,7 +8,7 @@ public sealed record LookSpec(string Id, string Label);
 public sealed record LetterboxSpec(string Id, string Label, double Ratio);
 
 /// <summary>
-/// Port of <c>GuitarCam/src/shared/colorGrade.js</c>, <c>src/shared/videoFx.js</c> and <c>src/video/colorGL.ts</c>.
+/// Port of the web app's <c>colorGrade.js</c>, <c>src/shared/videoFx.js</c> and <c>src/video/colorGL.ts</c>.
 /// Shared by the live preview and the FFmpeg MP4 export so that what you see in the preview matches the exported video:
 /// <list type="bullet">
 /// <item><description>29 looks (the fitted ones live in <see cref="FittedLooks"/>) + 9 color adjustments baked into a <c>33³</c> 3D LUT (<see cref="BuildLut"/> / <see cref="LutToCube"/>).</description></item>

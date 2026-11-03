@@ -45,12 +45,16 @@ public partial class MainWindow
         };
         DockPanel.SetDock(header, Dock.Top);
         pianoHost.Children.Add(header);
+        DockPanel.SetDock(pianoToolPanel, Dock.Right);
+        pianoHost.Children.Add(pianoToolPanel);
         pianoHost.Children.Add(pianoRoll);
+        InitPianoTools();
 
         pianoRoll.NotesCommitted += async (clipId, notes) =>
         {
             if (store == null || MidiEditing.TryFind(store.Project, clipId) == null) return;
             string trackId = MidiEditing.Find(store.Project, clipId).Track.Id;
+            RestoreBeforeCommit(clipId);
             await EditTimeline(p => { MidiEditing.SetNotes(p, clipId, notes); return trackId; }, "midi-notes");
             Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
         };
@@ -70,17 +74,23 @@ public partial class MainWindow
         if (double.TryParse(AppConfig.Get("pianoVelHeight"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double velH))
             pianoRoll.VelocityHeight = velH;
         pianoRoll.VelocityHeightChanged += h => SaveViewPref("pianoVelHeight", h.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        PianoViewButton.Click += (_, _) => ShowPiano();
+        PianoViewButton.Click += (_, _) =>
+        {
+            if (PianoShown && !ViewsCovered) SetMixerView(false);
+            else ShowPiano();
+        };
 
         Timeline.MidiClipChanged += async (clipId, atSec, beats, toTrack) =>
         {
             if (store == null) return;
             string? trackId = null;
             var clones = Timeline.TakeClones();
+            var along = Timeline.TakeResizedAlong();
             await EditTimeline(p =>
             {
                 MidiEditing.LeaveCopies(p, clones);
                 MidiEditing.Place(p, clipId, atSec, beats);
+                foreach (string id in along) MidiEditing.Place(p, id, MidiEditing.Find(p, id).Clip.AtSec, beats);
                 if (toTrack != null) MidiEditing.MoveToTrack(p, clipId, toTrack);
                 return trackId = MidiEditing.Find(p, clipId).Track.Id;
             }, clones.Count > 0 ? "midi-clip-duplicated" : "midi-clip-moved");
@@ -117,6 +127,9 @@ public partial class MainWindow
         };
         ToolTip.SetTip(pianoLengthButton, Loc.T("piano.length.tip"));
         title.Children.Add(pianoLengthButton);
+        pianoPartsButton.Click += (_, _) => ShowPianoParts();
+        ToolTip.SetTip(pianoPartsButton, Loc.T("piano.parts.tip"));
+        title.Children.Add(pianoPartsButton);
         // the track's instrument: which one (a menu to change it) and its window
         title.Children.Add(new Border { Width = 1, Height = 20, Background = Palette.Line, Margin = new Thickness(4, 0) });
         pianoInstrumentButton.Click += (_, _) =>
@@ -150,6 +163,7 @@ public partial class MainWindow
         snapRow.Children.Add(help);
         // groups that don't fit next to the title go down a row instead of drawing over it
         row.Children.Add(title);
+        row.Children.Add(BuildPianoToolbar());
         row.Children.Add(BuildPianoScaleTools());
         row.Children.Add(BuildPianoVelocityTools());
         row.Children.Add(snapRow);
@@ -486,10 +500,12 @@ public partial class MainWindow
         var clip = p == null ? null : MidiEditing.TryFind(p, pianoClipId);
         if (clip == null) pianoClipId = null;
         var track = clip == null ? null : MidiEditing.Find(p!, clip.Id).Track;
-        pianoRoll.SetClip(clip, clip?.PatternId is { } id ? MidiPatterns.Clips(p!, id) : track?.MidiClips, track?.Name, track == null ? null : TrackIcons.ColorOf(track), p?.Settings.Bpm ?? 120, frame);
+        pianoRoll.SetClip(clip, clip?.PatternId is { } id ? MidiPatterns.Clips(p!, id) : track?.MidiClips, track?.Name, track == null ? null : TrackIcons.ColorOf(track), p?.Settings.Bpm ?? 120, frame, clip == null ? null : PartGhosts(p!, clip));
+        RefreshPianoParts(p, clip, track);
         pianoTitle.Text = clip == null || track == null ? ""
             : clip.PatternId is { } pattern ? Loc.T("piano.pattern", clip.PatternName!, clip.Notes.Count, PatternClipsLabel(MidiPatterns.Clips(p!, pattern).Count()))
             : Loc.T("piano.clip", track.Name, $"{clip.LengthBeats / 4:0.##}", clip.Notes.Count);
+        ShowRollExtras();
         pianoLengthButton.IsVisible = clip?.PatternId != null;
         if (clip?.PatternId != null)
         {
@@ -518,9 +534,9 @@ public partial class MainWindow
         pianoInstrumentButton.IsVisible = pianoOpenButton.IsVisible = t != null;
         if (t == null) return;
         var plugin = t.Track.Instrument;
-        string name = plugin == null ? Loc.T("vst.testTone") : instrumentLoads.ContainsKey(t.Track.Id) ? Loc.T("vst.loading", plugin.Name) : plugin.Name;
+        string name = plugin != null && instrumentLoads.ContainsKey(t.Track.Id) ? Loc.T("vst.loading", plugin.Name) : InstrumentName(t.Track);
         pianoInstrumentButton.Content = name + "  ▾";
-        pianoOpenButton.IsEnabled = instruments.ContainsKey(t.Track.Id);
+        pianoOpenButton.IsEnabled = t.Track.Sampler != null || instruments.ContainsKey(t.Track.Id);
     }
 
     int TrackIndex(string? trackId) => tracks.FindIndex(t => t.Track.Id == trackId);
@@ -533,7 +549,12 @@ public partial class MainWindow
 
     async Task DuplicateMidiClip(string clipId)
     {
-        if (store == null || MidiEditing.TryFind(store.Project, clipId) == null) return;
+        if (store == null || MidiEditing.TryFind(store.Project, clipId) is not { } clip) return;
+        if (MidiPatterns.Together(store.Project.Tracks, clip).Count > 0)
+        {
+            await DuplicateClips([clipId]);
+            return;
+        }
         string trackId = MidiEditing.Find(store.Project, clipId).Track.Id;
         string? copy = null;
         await EditTimeline(p => { copy = MidiEditing.Duplicate(p, clipId); return trackId; }, "midi-clip-duplicated");
@@ -607,6 +628,7 @@ public partial class MainWindow
                 return Task.CompletedTask;
             }, enabled: enabled),
             new MenuItem { Header = new TextBlock { Text = Loc.T("midi.pattern.length", BarsLabel(clip.CellBeats / 4)), FontSize = 12 }, ItemsSource = lengths, IsEnabled = enabled },
+            new MenuItem { Header = new TextBlock { Text = Loc.T("piano.parts.add"), FontSize = 12 }, ItemsSource = AddPartItems(clipId), IsEnabled = enabled },
             MenuAction(Loc.T("midi.pattern.unique"), () => EditPattern(clipId, p => MidiPatterns.MakeUnique(p, clipId), "midi-pattern-left"), enabled: enabled, tip: Loc.T("midi.pattern.unique.tip")),
         ];
     }
@@ -628,14 +650,21 @@ public partial class MainWindow
         var list = new List<object>
         {
             new MenuItem { Header = track.Track.Name, IsEnabled = false, FontSize = 11 },
+        };
+        AddRangeItems(list, track, enabled);
+        double at = engine.PositionSec;
+        bool under = MidiEditing.TryFind(store.Project, clipId) is { } clip && MidiEditing.CanSplit(clip, at, store.Project.Settings.Bpm);
+        list.AddRange(
+        [
             MenuAction(Loc.T("midi.menu.open"), () => { OpenInPiano(clipId); return Task.CompletedTask; }, icon: ""),
             MenuAction(Loc.T("menu.duplicate"), () => boxed.Count > 1 ? DuplicateClips(boxed) : DuplicateMidiClip(clipId), Shortcuts.Label("duplicate"), enabled),
             MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")),
             MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled),
+            MenuAction(Loc.T("menu.split"), () => SplitMidi(track, clipId, at), "Alt+X", enabled && under && !track.Track.Locked),
             MenuAction(Loc.T("midi.quantize.menu", PianoSnapLabel()), () => Quantize(boxed.Count > 1 ? boxed : [clipId]), Shortcuts.Label("quantize"),
                 enabled && pianoRoll.QuantizeBeats > 0, tip: pianoRoll.QuantizeBeats > 0 ? null : Loc.T("midi.quantize.free")),
             new Separator(),
-        };
+        ]);
         list.AddRange(PatternItems(clipId, enabled, point));
         list.Add(new Separator());
         list.Add(MenuAction(boxed.Count > 1 ? Loc.T("menu.removeClips", boxed.Count) : Loc.T("menu.removeClip"),

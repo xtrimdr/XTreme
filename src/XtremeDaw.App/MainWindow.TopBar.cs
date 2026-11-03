@@ -12,7 +12,7 @@ namespace XtremeDaw.App;
 /// resolution, sample rate and FFmpeg check, and the theme picker. Native: the audio engine's DSP load sits here
 /// too, between thin lines, instead of in the transport bar (asked by the user); the sample rate went down under the
 /// input meter with the buffer size. Same as the web except the save state
-/// follows guitarcam.json (the web's follows the take uploads: here takes are written while they are recorded),
+/// follows xtreme_project.json (the web's follows the take uploads: here takes are written while they are recorded),
 /// so "Guardando" also shows during the 1.5 s before an edit is saved, and a read-only project says
 /// "Solo lectura". Native: when <see cref="SaveMode"/> saves every few minutes or by hand, pending edits say "Sin
 /// guardar" and the disk next to undo saves them (it is off while there is nothing to save). The bar also holds the status text here, so the system meter hides below

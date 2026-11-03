@@ -69,7 +69,7 @@ static class HistoryCommands
             if (!ok) throw new InvalidOperationException($"Historial: {text}");
             n++;
         }
-        string dir = Path.Combine(Path.GetTempPath(), $"wtlab-historial-{Guid.NewGuid():N}");
+        string dir = Path.Combine(Path.GetTempPath(), $"xtlab-historial-{Guid.NewGuid():N}");
         try
         {
             var p = new Project { Name = "Prueba" };
@@ -82,7 +82,7 @@ static class HistoryCommands
             Directory.CreateDirectory(Path.Combine(dir, "media"));
             File.WriteAllBytes(Path.Combine(dir, "media", "a.wav"), new byte[2048]);
             File.WriteAllBytes(Path.Combine(dir, "media", "b.wav"), new byte[4096]);
-            string outside = Path.Combine(dir, "..", $"wtlab-afuera-{Guid.NewGuid():N}.mp4");
+            string outside = Path.Combine(dir, "..", $"xtlab-afuera-{Guid.NewGuid():N}.mp4");
             File.WriteAllBytes(outside, new byte[10]);
             p.Exports.Add(new ExportRecord { File = Path.GetFullPath(outside), Bytes = 10, TakeIds = [a.Id, b.Id] });
             using var store = ProjectStore.Create(dir, p);
@@ -113,7 +113,7 @@ static class HistoryCommands
             Check(p.Exports.Count == 0 && !File.Exists(outside), "la exportación va a la Papelera aunque esté afuera");
 
             var lines = ProjectHistory.BuildActivity(p);
-            Check(lines[0].Text == "Mandaste «wtlab-afuera" + lines[0].Text["Mandaste «wtlab-afuera".Length..] && lines[0].Rec, "borrar una exportación: rojo");
+            Check(lines[0].Text == "Mandaste «xtlab-afuera" + lines[0].Text["Mandaste «xtlab-afuera".Length..] && lines[0].Rec, "borrar una exportación: rojo");
             Check(lines[1].Text == "Mandaste «Canal 2» a la Papelera (4 KB)", "borrar no usadas, con el tamaño");
             Check(lines[2].Text == "Sacaste «Canal 2» del timeline", "sacar del timeline");
             Check(lines[^1].Text == "Creaste el proyecto", "lo más viejo al final");

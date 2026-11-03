@@ -35,7 +35,7 @@ public sealed class TestListData
 /// <summary>
 /// The list of changes waiting to be tried by hand (asked by the user: with several changes it was impossible to tell
 /// what had been tried and what worked). It lives outside the test copies, in <c>pruebas\lista.json</c>, so it
-/// survives them: <c>tools\probar.ps1</c> adds to it through wtlab, the panel of a test copy marks it, and an agent
+/// survives them: <c>tools\probar.ps1</c> adds to it through xtlab, the panel of a test copy marks it, and an agent
 /// reads the verdicts back. Several processes write at once: each change holds <c>lista.lock</c> for one read, change
 /// and atomic swap, and readers need no lock.
 /// </summary>

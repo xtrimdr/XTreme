@@ -9,11 +9,11 @@ namespace XtremeDaw.Projects;
 /// <summary>
 /// An open project folder:
 /// <code>
-///   guitarcam.json        the project
-///   guitarcam.json.bak    the previous save
-///   guitarcam.lock        held while it's open (a second window opens it read-only)
-///   historial/            snapshots, to go back further than the .bak (versiones.json: their names)
-///   media/                recordings and imported files (never rewritten)
+///   xtreme_project.json      the project
+///   xtreme_project.json.bak  the previous save
+///   xtreme_project.lock      held while it's open (a second window opens it read-only)
+///   historial/               snapshots, to go back further than the .bak (versiones.json: their names)
+///   media/                   recordings and imported files (never rewritten)
 ///   exports/
 /// </code>
 /// Every save writes a temporary file, forces it to disk and swaps it in with File.Replace, so the
@@ -21,12 +21,12 @@ namespace XtremeDaw.Projects;
 /// </summary>
 public sealed class ProjectStore : IDisposable
 {
-    public const string FileName = "guitarcam.json";
+    public const string FileName = "xtreme_project.json";
     public const string MediaDir = "media";
     public const string HistoryDir = "historial";
     /// <summary>What can be made again from the media (transposed takes); deleting it only costs time.</summary>
     public const string CacheDir = "cache";
-    public const string LockName = "guitarcam.lock";
+    public const string LockName = "xtreme_project.lock";
     const string SnapshotStamp = "yyyy-MM-dd_HH-mm-ss";
     /// <summary>In historial/: what the user named each version and which export it was (<see cref="VersionInfo"/>).</summary>
     const string VersionsFile = "versiones.json";
@@ -77,7 +77,7 @@ public sealed class ProjectStore : IDisposable
 
     public static bool IsProject(string dir) => File.Exists(Path.Combine(dir, FileName));
 
-    /// <summary>A folder that lost guitarcam.json but still has the .bak or a snapshot: <see cref="Open"/> rescues it.</summary>
+    /// <summary>A folder that lost xtreme_project.json but still has the .bak or a snapshot: <see cref="Open"/> rescues it.</summary>
     public static bool IsRecoverable(string dir) => File.Exists(Path.Combine(dir, FileName + ".bak")) || Snapshots(dir).Count > 0;
 
     /// <summary>Creates the folder (it must not hold a project yet) and writes the first save.</summary>
@@ -107,7 +107,9 @@ public sealed class ProjectStore : IDisposable
         {
             Directory.CreateDirectory(Path.Combine(dir, MediaDir));
             Migrate(project);
+            store.SweepPartialCopies();
             var recovered = store.RecoverRecordings();
+            recovered.AddRange(store.RecoverMidiTakes());
             int adopted = store.AdoptStrayMedia();
             // a project rescued from the .bak or a snapshot goes back to being the main file right away
             if (from != FileName || recovered.Count > 0 || adopted > 0) store.Save();
@@ -160,7 +162,7 @@ public sealed class ProjectStore : IDisposable
         notices.Add(Texts.T("store.damaged", "El proyecto estaba dañado: se abrió desde {0}", what));
         if (File.Exists(main))
         {
-            string keep = Path.Combine(dir, $"guitarcam.dañado-{DateTime.Now.ToString(SnapshotStamp, CultureInfo.InvariantCulture)}.json");
+            string keep = Path.Combine(dir, $"xtreme_project.dañado-{DateTime.Now.ToString(SnapshotStamp, CultureInfo.InvariantCulture)}.json");
             File.Move(main, keep);
             notices.Add(Texts.T("store.damagedKept", "El archivo dañado quedó como {0}", Path.GetFileName(keep)));
         }
@@ -485,7 +487,7 @@ public sealed class ProjectStore : IDisposable
     /// <summary>Clips whose media file is gone stay in the project, marked as offline by the app.</summary>
     void CheckMedia()
     {
-        var used = Project.Tracks.SelectMany(t => t.Clips).Select(c => c.MediaId).ToHashSet();
+        var used = ProjectHistory.UsedMediaIds(Project);
         var missing = Project.Media
             .Where(m => used.Contains(m.Id) && Resolve(m.Audio) is { } a && !File.Exists(a))
             .Select(m => m.Name)
@@ -607,8 +609,123 @@ public sealed class ProjectStore : IDisposable
         return done;
     }
 
+    /// <summary>
+    /// The MIDI counterpart of <see cref="RecordingJournal"/>, written before the take starts and deleted once the project
+    /// with its clip is saved. The notes go next to it (<see cref="MidiNotesPath"/>, <see cref="Audio.Midi.MidiTakeWriter"/>).
+    /// The clip's id is decided here: finding it in the project means the take got there.
+    /// </summary>
+    public sealed class MidiTakeJournal
+    {
+        public string ClipId { get; set; } = "";
+        public string? TrackId { get; set; }
+        /// <summary>For the track it comes back on if the saved project doesn't have it, and the notice.</summary>
+        public string TrackName { get; set; } = "";
+        public double StartSec { get; set; }
+        /// <summary>"Cuantizar al grabar" when the take started; 0 = as played.</summary>
+        public double GridBeats { get; set; }
+        public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    const string MidiJournalSuffix = ".grabando-midi.json";
+
+    string MidiJournalPath(string clipId) => Path.Combine(Dir, MediaDir, clipId + MidiJournalSuffix);
+
+    /// <summary>Where a MIDI take keeps its notes while it is recorded.</summary>
+    public string MidiNotesPath(string clipId) => Path.Combine(Dir, MediaDir, clipId + ".notas");
+
+    public void BeginMidiTake(MidiTakeJournal j)
+    {
+        string path = MidiJournalPath(j.ClipId);
+        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(j, Json), Encoding.UTF8);
+        File.Move(path + ".tmp", path, true);
+    }
+
+    /// <summary>Call after the project with the clip is saved, or when the take is discarded.</summary>
+    public void EndMidiTake(string clipId)
+    {
+        File.Delete(MidiNotesPath(clipId));
+        File.Delete(MidiJournalPath(clipId));
+    }
+
+    /// <summary>
+    /// Turns every unfinished MIDI take into a clip on its track, the way stopping would have: the same notes, bars and
+    /// quantize. A take that only reached the count-in is gone, like when it's cancelled. Returns the files to delete
+    /// after the project is saved.
+    /// </summary>
+    List<string> RecoverMidiTakes()
+    {
+        var done = new List<string>();
+        foreach (var jf in Directory.GetFiles(Path.Combine(Dir, MediaDir), "*" + MidiJournalSuffix))
+        {
+            string id = Path.GetFileName(jf)[..^MidiJournalSuffix.Length];
+            MidiTakeJournal? j;
+            try
+            {
+                j = JsonSerializer.Deserialize<MidiTakeJournal>(File.ReadAllText(jf, Encoding.UTF8), Json);
+            }
+            catch (JsonException e)
+            {
+                j = null;
+                if (File.Exists(MidiNotesPath(id)))
+                {
+                    // Without the journal there's no track or start, but the notes stay on disk: a take is never deleted.
+                    Notices.Add(Texts.T("store.recoverFail", "No se pudo recuperar la grabación {0}: {1}", id, e.Message));
+                    continue;
+                }
+            }
+            if (j == null || !File.Exists(MidiNotesPath(id)) || MidiEditing.TryFind(Project, id) != null)
+            {
+                EndMidiTake(id); // already in the project (it died after saving) or never started
+                continue;
+            }
+            Audio.Midi.MidiTakeWriter.Saved saved;
+            try
+            {
+                saved = Audio.Midi.MidiTakeWriter.Read(MidiNotesPath(id));
+            }
+            catch (Exception e) when (e is IOException or InvalidDataException)
+            {
+                Notices.Add(Texts.T("store.recoverFail", "No se pudo recuperar la grabación {0}: {1}", j.TrackName, e.Message));
+                continue;
+            }
+            double endSec = saved.EndFrame / (double)saved.SampleRate;
+            var played = endSec > j.StartSec ? MidiEditing.TakeNotes(Project, saved.Take, j.StartSec, endSec, saved.SampleRate) : [];
+            if (played.Count == 0)
+            {
+                EndMidiTake(id);
+                continue;
+            }
+            var track = Project.Tracks.Find(t => t.Id == j.TrackId && t.IsMidi);
+            if (track == null)
+            {
+                string added = MidiEditing.AddTrack(Project);
+                track = Project.Tracks.Find(t => t.Id == added)!;
+                track.Name = j.TrackName;
+            }
+            var clip = MidiEditing.AddRecorded(Project, track.Id, j.StartSec, endSec, played, j.GridBeats, id)!;
+            Project.AddLog("recording-recovered", track.Name);
+            Notices.Add(Texts.T("store.recoveredMidi", "Toma MIDI interrumpida recuperada: \"{0}\" ({1} notas)", track.Name, clip.Notes.Count));
+            done.Add(MidiNotesPath(id));
+            done.Add(jf);
+        }
+        return done;
+    }
+
     static readonly string[] AudioExts = [".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aif", ".aiff"];
     static readonly string[] VideoExts = [".mp4", ".webm", ".mov", ".mkv"];
+
+    /// <summary>
+    /// A copy into media/ that the program died in the middle of (<see cref="AudioImport"/>, <see cref="LinkedMedia"/>):
+    /// only its temporary name exists, nothing points to it, and the lock says no other window is writing here.
+    /// </summary>
+    void SweepPartialCopies()
+    {
+        foreach (var f in Directory.GetFiles(Path.Combine(Dir, MediaDir), "*" + AudioImport.PartialCopy))
+        {
+            try { File.Delete(f); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // the next open tries again
+        }
+    }
 
     /// <summary>
     /// Audio in media/ that no media points to (an older save was restored, or the project file was

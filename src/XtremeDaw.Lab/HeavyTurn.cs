@@ -4,7 +4,7 @@ namespace XtremeDaw.Lab;
 
 /// <summary>
 /// One heavy job at a time on this checkout. Several agent sessions share bin\: a comprobar-dsp takes a minute and most
-/// of the cores, a few at once starve the whole machine, and a build can't replace the DLLs of a wtlab that is running.
+/// of the cores, a few at once starve the whole machine, and a build can't replace the DLLs of a xtlab that is running.
 /// So the heavy commands wait for their turn (tools\probar.ps1 and any build, through tools\turno.targets, hold the same
 /// one) and run below normal priority, so the desktop and an open XTreme stay responsive. The turn is an open file, not a mutex or a semaphore:
 /// Windows frees it when its holder dies, however it dies, so it can't stay taken.
@@ -14,7 +14,7 @@ static class HeavyTurn
     public const string FileName = "turno.lock";
     // Exit code when the turn never came; probar.ps1 uses the same one
     public const int BusyCode = 4;
-    // Set by tools\probar.ps1 for the wtlab it runs: it already holds the turn
+    // Set by tools\probar.ps1 for the xtlab it runs: it already holds the turn
     const string HeldByParent = "XTREME_TURNO";
     // A little under the ten minutes an agent's command can last, so it hears who is in the way
     const int MaxWaitSec = 540;
@@ -43,7 +43,7 @@ static class HeavyTurn
             {
                 held = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
                 held.SetLength(0);
-                held.Write(System.Text.Encoding.UTF8.GetBytes($"wtlab {command} (pid {Environment.ProcessId})"));
+                held.Write(System.Text.Encoding.UTF8.GetBytes($"xtlab {command} (pid {Environment.ProcessId})"));
                 held.Flush();
                 return true;
             }

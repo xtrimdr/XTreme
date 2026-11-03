@@ -24,7 +24,7 @@ namespace XtremeDaw.App;
 /// (no dialog, no text being typed), kept up to date every tick. If Raw Input isn't there, the window's events play.
 /// </para>
 /// <para>
-/// An instrument's window is another process (wtvsthost.exe), which says where its window is and when it has the
+/// An instrument's window is another process (xtvsthost.exe), which says where its window is and when it has the
 /// keyboard: while the mode is on the window grows and carries the same panel at its bottom, a window of ours inside
 /// the host's (<see cref="EmbedPanel"/>), and while that window is open the keys play on that plugin's track, not the selected one (<see cref="Hears"/>).
 /// Its window also carries a bar with the keyboard's switch, the track's mute and solo and a stop for hung notes
@@ -48,15 +48,24 @@ public partial class MainWindow
         public readonly TextBlock SustainState = new() { FontSize = 12, Width = 24, VerticalAlignment = VerticalAlignment.Center };
         public readonly Button Scale = new() { Classes = { "chip" }, Height = 26, MinHeight = 0, Padding = new Thickness(8, 0), Focusable = false, MaxWidth = 170 };
         public readonly Avalonia.Controls.Primitives.ToggleButton Chords = new() { Classes = { "chip" }, Height = 26, MinHeight = 0, Padding = new Thickness(8, 0), Focusable = false };
+        public readonly TextBlock FloatIcon = new() { Classes = { "icon" }, FontSize = 13 };
+        public readonly Button Float = new() { Classes = { "chip" }, Width = 26, Height = 26, MinHeight = 0, Padding = new Thickness(0), Focusable = false, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     }
 
     /// <summary>Under this width (of the plugin's window) the panel inside it is only the keys.</summary>
     const double VirtualSettingsWidth = 1100;
     /// <summary>The panel's height, the same as <c>VirtualKeysHost</c>'s in the window.</summary>
     const double VirtualHeight = 84;
+    /// <summary>The keyboard's own window: its first size, its smallest, and under this height it is only the keys.</summary>
+    const double VirtualWindowW = 900, VirtualWindowH = 190, VirtualWindowMinW = 320, VirtualWindowMinH = 84, VirtualWindowSettingsH = 130;
 
     readonly VirtualKeyboard virtualKeys = new(MidiSetup.Inputs);
     readonly List<VirtualPanel> virtualPanels = [];
+    /// <summary>The panel under the transport, which moves to <see cref="virtualWindow"/> when it goes out.</summary>
+    VirtualPanel virtualMain = null!;
+    /// <summary>The keyboard goes in its own window, remembered in config.json.</summary>
+    bool virtualFloat;
+    Window? virtualWindow;
     RawKeys? rawKeys;
     volatile bool virtualLive;
     /// <summary>When the last key came through <see cref="RawKeys"/> (Stopwatch ticks), for what it saved.</summary>
@@ -88,7 +97,9 @@ public partial class MainWindow
         if (int.TryParse(AppConfig.Get("virtualTranspose"), out int transpose)) virtualKeys.Transpose = transpose;
         if (int.TryParse(AppConfig.Get("virtualRange"), out int range)) virtualRange = Math.Clamp(range, VirtualKeyboardView.MinOctaves, VirtualKeyboardView.MaxOctaves);
         virtualKeys.PlayChords = AppConfig.Get("virtualChords") == "true";
-        VirtualKeysHost.Child = NewVirtualPanel(canPick: true).Root;
+        virtualFloat = AppConfig.Get("virtualFloat") == "true";
+        virtualMain = NewVirtualPanel();
+        VirtualKeysHost.Child = virtualMain.Root;
         // issue #2: the whole window growing, with nothing in the app that scales it
         ScalingChanged += (_, _) => SessionLog.Write($"escala de la ventana {RenderScaling:0.###}  tamaño {ClientSize.Width:0}x{ClientSize.Height:0}  teclado {VirtualKeysOn}{Environment.NewLine}{new StackTrace(1, false)}");
 
@@ -96,7 +107,7 @@ public partial class MainWindow
         ShowVirtualKeys();
         VirtualKeysButton.IsCheckedChanged += (_, _) =>
         {
-            VirtualKeysHost.IsVisible = VirtualKeysOn;
+            PlaceVirtualKeys();
             if (VirtualKeysOn) rawKeys = RawKeys.Start(OnRawKey);
             else StopVirtualKeys();
             UpdateVirtualLive();
@@ -119,12 +130,11 @@ public partial class MainWindow
 
     int virtualRange = VirtualKeyboardView.MinOctaves;
 
-    /// <param name="canPick">The scale can be changed from here. Not from the panel inside a plugin's window: it never
-    /// takes the focus, which a picker needs to close.</param>
-    VirtualPanel NewVirtualPanel(bool canPick)
+    /// <param name="inPlugin">The panel goes inside a plugin's window.</param>
+    VirtualPanel NewVirtualPanel(bool inPlugin = false)
     {
         var strip = new VirtualKeyboardView(virtualKeys) { Octaves = virtualRange };
-        var settings = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+        var settings = new WrapPanel { ItemSpacing = 16, LineSpacing = 6, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
         var root = new DockPanel();
         var panel = new VirtualPanel { Strip = strip, Settings = settings, Root = root };
         settings.Children.Add(new StackPanel
@@ -163,9 +173,8 @@ public partial class MainWindow
             Children = { new TextBlock { Text = Loc.T("vkeys.sustain"), Classes = { "label" } }, panel.Sustain },
         });
         // the scale: the same choice as the piano roll's, and with it the keys that play whole chords
-        panel.Scale.IsEnabled = canPick;
-        ToolTip.SetTip(panel.Scale, Loc.T(canPick ? "scale.pick.tip" : "scale.pick.main"));
-        panel.Scale.Click += (_, _) => ShowScalePicker(panel.Scale);
+        ToolTip.SetTip(panel.Scale, Loc.T("scale.pick.tip"));
+        panel.Scale.Click += (_, _) => ShowScalePicker(panel.Scale, inPlugin);
         panel.Chords.Content = Loc.T("vkeys.chords");
         ToolTip.SetTip(panel.Chords, Loc.T("vkeys.chords.tip"));
         panel.Chords.Click += (_, _) =>
@@ -182,12 +191,91 @@ public partial class MainWindow
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { panel.Scale, panel.Chords } },
             },
         });
+        if (!inPlugin)
+        {
+            panel.Float.Content = panel.FloatIcon;
+            panel.Float.Click += (_, _) => SetVirtualFloat(!virtualFloat);
+            settings.Children.Add(panel.Float);
+        }
         DockPanel.SetDock(settings, Dock.Left);
         root.Children.Add(settings);
         root.Children.Add(strip);
         virtualPanels.Add(panel);
         FillVirtualPanel(panel);
         return panel;
+    }
+
+    void SetVirtualFloat(bool on)
+    {
+        virtualFloat = on;
+        SaveViewPref("virtualFloat", on ? "true" : "false");
+        PlaceVirtualKeys();
+    }
+
+    /// <summary>The panel goes where it has to: nowhere with the mode off, under the transport or in its window.</summary>
+    void PlaceVirtualKeys()
+    {
+        bool outside = VirtualKeysOn && virtualFloat;
+        VirtualKeysHost.IsVisible = VirtualKeysOn && !virtualFloat;
+        var p = virtualMain;
+        p.FloatIcon.Text = outside ? "" : "";
+        ToolTip.SetTip(p.Float, Loc.T(outside ? "vkeys.dock.tip" : "vkeys.float.tip"));
+        if (outside == (virtualWindow != null)) return;
+        if (outside) OpenVirtualWindow(p);
+        else
+        {
+            var open = virtualWindow;
+            virtualWindow = null;
+            open?.Close();
+        }
+    }
+
+    /// <summary>
+    /// The keyboard in its own window (asked by the user), over the main one and going with it. It is the same panel, moved,
+    /// with its settings above the keys. The window takes the focus like any other, so the shortcuts pass through it to
+    /// <see cref="OnKey"/>; the notes don't need that, they come from <see cref="RawKeys"/>. Closing it brings the panel back.
+    /// </summary>
+    void OpenVirtualWindow(VirtualPanel p)
+    {
+        VirtualKeysHost.Child = null;
+        DockPanel.SetDock(p.Settings, Dock.Top);
+        p.Settings.Margin = new Thickness(0, 0, 0, 6);
+        double width = VirtualWindowW, height = VirtualWindowH;
+        var saved = AppConfig.Get("virtualWindow")?.Split(',').Select(s => int.TryParse(s, out int n) ? n : int.MinValue).ToArray();
+        bool known = saved is { Length: 4 } && !saved.Contains(int.MinValue);
+        var at = known ? new PixelPoint(saved![0], saved[1]) : default;
+        known = known && Screens.ScreenFromPoint(at) != null;
+        if (known) (width, height) = (saved![2], saved[3]);
+        var window = new Window
+        {
+            Title = Loc.T("vkeys.title"), Width = width, Height = height, MinWidth = VirtualWindowMinW, MinHeight = VirtualWindowMinH,
+            Background = Palette.Panel, ShowInTaskbar = false, Icon = Icon,
+            WindowStartupLocation = known ? WindowStartupLocation.Manual : WindowStartupLocation.CenterOwner,
+            Content = new Border { Padding = new Thickness(10, 6), Child = p.Root },
+        };
+        if (known) window.Position = at;
+        window.SizeChanged += (_, e) => p.Settings.IsVisible = e.NewSize.Height >= VirtualWindowSettingsH;
+        window.AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
+        window.AddHandler(KeyUpEvent, OnVirtualKeyUp, RoutingStrategies.Tunnel);
+        window.AddHandler(KeyUpEvent, OnTransportKeyUp, RoutingStrategies.Tunnel);
+        window.Closing += (_, e) =>
+        {
+            SaveViewPref("virtualWindow", $"{window.Position.X},{window.Position.Y},{(int)window.Width},{(int)window.Height}");
+            // its X, not the main window closing or the mode going off: next time it goes back under the transport
+            if (e.CloseReason != WindowCloseReason.WindowClosing || virtualWindow != window) return;
+            virtualWindow = null;
+            SetVirtualFloat(false);
+        };
+        window.Closed += (_, _) =>
+        {
+            ((Border)window.Content!).Child = null;
+            p.Settings.IsVisible = true;
+            p.Settings.Margin = new Thickness(0, 0, 12, 0);
+            DockPanel.SetDock(p.Settings, Dock.Left);
+            VirtualKeysHost.Child = p.Root;
+        };
+        virtualWindow = window;
+        window.Show(this);
     }
 
     void StopVirtualKeys()
@@ -330,7 +418,7 @@ public partial class MainWindow
     /// <summary>Which track the keys go to, now that a window opened, closed or took the keyboard.</summary>
     void UpdateKeyTarget()
     {
-        keyTarget = VirtualKeysOn && pluginFollowed != null && pluginWindows.ContainsKey(pluginFollowed) ? pluginFollowed : null;
+        keyTarget = samplerFront ?? (VirtualKeysOn && pluginFollowed != null && pluginWindows.ContainsKey(pluginFollowed) ? pluginFollowed : null);
         midiListenKey = 0;
         ShowMidiListeners();
         ShowVirtualTarget();
@@ -347,7 +435,7 @@ public partial class MainWindow
     void EmbedPanel(string trackId, nint container)
     {
         ClosePluginPanel(trackId);
-        var panel = NewVirtualPanel(canPick: false);
+        var panel = NewVirtualPanel(inPlugin: true);
         var window = new Window
         {
             SystemDecorations = SystemDecorations.None, CanResize = false, ShowInTaskbar = false, ShowActivated = false, Focusable = false,
@@ -362,6 +450,7 @@ public partial class MainWindow
             if (pluginPanels.TryGetValue(trackId, out var now) && now.Window == window) pluginPanels.Remove(trackId);
             virtualPanels.Remove(panel);
             panel.Strip.Detach();
+            pluginPicker?.Flyout.Hide();
         };
         pluginPanels[trackId] = (window, panel);
         window.Show();
@@ -385,6 +474,9 @@ public partial class MainWindow
     const uint SwpNoActivate = 0x10, SwpFrameChanged = 0x20, SwpShowWindow = 0x40;
     [StructLayout(LayoutKind.Sequential)]
     struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct NativePoint { public int X, Y; }
+    [DllImport("user32")] static extern bool GetCursorPos(out NativePoint p);
     [DllImport("user32")] static extern nint GetWindowLongPtrW(nint hwnd, int index);
     [DllImport("user32")] static extern nint SetWindowLongPtrW(nint hwnd, int index, nint value);
     [DllImport("user32")] static extern nint SetParent(nint child, nint parent);
@@ -451,6 +543,7 @@ public partial class MainWindow
                 virtualKeys.ReleaseSustain();
                 MidiSetup.Inputs.Push(new MidiEvent { Ticks = Stopwatch.GetTimestamp(), Port = MidiInputs.VirtualPort, Channel = 1, Kind = MidiKind.AllOff });
                 t.Instrument?.Panic();
+                t.Sampler?.Panic();
                 break;
         }
     }
@@ -458,13 +551,14 @@ public partial class MainWindow
     // --- the keys -----------------------------------------------------------------------------------
 
     /// <summary>Something on screen takes the keys ahead of the shortcuts.</summary>
-    bool DialogOpen => Unsaved.IsVisible || TempoAsk.IsVisible || Feedback.IsVisible || Stems.IsVisible || ComponentsHelp.IsVisible || Export.IsVisible || Settings.IsVisible || About.IsVisible || HelpPanel.IsVisible || News.IsVisible || Projects.IsVisible;
+    bool DialogOpen => Unsaved.IsVisible || TempoAsk.IsVisible || ImportAsk.IsVisible || Feedback.IsVisible || Stems.IsVisible || ComponentsHelp.IsVisible || Export.IsVisible || Settings.IsVisible || About.IsVisible || HelpPanel.IsVisible || News.IsVisible || Projects.IsVisible;
 
     /// <summary>Every tick: whether a key may play now, the same conditions as <see cref="OnKey"/> reaching <see cref="VirtualKeyDown"/>.</summary>
     void UpdateVirtualLive()
     {
         virtualLive = VirtualKeysOn && !DialogOpen && (FocusManager?.GetFocusedElement() as Visual)?.FindAncestorOfType<TextBox>(true) == null;
         ShowPluginBars();
+        DismissPluginPicker();
     }
 
     /// <summary><see cref="RawKeys"/>' thread. A release always counts: the key may have played before a dialog opened.</summary>

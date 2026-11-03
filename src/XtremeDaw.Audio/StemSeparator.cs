@@ -12,7 +12,7 @@ namespace XtremeDaw.Audio;
 /// with no error (DirectML did until the Sigmoids were exposed, see <c>make-demucs-onnx.py</c>), so before a model is
 /// trusted on a card it has to match the CPU on a segment of the audio at hand and beat its time (<see cref="Choose"/>).
 /// The graphs hold only the network; the STFT and its inverse are here, written to match <c>HTDemucs._spec</c> and
-/// <c>_ispec</c> sample for sample (<c>wtlab separar</c> measured it against PyTorch), and the audio goes through
+/// <c>_ispec</c> sample for sample (<c>xtlab separar</c> measured it against PyTorch), and the audio goes through
 /// in overlapping 7.8 s segments as <c>apply_model</c> does. The stems always add up to the mix
 /// (<see cref="Complete"/>). Offline only (allocates, runs on a worker thread); each model is loaded for its
 /// pass and released, since they are large and this is seldom used.
@@ -602,6 +602,6 @@ public static class StemSeparator
         }
     }
 
-    /// <summary><see cref="Transforms.RoundTripDb"/>, for <c>wtlab separar --comprobar</c>.</summary>
+    /// <summary><see cref="Transforms.RoundTripDb"/>, for <c>xtlab separar --comprobar</c>.</summary>
     public static double TransformRoundTripDb() => new Transforms().RoundTripDb();
 }

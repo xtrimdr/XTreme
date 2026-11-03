@@ -6,7 +6,7 @@
              Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
 
   <!-- Port of ExportSetupDialog, ExportProgressDialog, ExportErrorDialog and ExportDialog
-       from GuitarCam/src/components/ExportDialog.tsx -->
+       from the web app's ExportDialog.tsx -->
   <UserControl.Styles>
     <Style Selector="TextBox.field">
       <Setter Property="Height" Value="36" />

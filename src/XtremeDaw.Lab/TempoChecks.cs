@@ -3,7 +3,7 @@ using XtremeDaw.Audio;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab tempo (the tempo of a file, like "Detectar tempo" on a clip) and the rows of comprobar-dsp for
+/// xtlab tempo (the tempo of a file, like "Detectar tempo" on a clip) and the rows of comprobar-dsp for
 /// <see cref="TempoDetector"/>: click tracks and a strummed pattern at known tempos, a 44.1 kHz file, noise (no pulse),
 /// too short and silence.
 /// </summary>
@@ -11,7 +11,7 @@ static class TempoChecks
 {
     const int Sr = 48000;
 
-    /// <summary>wtlab tempo archivo [--desde s] [--hasta s].</summary>
+    /// <summary>xtlab tempo archivo [--desde s] [--hasta s].</summary>
     public static int Run(Args a)
     {
         string file = a.Positional.ElementAtOrDefault(0) ?? throw new ArgumentException("tempo: falta el archivo.");

@@ -6,7 +6,7 @@ using Avalonia.Media;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// Port of FX_ICONS (GuitarCam/src/components/fxIcons.ts): one icon per effect, shared by the inspector and the mixer
+/// Port of FX_ICONS (the web app's fxIcons.ts): one icon per effect, shared by the inspector and the mixer
 /// so both always show the same one. Drawn from lucide's own paths (24×24 grid, 2 px round stroke, like the web)
 /// because Segoe Fluent Icons has no flame or waves: Sat = Flame, Comp = Gauge, EQ = SlidersVertical,
 /// Reverb = Waves, Delay = Repeat, Gate = DoorOpen, a VST3 effect = Plug. <see cref="Create"/> also takes a Segoe glyph, so a section header accepts either.

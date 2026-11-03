@@ -229,11 +229,22 @@ public partial class MainWindow
         InitEffects();
 
         TimelineViewButton.Click += (_, _) => SetMixerView(false);
-        MixerViewButton.Click += (_, _) => ShowBottomView(mastering: false);
+        MixerViewButton.Click += (_, _) => ToggleMixer();
+    }
+
+    /// <summary>The mixer itself is on screen, not the Mastering or the Piano roll that share its place.</summary>
+    bool MixerShown => mixerView && !masteringView && !pianoView;
+
+    /// <summary>The Mixer button and shortcut: like Piano roll and Mastering, pressing the view on screen goes back to the timeline (asked by the user).</summary>
+    void ToggleMixer()
+    {
+        if (MixerShown && !ViewsCovered) SetMixerView(false);
+        else ShowBottomView(mastering: false);
     }
 
     void SetMixerView(bool mixer)
     {
+        UncoverViews();
         if (mixer == mixerView) return;
         var row = Root.RowDefinitions[3];
         // stacked (solo audio, Vertical layout) both views fill the place beside the inspector and the bottom row stays closed
@@ -245,10 +256,8 @@ public partial class MainWindow
             row.Height = new GridLength(mixer ? mixerH : timelineH);
         }
         mixerView = mixer;
-        TimelineHost.IsVisible = ToolBox.IsEnabled = !mixer || stackedViews;
         MixerHost.IsVisible = mixer;
-        miniRow.IsVisible = !stackedViews;
-        ApplyAudioMixerRows();
+        ApplyViewHosts();
         ToolTip.SetTip(BottomSplitter, Loc.T(mixer ? "splitter.mixer" : "splitter.timeline"));
         TimelineViewButton.Classes.Set("on", !mixer);
         MixerViewButton.Classes.Set("on", mixer);

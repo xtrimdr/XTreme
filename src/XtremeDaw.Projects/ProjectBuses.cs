@@ -3,7 +3,7 @@ namespace XtremeDaw.Projects;
 /// <summary>
 /// The edits of the buses (<see cref="ProjectSettings.Buses"/>) and of where things send their sound (every
 /// <see cref="IRouted"/>: a track's channel, a folder, a bus): outputs and sends. One place for the mixer, the
-/// inspector, the timeline and wtlab. For now a bus goes to the master only (asked by the user, 2026-10-26: chains
+/// inspector, the timeline and xtlab. For now a bus goes to the master only (asked by the user, 2026-10-26: chains
 /// between buses made the routing hard to follow): <see cref="CanFeed"/> refuses a bus as the source and
 /// <see cref="Normalize"/> clears a bus's output and sends. The engine still runs buses fed by buses
 /// (<see cref="Order"/>, <c>MixRenderer</c>), so the chains can come back later. Each edit returns false (or null)

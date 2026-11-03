@@ -1,11 +1,11 @@
-// wtvsthost.exe: hosts one VST3 or VST2 plugin for XTreme in its own process, so a plugin that hangs or crashes never
+// xtvsthost.exe: hosts one VST3 or VST2 plugin for XTreme in its own process, so a plugin that hangs or crashes never
 // takes a recording down with it (the user's call). The app starts one per plugin instance. This same source builds
-// wtvsthost32.exe, which the app starts for a 32-bit plugin; a .dll is a VST2 (vst2plugin.h), anything else a VST3.
+// xtvsthost32.exe, which the app starts for a 32-bit plugin; a .dll is a VST2 (vst2plugin.h), anything else a VST3.
 //
-//   wtvsthost --scan <file>
+//   xtvsthost --scan <file>
 //       prints one JSON line per audio class of the file (with its main audio and event inputs, to tell instruments
 //       from effects) and exits (scanning runs out of process too).
-//   wtvsthost --host <file> --cid <class id> --shm <name> --sr 48000 [--block <frames>] [--offline] [--parent <pid>]
+//   xtvsthost --host <file> --cid <class id> --shm <name> --sr 48000 [--block <frames>] [--offline] [--parent <pid>]
 //       loads that class and processes blocks through the shared memory <name> (shared.h), woken by the event
 //       <name>.req and answering on <name>.done. --block is the largest block the plugin is told about (the driver's):
 //       plugins size their internals by it (the partitions of a convolution reverb, say), so telling it more than it
@@ -23,6 +23,9 @@
 //         keys-panel <height>   room at the bottom of the window for a panel of the app, at 100 % (this scales it to the
 //                               window's DPI); 0 = none. It answers "editor-panel <hwnd>"
 //         transport-keys <vk>:<mods> ...   the keys that go to the app instead of the plugin (mods: 1 Ctrl, 2 Shift, 4 Alt)
+//         snapshot <png>        waits for the open window to settle and saves the plugin's picture there; it answers
+//                               "snapshot-done" or "snapshot-failed" (nothing but a blank window for 12 s)
+//         snapshot-now <png>    the same, of what the window shows right now
 //         stats                 -> "stats <blocks> <frames> <wall us> <worst wall us> <cpu us>" since the last stats
 //         params                -> "param <id> <value> <steps> <title>" per automatable parameter, then "params-end"
 //         quit
@@ -38,6 +41,7 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <shellapi.h>
+#include <UIAutomation.h>
 
 #include "shared.h"
 #include "vst2plugin.h"
@@ -47,6 +51,7 @@
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstevents.h"
+#include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "public.sdk/source/common/memorystream.h"
 #include "public.sdk/source/vst/hosting/eventlist.h"
@@ -302,7 +307,177 @@ public:
     uint32 PLUGIN_API release() override { return 1; }
 };
 
+/// A key of the app's transport: virtual key and modifiers (1 Ctrl, 2 Shift, 4 Alt).
+struct TransportKey { int vk, mods; };
+
+/// The transport's keys while the keyboard is in a window of another process inside the plugin's: a WebView2 or CEF
+/// interface has its own message loop, so those keys never come through this one and Host::TakeKey can't see them. Only a
+/// low-level hook can, and it has to answer at once whatever the plugin's window is doing, so it gets a thread of its own,
+/// for as long as the window is open. Whether a text field is in use takes UI Automation, too slow to ask with a key
+/// waiting: another thread keeps the answer ready.
+class ForeignKeys
+{
+public:
+    /// How often the text field is looked at: typing right after clicking one is slower than this.
+    static constexpr DWORD TypingCheckMs = 150;
+
+    /// The app's own process: its panel lives in the window, and the keys it gets are already the app's.
+    DWORD parent = 0;
+
+    void SetKeys(const std::vector<TransportKey>& list)
+    {
+        std::lock_guard<std::mutex> g(lock);
+        keys = list;
+    }
+
+    void Start(HWND editor)
+    {
+        window = editor;
+        if (!watcher.joinable()) watcher = std::thread([this] { WatchTyping(); });
+        if (hooker.joinable()) return;
+        hooker = std::thread(RunHook);
+    }
+
+    void Stop()
+    {
+        window = nullptr;
+        if (!hooker.joinable()) return;
+        // it fails until the thread has its queue
+        while (!PostThreadMessageW(GetThreadId(hooker.native_handle()), WM_QUIT, 0, 0)) Sleep(1);
+        hooker.join();
+    }
+
+    /// The thread lives until the process does: a page that hangs must not hold up closing the window.
+    void Detach()
+    {
+        if (watcher.joinable()) watcher.detach();
+    }
+
+private:
+    std::mutex lock;
+    std::vector<TransportKey> keys;
+    std::atomic<HWND> window {nullptr};
+    std::atomic<bool> typing {false};
+    std::thread hooker, watcher;
+    /// Taken on the way down, so the release and the repeats stay away from the plugin too. Only the hook's thread.
+    bool held[256] = {};
+
+    /// The keyboard is in the plugin's window, in another process that is not the app, with no native caret in it.
+    bool InForeignWindow() const
+    {
+        HWND w = window;
+        if (!w || GetForegroundWindow() != w) return false;
+        GUITHREADINFO gui {sizeof gui};
+        if (!GetGUIThreadInfo(GetWindowThreadProcessId(w, nullptr), &gui) || !gui.hwndFocus || gui.hwndCaret) return false;
+        DWORD process = 0;
+        GetWindowThreadProcessId(gui.hwndFocus, &process);
+        return process != GetCurrentProcessId() && process != parent;
+    }
+
+    static bool TextFieldFocused(IUIAutomation* uia)
+    {
+        IUIAutomationElement* focus = nullptr;
+        if (FAILED(uia->GetFocusedElement(&focus)) || !focus) return false;
+        CONTROLTYPEID type = 0;
+        focus->get_CurrentControlType(&type);
+        focus->Release();
+        return type == UIA_EditControlTypeId || type == UIA_ComboBoxControlTypeId;
+    }
+
+    void WatchTyping()
+    {
+        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        IUIAutomation* uia = nullptr;
+        CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, __uuidof(IUIAutomation), reinterpret_cast<void**>(&uia));
+        for (;;)
+        {
+            typing = uia && InForeignWindow() && TextFieldFocused(uia);
+            Sleep(TypingCheckMs);
+        }
+    }
+
+    bool Take(WPARAM message, const KBDLLHOOKSTRUCT& key)
+    {
+        if (key.vkCode >= 256) return false;
+        if (message == WM_KEYUP || message == WM_SYSKEYUP)
+        {
+            bool taken = held[key.vkCode];
+            held[key.vkCode] = false;
+            return taken;
+        }
+        if (held[key.vkCode]) return true;
+        int mods = (GetAsyncKeyState(VK_CONTROL) < 0 ? 1 : 0) | (GetAsyncKeyState(VK_SHIFT) < 0 ? 2 : 0) | (GetAsyncKeyState(VK_MENU) < 0 ? 4 : 0);
+        size_t index = SIZE_MAX;
+        {
+            std::lock_guard<std::mutex> g(lock);
+            for (size_t i = 0; i < keys.size() && index == SIZE_MAX; i++)
+                if (keys[i].vk == static_cast<int>(key.vkCode) && keys[i].mods == mods) index = i;
+        }
+        if (index == SIZE_MAX || typing || !InForeignWindow()) return false;
+        Say("transport-key " + std::to_string(index) + " " + std::to_string(key.flags & LLKHF_EXTENDED ? 0 : key.scanCode));
+        held[key.vkCode] = true;
+        return true;
+    }
+
+    static LRESULT CALLBACK OnKey(int code, WPARAM message, LPARAM data);
+
+    static void RunHook()
+    {
+        HHOOK hook = SetWindowsHookExW(WH_KEYBOARD_LL, OnKey, GetModuleHandleW(nullptr), 0);
+        MSG msg;
+        while (GetMessageW(&msg, nullptr, 0, 0) > 0) DispatchMessageW(&msg);
+        if (hook) UnhookWindowsHookEx(hook);
+    }
+};
+
+ForeignKeys foreignKeys;
+
+LRESULT CALLBACK ForeignKeys::OnKey(int code, WPARAM message, LPARAM data)
+{
+    if (code == HC_ACTION && foreignKeys.Take(message, *reinterpret_cast<const KBDLLHOOKSTRUCT*>(data))) return 1;
+    return CallNextHookEx(nullptr, code, message, data);
+}
+
 struct Host;
+
+/// The timer of the wait for a picture, and how often it looks.
+constexpr UINT_PTR ShotTimer = 2;
+constexpr UINT ShotEveryMs = 500;
+/// 12 s at most, and never before 2 s: a loading screen can stand still for a moment too.
+constexpr int ShotMaxLooks = 24, ShotMinLooks = 4;
+/// The picture's width: enough for the app's largest view of it.
+constexpr int ShotMaxWidth = 640;
+/// Fewer colors than this is a window still empty (a real interface has at least the edges of its letters).
+constexpr size_t ShotMinColors = 16;
+/// PW_RENDERFULLCONTENT, which older SDK headers don't have.
+constexpr UINT ShotFlags = 2;
+
+/// What the plugin's window showed once, and whether there is something on it.
+struct Shot
+{
+    int width = 0, height = 0;
+    std::vector<uint32_t> pixels;
+    uint64_t hash = 0;
+    size_t colors = 0;
+
+    bool Usable() const { return colors >= ShotMinColors; }
+
+    void Measure()
+    {
+        constexpr int Step = 7; // a sample is enough to count colors; the hash reads every pixel
+        std::vector<uint32_t> seen;
+        hash = 14695981039346656037ull;
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+            {
+                uint32_t rgb = pixels[static_cast<size_t>(y) * width + x] & 0xffffff;
+                hash = (hash ^ rgb) * 1099511628211ull;
+                if (x % Step == 0 && y % Step == 0) seen.push_back(rgb);
+            }
+        std::sort(seen.begin(), seen.end());
+        colors = std::unique(seen.begin(), seen.end()) - seen.begin();
+    }
+};
 
 /// A button of the bar above the plugin.
 struct ToolButton
@@ -330,6 +505,11 @@ public:
     std::vector<ToolButton> buttons;
     std::wstring title, trackName, pluginName;
     int hover = -1;
+    /// The picture being waited for (Host::StartSnapshot): where it goes, the looks left and what the last ones saw.
+    std::wstring shotFile;
+    int shotLooks = 0;
+    uint64_t shotHash = 0;
+    Shot shotLast;
     COLORREF panel = RGB(0x13, 0x13, 0x16), raised = RGB(0x1c, 0x1c, 0x20), fg = RGB(0xec, 0xec, 0xef), dim = RGB(0xa1, 0xa1, 0xaa),
         accent = RGB(0x22, 0xd3, 0xee), line = RGB(0x27, 0x27, 0x2c), trackColor = accent;
 
@@ -387,7 +567,11 @@ struct Host : Vst2Listener
     HANDLE request = nullptr, done = nullptr;
     HostProcessData data;
     EventList events {gcvst::MaxEvents + 128};
-    ParameterChanges params {256};
+    static constexpr int32 MaxQueues = 256;
+    ParameterChanges params {MaxQueues};
+    /// VST3 has no MIDI controllers: a plugin maps each to a parameter of its own (IMidiMapping). One entry per Control event's controller.
+    ParamID midiParam[gcvst::ControlBend + 1] {};
+    bool midiMapped[gcvst::ControlBend + 1] {};
     ProcessContext context {};
     ComponentHandler handler;
     Editor editor;
@@ -471,6 +655,7 @@ struct Host : Vst2Listener
         if (component->setActive(true) != kResultOk) return Fail("el plugin no se pudo activar");
         processor->setProcessing(true);
         if (controller) controller->setComponentHandler(&handler);
+        MapControllers();
 
         BusInfo bus {};
         component->getBusInfo(kAudio, kOutput, 0, bus);
@@ -488,6 +673,29 @@ struct Host : Vst2Listener
         context.sampleRate = sampleRate;
         Say("ready " + std::to_string(shared->latency) + " " + std::to_string(bus.channelCount) + " " + std::to_string(shared->instrument));
         return true;
+    }
+
+    /// Which parameter each controller moves, asked once. A plugin without a mapping ignores them. A parameter's queue
+    /// keeps its memory when cleared: grown here to all a block can bring, the audio thread never has to.
+    void MapControllers()
+    {
+        FUnknownPtr<IMidiMapping> mapping(controller);
+        if (!mapping) return;
+        bool any = false;
+        for (int32 c = 0; c <= gcvst::ControlBend; c++)
+        {
+            CtrlNumber number = static_cast<CtrlNumber>(c == gcvst::ControlBend ? ControllerNumbers::kPitchBend : c);
+            midiMapped[c] = mapping->getMidiControllerAssignment(0, 0, number, midiParam[c]) == kResultOk;
+            any |= midiMapped[c];
+        }
+        if (!any) return;
+        for (int32 q = 0; q < MaxQueues; q++)
+        {
+            int32 index = 0;
+            auto* queue = params.addParameterData(static_cast<ParamID>(q), index);
+            for (int32 i = 0; queue && i < gcvst::MaxEvents; i++) queue->addPoint(i, 0, index);
+        }
+        params.clearQueue();
     }
 
     bool Fail(const std::string& message)
@@ -569,6 +777,11 @@ struct Host : Vst2Listener
             for (; next < count && (last || s.events[next].offset < at + len); next++)
             {
                 auto& e = s.events[next];
+                if (e.type == gcvst::Control)
+                {
+                    if (e.pitch >= 0 && e.pitch <= gcvst::ControlBend) vst2->AddControl(std::clamp(e.offset - at, 0, len - 1), e.pitch, e.velocity);
+                    continue;
+                }
                 if (e.pitch < 0 || e.pitch > 127) continue;
                 bool on = e.type == gcvst::NoteOn;
                 vst2->AddNote(on, std::clamp(e.offset - at, 0, len - 1), e.pitch, e.velocity);
@@ -657,6 +870,16 @@ struct Host : Vst2Listener
             for (; next < count && (last || s.events[next].offset < at + len); next++)
             {
                 auto& e = s.events[next];
+                if (e.type == gcvst::Control)
+                {
+                    if (e.pitch >= 0 && e.pitch <= gcvst::ControlBend && midiMapped[e.pitch])
+                    {
+                        int32 index = 0;
+                        if (auto* queue = params.addParameterData(midiParam[e.pitch], index))
+                            queue->addPoint(std::clamp(e.offset - at, 0, len - 1), e.velocity, index);
+                    }
+                    continue;
+                }
                 if (e.pitch < 0 || e.pitch > 127) continue;
                 bool on = e.type == gcvst::NoteOn;
                 AddNote(on, std::clamp(e.offset - at, 0, len - 1), static_cast<int16>(e.pitch), e.velocity);
@@ -752,7 +975,7 @@ struct Host : Vst2Listener
             e.type = Event::kNoteOffEvent;
             e.noteOff.channel = 0;
             e.noteOff.pitch = pitch;
-            e.noteOff.velocity = 0;
+            e.noteOff.velocity = velocity;
             e.noteOff.noteId = -1;
         }
         events.addEvent(e);
@@ -851,12 +1074,12 @@ struct Host : Vst2Listener
         if (!vst2->HasEditor()) { Say("error el plugin no tiene ventana propia"); return; }
         DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN;
         std::wstring title = !editor.title.empty() ? editor.title : Wide(name);
-        editor.hwnd = CreateWindowExW(0, L"WtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
+        editor.hwnd = CreateWindowExW(0, L"XtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
             640, 480, owner, nullptr, GetModuleHandleW(nullptr), this);
         editor.host = this;
         editor.dpi = GetDpiForWindow(editor.hwnd);
         DressWindow();
-        editor.plug = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, editor.Bar(), 640, 480,
+        editor.plug = CreateWindowExW(0, L"XtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, editor.Bar(), 640, 480,
             editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
         if (editor.panelUnits > 0) MakePanelHost();
         vst2->OpenEditor(editor.plug);
@@ -865,6 +1088,7 @@ struct Host : Vst2Listener
         FitEditor(std::max(width, 100), std::max(height, 60));
         ShowWindow(editor.hwnd, SW_SHOWNORMAL);
         SetForegroundWindow(editor.hwnd);
+        foreignKeys.Start(editor.hwnd);
         Say("editor-open");
     }
 
@@ -889,7 +1113,7 @@ struct Host : Vst2Listener
         DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN | (resizable ? WS_THICKFRAME | WS_MAXIMIZEBOX : 0);
         std::wstring title = !editor.title.empty() ? editor.title : Wide(name);
         // the size comes after the window: what the plugin measures depends on the scale of the screen it landed on
-        editor.hwnd = CreateWindowExW(0, L"WtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
+        editor.hwnd = CreateWindowExW(0, L"XtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
             640, 480, owner, nullptr, GetModuleHandleW(nullptr), this);
         editor.host = this;
         editor.dpi = GetDpiForWindow(editor.hwnd);
@@ -900,7 +1124,7 @@ struct Host : Vst2Listener
         auto size = editor.WindowFor(width, height, style, 0);
         SetWindowPos(editor.hwnd, nullptr, 0, 0, size.cx, size.cy, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         DressWindow();
-        editor.plug = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, editor.Bar(), width, height,
+        editor.plug = CreateWindowExW(0, L"XtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, editor.Bar(), width, height,
             editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
         if (editor.panelUnits > 0) MakePanelHost();
         editor.view->setFrame(&editor);
@@ -914,6 +1138,7 @@ struct Host : Vst2Listener
         TellScale();
         ShowWindow(editor.hwnd, SW_SHOWNORMAL);
         SetForegroundWindow(editor.hwnd);
+        foreignKeys.Start(editor.hwnd);
         Say("editor-open");
     }
 
@@ -948,7 +1173,7 @@ struct Host : Vst2Listener
         RECT client {};
         GetClientRect(editor.hwnd, &client);
         int panel = editor.Panel();
-        editor.panelHost = CreateWindowExW(0, L"WtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, client.bottom - panel,
+        editor.panelHost = CreateWindowExW(0, L"XtVstPlug", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, client.bottom - panel,
             client.right, panel, editor.hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
         Say("editor-panel " + std::to_string(reinterpret_cast<intptr_t>(editor.panelHost)));
     }
@@ -1046,7 +1271,6 @@ struct Host : Vst2Listener
     }
 
     /// Keys of the app's transport, in the order it listed them.
-    struct TransportKey { int vk, mods; };
     std::vector<TransportKey> transportKeys;
     /// Taken on the way down, so the release stays away from the plugin too.
     bool transportHeld[256] = {};
@@ -1062,6 +1286,7 @@ struct Host : Vst2Listener
             if (colon != std::string::npos) transportKeys.push_back({std::atoi(key.c_str()), std::atoi(key.c_str() + colon + 1)});
             at = end + 1;
         }
+        foreignKeys.SetKeys(transportKeys);
     }
 
     /// A text field has the keyboard: a native edit box and JUCE's both keep a caret, so the keys are the plugin's.
@@ -1294,6 +1519,95 @@ struct Host : Vst2Listener
         DestroyWindow(editor.hwnd); // WM_DESTROY detaches the view
     }
 
+    /// The plugin as the window shows it, without the bar or the panel. PW_RENDERFULLCONTENT is what brings what it draws
+    /// with OpenGL, Direct3D or a browser: without it those come out black.
+    Shot TakeShot()
+    {
+        Shot shot;
+        RECT window {}, plug {};
+        GetWindowRect(editor.hwnd, &window);
+        GetWindowRect(editor.plug, &plug);
+        int outerW = window.right - window.left, outerH = window.bottom - window.top;
+        int left = std::max<int>(plug.left - window.left, 0), top = std::max<int>(plug.top - window.top, 0);
+        int width = std::min<int>(plug.right - plug.left, outerW - left), height = std::min<int>(plug.bottom - plug.top, outerH - top);
+        if (width <= 0 || height <= 0) return shot;
+        BITMAPINFO info {};
+        info.bmiHeader = {sizeof(BITMAPINFOHEADER), outerW, -outerH, 1, 32, BI_RGB};
+        void* bits = nullptr;
+        HDC dc = CreateCompatibleDC(nullptr);
+        HBITMAP bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+        if (bitmap)
+        {
+            auto old = SelectObject(dc, bitmap);
+            if (PrintWindow(editor.hwnd, dc, ShotFlags))
+            {
+                shot.width = width;
+                shot.height = height;
+                shot.pixels.resize(static_cast<size_t>(width) * height);
+                auto* from = static_cast<const uint32_t*>(bits);
+                for (int y = 0; y < height; y++)
+                    std::memcpy(&shot.pixels[static_cast<size_t>(y) * width], from + static_cast<size_t>(y + top) * outerW + left, width * sizeof(uint32_t));
+                shot.Measure();
+            }
+            SelectObject(dc, old);
+            DeleteObject(bitmap);
+        }
+        DeleteDC(dc);
+        return shot;
+    }
+
+    /// To a temporary file first: the app may be reading the one that is there.
+    bool SaveShot(const Shot& shot)
+    {
+        int width = std::min(shot.width, ShotMaxWidth), height = std::max(shot.height * width / shot.width, 1);
+        Gdiplus::Bitmap source(shot.width, shot.height, shot.width * 4, PixelFormat32bppRGB, reinterpret_cast<BYTE*>(const_cast<uint32_t*>(shot.pixels.data())));
+        Gdiplus::Bitmap fitted(width, height, PixelFormat24bppRGB);
+        Gdiplus::Graphics g(&fitted);
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHighQuality);
+        g.DrawImage(&source, Gdiplus::Rect(0, 0, width, height));
+        static const CLSID png {0x557cf406, 0x1a04, 0x11d3, {0x9a, 0x73, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e}};
+        std::wstring temporary = editor.shotFile + L".part";
+        return fitted.Save(temporary.c_str(), &png) == Gdiplus::Ok && MoveFileExW(temporary.c_str(), editor.shotFile.c_str(), MOVEFILE_REPLACE_EXISTING);
+    }
+
+    void EndSnapshot(bool saved)
+    {
+        KillTimer(editor.hwnd, ShotTimer);
+        editor.shotLooks = 0;
+        editor.shotLast = {};
+        Say(saved ? "snapshot-done" : "snapshot-failed");
+    }
+
+    /// Now, what is there; if not, it looks twice a second until two looks in a row match, past the time a plugin takes to
+    /// leave its first screen. One that never stands still (meters) keeps moving: at the end the last one with something on it goes.
+    void StartSnapshot(const std::string& file, bool now)
+    {
+        if (!editor.hwnd) { Say("snapshot-failed"); return; }
+        editor.shotFile = Wide(file);
+        if (now)
+        {
+            Shot shot = TakeShot();
+            EndSnapshot(shot.Usable() && SaveShot(shot));
+            return;
+        }
+        editor.shotLooks = ShotMaxLooks;
+        editor.shotHash = 0;
+        editor.shotLast = {};
+        SetTimer(editor.hwnd, ShotTimer, ShotEveryMs, nullptr);
+    }
+
+    void LookForSnapshot()
+    {
+        if (!editor.shotLooks || IsIconic(editor.hwnd)) return;
+        editor.shotLooks--;
+        Shot shot = TakeShot();
+        bool settled = shot.Usable() && shot.hash == editor.shotHash && ShotMaxLooks - editor.shotLooks >= ShotMinLooks;
+        editor.shotHash = shot.hash;
+        if (shot.Usable()) editor.shotLast = std::move(shot);
+        if (settled || !editor.shotLooks) EndSnapshot(editor.shotLast.Usable() && SaveShot(editor.shotLast));
+    }
+
     void Command(const std::string& line)
     {
         auto space = line.find(' ');
@@ -1316,6 +1630,8 @@ struct Host : Vst2Listener
         else if (cmd == "load-state") Say(SetState(arg) ? "loaded" : "error no pude cargar el estado guardado del plugin");
         else if (cmd == "editor") OpenEditor(arg.empty() ? nullptr : reinterpret_cast<HWND>(static_cast<intptr_t>(std::stoll(arg))));
         else if (cmd == "editor-close") CloseEditor();
+        else if (cmd == "snapshot") StartSnapshot(arg, false);
+        else if (cmd == "snapshot-now") StartSnapshot(arg, true);
         else if (cmd == "quit") PostQuitMessage(0);
     }
 
@@ -1395,6 +1711,13 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             return 0;
         }
         break;
+    case WM_TIMER:
+        if (host && wp == ShotTimer)
+        {
+            host->LookForSnapshot();
+            return 0;
+        }
+        break;
     case WM_ERASEBKGND:
         return 1;
     case WM_PAINT:
@@ -1437,6 +1760,7 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_DESTROY:
         if (host && (host->editor.view || host->vst2))
         {
+            foreignKeys.Stop();
             if (host->vst2) host->vst2->CloseEditor();
             else
             {
@@ -1448,6 +1772,10 @@ LRESULT CALLBACK EditorProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             host->editor.plug = nullptr;
             host->editor.panelHost = nullptr;
             host->editor.hover = -1;
+            // closed before it settled: the next time it opens tries again
+            if (host->editor.shotLooks) Say("snapshot-failed");
+            host->editor.shotLooks = 0;
+            host->editor.shotLast = {};
             Say("editor-closed");
         }
         break;
@@ -1492,6 +1820,7 @@ int HostMain(const std::string& path, const std::string& cid, const std::wstring
     Host host;
     gHost = &host;
     host.mainThread = GetCurrentThreadId();
+    foreignKeys.parent = parent;
 
     HANDLE map = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, shm.c_str());
     if (!map) { Say("error no encontré la memoria compartida"); return 2; }
@@ -1509,21 +1838,21 @@ int HostMain(const std::string& path, const std::string& cid, const std::wstring
     wc.lpfnWndProc = EditorProc;
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.lpszClassName = L"WtVstEditor";
+    wc.lpszClassName = L"XtVstEditor";
     RegisterClassW(&wc);
     WNDCLASSW pc {};
     pc.lpfnWndProc = DefWindowProcW;
     pc.hInstance = wc.hInstance;
     pc.hCursor = wc.hCursor;
     pc.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-    pc.lpszClassName = L"WtVstPlug";
+    pc.lpszClassName = L"XtVstPlug";
     RegisterClassW(&pc);
     WNDCLASSW mc {};
     mc.lpfnWndProc = MessageProc;
     mc.hInstance = GetModuleHandleW(nullptr);
-    mc.lpszClassName = L"WtVstMessages";
+    mc.lpszClassName = L"XtVstMessages";
     RegisterClassW(&mc);
-    host.messages = CreateWindowExW(0, L"WtVstMessages", L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, mc.hInstance, nullptr);
+    host.messages = CreateWindowExW(0, L"XtVstMessages", L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, mc.hInstance, nullptr);
 
     static HostApplication hostApp;
     PluginContextFactory::instance().setPluginContext(&hostApp);
@@ -1561,6 +1890,7 @@ int HostMain(const std::string& path, const std::string& cid, const std::wstring
     SetEvent(host.request);
     audio.join();
     host.Shutdown();
+    foreignKeys.Detach();
     PluginContextFactory::instance().setPluginContext(nullptr);
     return 0;
 }
@@ -1593,6 +1923,6 @@ int wmain(int argc, wchar_t** argv)
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     if (!scan.empty()) return Scan(scan);
     if (!path.empty() && !shm.empty()) return HostMain(path, cid, shm, sampleRate, offline, maxBlock, parent);
-    Say("error uso: wtvsthost --scan archivo | --host archivo --cid id --shm nombre [--sr 48000] [--block n] [--offline] [--parent pid]");
+    Say("error uso: xtvsthost --scan archivo | --host archivo --cid id --shm nombre [--sr 48000] [--block n] [--offline] [--parent pid]");
     return 1;
 }

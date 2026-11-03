@@ -4,7 +4,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab separar (the stems of a file, like "Separar en stems" on a clip) and the rows of comprobar-dsp for
+/// xtlab separar (the stems of a file, like "Separar en stems" on a clip) and the rows of comprobar-dsp for
 /// <see cref="StemSeparator"/>: that its transforms give the audio back, and that the stems of a short sound have its
 /// length and add up to it. Without the models only the transforms are checked.
 /// </summary>
@@ -12,7 +12,7 @@ static class StemChecks
 {
     const int Sr = 48000;
 
-    /// <summary>wtlab separar --comprobar (only its rows of comprobar-dsp), or separar archivo [--stems 2|4|6] [--calidad rapida|alta|maxima] [--sin-desplazar] [--desde s] [--hasta s] [--salida carpeta] [--cancelar s] [--cpu].</summary>
+    /// <summary>xtlab separar --comprobar (only its rows of comprobar-dsp), or separar archivo [--stems 2|4|6] [--calidad rapida|alta|maxima] [--sin-desplazar] [--desde s] [--hasta s] [--salida carpeta] [--cancelar s] [--cpu].</summary>
     public static int Run(Args a)
     {
         if (a.Flag("comprobar")) return Check() ? 0 : 3;

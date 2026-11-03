@@ -2,7 +2,7 @@ using XtremeDaw.Audio;
 namespace XtremeDaw.Projects;
 
 /// <summary>
-/// Framing operations from GuitarCam/src/components/SplitScreenCanvas.tsx and TakeInspector.tsx.
+/// Framing operations from the web app's SplitScreenCanvas.tsx and TakeInspector.tsx.
 /// Native edits belong to the selected clip, so separate uses of a recording can keep their own framing.
 /// </summary>
 public static class InspectorEditing

@@ -5,7 +5,7 @@
 #endif
 
 [Setup]
-; same AppId as when the app was "GuitarCam Studio Native": the new installer upgrades that install in place
+; the AppId never changes: a new installer upgrades the install in place
 AppId={{6F1C2B7E-3D54-4A8B-9C0E-2A7B5D1E8F43}
 AppName={#AppName}
 AppVersion={#AppVersion}
@@ -31,13 +31,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
-
-[InstallDelete]
-; what an install from before the rename left behind (exe, DLLs, VST host and shortcuts named GuitarCam)
-Type: files; Name: "{app}\GuitarCam*"
-Type: files; Name: "{app}\gcvsthost.exe"
-Type: files; Name: "{autodesktop}\GuitarCam Studio.lnk"
-Type: filesandordirs; Name: "{autoprograms}\GuitarCam Studio"
 
 [Files]
 Source: "..\artifacts\publish\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs

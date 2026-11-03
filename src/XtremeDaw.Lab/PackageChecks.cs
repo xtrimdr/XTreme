@@ -4,7 +4,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab proyecto verificar-paquete: a project in a temporary folder, with a take inside, one left outside (imported
+/// xtlab proyecto verificar-paquete: a project in a temporary folder, with a take inside, one left outside (imported
 /// without copying) and one no clip plays, packed both ways and unpacked into a separate projects folder. Checks what
 /// each package carries, that the outside take comes in and the project opens pointing to it, and that a ZIP whose
 /// entry climbs out of the folder is refused without writing anything.
@@ -19,7 +19,7 @@ static class PackageChecks
             Console.WriteLine($"{(ok ? "ok   " : "FALLA")} {what}");
             if (!ok) failed++;
         }
-        string tmp = Path.Combine(Path.GetTempPath(), $"wtlab-paquete-{Guid.NewGuid():N}");
+        string tmp = Path.Combine(Path.GetTempPath(), $"xtlab-paquete-{Guid.NewGuid():N}");
         string src = Path.Combine(tmp, "Tema"), elsewhere = Path.Combine(tmp, "afuera"), root = Path.Combine(tmp, "proyectos");
         string? savedData = AppConfig.DirectoryOverride;
         AppConfig.DirectoryOverride = Path.Combine(tmp, "datos");
@@ -54,7 +54,7 @@ static class PackageChecks
             var sn = Names(share);
             var bn = Names(backup);
             Check("para compartir: el proyecto, la toma y la de afuera: " + string.Join(" ", sn),
-                sn.SequenceEqual(["guitarcam.json", "media/de-afuera/base.wav", "media/toma1.wav"]) && r1.Missing == 0);
+                sn.SequenceEqual(["media/de-afuera/base.wav", "media/toma1.wav", "xtreme_project.json"]) && r1.Missing == 0);
             Check("respaldo: además la toma sin usar y la exportación, sin cache ni lock",
                 bn.Contains("media/vieja.wav") && bn.Contains("exports/video.mp4") && bn.Contains("media/de-afuera/base.wav")
                 && !bn.Any(n => n.StartsWith("cache/") || n == ProjectStore.LockName) && r2.Files == bn.Count);

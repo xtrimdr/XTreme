@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:XtremeDaw.App"
+             x:Class="XtremeDaw.App.Dialogs.ImportDialog"
+             AutomationProperties.Name="{loc:T imp.ask.title}"
+             Background="#B3000000" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+
+  <!-- same frame as UnsavedDialog: asked when a file comes in, while ImportMode says to ask -->
+  <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center"
+          Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <StackPanel Margin="24,22,24,20" Spacing="16">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Classes="icon" Text="&#xE71B;" FontSize="20" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+        <TextBlock Text="{loc:T imp.ask.title}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+      </StackPanel>
+      <StackPanel Spacing="8">
+        <TextBlock x:Name="Body" TextWrapping="Wrap" LineHeight="18" />
+        <TextBlock Classes="dim" Text="{loc:T imp.ask.copy.help}" TextWrapping="Wrap" LineHeight="18" />
+        <TextBlock Classes="dim" Text="{loc:T imp.ask.link.help}" TextWrapping="Wrap" LineHeight="18" />
+      </StackPanel>
+      <CheckBox x:Name="RememberBox" Content="{loc:T imp.ask.remember}" FontSize="12" ToolTip.Tip="{loc:T imp.ask.remember.tip}" />
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <Button x:Name="CancelButton" Classes="btn" Content="{loc:T transport.count.cancel}" />
+        <Button Grid.Column="2" x:Name="LinkButton" Classes="btn" Margin="8,0,0,0" Content="{loc:T imp.ask.link}" />
+        <Button Grid.Column="3" x:Name="CopyButton" Classes="btn primary" Margin="8,0,0,0" Padding="16,0" Content="{loc:T imp.ask.copy}" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

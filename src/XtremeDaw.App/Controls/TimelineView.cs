@@ -13,7 +13,7 @@ namespace XtremeDaw.App.Controls;
 
 /// <summary>
 /// The timeline: bar ruler, one lane per track with its clips and waveforms, sticky track headers
-/// Port of GuitarCam/src/components/Timeline.tsx gestures, handles, snap and lane controls.
+/// Port of the web app's Timeline.tsx gestures, handles, snap and lane controls.
 /// Native differences: an empty lane is just empty (the user asked to drop the web's dashed box and its "Apretá R" hint);
 /// drag previews are local and commit on release (the window applies them in place, still playing);
 /// multiple clips per track swap only with the clip under the pointer. Thumbnails are not ported yet.

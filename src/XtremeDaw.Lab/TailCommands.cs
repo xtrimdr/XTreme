@@ -24,9 +24,9 @@ static class TailCommands
         if (a.Get("proyecto") is { } dir)
         {
             // a copy of its JSON, so a project open in the app stays as it is
-            string copy = Path.Combine(Path.GetTempPath(), "wtlab-colas");
+            string copy = Path.Combine(Path.GetTempPath(), "xtlab-colas");
             Directory.CreateDirectory(copy);
-            File.Copy(Path.Combine(Path.GetFullPath(dir), "guitarcam.json"), Path.Combine(copy, "guitarcam.json"), true);
+            File.Copy(Path.Combine(Path.GetFullPath(dir), "xtreme_project.json"), Path.Combine(copy, "xtreme_project.json"), true);
             using var store = ProjectStore.Open(copy);
             project = store.Project;
         }

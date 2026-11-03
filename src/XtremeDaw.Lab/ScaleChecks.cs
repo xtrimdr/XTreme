@@ -4,7 +4,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab escala (the scale of a file, like "Detectar escala" on a clip) and the rows of comprobar-dsp for
+/// xtlab escala (the scale of a file, like "Detectar escala" on a clip) and the rows of comprobar-dsp for
 /// <see cref="ScaleDetector"/>: plucked chord progressions in major and minor keys, a pentatonic riff, a recording
 /// out of tune, a 44.1 kHz file, how notes are spelled, noise, too short and silence.
 /// </summary>
@@ -14,7 +14,7 @@ static class ScaleChecks
     /// <summary>What a played progression has to reach; a mix with voice and effects reads lower and is still shown.</summary>
     const double ClearEnough = 0.4;
 
-    /// <summary>wtlab escala --comprobar (only its rows of comprobar-dsp), or escala archivo [--desde s] [--hasta s].</summary>
+    /// <summary>xtlab escala --comprobar (only its rows of comprobar-dsp), or escala archivo [--desde s] [--hasta s].</summary>
     public static int Run(Args a)
     {
         if (a.Flag("comprobar")) return Check() ? 0 : 3;

@@ -11,7 +11,7 @@ namespace XtremeDaw.App.Video;
 
 /// <summary>
 /// Port of the preview color grade, grain, vignette and letterbox pipeline from
-/// <c>GuitarCam/src/components/SplitScreenCanvas.tsx</c> and <c>src/video/colorGL.ts</c>,
+/// the web app's <c>SplitScreenCanvas.tsx</c> and <c>src/video/colorGL.ts</c>,
 /// backed by <see cref="VideoColorProcessor"/> so the preview matches the FFmpeg MP4 export:
 /// <list type="bullet">
 /// <item><description>Per-frame 3D LUT trilinear grading and monochrome grain run on the decoded frame buffer in <c>LiveClip.UpdateVideo</c>, with the LUT table cached here (<see cref="GetLutTable"/>).</description></item>

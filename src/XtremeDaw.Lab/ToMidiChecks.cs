@@ -5,7 +5,7 @@ using NAudio.Midi;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab extraer-midi (the notes of a file, like "Extraer MIDI" on a clip) and the rows of comprobar-dsp for
+/// xtlab extraer-midi (the notes of a file, like "Extraer MIDI" on a clip) and the rows of comprobar-dsp for
 /// <see cref="AudioToMidi"/>: plucked strings (Karplus–Strong, close enough to a guitar for the model) playing a
 /// riff, strummed chords, chugs, a tremolo and a melody that rings over itself, scored like transcription papers do (a note is found
 /// when its pitch matches and it starts within 50 ms), plus a 44.1 kHz file, silence and the clip it makes.
@@ -16,7 +16,7 @@ static class ToMidiChecks
     /// <summary>How far a found note may start from the played one (mir_eval's default).</summary>
     const double OnsetToleranceSec = 0.05;
 
-    /// <summary>wtlab extraer-midi --comprobar (only its rows of comprobar-dsp), or extraer-midi archivo [--melodia] [--desde s] [--hasta s] [--inicio 0.5] [--nota 0.3] [--min-ms 128] [--midi x.mid] [--bpm 120].</summary>
+    /// <summary>xtlab extraer-midi --comprobar (only its rows of comprobar-dsp), or extraer-midi archivo [--melodia] [--desde s] [--hasta s] [--inicio 0.5] [--nota 0.3] [--min-ms 128] [--midi x.mid] [--bpm 120].</summary>
     public static int Run(Args a)
     {
         if (a.Flag("comprobar")) return Check() ? 0 : 3;

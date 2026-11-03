@@ -37,6 +37,8 @@ public sealed class MixTrackSpec
     public NoteSequence? Notes { get; init; }
     /// <summary>The instrument plugin that plays <see cref="Notes"/> instead of the test tone; null = the test tone.</summary>
     public Vst.VstInstance? Instrument { get; init; }
+    /// <summary>The native sampler that plays <see cref="Notes"/> instead of the test tone; null = none.</summary>
+    public SamplerRig? Sampler { get; init; }
     /// <summary>The project's tempo, for the instrument's transport.</summary>
     public double Tempo { get; init; } = 120;
     /// <summary>True when there is something to play: clips or notes.</summary>
@@ -838,7 +840,7 @@ public sealed class MixGraphBus
 }
 
 /// <summary>
-/// Port of <c>renderMix</c> in <c>GuitarCam/src/audio/mixGraph.ts</c>: renders the whole mix offline
+/// Port of <c>renderMix</c> in the web app's <c>mixGraph.ts</c>: renders the whole mix offline
 /// through <see cref="TrackDspChain"/>, the nodes (<see cref="BusDspChain"/>) and <see cref="MixGraphBus"/> (the exact
 /// same DSP graph as live playback) and strips the master limiter's look-ahead latency so the rendered audio aligns
 /// with sample 0.
@@ -917,7 +919,7 @@ public static class MixRenderer
                 if (w.End > maxEnd) maxEnd = w.End;
             }
             // an instrument's own release and effects ring past the last note: two seconds of room
-            if (t.Notes != null) maxEnd = Math.Max(maxEnd, t.Notes.End / (double)sampleRate + (t.Instrument != null ? InstrumentTailSec : 0));
+            if (t.Notes != null) maxEnd = Math.Max(maxEnd, t.Notes.End / (double)sampleRate + (t.Instrument != null ? InstrumentTailSec : t.Sampler?.TailSec(t.Notes, sampleRate) ?? 0));
         }
         return maxEnd;
     }
@@ -992,6 +994,7 @@ public static class MixRenderer
         // every chain made, so the VST3 effects it opened (each its own process) close at the end, or if one fails to open
         var made = new List<IReadOnlyList<ITrackInsert>>();
         var instruments = new List<(Vst.InstrumentRender Render, float[] L, float[] R)?>();
+        var samplers = new List<Sampler?>();
         void Close()
         {
             foreach (var inserts in made)
@@ -1050,6 +1053,13 @@ public static class MixRenderer
             active.Add((clips, TrackDspChain.AudioJoins(clips, sampleRate), t.Notes, chain, to, sends, [.. chain.Sends.Select(s => s.Delay)]));
             slotLanes.Add(t.InsertsAt);
             instruments.Add(null);
+            samplers.Add(null);
+            if (t.Sampler is { } rig && t.Instrument == null && t.Notes != null)
+            {
+                var player = new Sampler(sampleRate) { Sound = rig.Sound, Notes = t.Notes, Curves = rig.Curves };
+                player.Set(rig.Patch);
+                samplers[^1] = player;
+            }
             if (t.Instrument != null && t.Notes != null)
             {
                 var inst = t.Instrument;
@@ -1137,6 +1147,7 @@ public static class MixRenderer
                 Array.Clear(b.L, 0, len);
                 Array.Clear(b.R, 0, len);
                 var inst = instruments[k];
+                var sampler = samplers[k];
                 if (inst is { } plugin) plugin.Render.Render(at, len, plugin.L.AsSpan(0, len), plugin.R.AsSpan(0, len));
                 var lanes = slotLanes[k];
                 for (int off = 0; off < len; off += Quantum)
@@ -1149,6 +1160,7 @@ public static class MixRenderer
                     {
                         BusDspChain.Add(p.L.AsSpan(off, n), p.R.AsSpan(off, n), 1f, chain.BufferL(n), chain.BufferR(n));
                     }
+                    else if (sampler != null) sampler.Play(at + off, n, chain.BufferL(n), chain.BufferR(n));
                     else if (notes != null) NoteSynth.Render(notes, at + off, n, sampleRate, chain.BufferL(n), chain.BufferR(n));
                     if (at + off + n > stopFrame - stopFade) ExportRange.Stop(chain.BufferL(n), chain.BufferR(n), at + off, stopFrame, stopFade);
                     chain.ProcessFilledBuffer(n, anySolo, b.L.AsSpan(off, n), b.R.AsSpan(off, n), out _, out _, out _);

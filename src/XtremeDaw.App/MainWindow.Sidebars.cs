@@ -58,7 +58,7 @@ public partial class MainWindow
         InspectorBar.IsVisible = !hidden;
         LeftPanelFill.IsVisible = !hidden;
         SetPanelTip(LeftPanelButton, Loc.T(hidden ? "panel.left.show" : "panel.left.hide"));
-        if (save) SaveViewPref("sidebarHidden", hidden ? "1" : "2");
+        if (save && maxPanel == MaxPanel.None) SaveViewPref("sidebarHidden", hidden ? "1" : "2");
     }
 
     void SetProjectBarHidden(bool hidden, bool save = true)
@@ -66,7 +66,7 @@ public partial class MainWindow
         ProjectBar.IsVisible = !hidden;
         RightPanelFill.IsVisible = !hidden;
         SetPanelTip(RightPanelButton, Loc.T(hidden ? "panel.right.show" : "panel.right.hide"));
-        if (save) SaveViewPref("projectBarHidden", hidden ? "1" : "2");
+        if (save && maxPanel == MaxPanel.None) SaveViewPref("projectBarHidden", hidden ? "1" : "2");
     }
 
     static void SetPanelTip(Button b, string tip)

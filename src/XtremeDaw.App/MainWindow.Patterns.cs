@@ -56,14 +56,13 @@ public partial class MainWindow
 
     Control PatternRow(ProjectStore st, MidiPatterns.Info x, bool editable)
     {
-        var clip = MidiPatterns.Clips(st.Project, x.Id).First();
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto"), ColumnSpacing = 4, RowSpacing = 4 };
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(new TextBlock { Text = x.Name, FontSize = 13, Foreground = Palette.Fg, TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock
         {
             Classes = { "mono" }, FontSize = 10, Foreground = Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis,
-            Text = $"{BarsLabel(x.Beats / 4)} · {PatternClipsLabel(x.Clips)}",
+            Text = x.Parts > 1 ? $"{BarsLabel(x.Beats / 4)} · {PartsLabel(x.Parts)} · {PatternClipsLabel(x.Clips)}" : $"{BarsLabel(x.Beats / 4)} · {PatternClipsLabel(x.Clips)}",
         });
         grid.Children.Add(text);
 
@@ -78,7 +77,7 @@ public partial class MainWindow
         Grid.SetColumn(delete, 3); grid.Children.Add(delete);
 
         var preview = new PatternPreview();
-        preview.Set(clip.Notes, x.Beats, TrackIcons.ColorOf(MidiEditing.Find(st.Project, clip.Id).Track));
+        preview.Set([.. MidiPatterns.Parts(st.Project, x.Id).Select(part => (part.Clip.Notes, TrackIcons.ColorOf(part.Track)))], x.Beats);
         Grid.SetRow(preview, 1); Grid.SetColumnSpan(preview, 4);
         grid.Children.Add(preview);
 
@@ -160,11 +159,15 @@ public partial class MainWindow
         CanImport() && Timeline.DropTarget(e.GetPosition(Timeline), e.KeyModifiers) is { TrackId: { } id } at
             && store!.Project.Tracks.Find(t => t.Id == id)?.IsMidi == true ? (at.Sec, id) : null;
 
-    /// <summary>One more clip of a pattern, selected.</summary>
+    /// <summary>One more use of a pattern, its clip on that track (or its first) selected.</summary>
     async Task InsertPattern(string trackId, string patternId, double atSec)
     {
-        string? made = null;
-        await EditTimeline(p => { made = MidiPatterns.Insert(p, trackId, patternId, atSec).Id; return trackId; }, "midi-pattern-inserted");
-        if (made != null) Timeline.SelectMidiClip(TrackIndex(trackId), made);
+        string? made = null, on = null;
+        await EditTimeline(p =>
+        {
+            made = MidiPatterns.Insert(p, trackId, patternId, atSec).Id;
+            return on = MidiEditing.Find(p, made).Track.Id;
+        }, "midi-pattern-inserted");
+        if (made != null) Timeline.SelectMidiClip(TrackIndex(on), made);
     }
 }

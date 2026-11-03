@@ -155,6 +155,8 @@ public sealed class LiveClip
     internal int FadeLeft;
 
     public VideoDecoder? Video { get; private set; }
+    /// <summary>Where <see cref="Audio"/> came from, and <see cref="VideoPath"/> the same for the picture: once its media points elsewhere the clip starts over.</summary>
+    public string? AudioPath { get; set; }
     /// <summary>The take's video file (it may be missing), for the lane's thumbnails; null for audio-only media.</summary>
     public string? VideoPath { get; init; }
     public WriteableBitmap? Frame { get; private set; }
@@ -409,6 +411,7 @@ public sealed class LiveTrack
         Clips = clips;
         Chain = new TrackDspChain(sampleRate);
         Keys = new LiveNotes(sampleRate) { Transpose = track.Transpose };
+        Preview = new NotePreview(sampleRate);
         ApplyAll();
         started = true;
     }
@@ -447,6 +450,9 @@ public sealed class LiveTrack
     /// </summary>
     public LiveNotes Keys { get; }
 
+    /// <summary>The piano roll's notes on a track without an instrument: the test tone, through its chain like everything it plays.</summary>
+    public NotePreview Preview { get; }
+
     /// <summary>Takes the track's notes again at <paramref name="tempo"/> (after an edit or a tempo change). UI thread.</summary>
     public void SetMidi(double tempo)
     {
@@ -455,12 +461,34 @@ public sealed class LiveTrack
         bpm = tempo;
         if (retempo) ApplyInserts();
         Keys.Transpose = Track.Transpose;
+        Keys.Tempo = tempo;
+        Keys.Arp = Track.Arp?.Live();
         notes = ChannelDsp.Notes(Track, tempo, sampleRate);
         MidiEndSec = Track.MidiClips is { Count: > 0 } mc ? mc.Max(c => c.EndSec(tempo)) : 0;
         if (instrument is { } player)
         {
             player.Notes = notes;
             player.Tempo = tempo;
+        }
+        if (sampler is { } native) native.Notes = notes;
+    }
+
+    volatile Sampler? sampler;
+    /// <summary>
+    /// The native sampler that plays the notes instead of the test tone, set by the UI as soon as the track has one
+    /// (it stays silent until its sample is read). A track never has it along with a plugin. Read once per block.
+    /// </summary>
+    public Sampler? Sampler
+    {
+        get => sampler;
+        set
+        {
+            if (value != null)
+            {
+                value.Notes = notes;
+                value.Curves = Automations.SamplerCurves(Track);
+            }
+            sampler = value;
         }
     }
 
@@ -598,6 +626,7 @@ public sealed class LiveTrack
     {
         Chain.Automation = Automations.Compile(Track);
         if (instrument is { } player) player.Curves = Automations.InstrumentCurves(Track);
+        if (sampler is { } native) native.Curves = Automations.SamplerCurves(Track);
     }
 
     /// <summary>
@@ -668,7 +697,8 @@ public sealed class LiveTrack
     /// Zero allocations. During a seek crossfade or a loop's splice (<paramref name="fromFrame"/> other than
     /// <see cref="NoSecondRead"/>; a splice near zero reads before it) the clips at that position, weighted by
     /// <paramref name="wOut"/>, are summed with the ones at <paramref name="posFrame"/>, weighted by <paramref name="wIn"/>,
-    /// before the chain, so its state stays continuous.
+    /// before the chain, so its state stays continuous. <paramref name="loopEnd"/> above 0 is the end of the loop the
+    /// engine turns on, from it to <paramref name="turnTo"/>: an instrument plugin plays ahead of the playhead and needs it.
     /// </summary>
     public void MixInto(
         long posFrame,
@@ -679,7 +709,10 @@ public sealed class LiveTrack
         int sendOffset,
         long fromFrame = NoSecondRead,
         ReadOnlySpan<float> wIn = default,
-        ReadOnlySpan<float> wOut = default)
+        ReadOnlySpan<float> wOut = default,
+        int turnAt = -1,
+        long turnTo = 0,
+        long loopEnd = 0)
     {
         var bl = Chain.BufferL(n);
         var br = Chain.BufferR(n);
@@ -688,18 +721,23 @@ public sealed class LiveTrack
         Chain.Frame = posFrame;
         var seq = notes;
         var inst = instrument;
+        var native = sampler;
         if (fromFrame == NoSecondRead)
         {
             AddClips(posFrame, n, bl, br, default);
-            if (inst != null) inst.Play(posFrame, n, bl, br, Keys);
+            if (inst != null) inst.Play(posFrame, n, bl, br, Keys, turnTo, loopEnd);
+            else if (native != null) native.Play(posFrame, n, bl, br, Keys);
             else if (seq != null) NoteSynth.Render(seq, posFrame, n, sampleRate, bl, br);
         }
         else
         {
             AddClips(fromFrame, n, bl, br, wOut);
             AddClips(posFrame, n, bl, br, wIn);
-            // a plugin can't play two places at once: it jumps (its notes go off) and plays on from the new one
-            if (inst != null) inst.Play(posFrame, n, bl, br, Keys);
+            // a plugin can't play two places at once: in a seek it jumps (its notes go off) and plays on from the new
+            // one; a loop's turn it already played, ahead of the playhead
+            if (inst != null) inst.Play(posFrame, n, bl, br, Keys, turnTo, loopEnd);
+            // the sampler lets its old notes go and picks up the new ones; a loop tells it the exact frame
+            else if (native != null) native.Play(posFrame, n, bl, br, Keys, turnAt, turnTo);
             else if (seq != null)
             {
                 NoteSynth.Render(seq, fromFrame, n, sampleRate, bl, br, wOut);
@@ -707,15 +745,16 @@ public sealed class LiveTrack
             }
         }
         // the keyboard: through the plugin above, or the test tone here
-        if (inst != null) Keys.Skip(n);
+        if (inst != null || native != null) Keys.Skip(n);
         else Keys.Render(n, bl, br);
+        Preview.Mix(n, bl, br);
         Output(n, anySolo, masterL, masterR, sendOffset);
     }
 
     /// <summary>
     /// While stopped: an instrument plugin keeps running (its tails, the piano roll's keys, the keyboard through it and
     /// the keys in its own window) and, while it has something to play, its sound goes through the chain to its output like when it plays. Without
-    /// one, the keyboard's test tone does the same while it sounds (and a little after, for a reverb slot's tail).
+    /// one, the keyboard's test tone and the piano roll's do the same while they sound (and a little after, for a reverb slot's tail).
     /// Zero allocations.
     /// </summary>
     public void MixIdle(int n, bool anySolo, Span<float> masterL, Span<float> masterR)
@@ -726,17 +765,24 @@ public sealed class LiveTrack
             Keys.Skip(n);
             return;
         }
-        if (!Keys.Active) return;
+        if (sampler is { } native)
+        {
+            if (native.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys, Chain.Frame)) Output(n, anySolo, masterL, masterR, 0);
+            Keys.Skip(n);
+            return;
+        }
+        if (!Keys.Active && !Preview.Active) return;
         var bl = Chain.BufferL(n);
         var br = Chain.BufferR(n);
         bl.Clear();
         br.Clear();
         Keys.Render(n, bl, br);
+        Preview.Mix(n, bl, br);
         Output(n, anySolo, masterL, masterR, 0);
     }
 
-    /// <summary>The engine runs <see cref="MixIdle"/> for it: an instrument plugin, or the keyboard still sounding.</summary>
-    public bool RunsIdle => instrument != null || Keys.Active;
+    /// <summary>The engine runs <see cref="MixIdle"/> for it: an instrument, or the keyboard or the piano roll still sounding.</summary>
+    public bool RunsIdle => instrument != null || sampler != null || Keys.Active || Preview.Active;
 
     /// <summary>The chain over what the block filled in, into its output (its folder, a bus or the master) and its sends.</summary>
     void Output(int n, bool anySolo, Span<float> masterL, Span<float> masterR, int sendOffset)

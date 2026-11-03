@@ -28,8 +28,6 @@ y MIDI, piano roll, instrumentos y efectos VST3, buses y una cadena de master co
 Además hace **videos**: si grabás con cámara, cada toma guarda su imagen y XTreme arma un video con un panel por
 toma, con color y formatos para redes. Es un extra para cuando lo necesitás; sin cámara, funciona como cualquier DAW.
 
-Antes se llamaba **GuitarCam Studio Native**: al actualizar, tus ajustes y proyectos siguen ahí.
-
 <details>
 <summary><b>Antes de instalar</b></summary>
 
@@ -149,13 +147,13 @@ XTreme está **en desarrollo constante**. La idea es llevarla a un nivel que sir
 para quien recién empieza y quiere hacer música rápido y sin complicaciones, como para profesionales que
 quieren hacer música en serio.
 
-Ya están las pistas MIDI con su piano roll y los instrumentos y efectos VST3; lo próximo son perillas propias para
-los parámetros de los plugins, un sampler propio y más herramientas de estudio. Lo que está
+Ya están las pistas MIDI con su piano roll, un sampler propio y los instrumentos y efectos VST3; lo próximo son
+perillas propias para los parámetros de los plugins y más herramientas de estudio. Lo que está
 planeado y lo que falta está en [PENDIENTES.md](PENDIENTES.md).
 
 ## Más información
 
-[DETALLES.md](DETALLES.md): requisitos, cómo compilar, atajos de teclado, cómo está hecho y `wtlab`.
+[DETALLES.md](DETALLES.md): requisitos, cómo compilar, atajos de teclado, cómo está hecho y `xtlab`.
 
 ## Contribuir y licencia
 

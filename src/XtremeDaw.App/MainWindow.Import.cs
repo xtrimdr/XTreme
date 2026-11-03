@@ -10,8 +10,9 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// Bringing outside audio or video into the project (native only, asked by the user): "Importar audio…" in the new-track
-/// menu, dropping files on the window, or a sample from the Biblioteca. Each file is decoded and copied into the project's
-/// media/ in the background, with a progress toast, and lands on its own track at the playhead, as one undo step; the
+/// menu, dropping files on the window, or a sample from the Biblioteca. <see cref="ImportMode"/> says whether each file is
+/// copied into the project's media/ or linked where it is (asking first, by default). Each one is decoded in the
+/// background, with a progress toast, and lands on its own track at the playhead, as one undo step; the
 /// selected empty track takes the first one, like a take does. Dropped on the timeline it lands there instead, on the
 /// track under it when that stretch is free. The decoded audio goes straight to the clip, so the file is read once.
 /// </summary>
@@ -73,6 +74,11 @@ public partial class MainWindow
                 return;
             }
             if (files.Count == 0) return;
+            if (place?.TrackId is { } onto && tracks.FirstOrDefault(t => t.Track.Id == onto) is { Track.IsMidi: true, Track.Instrument: null } && CanImport())
+            {
+                await LoadSample(onto, files[0]);
+                return;
+            }
             if (place is { } at) await ImportAudio(files, at.Sec, at.TrackId, BringsPicture(files[0]));
             else if (!e.DataTransfer.Contains(SampleDrag)) await ImportAudio(files, picture: BringsPicture(files[0]));
         });
@@ -99,12 +105,26 @@ public partial class MainWindow
         if (paths.Count > 0) await ImportAudio(paths, picture: BringsPicture(paths[0]));
     }
 
+    /// <summary>True = link, false = copy, null = the import was cancelled. Nothing to ask when no file can come in.</summary>
+    async Task<bool?> LinkOrCopy(IReadOnlyList<string> paths)
+    {
+        if (ImportMode.Mode != ImportMode.Ask) return ImportMode.Mode == ImportMode.Link;
+        if (!paths.Any(AudioImport.IsSupported)) return false;
+        var choice = await ImportAsk.Ask(paths);
+        if (choice == Dialogs.ImportDialog.Choice.Cancel) return null;
+        bool link = choice == Dialogs.ImportDialog.Choice.Link;
+        if (ImportAsk.Remember) ImportMode.Set(link ? ImportMode.Link : ImportMode.Copy);
+        return link;
+    }
+
     /// <param name="atSec">Where they land; null = the playhead.</param>
     /// <param name="trackId">The track it was asked on, which takes it when that stretch is free; null = the rule above.</param>
     /// <param name="picture">A video brings its picture too; without it, only its sound.</param>
     async Task ImportAudio(IReadOnlyList<string> paths, double? atSec = null, string? trackId = null, bool picture = false)
     {
         if (!CanImport()) { Status(Loc.T("imp.busy")); return; }
+        if (await LinkOrCopy(paths) is not { } link) return;
+        if (!CanImport()) { Status(Loc.T("imp.busy")); return; } // the question stayed open while something else started
         var st = store!;
         string dir = st.Dir;
         int done = 0;
@@ -125,15 +145,26 @@ public partial class MainWindow
                     toast.Report((index + from + (to - from) * part) / paths.Count);
                 AudioImport.Imported file;
                 MediaAudio audio;
+                bool wav;
                 try
                 {
-                    (file, audio) = await Task.Run(() =>
+                    (file, audio, wav) = await Task.Run(() =>
                     {
                         var loaded = AudioImport.Read(path, PlaybackEngine.SampleRate, p => Report(0, ReadShare, p));
                         var media = new MediaAudio(loaded);
-                        var copied = AudioImport.CopyIn(dir, path, loaded, p => Report(ReadShare, 1, p));
-                        if (picture && MediaDecoder.IsVideo(path)) copied = AudioImport.CopyVideoIn(dir, path, copied, p => Report(ReadShare, 1, p));
-                        return (copied, media);
+                        bool video = picture && MediaDecoder.IsVideo(path);
+                        AudioImport.Imported copied;
+                        if (link)
+                        {
+                            copied = AudioImport.LinkIn(dir, path, loaded);
+                            if (video) copied = AudioImport.LinkVideoIn(path, copied);
+                        }
+                        else
+                        {
+                            copied = AudioImport.CopyIn(dir, path, loaded, p => Report(ReadShare, 1, p));
+                            if (video) copied = AudioImport.CopyVideoIn(dir, path, copied, p => Report(ReadShare, 1, p));
+                        }
+                        return (copied, media, loaded.Converted && !video);
                     });
                 }
                 catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
@@ -142,7 +173,8 @@ public partial class MainWindow
                     continue;
                 }
                 // the project may have changed while the file was copied
-                if (store != st || !CanImport()) { Toast(Loc.T("imp.switched", name)); return; }
+                if (store != st || !CanImport()) { Toast(Loc.T(link && !wav ? "imp.switched.link" : "imp.switched", name)); return; }
+                if (link && wav) Toast(Loc.T("imp.link.wav", name));
                 double at = atSec ?? engine.PositionSec;
                 string? selected = done == 0 ? trackId ?? sel?.Track.Id : null;
                 await EditTimeline(p =>

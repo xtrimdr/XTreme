@@ -1,4 +1,4 @@
-// The shared memory between XTreme (XtremeDaw.Audio/Vst/VstBridge.cs) and wtvsthost.exe. Both sides must agree
+// The shared memory between XTreme (XtremeDaw.Audio/Vst/VstBridge.cs) and xtvsthost.exe. Both sides must agree
 // on every offset: VstBridge.cs mirrors them as constants, and the static_asserts below keep this file honest.
 //
 // One block goes like this: the app fills slots[seq & 1] (events, input, transport) and then publishes
@@ -12,12 +12,13 @@
 namespace gcvst {
 
 constexpr int32_t Magic = 0x53564347; // "GCVS"
-constexpr int32_t Version = 2;
+constexpr int32_t Version = 3;
 constexpr int32_t MaxBlock = 8192;
 constexpr int32_t MaxEvents = 512;
 constexpr int32_t MaxParams = 128;
 
-enum EventType : int32_t { NoteOn = 0, NoteOff = 1 };
+enum EventType : int32_t { NoteOn = 0, NoteOff = 1, Control = 2 };
+constexpr int32_t ControlBend = 128; // the controller of a Control event that is the pitch bend; below it, a CC
 // Reset: the plugin forgets its tails and delay lines before the block (an effect, when the transport starts)
 enum SlotFlags : int32_t { AllNotesOff = 1, Playing = 2, Reset = 4 };
 enum Status : int32_t { Loading = 0, Ready = 1, Failed = 2, Crashed = 3 };
@@ -27,8 +28,8 @@ struct Event
 {
     int32_t offset;   // frame inside the block
     int32_t type;     // EventType
-    int32_t pitch;    // 0..127
-    float velocity;   // 0..1
+    int32_t pitch;    // 0..127; of a Control, the controller (0..127 or ControlBend)
+    float velocity;   // 0..1; a note off's is its release; of a Control, the value (the bend's centre is 0.5)
 };
 
 // an automated parameter's new value, for the start of the block

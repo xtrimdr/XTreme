@@ -1,16 +1,17 @@
-﻿# The one way to try a change: builds the solution, runs wtlab's DSP checks, copies the app to its own folder
+﻿# The one way to try a change: builds the solution, runs xtlab's DSP checks, copies the app to its own folder
 # and opens that copy. The app never runs from bin\, so an open XTreme never blocks the next build, and every
 # copy carries a prueba.txt mark (commit, uncommitted changes, time) that the app shows in its title bar.
 #   tools\probar.ps1 "qué probar"            -> build, check, copy, add that to the list to try and open
 #   tools\probar.ps1 "qué probar" -Proyecto D:\...\MiTema   -> same, opening that project directly
-#   tools\probar.ps1 -Abrir                  -> open the newest copy without building (the desktop shortcut)
-#   tools\probar.ps1 -SinComprobar           -> skip wtlab comprobar-dsp (UI-only changes in a hurry)
+#   tools\probar.ps1 -Abrir                  -> open the newest finished copy without building
+#   tools\probar.ps1 -Abrir -Acceso          -> same, from the desktop shortcut: it has no console, so a failure shows a window
+#   tools\probar.ps1 -SinComprobar           -> skip xtlab comprobar-dsp (UI-only changes in a hurry)
 #   tools\probar.ps1 -NoAbrir "qué probar"   -> build, check, copy and add to the list (what the agent runs after each change)
 #   tools\probar.ps1 -NoAbrir -Arregla 12    -> same, for a fix: item 12 goes back to be tried on this copy
 #   tools\probar.ps1 -Lista                  -> what is left to try and what the user marked as failing
 #   tools\probar.ps1 -SoloCompilar           -> build only, in its turn and below normal priority
 # Several sessions share this folder, so building, checking and copying go one at a time: the script holds the turn that
-# wtlab (HeavyTurn.cs) and dotnet build (turno.targets) also take until the copy is done, and runs below normal priority
+# xtlab (HeavyTurn.cs) and dotnet build (turno.targets) also take until the copy is done, and runs below normal priority
 # so the machine stays usable.
 # Before opening, if a XTreme is already open, a window offers to close it and open the new one (it saves first);
 # one open from bin\ is asked about before building, since it blocks it. A XTreme with no window left is not asked
@@ -21,6 +22,7 @@ param(
     [Parameter(Position = 0)][string]$Que = '',
     [string]$Proyecto = '',
     [switch]$Abrir,
+    [switch]$Acceso,
     [switch]$SinComprobar,
     [switch]$NoAbrir,
     [switch]$SoloCompilar,
@@ -35,7 +37,7 @@ $bin = Join-Path $root 'src\XtremeDaw.App\bin\Debug\net10.0-windows'
 $copies = Join-Path $root 'pruebas'
 # The list of changes to try: it stays here so it outlives the copies (TestList.cs)
 $listFile = Join-Path $copies 'lista.json'
-$wtlab = Join-Path $root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows\wtlab.exe'
+$xtlab = Join-Path $root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows\xtlab.exe'
 # How many copies stay around; older ones are deleted (unless one is still open)
 $Keep = 5
 
@@ -43,7 +45,15 @@ function Fail([string]$text) {
     Write-Host ''
     Write-Host "NO SE PUEDE PROBAR: $text" -ForegroundColor Red
     SessionLog "probar.ps1 no pudo: $text"
+    ShortcutError $text
     exit 1
+}
+
+# From the desktop shortcut the console is hidden: says what failed in a window, always on top (0x40000), with a stop
+# icon (0x10). Only there: an agent's command must never wait on a window nobody asked for.
+function ShortcutError([string]$text) {
+    if (-not $Acceso) { return }
+    try { [void](New-Object -ComObject WScript.Shell).Popup("No se pudo abrir XTreme.`n`n$text", 0, 'XTreme · Probar', 0x40010) } catch { }
 }
 
 # The app's own sesiones.log: a window this script closes looks like one closed by hand, so it says so there
@@ -54,8 +64,8 @@ function SessionLog([string]$text) {
         Add-Content -Path (Join-Path $dir 'sesiones.log') -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff')  $text" -Encoding UTF8
     } catch { }
 }
-# From the desktop shortcut the console is hidden: an error would vanish without a trace
-trap { SessionLog "probar.ps1 falló: $_ $($_.InvocationInfo.PositionMessage)"; break }
+# An unexpected error must not vanish without a trace either
+trap { SessionLog "probar.ps1 falló: $_ $($_.InvocationInfo.PositionMessage)"; ShortcutError "$_"; break }
 
 # How long a XTreme with its window gone gets to end on its own
 $GhostWaitSec = 3
@@ -68,7 +78,7 @@ $AliveWaitSec = 8
 $TurnWaitSec = 540
 
 # The app's process, and its name before the rename (a test copy from then may still be open)
-$AppProcesses = 'XTreme', 'GuitarCam'
+$AppProcesses = 'XTreme'
 
 # Closes one XTreme through its window, so the project is saved and a take in progress is kept. The window may stay
 # up asking something (changes it could not save, an export running): it gets time and is never forced. Once the window
@@ -181,8 +191,8 @@ function AddToList([string]$copy) {
     if (-not $Que -and -not $Arregla) { return }
     # through the environment: Windows PowerShell breaks quotes inside an argument
     $env:XTREME_PROBAR_TEXTO = if ($Que) { $Que } else { $null }
-    if ($Arregla) { & $wtlab lista arreglado $Arregla --archivo $listFile --copia $copy }
-    else { & $wtlab lista agregar --archivo $listFile --copia $copy }
+    if ($Arregla) { & $xtlab lista arreglado $Arregla --archivo $listFile --copia $copy }
+    else { & $xtlab lista agregar --archivo $listFile --copia $copy }
     if ($LASTEXITCODE -ne 0) { Write-Host 'No se pudo anotar en la lista de pruebas.' -ForegroundColor Yellow }
     $env:XTREME_PROBAR_TEXTO = $null
 }
@@ -233,16 +243,19 @@ function Launch([string]$dir) {
 }
 
 if ($Lista) {
-    if (-not (Test-Path $wtlab)) { Fail 'falta wtlab: compilá una vez.' }
+    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    & $wtlab lista ver --archivo $listFile
+    & $xtlab lista ver --archivo $listFile
     exit $LASTEXITCODE
 }
 
 if ($Abrir) {
-    $last = Get-ChildItem $copies -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    # prueba.txt is written last: a folder without it is a copy still being made (or one that died halfway)
+    $last = Get-ChildItem $copies -Directory -ErrorAction SilentlyContinue |
+        Where-Object { (Test-Path (Join-Path $_.FullName 'prueba.txt')) -and (Test-Path (Join-Path $_.FullName 'XTreme.exe')) } |
+        Sort-Object Name -Descending | Select-Object -First 1
     if (-not $last) { Fail 'todavía no hay ninguna copia de prueba. Corré tools\probar.ps1 una vez.' }
-    if (Test-Path $wtlab) { AddToList $last.Name }
+    if (Test-Path $xtlab) { AddToList $last.Name }
     Launch $last.FullName
     exit 0
 }
@@ -272,9 +285,9 @@ if ($LASTEXITCODE -ne 0) { Fail 'la compilación falló (arriba están los error
 if ($SoloCompilar) { exit 0 }
 
 if (-not $SinComprobar) {
-    Write-Host 'Comprobando el DSP (wtlab comprobar-dsp)...' -ForegroundColor Cyan
-    $out = & $wtlab comprobar-dsp 2>&1
-    if ($LASTEXITCODE -ne 0) { $out | Write-Host; Fail "wtlab comprobar-dsp falló (código $LASTEXITCODE)." }
+    Write-Host 'Comprobando el DSP (xtlab comprobar-dsp)...' -ForegroundColor Cyan
+    $out = & $xtlab comprobar-dsp 2>&1
+    if ($LASTEXITCODE -ne 0) { $out | Write-Host; Fail "xtlab comprobar-dsp falló (código $LASTEXITCODE)." }
     Write-Host '  todo bien' -ForegroundColor DarkGray
 }
 
@@ -294,6 +307,8 @@ Get-ChildItem $copies -Directory | Sort-Object Name -Descending | Select-Object 
 }
 
 Write-Host "Copia: $dest" -ForegroundColor DarkGray
+# Every copy leaves the desktop shortcut right, even if this folder moved: that is how the old one ended up pointing nowhere
+try { [void](& (Join-Path $PSScriptRoot 'make-shortcut.ps1')) } catch { Write-Host "No se pudo actualizar el acceso directo: $_" -ForegroundColor Yellow }
 AddToList (Split-Path -Leaf $dest)
 $turn.Dispose()
 if (-not $NoAbrir) { Launch $dest }

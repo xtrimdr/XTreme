@@ -33,7 +33,7 @@ public sealed class ValueBar : Control
     public event Action<int>? Moved;
 
     /// <summary>Where the right button puts it.</summary>
-    public int Default { get; }
+    public int Default { get; init; }
 
     /// <summary>What a notch of the wheel moves.</summary>
     public int WheelStep { get; init; } = 1;

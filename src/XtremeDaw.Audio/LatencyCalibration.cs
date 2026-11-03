@@ -22,7 +22,7 @@ public readonly record struct CalibrationProgress(
     bool CountIn);
 
 /// <summary>
-/// Port of <c>LatencyInfo</c> (<c>GuitarCam/src/audio/audioEngine.ts</c>).
+/// Port of <c>LatencyInfo</c> (the web app's <c>audioEngine.ts</c>).
 /// </summary>
 public readonly record struct LatencyInfo(
     double OutputMs,
@@ -36,7 +36,7 @@ public readonly record struct LatencyInfo(
 /// <summary>
 /// Sample-accurate state machine that plays the calibration pulses/clicks (delayed by the master limiter
 /// lookahead, like backing tracks) and records the stereo input from frame 0 on the same callback clock.
-/// Port of <c>StudioAudioEngine.measureLatency</c> (<c>GuitarCam/src/audio/audioEngine.ts:522-606</c>).
+/// Port of <c>StudioAudioEngine.measureLatency</c> (the web app's <c>audioEngine.ts:522-606</c>).
 /// </summary>
 public sealed class CalibrationSession
 {
@@ -186,7 +186,7 @@ public sealed class CalibrationSession
 
 /// <summary>
 /// A calibration saved for one input + output pair (machine-specific).
-/// Port of <c>StoredCalibration</c> (<c>GuitarCam/src/audio/latencyCalibration.ts</c>).
+/// Port of <c>StoredCalibration</c> (the web app's <c>latencyCalibration.ts</c>).
 /// </summary>
 public sealed class StoredCalibration
 {
@@ -199,7 +199,7 @@ public sealed class StoredCalibration
 }
 
 /// <summary>
-/// Port of <c>GuitarCam/src/audio/latencyCalibration.ts</c>: round-trip latency measurement via
+/// Port of the web app's <c>latencyCalibration.ts</c>: round-trip latency measurement via
 /// seeded Hann-windowed white-noise pulses (<c>loopback</c>) or 90 BPM click attacks (<c>tap</c>),
 /// plus per-device calibration storage and staleness check.
 /// </summary>

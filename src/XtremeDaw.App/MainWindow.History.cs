@@ -16,10 +16,11 @@ namespace XtremeDaw.App;
 /// <summary>
 /// The Biblioteca and Historial tabs of the project bar (once one tab, HistoryPanel.tsx). Biblioteca: Canales (filter,
 /// search, by day, listen to the raw file in a mini player under its row (wave, seek, ±5 s), show in Explorer,
-/// take off the timeline or use again, send one unused take to the Recycle Bin) and "Borrar no usados".
+/// take off the timeline or use again, send one unused take to the Recycle Bin, copy a linked one in or find a file
+/// that is missing, MainWindow.Linked.cs) and "Borrar no usados".
 /// Historial: Pasos and Versiones (MainWindow.Steps.cs) and Exportaciones (watch, show, go back to the version it was made
 /// from, Recycle Bin with an inline confirmation). Actividad, the log as sentences, left the tab when Pasos and
-/// Versiones came (the user's call); the log is still written and wtlab still reads it. Both tabs are refreshed together
+/// Versiones came (the user's call); the log is still written and xtlab still reads it. Both tabs are refreshed together
 /// while either is on screen. Same as the web except:
 /// there are no "Guardando / Reintentar" rows, as a native take is written to disk while it is recorded, and listening
 /// goes through Windows' default output (the web's &lt;audio&gt;), not the ASIO engine. The work is in ProjectHistory.
@@ -133,6 +134,7 @@ public partial class MainWindow
         var p = st.Project;
         bool editable = !st.ReadOnly && !restoring && !RecordingTake;
         MeasureHistoryBytes(st);
+        CheckMissingFiles(st);
 
         // Canales
         var used = ProjectHistory.UsedMediaIds(p);
@@ -248,7 +250,7 @@ public partial class MainWindow
     Control TakeRow(ProjectStore st, Media m, bool inTimeline, bool editable)
     {
         bool current = takePreview.PlayingId == m.Id, playing = current && !takePreview.Paused;
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto"), ColumnSpacing = 8 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto,Auto"), ColumnSpacing = 8 };
         var play = RowButton(playing ? "\uE769" : "\uF5B0", Loc.T(playing ? "hist.pause" : current ? "hist.resume" : "hist.listen"), () => TogglePreview(st, m));
         if (current) play.Foreground = Palette.Accent;
         grid.Children.Add(play);
@@ -265,6 +267,19 @@ public partial class MainWindow
         }
         // where it came from (native only: the web has no imports)
         nameLine.Children.Add(Badge(m.Kind == "import" ? Loc.T("hist.kind.import") : Loc.T("hist.kind.recording"), m.Video != null ? "\uE714" : m.Kind == "import" ? "\uE896" : "\uE720"));
+        if (m.Linked)
+        {
+            var linked = Badge(Loc.T("hist.kind.linked"), "");
+            ToolTip.SetTip(linked, st.Resolve(m.Video) ?? st.Resolve(m.Audio));
+            nameLine.Children.Add(linked);
+        }
+        bool lost = historyMissing.Contains(m.Id);
+        if (lost)
+        {
+            var offline = Badge(Loc.T("hist.kind.offline"), "");
+            ToolTip.SetTip(offline, st.Resolve(m.Video) is { } picture && !File.Exists(picture) ? picture : st.Resolve(m.Audio));
+            nameLine.Children.Add(offline);
+        }
         if (!inTimeline) nameLine.Children.Add(Badge(Loc.T("hist.unusedBadge")));
         text.Children.Add(nameLine);
         text.Children.Add(new TextBlock
@@ -275,14 +290,31 @@ public partial class MainWindow
         Grid.SetColumn(text, 1); grid.Children.Add(text);
 
         var reveal = RowButton("\uE838", Loc.T("hist.reveal"), () => RevealInExplorer(st.Dir, m.Video ?? m.Audio));
-        Grid.SetColumn(reveal, 2); grid.Children.Add(reveal);
+        Grid.SetColumn(reveal, 4); grid.Children.Add(reveal);
         var hover = new List<Control> { reveal };
+        bool canPlace = editable && historyBusyId == null;
+        if (lost)
+        {
+            var file = RowButton("", Loc.T("hist.findFile"), async () => await FindFile(st, m));
+            var folder = RowButton("", Loc.T("hist.findFolder.tip"), async () => await FindInFolder(st));
+            file.Foreground = folder.Foreground = Palette.Accent;
+            file.IsEnabled = folder.IsEnabled = canPlace;
+            Grid.SetColumn(file, 2); grid.Children.Add(file);
+            Grid.SetColumn(folder, 3); grid.Children.Add(folder);
+        }
+        else if (m.Linked)
+        {
+            var copy = RowButton("", Loc.T("hist.copyIn"), async () => await CopyLinked(st, m));
+            copy.IsEnabled = canPlace;
+            hover.Add(copy);
+            Grid.SetColumn(copy, 3); grid.Children.Add(copy);
+        }
         if (!inTimeline)
         {
             var trash = RowButton("", Loc.T("hist.trashTake"), () => { historyDeletingTake = m.Id; RefreshHistory(); }, danger: true);
             trash.IsEnabled = editable && historyBusyId == null && !historyTakeBusy;
             hover.Add(trash);
-            Grid.SetColumn(trash, 3); grid.Children.Add(trash);
+            Grid.SetColumn(trash, 5); grid.Children.Add(trash);
         }
         Control action;
         if (historyBusyId == m.Id)
@@ -304,7 +336,7 @@ public partial class MainWindow
             use.Click += async (_, _) => await UseTake(m);
             action = use;
         }
-        Grid.SetColumn(action, 4); grid.Children.Add(action);
+        Grid.SetColumn(action, 6); grid.Children.Add(action);
         if (!current) return DraggableTake(HistoryRow(grid, hover, new Thickness(8, 6, 16, 6)), m, editable);
         (takePlayer.Parent as Panel)?.Children.Remove(takePlayer); // it moves with the take across refreshes
         return DraggableTake(HistoryRow(new StackPanel { Children = { grid, takePlayer } }, hover, new Thickness(8, 6, 16, 8)), m, editable);

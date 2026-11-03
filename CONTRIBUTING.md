@@ -20,7 +20,7 @@ mantenedor** antes de entrar al proyecto.
 ### Antes de abrir el PR
 
 - `dotnet build` desde la raíz (`XtremeDaw.slnx`) tiene que compilar **sin warnings nuevos**.
-- Probá el motor y el proyecto con `wtlab` y la ventana con `XTreme.exe`. Si no tenés interfaz ASIO o
+- Probá el motor y el proyecto con `xtlab` y la ventana con `XTreme.exe`. Si no tenés interfaz ASIO o
   cámara, decí en el PR qué no pudiste probar.
 - Un PR, una idea: cambios chicos y enfocados se revisan (y se aprueban) mucho más rápido.
 - No subas archivos de audio, video ni binarios (`*.wav`, `bin/`, `obj/`).
@@ -36,7 +36,7 @@ La guía completa está en [AGENTS.md](AGENTS.md) (y, para la ventana, en [src/X
   `Assets/Lang/*.json`. Identificadores y comentarios del código, en inglés.
 - **Estilo**: escribí como el código que ya está (clases `sealed`, `<summary>` en cada clase, comentarios
   solo para el *por qué*).
-- **Formato del proyecto**: lo que se guarda en `guitarcam.json` es compatible hacia atrás.
+- **Formato del proyecto**: lo que se guarda en `xtreme_project.json` es compatible hacia atrás.
 - Sin dependencias nuevas de NuGet sin charlarlo antes.
 
 ### Licencia de tus aportes
@@ -61,7 +61,7 @@ is merged.
 3. Open a **Pull Request** explaining what changes, why, and how you tested it.
 4. The maintainer reviews it and may ask for changes. **Nothing is merged into `master` without their approval.**
 
-Before opening the PR: `dotnet build` must pass **with no new warnings**; test with `wtlab` and the app (say
+Before opening the PR: `dotnet build` must pass **with no new warnings**; test with `xtlab` and the app (say
 what you could not test if you lack an ASIO interface or a camera); keep PRs small and focused; do not commit
 audio, video or binaries.
 

@@ -9,7 +9,7 @@ namespace XtremeDaw.Lab;
 /// <summary>
 /// MIDI tracks, clips and notes without the window (stage 1 of the MIDI editor), and the checks of the notes' sound:
 /// the test tone is the same in any block size and from any position, and the export plays what the live engine does.
-/// <c>wtlab mezclar carpeta</c> renders a project with its MIDI tracks.
+/// <c>xtlab mezclar carpeta</c> renders a project with its MIDI tracks.
 /// </summary>
 static class MidiCommands
 {
@@ -22,9 +22,12 @@ static class MidiCommands
         if (sub == "escuchar") return Listen(a.Get("entrada"), a.Double("segundos", 10));
         if (sub == "teclas") return RawKeyList(a.Double("segundos", 10));
         string? dir = a.Positional.Skip(1).FirstOrDefault();
-        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|acorde|escala|ajustar-escala|cuantizar|velocidad|humanizar|quitar|instrumento|patron|patron-insertar|patron-unico|patron-disolver|patron-borrar <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
+        if (sub == "cortar" && dir != null) return MidiTakeChecks.Die(Path.GetFullPath(dir));
+        if (dir == null) throw new ArgumentException("midi ver|pista|clip|nota|acordes|acorde|escala|ajustar-escala|cuantizar|velocidad|humanizar|quitar|herramienta|instrumento|sampler|patron|patron-insertar|patron-instrumento|patron-unico|patron-disolver|patron-borrar|exportar-mid|importar-mid|partitura <carpeta> (o midi comprobar, entradas, escuchar, teclas)");
         using var store = ProjectStore.Open(Path.GetFullPath(dir));
         var p = store.Project;
+        if (sub == "exportar-mid") return MidiFileChecks.Export(a, p);
+        if (sub == "partitura") return MidiFileChecks.Sheet(a, p);
         if (sub != "ver" && store.ReadOnly) throw new IOException(store.ReadOnlyReason);
         switch (sub)
         {
@@ -62,6 +65,16 @@ static class MidiCommands
             case "quitar":
                 MidiEditing.RemoveClip(p, a.Get("clip") ?? throw new ArgumentException("Falta --clip."));
                 break;
+            case "herramienta":
+                MidiToolChecks.Run(p, a, a.Get("clip") ?? throw new ArgumentException("Falta --clip."));
+                break;
+            case "importar-mid":
+            {
+                var file = MidiFiles.Read(a.Get("de") ?? throw new ArgumentException("Falta --de archivo.mid."));
+                string? onto = a.Get("pista") == null ? null : (TrackOf(p, a.Get("pista")) ?? throw new ArgumentException($"No encontré la pista {a.Get("pista")}.")).Id;
+                foreach (string id in MidiFiles.Import(p, file, onto, a.Double("en", 0))) Console.WriteLine(id);
+                break;
+            }
             case "escala":
             {
                 // no --escala: none. --raiz takes a note name, whatever its octave
@@ -135,6 +148,18 @@ static class MidiCommands
                 Console.WriteLine(MidiPatterns.Insert(p, t.Id, pattern, a.Double("en", 0)).Id);
                 break;
             }
+            case "patron-instrumento":
+            {
+                // one more instrument in the pattern, on that track; --quitar takes out the clip's instrument
+                string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip (uno del patrón).");
+                if (a.Flag("quitar")) Console.WriteLine($"{MidiPatterns.RemovePart(p, clip)} clips borrados.");
+                else
+                {
+                    var t = TrackOf(p, a.Get("pista")) ?? throw new ArgumentException("Falta --pista (número o id de una pista MIDI).");
+                    Console.WriteLine(MidiPatterns.AddPart(p, clip, t.Id).Id);
+                }
+                break;
+            }
             case "patron-unico":
                 MidiPatterns.MakeUnique(p, a.Get("clip") ?? throw new ArgumentException("Falta --clip."));
                 break;
@@ -159,6 +184,19 @@ static class MidiCommands
                     var plugin = PluginCatalog.Find(PluginCatalog.Plugins(PluginCatalog.Load()).Where(x => x.IsInstrument), name)
                         ?? throw new ArgumentException($"No encontré el instrumento \"{name}\": probá con vst escanear.");
                     t.Instrument = PluginCatalog.Ref(plugin);
+                }
+                break;
+            }
+            case "sampler":
+            {
+                var t = TrackOf(p, a.Get("pista")) ?? throw new ArgumentException("Falta --pista (número o id de una pista MIDI).");
+                if (!t.IsMidi) throw new ArgumentException("Esa pista no es MIDI.");
+                if (a.Flag("quitar")) t.Sampler = null;
+                else
+                {
+                    string file = a.Get("sample") ?? throw new ArgumentException("Falta --sample archivo (o --quitar).");
+                    var audio = AudioImport.Read(file, 48000);
+                    SamplerMedia.Set(p, t, AudioImport.CopyIn(store.Dir, file, audio), audio.Left, audio.Right, 48000);
                 }
                 break;
             }
@@ -271,7 +309,7 @@ static class MidiCommands
             Console.WriteLine($"{p.Tracks.IndexOf(t) + 1}. {t.Id} · {t.Name} · {(t.Instrument is { } i ? i.Name + (i.State != null ? " (con su estado)" : "") : "tono de prueba")}");
             foreach (var c in t.MidiClips ?? [])
             {
-                string pattern = c.PatternId == null ? "" : $" · {c.PatternName} ({c.CellBeats / 4:0.##} compases, {c.Passes} vueltas, {MidiPatterns.Clips(p, c.PatternId).Count()} clips)";
+                string pattern = c.PatternId == null ? "" : $" · {c.PatternName} ({c.CellBeats / 4:0.##} compases, {c.Passes} vueltas, {MidiPatterns.Clips(p, c.PatternId).Count()} clips, {MidiPatterns.Parts(p, c.PatternId).Count} instrumentos)";
                 Console.WriteLine($"   {c.Id} · {c.AtSec:0.000}–{c.EndSec(bpm):0.000} s · {c.LengthBeats / 4:0.##} compases · {c.Notes.Count} notas{pattern}");
                 foreach (var n in c.Notes)
                     Console.WriteLine($"      {MidiNote.Name(n.Pitch),-4} pulso {n.Beat,6:0.###} · largo {n.Beats:0.###} · vel {n.Velocity}");
@@ -335,6 +373,59 @@ static class MidiCommands
 
         bool ok = linked && repeats && length && unique && saved && dissolved && gone;
         Console.WriteLine($"{"MIDI: patrones",-36} {built?.Notes.Length ?? 0,12} {"5",10}  {(ok ? "igual" : "DISTINTO")}");
+        return ok & CheckPatternParts(sr);
+    }
+
+    /// <summary>A pattern's instruments: own notes on their own tracks, shared name and pass, every use gets them, and leaving keeps the sound.</summary>
+    static bool CheckPatternParts(int sr)
+    {
+        var p = new Project();
+        p.Settings.Bpm = 120;
+        string m1 = MidiEditing.AddTrack(p), m2 = MidiEditing.AddTrack(p), m3 = MidiEditing.AddTrack(p);
+        var bass = MidiEditing.AddClip(p, m1, 0, 4);
+        MidiEditing.AddNote(p, bass.Id, 40, 0);
+        MidiPatterns.Create(p, bass.Id);
+        var bass2 = MidiPatterns.Insert(p, m1, bass.PatternId!, 8);
+
+        // the new instrument starts empty in every use, and the notes of each one stay its own
+        var keys = MidiPatterns.AddPart(p, bass.Id, m2);
+        var keys2 = MidiPatterns.Together(p.Tracks, bass2) is [var found] ? found : null;
+        MidiEditing.AddNote(p, keys.Id, 72, 1);
+        bool own = keys.AtSec == 0 && keys2 is { AtSec: 8, LengthBeats: 4 } && keys.Notes.Count == 1 && keys2.Notes.Count == 1 && bass.Notes is [{ Pitch: 40 }]
+            && bass2.Notes is [{ Pitch: 40 }] && MidiPatterns.Parts(p, bass.PatternId!).Count == 2 && MidiPatterns.All(p) is [{ Clips: 4, Parts: 2 }]
+            && MidiPatterns.Together(p.Tracks, bass) is [var beside] && beside == keys;
+
+        // name and pass reach every instrument without touching its notes
+        MidiPatterns.Rename(p, keys.Id, "Base");
+        MidiPatterns.SetBeats(p, bass.Id, 8);
+        bool shared = keys.PatternName == "Base" && bass2.PatternName == "Base" && keys.CellBeats == 8 && keys2!.LengthBeats == 8 && keys.Notes is [{ Pitch: 72 }];
+
+        // a new use: each instrument on its track, wherever it was dropped; a paste keeps to its own part
+        var use = MidiPatterns.Insert(p, m3, bass.PatternId!, 20);
+        bool inserted = p.Tracks[0].MidiClips!.Count == 3 && p.Tracks[1].MidiClips!.Count == 3 && p.Tracks[2].MidiClips is not { Count: > 0 }
+            && MidiPatterns.Together(p.Tracks, use).Count == 1;
+        var board = ClipClipboard.Take(p, [keys.Id])!;
+        MidiEditing.AddNote(p, keys.Id, 74, 2);
+        var pasted = MidiEditing.Find(p, board.Paste(p, m2, 30)[0]).Clip;
+        bool adopted = pasted.Notes.Count == 2 && pasted.PatternPart == keys.PatternPart && bass.Notes.Count == 1;
+
+        var round = JsonSerializer.Deserialize<MidiClip>(JsonSerializer.Serialize(keys, ProjectStore.Json), ProjectStore.Json)!;
+        bool saved = round.PatternPart == keys.PatternPart && !JsonSerializer.Serialize(bass, ProjectStore.Json).Contains("patternPart", StringComparison.OrdinalIgnoreCase);
+
+        // leaving sounds the same; an instrument goes with all its clips, but never the last one
+        var before = ChannelDsp.Notes(p.Tracks[1], 120, sr)!.Notes;
+        MidiPatterns.MakeUnique(p, keys.Id);
+        bool left = keys is { PatternId: null, PatternPart: null } && before.SequenceEqual(ChannelDsp.Notes(p.Tracks[1], 120, sr)!.Notes);
+        int removed = MidiPatterns.RemovePart(p, keys2!.Id);
+        bool remove = removed == 3 && MidiPatterns.Parts(p, bass.PatternId!).Count == 1 && MidiPatterns.RemovePart(p, bass.Id) == 0 && p.Tracks[0].MidiClips!.Count == 3
+            && p.Tracks[1].MidiClips is [var kept] && kept == keys;
+
+        // the new track goes under the one given
+        var below = MidiEditing.AddTrackBelow(p, p.Tracks[0]);
+        bool under = p.Tracks[1] == below;
+
+        bool ok = own && shared && inserted && adopted && saved && left && remove && under;
+        Console.WriteLine($"{"MIDI: patrón con instrumentos",-36} {removed,12} {"3",10}  {(ok ? "igual" : "DISTINTO")}");
         return ok;
     }
 
@@ -459,15 +550,131 @@ static class MidiCommands
         ok &= pasteOk;
         Console.WriteLine($"{"MIDI: copiar y pegar clips",-36} {pastedClip.Notes.Count,12} {"2",10}  {(pasteOk ? "igual" : "DISTINTO")}");
 
+        ok &= CheckExpression(sr);
         ok &= CheckPatterns(sr);
         ok &= CheckTempo();
         ok &= CheckLive(sr);
         ok &= CheckVirtualKeyboard();
+        ok &= MidiFileChecks.Check();
+        ok &= MidiToolChecks.Check();
+        ok &= MidiSplitChecks.Check();
 
         bool parseOk =MidiNote.Parse("C4") == 60 && MidiNote.Parse("f#2") == 42 && MidiNote.Parse("Eb3") == 51 && MidiNote.Name(61) == "C#4"
             && MidiNote.Parse("H2") == null;
         ok &= parseOk;
         Console.WriteLine($"{"MIDI: nombres de notas",-36} {"C4 = 60",12} {"",10}  {(parseOk ? "igual" : "DISTINTO")}");
+        return ok;
+    }
+
+    /// <summary>
+    /// What a note expresses: muted, slide and porta for a plugin (held notes and bend ramps) and for the test tone
+    /// (glides without a step at the join), its controllers and its note-off, and a plain clip staying as it was.
+    /// </summary>
+    static bool CheckExpression(int sr)
+    {
+        bool ok = true;
+        void Show(string what, string value, string want, bool good)
+        {
+            ok &= good;
+            Console.WriteLine($"{what,-36} {value,12} {want,10}  {(good ? "igual" : "DISTINTO")}");
+        }
+        const int beat = 24000; // at 120 bpm and 48 kHz
+        NoteSequence? Build(params MidiNote[] notes)
+        {
+            var p = new Project();
+            p.Settings.Bpm = 120;
+            var c = MidiEditing.AddClip(p, MidiEditing.AddTrack(p), 0, 32);
+            MidiEditing.SetNotes(p, c.Id, [.. notes]);
+            return ChannelDsp.Notes(p.Tracks[0], 120, sr);
+        }
+        (float[] L, float[] R) Sound(NoteSequence seq)
+        {
+            var l = new float[seq.End];
+            var r = new float[seq.End];
+            NoteSynth.Render(seq, 0, l.Length, sr, l, r);
+            return (l, r);
+        }
+
+        var mute = Build(new MidiNote { Pitch = 60, Beat = 0 }, new MidiNote { Pitch = 64, Beat = 1, Muted = true });
+        var allMuted = Build(new MidiNote { Pitch = 64, Muted = true });
+        Show("Notas: la silenciada no suena", $"{mute?.Notes.Length ?? 0}", "1", mute is { Notes: [{ Pitch: 60 }] } && allMuted == null);
+
+        // a slide of one semitone: no note of its own, the one before held to its end, a ramp that gets there
+        var slide = Build(new MidiNote { Pitch = 60, Beat = 0, Beats = 1 }, new MidiNote { Pitch = 61, Beat = 1, Beats = 1, Slide = true });
+        var bends = slide?.Controls.Where(c => c.Controller == NoteControl.Bend).ToList() ?? [];
+        bool held = slide is { Notes: [{ Pitch: 60, Start: 0, Length: 2 * beat }] };
+        bool ramp = bends.Count > 2 && bends[0].Frame > beat && bends[0].Value > 0.5f && bends.Zip(bends.Skip(1)).Take(bends.Count - 2).All(b => b.Second.Value >= b.First.Value)
+            && bends.Zip(bends.Skip(1)).Take(bends.Count - 2).All(b => b.Second.Frame - b.First.Frame <= 240);
+        bool arrives = bends.Count > 2 && bends[^2] is { Frame: 2 * beat - 1, Value: 0.75f } && bends[^1] is { Value: NoteControl.Centre, Frame: >= 2 * beat };
+        Show("Slide: sostiene la nota y hace rampa", $"{bends.Count}", "llega", held && ramp && arrives);
+
+        // two in a row chain on the same note; beyond the range the bend stops; nothing sounding, it is a plain note
+        var chain = Build(new MidiNote { Pitch = 60, Beat = 0, Beats = 1 }, new MidiNote { Pitch = 61, Beat = 1, Beats = 1, Slide = true }, new MidiNote { Pitch = 67, Beat = 2, Beats = 1, Slide = true });
+        var chained = chain?.Controls.Where(c => c.Controller == NoteControl.Bend).ToList() ?? [];
+        var alone = Build(new MidiNote { Pitch = 61, Beat = 1, Beats = 1, Slide = true });
+        var apart = Build(new MidiNote { Pitch = 60, Beat = 0, Beats = 1 }, new MidiNote { Pitch = 64, Beat = 2, Beats = 1, Slide = true });
+        Show("Slide: encadena, y sin nota es nota", $"{chain?.Notes.Length ?? 0}", "1",
+            chain is { Notes: [{ Length: 3 * beat }] } && chained is [.., { Value: 1f }, { Value: NoteControl.Centre }] && alone is { Notes: [{ Pitch: 61 }], Controls: [] } && apart is { Notes: [_, _], Controls: [] });
+
+        // the test tone goes on from the note before: no step at the join, and it ends up at the slide's pitch
+        var glide = Build(new MidiNote { Pitch = 60, Beat = 0, Beats = 4 }, new MidiNote { Pitch = 67, Beat = 1, Beats = 1, Slide = true });
+        var (tone, _) = Sound(glide!);
+        double step = 0;
+        foreach (long join in glide!.Tone.Skip(1).Select(e => e.Start))
+            for (long i = join - 4; i < join + 4; i++) step = Math.Max(step, Math.Abs(tone[i + 1] - tone[i]));
+        Show("Slide: tono de prueba sin salto", $"{step:0.0e0}", "< 0.01", glide.Tone.Length == 2 && step is > 0 and < 0.01);
+        int rises = 0;
+        for (int i = 3 * beat; i < 4 * beat; i++) if (tone[i] < 0 && tone[i + 1] >= 0) rises++;
+        double hz = rises * sr / (double)beat, want = NoteSynth.Hz(67);
+        Show("Slide: tono de prueba llega al tono", $"{hz:0.#}", $"{want:0.#}", Math.Abs(hz - want) / want < 0.01);
+        var whole = Sound(glide);
+        var parted = new float[whole.L.Length];
+        for (int at = 0; at < parted.Length; at += 37)
+        {
+            int n = Math.Min(37, parted.Length - at);
+            NoteSynth.Render(glide, at, n, sr, parted.AsSpan(at, n), new float[n]);
+        }
+        Show("Slide: igual en cualquier bloque", $"{parted.Zip(whole.L).Max(s => Math.Abs(s.First - s.Second)):0.0e0}", "0", parted.AsSpan().SequenceEqual(whole.L));
+
+        // a porta attacks for real, its bend starts at the note before and falls to the centre; with none before, nothing
+        var porta = Build(new MidiNote { Pitch = 60, Beat = 0, Beats = 1 }, new MidiNote { Pitch = 61, Beat = 1, Beats = 1, Porta = true });
+        var firstPorta = Build(new MidiNote { Pitch = 61, Beat = 0, Beats = 1, Porta = true });
+        var fell = porta?.Controls ?? [];
+        bool portaOk = porta is { Notes: [_, { Pitch: 61, Start: beat, BendSemis: -1 }] } && fell is [{ Frame: beat, Value: 0.25f }, .., { Value: NoteControl.Centre }]
+            && fell[^1].Frame == beat + beat / 4 - 1 && firstPorta is { Controls: [] };
+        Show("Porta: ataca y baja al centro", $"{fell.Length}", "llega", portaOk);
+
+        // what each note carries, in frames; note-off velocity, the pan's CC and the test tone's sides
+        var carried = Build(new MidiNote { Pitch = 60, Beat = 1, Beats = 1, Release = 64, Pan = 100, ModX = 127, ModY = 1 });
+        bool ccOk = carried is { Notes: [{ Release: 64 }] } && carried.Controls.Length == 3 && carried.Controls.All(c => c.Frame == beat)
+            && carried.Controls.Any(c => c is { Controller: NoteControl.Pan, Value: 1f }) && carried.Controls.Any(c => c is { Controller: NoteControl.ModX, Value: 1f })
+            && carried.Controls.Any(c => c is { Controller: NoteControl.ModY, Value: 1 / 127f });
+        var sides = Sound(carried!);
+        Show("Notas: release, CC y paneo", $"{sides.L.Max(s => Math.Abs(s)):0.0}", "0", ccOk && sides.L.All(s => s == 0) && sides.R.Max(s => Math.Abs(s)) > 0.05);
+
+        // a jump lands with each controller's last value; controls go first at a frame, in the order they came
+        var marks = new NoteSequence([new NoteEvent(0, 100, 440, 0)], sr, null,
+            [new(10, NoteControl.Bend, 0.7f), new(5, 1, 0.1f), new(20, NoteControl.Bend, 0.9f), new(30, 1, 0.2f)]);
+        var last = new NoteControl[NoteControl.Count];
+        int found = marks.LastValues(25, last);
+        bool chase = found == 2 && last.Take(2).Any(c => c.Value == 0.9f) && last.Take(2).Any(c => c.Value == 0.1f) && marks.LastValues(5, last) == 0 && marks.ControlAt(11) == 2;
+        var events = new[]
+        {
+            new XtremeDaw.Audio.Vst.VstNote { Offset = 3, Type = XtremeDaw.Audio.Vst.VstNote.On },
+            new XtremeDaw.Audio.Vst.VstNote { Offset = 3, Type = XtremeDaw.Audio.Vst.VstNote.Off },
+            new XtremeDaw.Audio.Vst.VstNote { Offset = 3, Type = XtremeDaw.Audio.Vst.VstNote.Control, Pitch = 1 },
+            new XtremeDaw.Audio.Vst.VstNote { Offset = 3, Type = XtremeDaw.Audio.Vst.VstNote.Control, Pitch = 2 },
+            new XtremeDaw.Audio.Vst.VstNote { Offset = 0, Type = XtremeDaw.Audio.Vst.VstNote.On },
+        };
+        XtremeDaw.Audio.Vst.VstNote.Sort(events);
+        Show("Plugin: salto y orden de eventos", $"{found}", "2", chase && string.Join(" ", events.Select(e => $"{e.Offset}:{e.Type}:{e.Pitch}")) == "0:0:0 3:2:1 3:2:2 3:1:0 3:0:0");
+
+        // nothing expressed: no controls, the tone is the notes, and the same samples as plain events
+        var plain = Build(new MidiNote { Pitch = 60, Beat = 0, Beats = 1, Velocity = 90 }, new MidiNote { Pitch = 64, Beat = 0.5, Beats = 2, Velocity = 70 });
+        var same = new NoteSequence([new NoteEvent(0, beat, NoteSynth.Hz(60), NoteSynth.Gain(90)), new NoteEvent(beat / 2, 2 * beat, NoteSynth.Hz(64), NoteSynth.Gain(70))], sr);
+        var (x, xr) = Sound(plain!);
+        var (y, _) = Sound(same);
+        Show("Clip común: sin controles, igual", $"{plain!.Controls.Length}", "0", plain.Controls.Length == 0 && ReferenceEquals(plain.Tone, plain.Notes) && x.AsSpan().SequenceEqual(y) && x.AsSpan().SequenceEqual(xr));
         return ok;
     }
 
@@ -707,6 +914,7 @@ static class MidiCommands
         bool settingsOk = parsed.QuantizeOnRecord && parsed.Inputs[0] is { Channel: 16, Velocity: VelocityCurves.Normal }
             && MidiSettings.Parse("no es json").Inputs.Count == 0;
         Show("Teclado: curvas y ajustes", curves && settingsOk ? "ok" : "mal", "ok", curves && settingsOk);
+        MidiTakeChecks.Run(Show);
         return ok;
     }
 }

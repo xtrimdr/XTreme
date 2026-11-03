@@ -93,7 +93,11 @@ public partial class MainWindow
     void InitMastering()
     {
         InitLoudness();
-        MasteringViewButton.Click += (_, _) => ShowBottomView(mastering: true);
+        MasteringViewButton.Click += (_, _) =>
+        {
+            if (mixerView && masteringView && !ViewsCovered) SetMixerView(false);
+            else ShowBottomView(mastering: true);
+        };
     }
 
     /// <summary>Mixer or Mastering: both live in the mixer's place, with different content.</summary>
@@ -145,6 +149,7 @@ public partial class MainWindow
     /// <summary>The height of the place the mixer and the mastering share: the bottom row, or the row under the timeline when stacked.</summary>
     void SetBottomRowHeight(double h)
     {
+        if (maxPanel == MaxPanel.Views) return; // it fills the place, whatever its height
         if (stackedViews) AudioArea.RowDefinitions[2].Height = new GridLength(Math.Max(0, h));
         else
         {

@@ -7,12 +7,12 @@ using System.Text;
 namespace XtremeDaw.Audio.Vst;
 
 /// <summary>
-/// Where the plugin host processes are (src/XtremeDaw.VstHost), next to the app or wtlab: wtvsthost.exe, and
-/// wtvsthost32.exe because a 32-bit plugin can only load in a 32-bit process.
+/// Where the plugin host processes are (src/XtremeDaw.VstHost), next to the app or xtlab: xtvsthost.exe, and
+/// xtvsthost32.exe because a 32-bit plugin can only load in a 32-bit process.
 /// </summary>
 public static class VstHost
 {
-    public const string ExeName = "wtvsthost.exe", Exe32Name = "wtvsthost32.exe";
+    public const string ExeName = "xtvsthost.exe", Exe32Name = "xtvsthost32.exe";
     /// <summary>Set it to use another one for 64-bit plugins; null = the one next to the program.</summary>
     public static string? ExePath { get; set; }
 
@@ -33,8 +33,8 @@ public static class VstHost
 
     /// <summary>Why no host opens that plugin file.</summary>
     public static string Missing(string pluginPath) => PluginFile.Bits(pluginPath) == 32
-        ? Texts.T("err.vst.noHost32", "Falta wtvsthost32.exe: no se pueden abrir plugins de 32 bits.")
-        : Texts.T("err.vst.noHost", "Falta wtvsthost.exe.");
+        ? Texts.T("err.vst.noHost32", "Falta xtvsthost32.exe: no se pueden abrir plugins de 32 bits.")
+        : Texts.T("err.vst.noHost", "Falta xtvsthost.exe.");
 }
 
 /// <summary>
@@ -109,15 +109,38 @@ public sealed record VstParamInfo(uint Id, string Title, double Value, int Steps
     }
 }
 
-/// <summary>A MIDI note for a plugin: where in the block, on or off, which key, how hard (0..1).</summary>
+/// <summary>
+/// An event for a plugin: where in the block, then a note (on or off, which key, how hard, 0..1; an off's is its
+/// release velocity) or a <see cref="Control"/> (<see cref="Pitch"/> the controller, <see cref="Velocity"/> its value 0..1,
+/// as in <see cref="Dsp.NoteControl"/>).
+/// </summary>
 public struct VstNote
 {
     public int Offset;
-    public int Type; // 0 on, 1 off
+    public int Type; // 0 on, 1 off, 2 control
     public int Pitch;
     public float Velocity;
 
-    public const int On = 0, Off = 1;
+    public const int On = 0, Off = 1, Control = 2;
+
+    /// <summary>
+    /// Plugins want events in time order; at one frame, controls first (a note attacks with its bend already there),
+    /// then offs before ons (a note retriggered right where it ends). Stable and without allocating: audio thread.
+    /// </summary>
+    public static void Sort(Span<VstNote> events)
+    {
+        for (int i = 1; i < events.Length; i++)
+        {
+            var x = events[i];
+            int j = i - 1;
+            while (j >= 0 && (events[j].Offset > x.Offset || events[j].Offset == x.Offset && events[j].Type < x.Type))
+            {
+                events[j + 1] = events[j];
+                j--;
+            }
+            events[j + 1] = x;
+        }
+    }
 }
 
 /// <summary>
@@ -135,7 +158,7 @@ public struct VstNote
 public sealed unsafe class VstBridge : IDisposable
 {
     // shared.h
-    const int Magic = 0x53564347, ProtocolVersion = 2;
+    const int Magic = 0x53564347, ProtocolVersion = 3;
     public const int MaxBlock = 8192, MaxEvents = 512, MaxParams = 128;
     const int OffMagic = 0, OffVersion = 4, OffSampleRate = 8, OffMaxBlock = 12, OffStatus = 16, OffLatency = 20, OffOutputs = 24,
         OffInstrument = 28, OffRequested = 32, OffDone = 40, OffError = 48, OffSlots = 560, SlotSize = 140336, TotalSize = 281232;
@@ -180,6 +203,9 @@ public sealed unsafe class VstBridge : IDisposable
     public string? Error { get; private set; }
     /// <summary>Blocks it did not finish in time (live), for the diagnostics.</summary>
     public int Misses;
+    /// <summary>The last block sent, and the last one the plugin finished: how far behind it runs.</summary>
+    public long Published => Volatile.Read(ref seq);
+    public long Finished => Volatile.Read(ref *(long*)(mem + OffDone));
 
     /// <summary>A line from the plugin's process that is not an answer: "dirty", "editor-open", "editor-closed", "latency N"
     /// (after <see cref="Latency"/> changed), "editor-rect left top right bottom" (where its window is, in pixels; alone
@@ -197,7 +223,7 @@ public sealed unsafe class VstBridge : IDisposable
         Name = name;
         SampleRate = sampleRate;
         string exe = VstHost.Find(pluginPath) ?? throw new FileNotFoundException(VstHost.Missing(pluginPath));
-        string id = $"WtVst-{Environment.ProcessId}-{Guid.NewGuid():N}";
+        string id = $"XtVst-{Environment.ProcessId}-{Guid.NewGuid():N}";
         map = MemoryMappedFile.CreateNew(id, TotalSize);
         view = map.CreateViewAccessor(0, TotalSize);
         byte* p = null;

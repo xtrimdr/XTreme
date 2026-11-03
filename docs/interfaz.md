@@ -8,7 +8,7 @@ acá, actualizá su apartado en el mismo cambio.
 La captura de referencia es [captura.png](captura.png).
 
 Todo lo que se describe acá lo decidió el usuario: no lo cambies sin preguntar, aunque otro DAW (o la web
-`..\GuitarCam`, de donde nació la app) lo haga distinto.
+de donde nació la app) lo haga distinto.
 
 ## Splash (`SplashWindow`)
 
@@ -47,6 +47,13 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 - En solo audio no hay video: el diseño no cambia nada y se ve como siempre, y el botón queda desactivado con un
   tooltip que dice por qué (pedido del usuario).
 - Al pasar el proyecto a 9:16 en Clásico, un toast ofrece el Vertical (una vez por sesión); nunca cambia solo.
+- **Maximizar un panel** (Enter, atajo `maximize`, o el botón junto a las vistas del transporte, `MainWindow.MaxPanel.cs`;
+  pedido del usuario, como en FL Studio): le da toda la zona de trabajo al panel que se tocó último (`pressedPanel`): la
+  preview, sin "En vivo", o la vista (timeline, piano roll, mixer o mastering; con la mini timeline en estas). Las barras
+  de título y de transporte quedan: maximizado, los botones de vista cambian lo que llena el lugar (con la preview
+  maximizada, pasan a esa vista). Usa la disposición apilada de solo audio (`MoveBottomView`, `ApplyViewHosts`), así las
+  alturas recordadas no se tocan. B y P traen las barras laterales sin guardarlo; otro Enter vuelve todo como estaba. No se
+  recuerda entre sesiones.
 - Los paneles (InspectorBar, StageArea, AudioArea con TimelineHost y MixerHost, ProjectBar) se mueven sin
   reconstruirse; la barra de título y el transporte no se mueven. `ApplyLayout` decide dónde va cada uno: todo
   diseño nuevo pasa por ahí. Falta sacarlos a otra ventana (etapa 3 de PENDIENTES).
@@ -173,7 +180,8 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   rojo sin texto) │ metrónomo, separados por `Border.vsep`. Queda **siempre centrado en la ventana**: columnas `*,Auto,*`.
 - A la izquierda, pegados al recuadro: el medidor de entrada (del ancho del texto de abajo y con su escala en dB,
   `StereoMeter.ShowScale`) con "Entrada 1-2 · 48 kHz · 192 muestras (4,0 ms)" chiquito debajo (el driver va en el
-  tooltip) y el botón **Monitor** (`ToggleButton.cell`, el monitoreo por software de Configuración). A la derecha, la vista.
+  tooltip) y el botón **Monitor** (`ToggleButton.cell`, el monitoreo por software de Configuración). A la derecha, la vista:
+  tocar de nuevo Piano roll, Mixer o Mastering (el botón encendido) vuelve al timeline (pedido del usuario), igual que el atajo del mixer.
 - Metrónomo: una caja con celdas Compás · Tempo · TAP · Cuenta · Click · sonido ▾ (ícono `MetronomeIcon`, dibujado
   porque Segoe no tiene metrónomo).
 - **Cambiar el tempo pregunta si se estiran los clips** (pedido del usuario): con clips en el timeline, el valor nuevo
@@ -200,7 +208,7 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   de ±3 cents (`TunerView.InTuneCents`) la nota, la aguja y un "OK!" se ponen en verde (`InTune`), también en la celda.
 - El slider "Sensibilidad" es la compuerta de nivel de `PitchTap` (−70 a −30 dB, por defecto −50 =
   `PitchTap.DefaultGateDb`; el umbral de YIN no se toca). Se guarda en `config.json` (`tuner.gateDb`) al cerrar el
-  panel; en wtlab, `afinar --umbral`.
+  panel; en xtlab, `afinar --umbral`.
 - El panel se cierra con un clic afuera (`IsLightDismissEnabled`), con A o con la celda; con el foco en el slider,
   los atajos pasan igual.
 - A la derecha, la celda "LUFS" con el integrado del master de la pasada actual (`LoudnessMeter`, BS.1770; empieza
@@ -330,11 +338,11 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   entra en tomas ni exportaciones, y sin driver abierto sale por Windows. Grabar la corta.
   Doble clic o Enter insertan en el cursor; arrastrar marca dónde cae (`TimelineView.Drop.cs`, con la grilla, Alt la
   libera). Soltar sobre una pista la usa si ese tramo está libre; si no, o sobre un lugar vacío, va a una pista nueva. Todo pasa por `ImportAudio`, que copia a
-  media/: el proyecto nunca depende de la carpeta. En la vista Proyecto una toma se arrastra igual desde su fila (`DraggableTake`,
+  media/ o vincula el archivo donde está (`ImportMode`, `config.json` "import.mode": pregunta con `ImportDialog`, cuyo "No mostrar más" fija la respuesta, o lo que diga Configuración → Guardado y exportación). Un vínculo guarda la ruta entera (`Media.Linked`, marca Vinculado en la Biblioteca): si el archivo se va, el clip queda offline; borrar la toma no lo toca y el paquete lleva su copia. La fila de una toma vinculada copia a media/ ("Copiar al proyecto") y la de una que perdió su archivo (marca Sin conexión, también en el menú del clip gris) lo reencuentra: "Elegir el archivo…" (misma duración, cualquier nombre) o "Buscar en una carpeta…" (todo lo que falta, por nombre y tamaño); cada una es un paso de deshacer (`MainWindow.Linked.cs`, `LinkedMedia`). En la vista Proyecto una toma se arrastra igual desde su fila (`DraggableTake`,
   `ClipEditing.PlaceMedia`): no copia nada, se puede usar varias veces y una que estaba fuera del timeline vuelve con su corte y su canal. Lo que NAudio no lee lo decodifica FFmpeg (`MediaDecoder`) y entra
-  como WAV, así el proyecto abre sin FFmpeg; un video con Con imagen entra además con el archivo tal cual y pista con panel.
+  como WAV aunque se elija vincular, así el proyecto abre sin FFmpeg; un video con Con imagen entra además con el archivo tal cual y pista con panel.
 - Historial es para volver atrás (pedido del usuario, 2026-10-29; antes mostraba la actividad, que se sigue anotando
-  en el proyecto y lee `wtlab proyecto historial`). Tres secciones, en `MainWindow.Steps.cs` salvo Exportaciones:
+  en el proyecto y lee `xtlab proyecto historial`). Tres secciones, en `MainWindow.Steps.cs` salvo Exportaciones:
   - **Pasos**: los pasos de deshacer de esta sesión con nombre ("Moviste «Toma 1»", "Volumen de «Bajo»: -3,0 dB"), el
     más nuevo arriba, y abajo de todo cómo estaba al empezar (al abrir, al volver a una versión o al borrar canales sin
     usar). Clic en un paso = ir ahí de una (`UndoManager.JumpTo`, por el mismo `RestoreEdit` que Ctrl+Z); el actual va
@@ -463,7 +471,8 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   suma las pistas visibles que cruza (`rangeTracks`). Supr o "Borrar el rango" del clic derecho lo saca de sus clips
   (`ClipEditing.DeleteRange`) dejando el hueco; Shift+Supr o "Borrar y cerrar el hueco" además corre lo de después en
   esas pistas (`ClipEditing.DeleteRangeClosing`; las otras pistas y el A–B no se mueven; los marcadores, solo si el rango abarca todas las pistas). "Repetir este
-  rango" lo pasa al rango A–B. La selección se va con un clic, Esc o una edición.
+  rango" lo pasa al rango A–B. La selección se va con un clic, Esc o una edición. Corta también los clips MIDI (`MidiEditing.DeleteRange`): una nota que sobresale del rango
+  conserva lo que queda de ella, y a la derecha vuelve a atacar donde termina el rango.
 - **Herramientas** (`Controls/TimelineView.Tools.cs`, `TimelineView.Tool`): solo cambian qué hace apretar sobre los
   carriles; encabezados, regla, marcadores y menús andan igual con cualquiera. **Dividir** corta el clip en el clic
   (imantado; Alt, libre) y mientras pasás muestra la línea del corte. **Borrar** saca lo que toca un arrastre, en un solo
@@ -487,7 +496,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   la derecha. Deshabilitado en clips con video (`ClipEditing.CanReverse`) y en los bloqueados.
 - **Bloquear** (`MainWindow.Locks.cs`): "Bloquear clip" en el menú del clip y "Bloquear pista" en el de la pista (no
   en las MIDI, por ahora). La regla es una sola, `ClipEditing.IsLocked` (`Clip.Locked` o `Track.Locked`), y la usa
-  wtlab: lo bloqueado no cambia de lugar, de largo ni de pista, no se divide ni se borra (`Replace`, `Split`,
+  xtlab: lo bloqueado no cambia de lugar, de largo ni de pista, no se divide ni se borra (`Replace`, `Split`,
   `RemoveClip`… lo rechazan); borrar un tramo lo saltea y "cerrar el hueco" deja quieta su pista. El volumen, los
   fades, la curva y el encuadre sí se tocan. En el timeline un clip bloqueado lleva un candadito arriba a la derecha
   (a la izquierda del ícono de audio/video) y no muestra las pestañas de recorte; agarrarlo lo elige pero no lo mueve.
@@ -907,7 +916,7 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
 ## Pistas MIDI y piano roll (`MainWindow.Midi.cs`, `Controls/PianoRollView.cs`, `Controls/TimelineView.Midi.cs`)
 
 Etapa 1 del editor MIDI (pedido del usuario: armar bases "al más puro estilo FL Studio", con clips por pista como
-Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
+Logic o Studio One). Sigue en PENDIENTES.
 
 - **Pista MIDI** (`Track.Kind = "midi"`, "+ Nueva pista" → Pista MIDI, ícono de piano): nunca lleva panel de video.
   Tomas y clips de audio no entran en ella. Su ● la arma para grabar el teclado MIDI (ver "Teclado MIDI" abajo).
@@ -920,7 +929,12 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
   rectángulo, mezclados con tomas): arrastrar uno marcado por el cuerpo los mueve a todos el mismo tiempo, cada uno en
   su pista (`ClipsMoved`, un solo paso de deshacer), y Supr, D y el clic derecho actúan sobre todos
   (`MidiEditing.DuplicateMany`: el bloque entero va justo después de sí mismo), también Ctrl+C / Ctrl+X / Ctrl+V
-  (`ClipClipboard.MidiItems`, pedido del usuario). Las herramientas que no son Seleccionar y el rango todavía no los tocan.
+  (`ClipClipboard.MidiItems`, pedido del usuario). **Dividir** (herramienta, Alt+X y clic derecho, `MainWindow.MidiSplit.cs`), **Borrar**, **Escuchar** y el rango también actúan sobre ellos.
+  Una división nunca cambia lo que suena (decisión de diseño): la nota que cruza el corte queda en los dos pedazos, la de la derecha con
+  `MidiNote.Tie`, que `NoteExpression.JoinTies` une a la que termina justo ahí con el mismo tono, en cualquier clip, antes de armar los eventos: un solo ataque, un solo release, el mismo glide. Sin
+  nada que termine ahí es una nota común: al separar los pedazos vuelve a atacar, y una copia (`MidiClip.Copy`) no queda atada. En un clip de patrón, un corte en la raya de una vuelta deja dos clips
+  del patrón. En otro lado la izquierda sigue en el patrón y la derecha queda clip propio con sus repeticiones escritas (un clip de patrón no tiene cómo empezar en medio de una vuelta); lo avisa la
+  campanita. Los otros instrumentos del patrón que empiezan con él se cortan juntos.
 - **Patrones** (`MidiPatterns`, pedido del usuario, 2026-11-01: como en FL Studio, pero por pista): clic derecho en un
   clip → "Crear patrón". Duplicar, copiar o pegar ese clip da otro clip enlazado: editar las notas de uno cambia todas,
   también en otras pistas MIDI (cada pista lo toca con su instrumento). El clip muestra el nombre del patrón; estirarlo
@@ -933,6 +947,17 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
   "Otro…"). El cabezal marca dónde va cualquier clip del patrón que esté sonando, volviendo al inicio en cada repetición
   (`PlayBeat`), y la regla salta dentro del clip abierto. Cada clip guarda su copia de las notas y el patrón no tiene lista propia: desaparece con su último
   clip (`Sync` reparte cada cambio; `ClipClipboard.Paste` usa `Adopt` porque lo copiado puede estar viejo).
+- **Varios instrumentos en un patrón** (`MidiClip.PatternPart`, `MainWindow.PatternParts.cs`, pedido del usuario, 2026-11-02;
+  decisión del usuario: un clip por pista, no un bloque solo): cada instrumento es una parte con sus notas, tocada por
+  la pista donde están sus clips, así conserva su canal y el motor no cambia. Nombre y largo son del patrón; las notas, de la parte.
+  En el piano roll, un chip (`pianoPartsButton`: pista · cantidad) abre con un clic la lista: la fila pasa a editar ese
+  instrumento, el ojo prende o apaga sus notas fantasma (tenues, del color de su pista, no se tocan; sin guardar:
+  todas a la vista al abrir) y el tacho lo quita con sus clips (salvo el último). "Sumar instrumento" (ahí y en el menú
+  del clip) elige una pista MIDI que no toque el patrón, o una nueva debajo: suma un clip vacío en cada uso. Los clips
+  de otras partes que empiezan juntos son un uso (`Together`): arrastrar el cuerpo los lleva a todos (`UpdateMidiDrag`, por el
+  camino de la selección de varios; por eso no cambian de pista), el borde estira los de igual largo (Shift, solo ese) y D los duplica.
+  El clic, Supr y copiar actúan sobre el elegido, para poder callar un instrumento en una sección. Insertar un patrón
+  con varios instrumentos pone cada uno en su pista, caiga donde caiga. La fila de la pestaña Patrones los dibuja juntos.
 - **Tiempos**: el clip empieza en segundos (`AtSec`) como todos, pero su largo y sus notas van en tiempos
   (`LengthBeats`, `MidiNote.Beat/Beats`), así siguen al tempo. Una nota que pasa el final del clip (o de la vuelta de su
   patrón) se corta ahí.
@@ -982,7 +1007,7 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
 - **Instrumento VST3** (`MainWindow.Vst.cs`, `Track.Instrument`, `PluginRef`): clic derecho en la pista →
   "Instrumento: …", y lo mismo en la cabecera del piano roll: un chip con el nombre (▾ abre la lista; "(cargando…)"
   mientras abre) y un botón que abre la ventana del plugin. La lista (`InstrumentItems`, pedido del usuario) va en dos
-  grupos con título (`MenuGroup`): NATIVOS (el tono de prueba) y VST3 (cada instrumento con su marca; desde 12,
+  grupos con título (`MenuGroup`): NATIVOS (el tono de prueba y el Sampler) y VST3 (cada instrumento con su marca; desde 12,
   `ByVendorFrom`, un submenú por marca, con el tilde en la del que se usa), y abajo "Buscar plugins de nuevo",
   "Administrar plugins…" y "Abrir la ventana de …".
 - **Inspector de una pista MIDI** (`InitMidiInspector`, `RefreshMidiInspector`): INSTRUMENTO, una tarjeta con un
@@ -990,20 +1015,24 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
   muchos plugins llenaba el panel), cómo va (listo, abriendo, no abrió) y "Abrir la ventana". Debajo, la fila SALIDA y
   los envíos a buses, la misma bandeja que una pista de audio (`sendsTray`, que `PlaceInspectorSends` mueve
   acá mientras se ve una pista MIDI).
-- **Instrumento o efecto** (`VstPluginInfo.IsInstrument`): la búsqueda (`wtvsthost --scan`) crea cada plugin y le
+- **Sampler** (`MainWindow.Sampler.cs`, `Dialogs/SamplerWindow.cs`, `Track.Sampler`, pedido del usuario, 2026-11-02: lindo, funcional y fácil; un sample por ahora): en NATIVOS de la lista de instrumentos. Es una ventana por pista, en el lugar de la de un plugin ("Abrir la ventana", clic en el chip), flotando sobre la app (`Show(this)`), sin pestañas: todo a la vista. Arriba, nombre y datos del sample, Reverse, Normalizar, Cargar y Quitar, y la onda (`SamplerWaveView`): sin sample es el lugar donde soltar uno (o un clic para elegirlo); con sample se arrastran las banderas S y E (inicio y fin) y las L del loop, y las voces corren encima en una capa propia. Abajo, cuatro tarjetas: Reproducción (Nota / One shot, loop, Raíz, Detectado, Tono, Voces, Sigue la tecla, Legato, Fino, Glide, Crossfade), Amplificador (`SamplerEnvelopeView`: la envolvente con sus puntos arrastrables, A D S R, Volumen, Paneo, Vel), Filtro (tipo, Corte, Reso, Drive, su envolvente, Env, Tecla, Vel; atenuado sin filtro) y Modulación (forma, Tempo o Libre, LFO, Espera, a Tono, Filtro y Vol, y la envolvente de tono). Al pie, el teclado (`SamplerKeysView`): clic toca, más abajo más fuerte; clic derecho elige la raíz. Se apaga lo que no aplica (el loop en One shot, Legato y Glide con más de una voz, Crossfade salvo en loop hacia adelante, la perilla LFO con Tempo).
+  Un archivo entra soltándolo en la ventana, soltándolo en una pista MIDI sin plugin (`InitImport`) o desde la Biblioteca ("Abrir en el sampler", en la pista elegida o en una nueva): se copia o vincula como una importación (`LoadSample`) y queda como `Media`. Un sample nuevo toma la raíz de su nombre ("Piano_C3") o de su sonido, ya afinado, y si no tiene altura y dura menos de 3 s queda en One shot. Detectado (pedido del usuario) muestra la nota y los cents del tramo entre S y E, se mide de nuevo al mover esas banderas (`MeasurePitch`) y dice "afinado" si la raíz y Fino dejan el sonido a menos de 2 cents; si no, el botón Afinar pone raíz y Fino. Mientras la ventana está al frente el teclado MIDI y el virtual tocan esa pista (`samplerFront`, `UpdateKeyTarget`) y los atajos siguen andando (`Shortcut`). Editar es un paso de deshacer por gesto (`EditSampler`, clave por perilla). Corte, Reso, Drive, Env, Volumen, Paneo y Tono, Filtro y Vol del LFO se automatizan: clic derecho en la perilla (`Automate`, que pasa por `AutomateOn`) o el submenú Sampler de Automatización de la pista; mientras suena, la perilla sigue su carril.
+- **Instrumento o efecto** (`VstPluginInfo.IsInstrument`): la búsqueda (`xtvsthost --scan`) crea cada plugin y le
   pregunta sus entradas: de audio principales (un sidechain no cuenta) y de notas. Toma notas y no audio → instrumento;
   toma audio y no notas → efecto, diga lo que diga su categoría; las dos cosas (un afinador por MIDI, un synth con
   sidechain) o ninguna → su categoría ("Instrument", o sin "Fx" y con notas). Un `plugins.json` de antes
   (`PluginCatalog.CurrentFormat`) se vuelve a abrir una vez en la próxima búsqueda, que la primera lista de
   instrumentos lanza sola (`EnsurePlugins`). La lista sale de `PluginCatalog` (`plugins.json`): la primera
   vez hay que buscarlos ("Buscar plugins VST3…", unos segundos, con toast). Elegir uno es un paso de deshacer; el plugin
-  carga en segundo plano (su proceso, `wtvsthost.exe`) y mientras tanto la pista suena con el tono de prueba. Lo que el
+  carga en segundo plano (su proceso, `xtvsthost.exe`) y mientras tanto la pista suena con el tono de prueba. Lo que el
   usuario cambia en la ventana del plugin se guarda en el proyecto (su estado, en base64) 1,5 s después de tocarla y al
   cerrarla, fuera del deshacer como el tempo. Si no abre (archivo que falta, error) o se cierra de golpe, un toast lo
   dice (con "Abrirlo de nuevo") y la pista vuelve al tono de prueba; no se reintenta solo. Con la transporte parada el
   instrumento sigue corriendo: las teclas del piano roll suenan a través de él y su cadena. Con la ventana de un plugin
   (instrumento o efecto) en primer plano, los atajos del grupo Transporte siguen andando (`MainWindow.PluginKeys.cs`, pedido
   del usuario): el host se los saca al plugin y se los pasa a la app, salvo mientras el plugin tiene un cursor de texto.
+  Si la interfaz del plugin corre en otro proceso (WebView2, CEF), esas teclas no pasan por el host: las toma un hook de
+  teclado (`ForeignKeys`, en `xtvsthost`, solo con la ventana abierta y al frente), y un campo de texto se detecta con UI Automation.
   Las demás teclas son del plugin. Con el teclado virtual prendido, una tecla que es nota sigue siendo nota.
 - **Efecto VST3** (`MainWindow.VstFx.cs`, `InsertSlot.VstKind`, `VstSlotSettings`): "+ Efecto" (de una pista o un bus)
   tiene dos entradas que se despliegan al pasar el mouse (pedido del usuario: todo junto era una lista larguísima,
@@ -1015,6 +1044,13 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
   de golpe, el sonido pasa sin él (toast con "Abrirlo de nuevo"); apagado también pasa sin él, igual de atrasado, así
   prenderlo y apagarlo no salta. Lo que se cambia en su ventana se guarda en el slot (`PluginRef.State`) como el de un
   instrumento: 1,5 s después de tocarla y al cerrarla, fuera del deshacer.
+- **Miniaturas de plugins** (`PluginThumbs`, `Controls/PluginThumbView.cs`, `MainWindow.PluginThumbs.cs`, decisión del
+  usuario, como hacen otros DAW): cada máquina hace las suyas en `%APPDATA%\XTreme\plugin-thumbs`. La primera vez que se
+  abre la ventana de un plugin, o si se actualizó, el host espera a que se quede quieta y guarda el plugin sin la barra
+  (`snapshot`); una ventana casi de un solo color no cuenta. El botón Miniatura de la barra la rehace con lo que se ve
+  (`snapshot-now`). Un VST3 que trae su PNG (`Resources\Snapshots`) lo usa. Se ve chica en las filas de Configuración y
+  grande en un tooltip, ahí y en los menús de plugins. No se abre cada plugin para sacarlas: algunos solo se dibujan en
+  pantalla y otros muestran su login.
 - **Configuración → Plugins** (`Dialogs/SettingsDialog.Plugins.cs`, pedido del usuario): las carpetas donde se buscan
   (las dos de Windows y las que suma el usuario con +, "vst.folders" en `config.json`), "Buscar nuevos" (solo los
   nuevos o actualizados) y "Revisar todos de nuevo" con el avance ("Abriendo X… (3 de 20)") y Cancelar (para entre un
@@ -1024,13 +1060,13 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
   sola para la ventana (`PluginScan`): el menú de la pista, el inspector MIDI y esta página se actualizan con
   `PluginScan.Changed`. El menú del instrumento lleva "Administrar plugins…" y el toast de la búsqueda, "Administrar".
 - **Sonido**: sin instrumento, un tono de prueba (`NoteSynth`, sin estado: igual en la reproducción, la
-  exportación y wtlab). Las notas que suenan al tocar el teclado del piano roll o escribir van directo a la salida
-  (`PlaybackEngine.PreviewNote`), sin la cadena de la pista.
+  exportación y xtlab). Las notas que suenan al tocar el teclado del piano roll o escribir entran antes de la cadena
+  de la pista (`LiveTrack.Preview`, `NotePreview`), como las de un instrumento: se oyen con sus slots, fader y envíos, y un mute las calla.
 - **Teclado MIDI** (`MainWindow.MidiInput.cs`, etapa 4, decidido con el usuario): suena en **una sola pista**, la
   **MIDI elegida** (como Logic y Studio One, sin armar nada) o, sin ninguna elegida, la primera **armada**; solo
   grabando suena en todas las armadas, y únicamente en ellas (pedido del usuario: nunca dos instrumentos sin querer). Con su instrumento (o el tono de prueba, que suena
   igual que la nota escrita) y su cadena, parado o reproduciendo, también durante la cuenta. El pedal de sustain
-  sostiene lo que se suelta (`LiveNotes`; el puente VST3 solo lleva notas). Cada pista elige de dónde toca
+  sostiene lo que se suelta (`LiveNotes`; del teclado, al plugin solo le llegan notas). Cada pista elige de dónde toca
   (`Track.MidiInput` / `MidiChannel`): armada, en el chip a la izquierda del ● ("MIDI" = todas, o las primeras letras
   del nombre del aparato), en el chip de la tira del mixer o con clic derecho → "Entrada MIDI: …"; el menú tiene
   "Todas las entradas", cada aparato (enchufado o recordado), el canal y "Configurar las entradas MIDI…". En el
@@ -1047,7 +1083,7 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
   muestra de 1 a 7 octavas (Rango), dónde toca, la octava, la velocidad (guardados en `config.json`) y el Sustain, un botón On/Off con la tecla Shift a la vista: Shift lo prende mientras se aprieta y un clic lo deja prendido, y se
   toca con clic y arrastrando. La tira muestra las notas que suenan: al transponer, las letras (cada una en su recuadro) se corren a donde caen sin mover la vista, y lo mismo con la octava;
   y un clic toca la nota que está debajo. Clic derecho y arrastrar la desplaza por todo el teclado, la ruedita lo escala de forma continua y suave (de
-  1 a 7 octavas, alrededor del mouse). Transponer,
+  1 a 7 octavas, alrededor del mouse). El botón al final de los ajustes lo saca a su propia ventana (`OpenVirtualWindow`, pedido del usuario: el mismo panel, movido, con los ajustes arriba de las teclas; con poca altura, solo las teclas), que va encima de la principal, recuerda lugar y tamaño (`virtualFloat`, `virtualWindow` en `config.json`) y al cerrarse devuelve el panel bajo el transporte. Transponer,
   Velocidad y Rango son barras (`ValueBar`): clic o arrastrar las pone donde está el mouse, la ruedita las corre y el
   clic derecho las vuelve a su valor (0, 100 y 2). Con una ventana de instrumento
   abierta, la ventana crece y lleva el mismo panel abajo, integrado (`EmbedPanel`: una ventana nuestra hija de la del
@@ -1060,16 +1096,18 @@ Logic o Studio One). Etapas siguientes en PENDIENTES: sampler, después VST3.
 - **Grabar notas**: una pista MIDI armada graba lo que toca su entrada junto con las tomas de audio y la cámara (o
   sola, sin tomas). Al parar, las notas son un clip nuevo en esa pista, del compás donde empezó la toma al compás
   después del final (las de la cuenta entran desde ahí), arriba de lo que había (no reemplaza: los dos suenan) y en el
-  mismo paso de deshacer que las tomas (`MidiEditing.AddRecorded`). Cada nota va donde se oía la canción cuando se
+  mismo paso de deshacer que las tomas (`MidiEditing.AddRecorded`). Mientras se graba, las notas van a disco (`MidiTakeWriter`) y una toma cortada vuelve como clip al abrir el proyecto. Cada nota va donde se oía la canción cuando se
   tocó: el bloque menos la latencia de salida (`midiLatencyFrames`) y menos lo que esperó antes del bloque. Descartar o
   cancelar la cuenta no deja nada. Si no llegó ninguna nota, un toast lo dice y manda a mirar la lucecita.
-- **Escala** (pedido del usuario; `MusicScale`, `MainWindow.Scales.cs`): una sola, de la canción (`ProjectSettings.Scale` y `ScaleRoot`, con deshacer; `ApplyScale`, en cada `RefreshPiano`). El chip "Escala: …" del piano roll y el del teclado virtual abren el mismo selector, compacto como un menú (pedido del usuario): las 12 tónicas en una fila, las escalas en filas simples en tres columnas (mayores y menores, y modos y otras en las dos últimas), y al pie Sin escala y "Llevar las notas a la escala". Queda abierto para probar; el panel dentro de la ventana de un plugin solo la muestra. Piano roll: filas de la escala resaltadas, tónica en acento, teclas de afuera oscurecidas; lo que escribís o movés cae en la escala y mover va por grados (un acorde sigue en tono), ↑ ↓ también; Alt, libre. Una nota fuera de la escala se dibuja hueca. Teclado virtual: las filas de Z, A y Q son tres octavas de 7 notas desde la tónica (A en la octava elegida; una escala de 8 notas suma una tecla: `,` K I), con sus letras sobre esas notas; Z, X, C, V pasan a ser notas, así que O / P mueven la octava y L / Ñ la velocidad. La primera vez la tira muestra al menos 3 octavas. "Acordes", al lado, hace que cada tecla toque la tríada de su nota.
+- **Escala** (pedido del usuario; `MusicScale`, `MainWindow.Scales.cs`): una sola, de la canción (`ProjectSettings.Scale` y `ScaleRoot`, con deshacer; `ApplyScale`, en cada `RefreshPiano`). El chip "Escala: …" del piano roll y el del teclado virtual abren el mismo selector, compacto como un menú (pedido del usuario): las 12 tónicas en una fila, las escalas en filas simples en tres columnas (mayores y menores, y modos y otras en las dos últimas), y al pie Sin escala y "Llevar las notas a la escala". Queda abierto para probar; desde el panel dentro de la ventana de un plugin abre hacia arriba y un clic en cualquier otro lado lo cierra (`DismissPluginPicker`: ese clic es de otro proceso y no le llega). Piano roll: filas de la escala resaltadas, tónica en acento, teclas de afuera oscurecidas; lo que escribís o movés cae en la escala y mover va por grados (un acorde sigue en tono), ↑ ↓ también; Alt, libre. Una nota fuera de la escala se dibuja hueca. Teclado virtual: las filas de Z, A y Q son tres octavas de 7 notas desde la tónica (A en la octava elegida; una escala de 8 notas suma una tecla: `,` K I), con sus letras sobre esas notas; Z, X, C, V pasan a ser notas, así que O / P mueven la octava y L / Ñ la velocidad. La primera vez la tira muestra al menos 3 octavas. "Acordes", al lado, hace que cada tecla toque la tríada de su nota.
 - **Acordes** (pedido del usuario; `Chords`): el chip "Acordes" del piano roll (`H`, atajo `chordTool`) hace que un clic escriba un acorde, con su vista previa y su nombre bajo el puntero. "De la escala" arma el de cada nota (con escala; sin ella, mayor) y hay formas fijas (`pianoChordKind`). Todo grupo de notas elegidas que arranca junto y forma un acorde conocido muestra encima una barra (`DrawChordBar`) con su nombre y sus inversiones, cada una con un dibujito de sus notas, también con las teclas 1 a 4: el acorde recién escrito queda elegido, así que aparece solo, y el siguiente sale en la misma inversión.
 - **Cuantizar** (pedido del usuario: configurable): a mano con Q (atajo `quantize`) en el piano roll (las elegidas, o
   todas sin ninguna elegida, `PianoRollView.Quantize`), en el timeline sobre los clips MIDI elegidos, o con clic derecho
   en un clip → "Cuantizar a paso"; al grabar, si Configuración → MIDI → "Cuantizar al grabar" está prendido. Siempre
   al **imán del piano roll** y sobre la grilla de la canción, no la del clip; mueve el comienzo y deja el largo. Sin
   imán, en Línea o en Celda no cuantiza (el resultado cambiaría con el zoom; como FL) y lo dice.
+- **Herramientas** (pedido del usuario, todas las de FL Studio; `MidiTools`, `MainWindow.PianoTools.cs`, `Controls/PianoRollView.Tools.cs`): una sola tabla (`MidiTools.All`) da la tarjeta "Herramientas", el panel, los atajos (`Shortcuts.PianoKeys`, ids `piano.*`, solo con el foco en el piano roll) y `xtlab midi herramienta`: una herramienta nueva es una fila y una función. La tarjeta muestra todo a la vista en cinco columnas (Notas, Tiempo, Niveles, Edición, Elegir, Lo elegido, Archivos, En vivo). Sin ajustes, corre al toque; con ajustes abre un panel a la derecha que no tapa las notas: la herramienta corre desde las notas de cuando se abrió cada vez que se mueve un valor (`PreviewTool`), y mientras tanto el resultado va al motor y se oye (`PreviewNotes`, fuera del deshacer). Enter o un clic en las notas aplica (un paso de deshacer: `RestoreBeforeCommit` devuelve el original antes de `EditTimeline`), Esc cancela. Actúa sobre las notas elegidas o, sin ninguna, sobre todo el clip. Los valores se recuerdan por herramienta (`pianoTool.<id>`). Lo que es al azar sale de una semilla: "Otra variante" tira de nuevo.
+  **Escribir / Pintar / Cortar** (`PianoTool`): pintar deja una nota por paso del imán (Shift: en la misma fila); cortar parte lo que cruza la línea. Ctrl+Alt+arrastrar elige con un lazo. **Notas**: `MidiNote` lleva `Muted`, `Group` (se eligen juntas), `Color` (15 grupos), `Slide`, `Porta`, `Pan`, `Release`, `ModX`, `ModY`; doble clic abre su tarjeta, la herramienta `note`, que solo cambia lo que se movió. **Vista**: qué muestra el carril de abajo (`NoteLane`), otras pistas MIDI en gris y una forma de onda de fondo (de la sesión, no se guardan); clic derecho en una tecla la nombra (`Track.KeyNames`). Al lado, el acorde que se toca o se eligió. **Sellos** (`MidiStamps`): corridas de escala y figuras de batería en el menú de Acordes. **Slide** usa pitch bend de ±2 semitonos: es por canal, así que un acorde se dobla junto, y el sampler todavía no lo oye. **Arpegiador en vivo** (`ArpSettings`, `LiveNotes.RunArp`): arpegia lo que toca el teclado, en la grilla de la canción, y se graba como suena; lo escrito no pasa por él. **Teclado MIDI a la escala** (selector de escala, `midiScaleSnap`, `PlaybackEngine.KeySnap`). **Archivos**: .mid (`MidiFiles`) y partitura PDF (`ScoreSheet`).
 - **Configuración → MIDI** (`Dialogs/SettingsDialog.Midi.cs`, `MidiSetup`): una tarjeta por aparato que Windows ve
   (`MidiInputs.Devices`, por nombre; dos iguales, "nombre #2") con una lucecita que titila con lo que llega y lo
   último en palabras ("C4 · 96 · canal 1", "pedal abajo", `MidiSetup.Describe`), su nombre propio (el del aparato de

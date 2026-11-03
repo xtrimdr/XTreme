@@ -5,8 +5,8 @@ using NAudio.Wave;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// The Biblioteca's sample folders from the console: <c>wtlab samples listar carpeta [--buscar "kick 808"]</c>,
-/// <c>wtlab samples leer archivo</c>, and <see cref="Check"/> (part of <c>comprobar-dsp</c>), which verifies the search,
+/// The Biblioteca's sample folders from the console: <c>xtlab samples listar carpeta [--buscar "kick 808"]</c>,
+/// <c>xtlab samples leer archivo</c>, and <see cref="Check"/> (part of <c>comprobar-dsp</c>), which verifies the search,
 /// the tree, the index and the preview voice's fades without an audio interface. What needs FFmpeg is skipped without it.
 /// </summary>
 static class SampleChecks
@@ -32,7 +32,7 @@ static class SampleChecks
             Console.WriteLine($"{Path.GetFileName(target)}: {audio.DurationSec:0.000} s, {(audio.Converted ? "por FFmpeg" : "nativo")}, en el encabezado {MediaDecoder.Duration(target):0.000} s");
             return 0;
         }
-        throw new ArgumentException("Usá: wtlab samples listar carpeta [--buscar texto] | leer archivo");
+        throw new ArgumentException("Usá: xtlab samples listar carpeta [--buscar texto] | leer archivo");
     }
 
     public static bool Check()

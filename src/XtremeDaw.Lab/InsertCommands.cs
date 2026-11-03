@@ -5,7 +5,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.Lab;
 
 /// <summary>
-/// wtlab's side of the channels' insert slots: <c>proyecto insertos</c> lists and edits a track's slots (or, with
+/// xtlab's side of the channels' insert slots: <c>proyecto insertos</c> lists and edits a track's slots (or, with
 /// <c>--bus</c>, a bus's) like the mixer strip, and <see cref="Check"/> (part of <c>comprobar-dsp</c>) verifies that a
 /// version 1 channel, turned into slots, sounds exactly like the fixed chain did, that repeating, reordering and swapping
 /// slots behave, and that a bus sounds like its slots on the sum of what is routed to it.
@@ -15,7 +15,7 @@ static class InsertCommands
     const int Block = 128;
 
     /// <summary>
-    /// wtlab proyecto insertos carpeta (pista | --bus id|n) [agregar tipo [--en n] | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n | cadena]
+    /// xtlab proyecto insertos carpeta (pista | --bus id|n) [agregar tipo [--en n] | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n | cadena]
     /// <c>agregar vst --plugin "nombre"</c> adds a VST3 effect from the scanned plugins (<c>vst escanear</c>); <c>cadena</c>
     /// is the master's "Cadena completa". With <c>--master</c>, at the end of the line, it works on the master's list.
     /// </summary>
@@ -44,7 +44,7 @@ static class InsertCommands
         }
         else
         {
-            string trackId = a.Positional.ElementAtOrDefault(2) ?? throw new ArgumentException("insertos: falta la pista o --bus (wtlab proyecto clips carpeta).");
+            string trackId = a.Positional.ElementAtOrDefault(2) ?? throw new ArgumentException("insertos: falta la pista o --bus (xtlab proyecto clips carpeta).");
             var track = p.Tracks.Find(t => t.Id == trackId)
                 ?? (int.TryParse(trackId, out int n) && n >= 1 && n <= p.Tracks.Count ? p.Tracks[n - 1] : null)
                 ?? throw new ArgumentException("No encontré esa pista.");
@@ -86,7 +86,7 @@ static class InsertCommands
     {
         string name = a.Get("plugin") ?? throw new ArgumentException("insertos: agregar vst --plugin \"nombre\"");
         var found = PluginCatalog.Find(PluginCatalog.Plugins(PluginCatalog.Load()), name)
-            ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con wtlab vst escanear.");
+            ?? throw new ArgumentException($"No encontré \"{name}\" en la lista: probá con xtlab vst escanear.");
         if (found.IsInstrument) Console.WriteLine($"Ojo: {found.Name} figura como instrumento; lo pongo como efecto igual.");
         return PluginCatalog.Ref(found);
     }
@@ -98,7 +98,7 @@ static class InsertCommands
         return true;
     }
 
-    /// <summary>The kind from wtlab's Spanish names (or the saved ones).</summary>
+    /// <summary>The kind from xtlab's Spanish names (or the saved ones).</summary>
     public static string Kind(string name) => name.ToLowerInvariant() switch
     {
         "sat" or "vida" or "valvula" or "saturacion" => TrackInserts.Sat,
