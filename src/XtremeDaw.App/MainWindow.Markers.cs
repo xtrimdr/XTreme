@@ -5,8 +5,8 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App;
 
 /// <summary>
-/// The A–B loop range and the song's markers (native only, asked by the user), drawn on the strip over the ruler
-/// (<see cref="Controls.TimelineView"/>). Markers are edits of the project, one undo step each; the range is transport
+/// The A–B loop range, the song's markers and the chords (native only, asked by the user), each on its strip over the
+/// ruler (<see cref="Controls.TimelineView"/>). Chords come from Detectar escala or are written by hand. Markers are edits of the project, one undo step each; the range is transport
 /// state like the tempo (saved, outside undo) and turns the loop on when it is drawn or set. The keys work on the
 /// playhead, so the guitar never has to leave the hands: I and O set A and B, K drops a marker, comma and period jump.
 /// </summary>
@@ -24,7 +24,12 @@ public partial class MainWindow
         Timeline.MarkerAddRequested += sec => AddMarker(sec, rename: true);
         Timeline.MarkerRenameRequested += BeginNameEdit;
         Timeline.StripContextRequested += ShowStripMenu;
+        Timeline.LoopClearRequested += ClearLoopRange;
+        Timeline.RangeContextRequested += ShowRangeMenu;
         Timeline.ChordContextRequested += ShowChordMenu;
+        Timeline.ChordAddRequested += BeginChordEntry;
+        Timeline.ChordRenameRequested += BeginNameEdit;
+        Timeline.ChordTimesRequested += times => MarkerEdit(p => ProjectMarkers.SetChordTimes(p, times));
     }
 
     bool CanEditMarkers => store != null && !store.ReadOnly && !restoring && !RecordingBusy;
@@ -35,7 +40,6 @@ public partial class MainWindow
         var p = store?.Project;
         Timeline.Markers = p?.Markers ?? [];
         Timeline.Chords = p?.ChordMarkers ?? [];
-        chordStripButton.IsEnabled = Timeline.Chords.Count > 0;
         var loop = p == null ? null : ProjectMarkers.Loop(p.Settings);
         Timeline.LoopRange = loop;
         engine.SetLoopRange(loop);
@@ -136,9 +140,9 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>The strip's right click: on a marker, the marker's things; elsewhere, adding one and the range.</summary>
-    /// <summary>The chords' strip: what is marked goes, or all of them, one undo step either way.</summary>
-    void ShowChordMenu(ChordMarker? chord, Point point)
+    /// <summary>The chords' strip: writing one where there is room, renaming the one under the pointer, and what is
+    /// marked goes, or all of them, one undo step either way.</summary>
+    void ShowChordMenu(ChordMarker? chord, double sec, Point point)
     {
         if (store == null || restoring) return;
         bool enabled = CanEditMarkers;
@@ -146,8 +150,25 @@ public partial class MainWindow
         var list = new List<object>();
         if (chord != null)
         {
+            string id = chord.Id;
             list.Add(new MenuItem { Header = chord.Name, IsEnabled = false, FontSize = 11 });
             list.Add(MenuAction(Loc.T("marker.go"), () => { engine.Seek(chord.Sec); return Task.CompletedTask; }));
+            list.Add(MenuAction(Loc.T("marker.rename") + "…", () =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (Timeline.ChordRectOf(id) is { } r) BeginNameEdit(id, r); },
+                    Avalonia.Threading.DispatcherPriority.Background);
+                return Task.CompletedTask;
+            }, enabled: enabled, icon: ""));
+            list.Add(new Separator());
+        }
+        else
+        {
+            var slot = Timeline.ChordSlotAt(sec);
+            list.Add(MenuAction(Loc.T("chords.addHere"), () =>
+            {
+                if (slot is { } s) Avalonia.Threading.Dispatcher.UIThread.Post(() => BeginChordEntry(sec, s.End, s.Box), Avalonia.Threading.DispatcherPriority.Background);
+                return Task.CompletedTask;
+            }, enabled: enabled && slot != null));
             list.Add(new Separator());
         }
         if (marks.Count > 0)
@@ -160,7 +181,7 @@ public partial class MainWindow
         {
             MarkerEdit(ProjectMarkers.ClearChords);
             return Task.CompletedTask;
-        }, enabled: enabled, danger: true));
+        }, enabled: enabled && Timeline.Chords.Count > 0, danger: true));
         OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
     }
 
@@ -170,6 +191,7 @@ public partial class MainWindow
         Timeline.ClearChordMarks();
     }
 
+    /// <summary>The markers' strip's right click: on a marker, the marker's things; elsewhere, adding one.</summary>
     void ShowStripMenu(Marker? marker, double sec, Point point)
     {
         if (store == null || restoring) return;
@@ -195,28 +217,34 @@ public partial class MainWindow
             list.Add(new Separator());
             list.Add(MenuAction(Loc.T("marker.remove"), () => { MarkerEdit(p => ProjectMarkers.Remove(p, id)); return Task.CompletedTask; }, enabled: enabled, danger: true));
         }
-        else
+        else list.Add(MenuAction(Loc.T("marker.addHere"), () => { AddMarker(sec, rename: true); return Task.CompletedTask; }, MenuKey("marker"), enabled, icon: ""));
+        list.Add(new Separator());
+        list.Add(MenuAction(Loc.T("marker.chapters"), CopyChapters, enabled: store.Project.Markers.Count > 0, icon: "", tip: Loc.T("marker.chapters.tip")));
+        OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
+    }
+
+    /// <summary>The range's strip's right click: A or B there, or no range.</summary>
+    void ShowRangeMenu(double sec, Point point)
+    {
+        if (store == null || restoring) return;
+        var loop = ProjectMarkers.Loop(store.Project.Settings);
+        var list = new List<object>
         {
-            list.Add(MenuAction(Loc.T("marker.addHere"), () => { AddMarker(sec, rename: true); return Task.CompletedTask; }, Key("marker"), enabled, icon: ""));
-            list.Add(new Separator());
-            var loop = ProjectMarkers.Loop(store.Project.Settings);
-            list.Add(MenuAction(Loc.T("loop.startHere"), () =>
+            MenuAction(Loc.T("loop.startHere"), () =>
             {
                 double end = loop is { } r && r.End - sec >= ProjectMarkers.MinLoopSec ? r.End : Math.Max(engine.LengthSec, sec + BarSec);
                 SetLoopRange(sec, end);
                 return Task.CompletedTask;
-            }, Key("loopIn"), icon: ""));
-            list.Add(MenuAction(Loc.T("loop.endHere"), () =>
+            }, MenuKey("loopIn"), icon: ""),
+            MenuAction(Loc.T("loop.endHere"), () =>
             {
                 SetLoopRange(loop is { } r && sec - r.Start >= ProjectMarkers.MinLoopSec ? r.Start : 0, sec);
                 return Task.CompletedTask;
-            }, Key("loopOut"), sec >= ProjectMarkers.MinLoopSec));
-            list.Add(MenuAction(Loc.T("loop.clear"), () => { ClearLoopRange(); return Task.CompletedTask; }, enabled: loop != null, tip: Loc.T("loop.clear.tip")));
-        }
-        list.Add(new Separator());
-        list.Add(MenuAction(Loc.T("marker.chapters"), CopyChapters, enabled: store.Project.Markers.Count > 0, icon: "", tip: Loc.T("marker.chapters.tip")));
+            }, MenuKey("loopOut"), sec >= ProjectMarkers.MinLoopSec),
+            MenuAction(Loc.T("loop.clear"), () => { ClearLoopRange(); return Task.CompletedTask; }, enabled: loop != null, tip: Loc.T("loop.clear.tip")),
+        };
         OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
-
-        static string? Key(string id) => Shortcuts.Label(id) is { Length: > 0 } k ? k : null;
     }
+
+    static string? MenuKey(string id) => Shortcuts.Label(id) is { Length: > 0 } k ? k : null;
 }

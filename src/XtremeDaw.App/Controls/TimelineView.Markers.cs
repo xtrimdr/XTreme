@@ -7,16 +7,17 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// The strip over the ruler (native only, asked by the user): the A–B range the loop repeats and the song's markers.
-/// A drag on the empty strip draws the range, its edges and its body drag, and a click anywhere jumps there; a marker
-/// drags in time, a click jumps to it, a double click renames it, and a double click on the empty strip adds one.
-/// Everything snaps like the clips (Alt = free). The drag is a local preview; the window gets it on release, like a
-/// clip edit, and decides what to save. Off, the range stays drawn in grey so you still see where it is.
+/// The two strips over the ruler (native only, asked by the user), each shown or hidden on its own: the range's, with
+/// the A–B range the loop repeats, and the markers'. On the range's a drag draws the range, its edges and its body drag,
+/// a click jumps there and a double click takes the range out. On the markers' a marker drags in time, a click jumps to
+/// it, a double click renames it, and a double click on the empty strip adds one; a press on the empty strip scrubs
+/// like the ruler. Everything snaps like the clips (Alt = free). The drag is a local preview; the window gets it on
+/// release, like a clip edit, and decides what to save. Off, the range stays drawn in grey so you still see where it is.
 /// </summary>
 public sealed partial class TimelineView
 {
-    /// <summary>Height of the strip; <see cref="RulerH"/> includes it, the ruler's numbers sit under it.</summary>
-    public const double MarkerH = 18;
+    /// <summary>Height of the range's and the markers' strips; <see cref="RulerH"/> includes them, the ruler's numbers sit under them.</summary>
+    public const double MarkerH = 18, RangeH = 18;
     /// <summary>Px from a range edge that grab it.</summary>
     const double LoopEdgeGrab = 5;
 
@@ -35,8 +36,12 @@ public sealed partial class TimelineView
     public event Action<double>? MarkerAddRequested;
     /// <summary>A double click on a marker: the window edits its name in place over that rect.</summary>
     public event Action<string, Rect>? MarkerRenameRequested;
-    /// <summary>A right click on the strip: the marker under the pointer (or null), the time there and the point.</summary>
+    /// <summary>A right click on the markers' strip: the marker under the pointer (or null), the time there and the point.</summary>
     public event Action<Marker?, double, Point>? StripContextRequested;
+    /// <summary>A double click on the range's strip: the range goes.</summary>
+    public event Action? LoopClearRequested;
+    /// <summary>A right click on the range's strip: the time there and the point.</summary>
+    public event Action<double, Point>? RangeContextRequested;
 
     // the strip's gesture: "marker" or "loop" (loopMode says which part: draw, start, end, move)
     string? markerDragId;
@@ -44,7 +49,8 @@ public sealed partial class TimelineView
     string loopMode = "";
     double loopAnchor, loopA, loopB, loopDownSec;
 
-    bool InStrip(Point p) => markerStripShown && p.Y < MarkerH && p.X > HeaderW;
+    bool InStrip(Point p) => markerStripShown && p.Y >= MarkerTop && p.Y < MarkerTop + MarkerH && p.X > HeaderW;
+    bool InRangeStrip(Point p) => rangeStripShown && p.Y < RangeH && p.X > HeaderW;
 
     double SnapAt(double x) => Math.Max(0, ClipEditing.Snap(Sec(x), Grid, (modifiers & KeyModifiers.Alt) != 0));
 
@@ -53,7 +59,7 @@ public sealed partial class TimelineView
     Rect MarkerRect(Marker m)
     {
         double sec = m.Id == markerDragId ? markerDragSec : m.Sec;
-        return new Rect(X(sec), 1, MarkerLabel(m, false).Width + 12, MarkerH - 2);
+        return new Rect(X(sec), MarkerTop + 1, MarkerLabel(m, false).Width + 12, MarkerH - 2);
     }
 
     /// <summary>Where a marker's flag is drawn, to rename it in place; null if it is out of sight.</summary>
@@ -81,7 +87,7 @@ public sealed partial class TimelineView
         return x > x0 && x < x1 ? "move" : "";
     }
 
-    /// <summary>A press on the strip; true when it took it.</summary>
+    /// <summary>A press on the markers' strip; true when it took it.</summary>
     bool StripPressed(Point p, PointerPressedEventArgs e, bool right)
     {
         if (!InStrip(p)) return false;
@@ -103,6 +109,27 @@ public sealed partial class TimelineView
         if (e.ClickCount == 2)
         {
             MarkerAddRequested?.Invoke(SnapAt(p.X));
+            e.Handled = true;
+            return true;
+        }
+        StartGesture("scrub", e);
+        UpdateGesture();
+        return true;
+    }
+
+    /// <summary>A press on the range's strip; true when it took it.</summary>
+    bool RangePressed(Point p, PointerPressedEventArgs e, bool right)
+    {
+        if (!InRangeStrip(p)) return false;
+        if (right)
+        {
+            RangeContextRequested?.Invoke(SnapAt(p.X), p);
+            e.Handled = true;
+            return true;
+        }
+        if (e.ClickCount == 2)
+        {
+            LoopClearRequested?.Invoke();
             e.Handled = true;
             return true;
         }
@@ -151,34 +178,44 @@ public sealed partial class TimelineView
         loopMode = "";
     }
 
-    StandardCursorType StripCursor(Point p) =>
-        MarkerAt(p) != null ? StandardCursorType.Hand
-        : LoopPartAt(p.X) switch { "start" => StandardCursorType.LeftSide, "end" => StandardCursorType.RightSide, "move" => StandardCursorType.SizeWestEast, _ => StandardCursorType.Arrow };
+    StandardCursorType StripCursor(Point p) => MarkerAt(p) != null ? StandardCursorType.Hand : StandardCursorType.Arrow;
 
-    /// <summary>The strip: the range (accent while the loop is on, grey off) and the markers' flags on top.</summary>
+    StandardCursorType RangeCursor(Point p) =>
+        LoopPartAt(p.X) switch { "start" => StandardCursorType.LeftSide, "end" => StandardCursorType.RightSide, "move" => StandardCursorType.SizeWestEast, _ => StandardCursorType.Arrow };
+
+    /// <summary>The range's strip: the range in the accent while the loop is on, grey off.</summary>
+    void DrawRangeStrip(DrawingContext ctx, double W)
+    {
+        if (!rangeStripShown) return;
+        ctx.FillRectangle(Palette.Panel, new Rect(HeaderW, 0, W - HeaderW, RangeH));
+        ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.LineColor, 0.7)), new Point(HeaderW, RangeH - 0.5), new Point(W, RangeH - 0.5));
+        if (ShownLoop is not { } r) return;
+        using var clip = ctx.PushClip(new Rect(HeaderW, 0, Math.Max(0, W - HeaderW), RangeH));
+        double x0 = X(r.Start), x1 = X(r.End);
+        var color = loopOn ? Palette.AccentColor : Palette.FaintColor;
+        ctx.DrawRectangle(Palette.Alpha(color, loopOn ? 0.30 : 0.16), null, new Rect(x0, 2, Math.Max(1, x1 - x0), RangeH - 4), 4, 4);
+        var edge = Palette.Pen(Palette.Alpha(color, 0.9), 2);
+        ctx.DrawLine(edge, new Point(x0 + 1, 2), new Point(x0 + 1, RangeH - 2));
+        ctx.DrawLine(edge, new Point(x1 - 1, 2), new Point(x1 - 1, RangeH - 2));
+    }
+
+    /// <summary>The markers' strip: the flags.</summary>
     void DrawStrip(DrawingContext ctx, double W)
     {
-        ctx.FillRectangle(Palette.Panel, new Rect(HeaderW, 0, W - HeaderW, MarkerH));
-        ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.LineColor, 0.7)), new Point(HeaderW, MarkerH - 0.5), new Point(W, MarkerH - 0.5));
-        using var clip = ctx.PushClip(new Rect(HeaderW, 0, Math.Max(0, W - HeaderW), MarkerH));
-        if (ShownLoop is { } r)
-        {
-            double x0 = X(r.Start), x1 = X(r.End);
-            var color = loopOn ? Palette.AccentColor : Palette.FaintColor;
-            ctx.DrawRectangle(Palette.Alpha(color, loopOn ? 0.30 : 0.16), null, new Rect(x0, 2, Math.Max(1, x1 - x0), MarkerH - 4), 4, 4);
-            var edge = Palette.Pen(Palette.Alpha(color, 0.9), 2);
-            ctx.DrawLine(edge, new Point(x0 + 1, 2), new Point(x0 + 1, MarkerH - 2));
-            ctx.DrawLine(edge, new Point(x1 - 1, 2), new Point(x1 - 1, MarkerH - 2));
-        }
+        if (!markerStripShown) return;
+        double top = MarkerTop;
+        ctx.FillRectangle(Palette.Panel, new Rect(HeaderW, top, W - HeaderW, MarkerH));
+        ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.LineColor, 0.7)), new Point(HeaderW, top + MarkerH - 0.5), new Point(W, top + MarkerH - 0.5));
+        using var clip = ctx.PushClip(new Rect(HeaderW, top, Math.Max(0, W - HeaderW), MarkerH));
         foreach (var m in markers)
         {
             var box = MarkerRect(m);
             if (box.X > W || box.Right < HeaderW || m.Id == editingNameId) continue;
             bool hot = m.Id == markerDragId || gesture == null && box.Contains(lastPointer);
             ctx.DrawRectangle(hot ? Palette.Hover : Palette.Raised, Palette.Pen(Palette.Line), box, 4, 4);
-            ctx.DrawLine(Palette.Pen(Palette.Fg, 1.5), new Point(box.X + 0.75, 1), new Point(box.X + 0.75, MarkerH - 1));
+            ctx.DrawLine(Palette.Pen(Palette.Fg, 1.5), new Point(box.X + 0.75, top + 1), new Point(box.X + 0.75, top + MarkerH - 1));
             var label = MarkerLabel(m, hot);
-            ctx.DrawText(label, new Point(box.X + 7, (MarkerH - label.Height) / 2));
+            ctx.DrawText(label, new Point(box.X + 7, top + (MarkerH - label.Height) / 2));
         }
     }
 

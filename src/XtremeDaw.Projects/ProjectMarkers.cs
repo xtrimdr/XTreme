@@ -65,6 +65,46 @@ public static class ProjectMarkers
         return added;
     }
 
+    /// <summary>Shortest chord written by hand: under this its block can't be seen or clicked.</summary>
+    public const double MinChordSec = 0.05;
+
+    /// <summary>A chord written by hand from <paramref name="sec"/> to <paramref name="endSec"/>; it can't overlap another.</summary>
+    public static ChordMarker AddChord(Project p, double sec, double endSec, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException(Texts.T("err.chord.noName", "El acorde necesita un nombre."));
+        if (!double.IsFinite(sec) || !double.IsFinite(endSec)) throw new ArgumentException(Texts.T("err.chord.short", "No hay lugar para un acorde ahí."));
+        sec = Math.Max(0, sec);
+        if (endSec - sec < MinChordSec || p.ChordMarkers.Any(c => c.Sec < endSec && c.EndSec > sec))
+            throw new ArgumentException(Texts.T("err.chord.short", "No hay lugar para un acorde ahí."));
+        var chord = new ChordMarker { Name = name.Trim(), Sec = sec, EndSec = endSec };
+        p.ChordMarkers.Add(chord);
+        SortChords(p);
+        return chord;
+    }
+
+    /// <summary>
+    /// Moves or stretches chords (id → start, end) all at once: refused, with nothing changed, if one would be shorter
+    /// than <see cref="MinChordSec"/>, start before 0 or overlap another.
+    /// </summary>
+    public static void SetChordTimes(Project p, IReadOnlyDictionary<string, (double Sec, double End)> times)
+    {
+        var spans = p.ChordMarkers.Select(c => times.TryGetValue(c.Id, out var t) ? (c, t.Sec, t.End) : (c, c.Sec, c.EndSec)).OrderBy(x => x.Item2).ToList();
+        for (int i = 0; i < spans.Count; i++)
+        {
+            var (_, sec, end) = spans[i];
+            if (!double.IsFinite(sec) || !double.IsFinite(end) || sec < 0 || end - sec < MinChordSec - 1e-9 || i > 0 && sec < spans[i - 1].Item3 - 1e-9)
+                throw new ArgumentException(Texts.T("err.chord.short", "No hay lugar para un acorde ahí."));
+        }
+        foreach (var (c, sec, end) in spans) (c.Sec, c.EndSec) = (sec, end);
+        SortChords(p);
+    }
+
+    public static void RenameChord(Project p, string id, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException(Texts.T("err.chord.noName", "El acorde necesita un nombre."));
+        (p.ChordMarkers.Find(c => c.Id == id) ?? throw new ArgumentException(Texts.T("err.chord.notFound", "Acorde no encontrado."))).Name = name.Trim();
+    }
+
     public static void RemoveChords(Project p, IReadOnlyCollection<string> ids) => p.ChordMarkers.RemoveAll(c => ids.Contains(c.Id));
 
     public static void ClearChords(Project p) => p.ChordMarkers.Clear();

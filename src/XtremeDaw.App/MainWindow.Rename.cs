@@ -10,9 +10,10 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App;
 
 /// <summary>
-/// Renaming a track, a folder or a marker right where it is drawn (native only, asked by the user), like a DAW: a
+/// Renaming a track, a folder, a marker or a chord right where it is drawn (native only, asked by the user), like a DAW: a
 /// double click on the name (or "Renombrar…" in its menu) lays a text box over it. Enter or a click elsewhere keeps the name, Esc
-/// drops it; a scroll keeps it too, since the box would no longer sit on its row. Each rename is one undo step.
+/// drops it; a scroll keeps it too, since the box would no longer sit on its row. Each rename is one undo step. A chord
+/// written by hand uses the same box: it is added only when its name is kept, so Esc leaves nothing behind.
 /// </summary>
 public partial class MainWindow
 {
@@ -24,6 +25,11 @@ public partial class MainWindow
     string? nameEditId;
     /// <summary>Narrowest box for a marker's name.</summary>
     const double MarkerEditorW = 140;
+    /// <summary>Narrowest box for a chord's name.</summary>
+    const double ChordEditorW = 70;
+    /// <summary>The id the box edits while it writes a new chord, and where that chord goes.</summary>
+    const string NewChordId = "new-chord";
+    (double Sec, double End) newChord;
 
     void InitNameEditor()
     {
@@ -49,19 +55,34 @@ public partial class MainWindow
         }, DispatcherPriority.Background);
     }
 
+    /// <summary>A double click on the chords' empty strip: the box opens where the new chord goes.</summary>
+    void BeginChordEntry(double sec, double end, Rect r)
+    {
+        if (!CanEditMarkers) return;
+        EndNameEdit(true);
+        newChord = (sec, end);
+        OpenNameEditor(NewChordId, r, Math.Max(r.Width, ChordEditorW), "");
+    }
+
     void BeginNameEdit(string id, Rect r)
     {
         if (store == null || store.ReadOnly || restoring) return;
         EndNameEdit(true);
         var marker = store.Project.Markers.Find(m => m.Id == id);
-        string? name = FolderById(id)?.Name ?? tracks.Find(t => t.Track.Id == id)?.Track.Name ?? marker?.Name;
+        var chord = store.Project.ChordMarkers.Find(c => c.Id == id);
+        string? name = FolderById(id)?.Name ?? tracks.Find(t => t.Track.Id == id)?.Track.Name ?? marker?.Name ?? chord?.Name;
         if (name == null) return;
+        // a marker's flag is as wide as its name: the box leaves room to write a longer one
+        OpenNameEditor(id, r, marker != null ? Math.Max(r.Width, MarkerEditorW) : chord != null ? Math.Max(r.Width, ChordEditorW) : r.Width, name);
+    }
+
+    void OpenNameEditor(string id, Rect r, double width, string name)
+    {
         nameEditId = id;
         Timeline.EditingNameId = id;
         var origin = Timeline.TranslatePoint(default, TimelineHost) ?? default;
         nameEditor.Margin = new Thickness(origin.X + r.X, origin.Y + r.Y, 0, 0);
-        // a marker's flag is as wide as its name: the box leaves room to write a longer one
-        nameEditor.Width = marker != null ? Math.Max(r.Width, MarkerEditorW) : r.Width;
+        nameEditor.Width = width;
         nameEditor.Height = r.Height;
         nameEditor.Text = name;
         nameEditor.IsVisible = true;
@@ -78,13 +99,22 @@ public partial class MainWindow
         Timeline.EditingNameId = null;
         if (focused) Timeline.Focus();
         if (!keep || text.Length == 0) return;
-        if (FolderById(id) is { } f)
+        if (id == NewChordId)
+        {
+            var (sec, end) = newChord;
+            MarkerEdit(p => ProjectMarkers.AddChord(p, sec, end, text));
+        }
+        else if (FolderById(id) is { } f)
         {
             if (f.Name != text) FolderEdit(f, x => x.Name = text, "name");
         }
         else if (store?.Project.Markers.Find(m => m.Id == id) is { } m)
         {
             if (m.Name != text) MarkerEdit(p => ProjectMarkers.Rename(p, id, text), $"marker:{id}:name");
+        }
+        else if (store?.Project.ChordMarkers.Find(c => c.Id == id) is { } c)
+        {
+            if (c.Name != text) MarkerEdit(p => ProjectMarkers.RenameChord(p, id, text), $"chord:{id}:name");
         }
         else if (tracks.Find(t => t.Track.Id == id) is { } t && t.Track.Name != text) EditTrack(t, x => x.Track.Name = text, "name");
     }

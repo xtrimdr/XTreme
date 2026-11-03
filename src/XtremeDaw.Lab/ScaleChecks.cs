@@ -168,6 +168,23 @@ static class ScaleChecks
         Row("Escala: siguen el hueco cerrado", spans, "0-1 1-2 6-8", spans == "0-1 1-2 6-8");
         ProjectMarkers.RemoveChords(p, [p.ChordMarkers[0].Id, p.ChordMarkers[2].Id]);
         Row("Escala: borrar marcados", Now(), "F", Now() == "F" && p.Markers.Count == 1);
+        // written by hand: in a gap, in order, never over another, renamed
+        ProjectMarkers.AddChord(p, 0, 1, " Dm7 ");
+        bool overlapRefused = false;
+        try { ProjectMarkers.AddChord(p, 1, 3, "E"); }
+        catch (ArgumentException) { overlapRefused = true; }
+        Row("Escala: acorde a mano", Now(), "Dm7 F", Now() == "Dm7 F" && overlapRefused);
+        ProjectMarkers.RenameChord(p, p.ChordMarkers[0].Id, "D");
+        Row("Escala: renombrar acorde", Now(), "D F", Now() == "D F");
+        // moved and stretched: in the gap it is fine, over a neighbour nothing changes
+        string d = p.ChordMarkers[0].Id, fId = p.ChordMarkers[1].Id;
+        ProjectMarkers.SetChordTimes(p, new Dictionary<string, (double, double)> { [fId] = (3, 5), [d] = (0, 2.5) });
+        string moved = string.Join(" ", p.ChordMarkers.Select(c => $"{c.Name}:{c.Sec:0.#}-{c.EndSec:0.#}"));
+        bool overRefused = false;
+        try { ProjectMarkers.SetChordTimes(p, new Dictionary<string, (double, double)> { [d] = (0, 4) }); }
+        catch (ArgumentException) { overRefused = true; }
+        string kept = string.Join(" ", p.ChordMarkers.Select(c => $"{c.Name}:{c.Sec:0.#}-{c.EndSec:0.#}"));
+        Row("Escala: mover y estirar acordes", moved, "D:0-2.5 F:3-5", moved == "D:0-2.5 F:3-5" && overRefused && kept == moved);
         ProjectMarkers.ClearChords(p);
         Row("Escala: borrar todos", $"{p.ChordMarkers.Count} acordes, {p.Markers.Count} marcador", "0 acordes, 1 marcador", p.ChordMarkers.Count == 0 && p.Markers.Count == 1);
 
