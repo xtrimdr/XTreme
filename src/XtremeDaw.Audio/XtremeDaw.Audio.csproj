@@ -5,6 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Optimized in Debug too (asked by the user): the test copies are Debug builds, and unoptimized DSP (Vector<float>
+         above all) costs several times more, so the DSP meter didn't show what the installer does. -->
+    <Optimize>true</Optimize>
   </PropertyGroup>
 
   <ItemGroup>

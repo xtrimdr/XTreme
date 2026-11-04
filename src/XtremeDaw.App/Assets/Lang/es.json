@@ -45,7 +45,7 @@
   "mode.audio": "Solo audio",
   "title.undo": "Deshacer",
   "title.redo": "Rehacer",
-  "title.dsp.tip": "Carga de audio: por encima del 80 % puede cortar",
+  "title.dsp.tip": "Carga de audio: cuánto de cada bloque usa el motor. En rojo puede cortar",
   "title.dsp.heaviest": "Más pesada: {0} · {1} % (instrumento {2} %)",
   "title.ffmpeg.looking": "Buscando FFmpeg…",
   "export.mp4": "Exportar MP4",

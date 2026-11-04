@@ -4,6 +4,11 @@
       "version": "0.9.15",
       "items": [
         {
+          "icon": "E9D9",
+          "title": "Lighter reverb",
+          "text": "**Reverb** spreads its work over each block: no more spikes that make audio drop out at small buffer sizes, and the **DSP** tooltip shows which track and instrument take the most load."
+        },
+        {
           "icon": "E962",
           "title": "Buttons without tooltips",
           "text": "In the **mixer**, the **piano roll** and **Mastering**, buttons no longer show a tooltip.",

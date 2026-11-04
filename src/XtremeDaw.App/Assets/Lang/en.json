@@ -45,7 +45,7 @@
   "mode.audio": "Audio only",
   "title.undo": "Undo",
   "title.redo": "Redo",
-  "title.dsp.tip": "Audio load: above 80% it may drop out",
+  "title.dsp.tip": "Audio load: how much of each block the engine uses. Red means it may drop out",
   "title.dsp.heaviest": "Heaviest: {0} · {1}% (instrument {2}%)",
   "title.ffmpeg.looking": "Looking for FFmpeg…",
   "export.mp4": "Export MP4",

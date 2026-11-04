@@ -4,6 +4,11 @@
       "version": "0.9.15",
       "items": [
         {
+          "icon": "E9D9",
+          "title": "Reverb más liviana",
+          "text": "La **Reverb** reparte su trabajo a lo largo de cada bloque: ya no hay picos que hagan cortar el audio con buffers chicos, y el tooltip de **DSP** dice qué pista y qué instrumento se llevan más carga."
+        },
+        {
           "icon": "E962",
           "title": "Botones sin tooltip",
           "text": "En el **mixer**, el **piano roll** y **Mastering** los botones ya no muestran tooltip.",

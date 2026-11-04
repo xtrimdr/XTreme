@@ -486,10 +486,27 @@ public sealed class ReverbBus
         }
     }
 
+    /// <summary>
+    /// One uniform stage: the input in blocks of <c>B</c>, each against every partition of its part of the impulse in the
+    /// frequency domain. The partitions past the first only need older blocks, so they are summed a slice at a time while
+    /// the next block comes in (<see cref="Slices"/>, at fixed places of the block: any callback size gives the same floats);
+    /// a block's end only does the newest one and the two FFTs. Done all at once, the long stage took a whole callback
+    /// every 1024 frames.
+    /// <para>
+    /// The sound and the impulse are real, so half of each spectrum mirrors the other: each 2B-point transform is a B-point
+    /// complex one plus a pass that splits it (<see cref="RealForward"/>, <see cref="RealInverse"/>), and only B bins are
+    /// multiplied. Bin 0 carries two real ones, DC in its real part and Nyquist in the imaginary one; those two are summed apart.
+    /// </para>
+    /// </summary>
     sealed class FftStage
     {
+        /// <summary>How many pieces the older partitions' sum is cut into over a block.</summary>
+        const int Slices = 16;
+
         readonly int B;
-        readonly int N;
+        readonly int sliceLen;
+        /// <summary>The real transform's length (2B) and the complex one's under it (B).</summary>
+        readonly int N, M;
         readonly int vecLen;
         readonly int parts;
         readonly Vector<float>[][] irRe;
@@ -498,25 +515,35 @@ public sealed class ReverbBus
         readonly Vector<float>[][] fdlIm;
         readonly bool[] fdlActive;
         readonly float[] blockIn;
+        /// <summary>The 2B real samples going into or coming out of a transform.</summary>
+        readonly float[] frame;
         readonly float[] fftRe;
         readonly float[] fftIm;
-        readonly float[] sumRe;
-        readonly float[] sumIm;
         readonly Vector<float>[] sumReVec;
         readonly Vector<float>[] sumImVec;
         readonly float[] tailOut;
         readonly float[] overlap;
         readonly float[] twiddleRe;
         readonly float[] twiddleIm;
+        /// <summary>exp(-2πik/N) for k = 0 .. M/2: what joins the two halves of a real transform.</summary>
+        readonly float[] splitRe;
+        readonly float[] splitIm;
 
         int blockPos;
         int fdlIdx;
+        /// <summary>The older partitions (1 ..) already in the sum for the block coming in.</summary>
+        int summed;
+        bool anySummed;
+        /// <summary>The sum's DC and Nyquist bins, apart from the vectors (they share bin 0 there).</summary>
+        float dcSum, nyquistSum;
 
         public FftStage(float[] ir, int startTap, int maxTaps, int blockSize)
         {
             B = blockSize;
+            sliceLen = Math.Max(1, blockSize / Slices);
             N = blockSize * 2;
-            vecLen = N / Vector<float>.Count;
+            M = blockSize;
+            vecLen = M / Vector<float>.Count;
             int avail = Math.Max(0, Math.Min(maxTaps, ir.Length - startTap));
             parts = (avail + B - 1) / B;
 
@@ -526,18 +553,17 @@ public sealed class ReverbBus
             fdlIm = new Vector<float>[parts][];
             fdlActive = new bool[parts];
             blockIn = new float[B];
-            fftRe = new float[N];
-            fftIm = new float[N];
-            sumRe = new float[N];
-            sumIm = new float[N];
+            frame = new float[N];
+            fftRe = new float[M];
+            fftIm = new float[M];
             sumReVec = new Vector<float>[vecLen];
             sumImVec = new Vector<float>[vecLen];
             tailOut = new float[B];
             overlap = new float[B];
 
-            twiddleRe = new float[N];
-            twiddleIm = new float[N];
-            for (int len = 2; len <= N; len <<= 1)
+            twiddleRe = new float[M];
+            twiddleIm = new float[M];
+            for (int len = 2; len <= M; len <<= 1)
             {
                 int half = len >> 1;
                 double step = -2.0 * Math.PI / len;
@@ -547,15 +573,23 @@ public sealed class ReverbBus
                     twiddleIm[half + j] = (float)Math.Sin(step * j);
                 }
             }
+            splitRe = new float[M / 2 + 1];
+            splitIm = new float[M / 2 + 1];
+            for (int k = 0; k <= M / 2; k++)
+            {
+                splitRe[k] = (float)Math.Cos(-2.0 * Math.PI * k / N);
+                splitIm[k] = (float)Math.Sin(-2.0 * Math.PI * k / N);
+            }
 
             for (int p = 0; p < parts; p++)
             {
-                var re = new float[N];
-                var im = new float[N];
+                var x = new float[N];
+                var re = new float[M];
+                var im = new float[M];
                 int offset = startTap + p * B;
                 int count = Math.Min(B, startTap + avail - offset);
-                for (int i = 0; i < count; i++) re[i] = ir[offset + i];
-                Fft(re, im, invert: false);
+                for (int i = 0; i < count; i++) x[i] = ir[offset + i];
+                RealForward(x, re, im);
                 irRe[p] = MemoryMarshal.Cast<float, Vector<float>>(re.AsSpan()).ToArray();
                 irIm[p] = MemoryMarshal.Cast<float, Vector<float>>(im.AsSpan()).ToArray();
                 fdlRe[p] = new Vector<float>[vecLen];
@@ -574,8 +608,13 @@ public sealed class ReverbBus
                 Array.Clear(fdlRe[p]);
                 Array.Clear(fdlIm[p]);
             }
+            Array.Clear(sumReVec);
+            Array.Clear(sumImVec);
+            dcSum = nyquistSum = 0;
             blockPos = 0;
             fdlIdx = 0;
+            summed = 0;
+            anySummed = false;
         }
 
         public void AddCausal(ReadOnlySpan<float> input, Span<float> output)
@@ -586,7 +625,7 @@ public sealed class ReverbBus
             int idx = 0;
             while (idx < input.Length)
             {
-                int rem = Math.Min(input.Length - idx, B - blockPos);
+                int rem = Math.Min(input.Length - idx, sliceLen - blockPos % sliceLen);
                 for (int k = 0; k < rem; k++)
                 {
                     output[idx + k] += tOut[blockPos + k];
@@ -599,11 +638,46 @@ public sealed class ReverbBus
                     blockPos = 0;
                     StepBlock();
                 }
+                else if (blockPos % sliceLen == 0) SumOlder((parts - 1) * (blockPos / sliceLen) / Slices);
             }
+        }
+
+        /// <summary>Adds partitions up to <paramref name="upTo"/> (of 1 .. parts - 1) to the sum for the block coming in, in order.</summary>
+        void SumOlder(int upTo)
+        {
+            for (; summed < upTo; summed++)
+            {
+                int p = summed + 1;
+                // the block coming in goes to fdlIdx: partition p plays the one p blocks before it
+                int slot = fdlIdx - p;
+                if (slot < 0) slot += parts;
+                if (!fdlActive[slot]) continue;
+                anySummed = true;
+                Accumulate(fdlRe[slot], fdlIm[slot], irRe[p], irIm[p]);
+            }
+        }
+
+        /// <summary>Adds one block's spectrum times one partition's to the sum; bin 0 apart, as two real products.</summary>
+        void Accumulate(Vector<float>[] xRe, Vector<float>[] xIm, Vector<float>[] hRe, Vector<float>[] hIm)
+        {
+            Vector<float>[] vSumRe = sumReVec;
+            Vector<float>[] vSumIm = sumImVec;
+            for (int k = 0; k < vecLen; k++)
+            {
+                var xr = xRe[k];
+                var xi = xIm[k];
+                var hr = hRe[k];
+                var hi = hIm[k];
+                vSumRe[k] += xr * hr - xi * hi;
+                vSumIm[k] += xr * hi + xi * hr;
+            }
+            dcSum += xRe[0][0] * hRe[0][0];
+            nyquistSum += xIm[0][0] * hIm[0][0];
         }
 
         void StepBlock()
         {
+            SumOlder(parts - 1);
             bool nonZero = false;
             float[] bIn = blockIn;
             for (int i = 0; i < B; i++)
@@ -613,48 +687,19 @@ public sealed class ReverbBus
 
             if (nonZero)
             {
-                Array.Copy(bIn, 0, fftRe, 0, B);
-                Array.Clear(fftRe, B, B);
-                Array.Clear(fftIm, 0, N);
-                Fft(fftRe, fftIm, invert: false);
+                Array.Copy(bIn, 0, frame, 0, B);
+                Array.Clear(frame, B, B);
+                RealForward(frame, fftRe, fftIm);
                 MemoryMarshal.Cast<float, Vector<float>>(fftRe.AsSpan()).CopyTo(fdlRe[fdlIdx]);
                 MemoryMarshal.Cast<float, Vector<float>>(fftIm.AsSpan()).CopyTo(fdlIm[fdlIdx]);
                 fdlActive[fdlIdx] = true;
+                Accumulate(fdlRe[fdlIdx], fdlIm[fdlIdx], irRe[0], irIm[0]);
             }
             else
             {
                 fdlActive[fdlIdx] = false;
             }
-
-            Vector<float>[] vSumRe = sumReVec;
-            Vector<float>[] vSumIm = sumImVec;
-            Array.Clear(vSumRe, 0, vecLen);
-            Array.Clear(vSumIm, 0, vecLen);
-
-            bool anyActive = false;
-            int idx = fdlIdx;
-            int vLen = vecLen;
-            for (int p = 0; p < parts; p++)
-            {
-                if (fdlActive[idx])
-                {
-                    anyActive = true;
-                    Vector<float>[] xRe = fdlRe[idx];
-                    Vector<float>[] xIm = fdlIm[idx];
-                    Vector<float>[] hRe = irRe[p];
-                    Vector<float>[] hIm = irIm[p];
-                    for (int k = 0; k < vLen; k++)
-                    {
-                        var xr = xRe[k];
-                        var xi = xIm[k];
-                        var hr = hRe[k];
-                        var hi = hIm[k];
-                        vSumRe[k] += xr * hr - xi * hi;
-                        vSumIm[k] += xr * hi + xi * hr;
-                    }
-                }
-                if (--idx < 0) idx = parts - 1;
-            }
+            bool anyActive = anySummed || nonZero;
 
             if (++fdlIdx == parts) fdlIdx = 0;
 
@@ -662,15 +707,18 @@ public sealed class ReverbBus
             float[] ov = overlap;
             if (anyActive)
             {
-                float[] sRe = sumRe;
-                float[] sIm = sumIm;
-                MemoryMarshal.AsBytes(vSumRe.AsSpan()).CopyTo(MemoryMarshal.AsBytes(sRe.AsSpan()));
-                MemoryMarshal.AsBytes(vSumIm.AsSpan()).CopyTo(MemoryMarshal.AsBytes(sIm.AsSpan()));
-                Fft(sRe, sIm, invert: true);
+                MemoryMarshal.AsBytes(sumReVec.AsSpan()).CopyTo(MemoryMarshal.AsBytes(fftRe.AsSpan()));
+                MemoryMarshal.AsBytes(sumImVec.AsSpan()).CopyTo(MemoryMarshal.AsBytes(fftIm.AsSpan()));
+                fftRe[0] = dcSum;
+                fftIm[0] = nyquistSum;
+                Array.Clear(sumReVec);
+                Array.Clear(sumImVec);
+                dcSum = nyquistSum = 0;
+                RealInverse(fftRe, fftIm, frame);
                 for (int k = 0; k < B; k++)
                 {
-                    tOut[k] = sRe[k] + ov[k];
-                    ov[k] = sRe[B + k];
+                    tOut[k] = frame[k] + ov[k];
+                    ov[k] = frame[B + k];
                 }
             }
             else
@@ -681,13 +729,70 @@ public sealed class ReverbBus
                     ov[k] = 0f;
                 }
             }
+            summed = 0;
+            anySummed = false;
+        }
+
+        /// <summary>The spectrum of <paramref name="x"/> (N real samples): bins 1 .. M-1, and DC / Nyquist in bin 0's real / imaginary parts.</summary>
+        void RealForward(float[] x, float[] re, float[] im)
+        {
+            for (int n = 0; n < M; n++)
+            {
+                re[n] = x[2 * n];
+                im[n] = x[2 * n + 1];
+            }
+            Fft(re, im, invert: false);
+            float z0r = re[0], z0i = im[0];
+            re[0] = z0r + z0i;
+            im[0] = z0r - z0i;
+            for (int k = 1; k <= M / 2; k++)
+            {
+                int m = M - k;
+                float ar = re[k], ai = im[k], br = re[m], bi = im[m];
+                // the even samples' spectrum and the odd ones', out of the packed one
+                float er = 0.5f * (ar + br), ei = 0.5f * (ai - bi);
+                float or = 0.5f * (ai + bi), oi = -0.5f * (ar - br);
+                float wr = splitRe[k], wi = splitIm[k];
+                float tr = wr * or - wi * oi, ti = wr * oi + wi * or;
+                re[k] = er + tr;
+                im[k] = ei + ti;
+                re[m] = er - tr;
+                im[m] = ti - ei;
+            }
+        }
+
+        /// <summary>Back from a spectrum laid out as <see cref="RealForward"/> leaves it to N real samples in <paramref name="y"/>; overwrites re / im.</summary>
+        void RealInverse(float[] re, float[] im, float[] y)
+        {
+            float x0 = re[0], xm = im[0];
+            re[0] = 0.5f * (x0 + xm);
+            im[0] = 0.5f * (x0 - xm);
+            for (int k = 1; k <= M / 2; k++)
+            {
+                int m = M - k;
+                float ar = re[k], ai = im[k], br = re[m], bi = im[m];
+                float er = 0.5f * (ar + br), ei = 0.5f * (ai - bi);
+                float dr = 0.5f * (ar - br), di = 0.5f * (ai + bi);
+                float wr = splitRe[k], wi = splitIm[k];
+                float or = dr * wr + di * wi, oi = di * wr - dr * wi;
+                re[k] = er - oi;
+                im[k] = ei + or;
+                re[m] = er + oi;
+                im[m] = or - ei;
+            }
+            Fft(re, im, invert: true);
+            for (int n = 0; n < M; n++)
+            {
+                y[2 * n] = re[n];
+                y[2 * n + 1] = im[n];
+            }
         }
 
         void Fft(float[] re, float[] im, bool invert)
         {
-            for (int i = 1, j = 0; i < N; i++)
+            for (int i = 1, j = 0; i < M; i++)
             {
-                int bit = N >> 1;
+                int bit = M >> 1;
                 for (; (j & bit) != 0; bit >>= 1) j ^= bit;
                 j ^= bit;
                 if (i < j)
@@ -697,10 +802,10 @@ public sealed class ReverbBus
                 }
             }
             float sign = invert ? -1f : 1f;
-            for (int len = 2; len <= N; len <<= 1)
+            for (int len = 2; len <= M; len <<= 1)
             {
                 int half = len >> 1;
-                for (int i = 0; i < N; i += len)
+                for (int i = 0; i < M; i += len)
                 {
                     for (int j = 0; j < half; j++)
                     {
@@ -718,11 +823,11 @@ public sealed class ReverbBus
             }
             if (invert)
             {
-                float invN = 1f / N;
-                for (int i = 0; i < N; i++)
+                float invM = 1f / M;
+                for (int i = 0; i < M; i++)
                 {
-                    re[i] *= invN;
-                    im[i] *= invN;
+                    re[i] *= invM;
+                    im[i] *= invM;
                 }
             }
         }
