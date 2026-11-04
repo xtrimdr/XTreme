@@ -15,8 +15,9 @@ namespace XtremeDaw.App.Controls;
 /// <summary>
 /// The "Proyectos" manager. Same as SessionPicker in the web app (SessionPicker.tsx):
 /// list with search, new project with a template, rename (F2), save as template, duplicate, show in
-/// Explorer, delete to the Recycle Bin, forget missing ones, projects folder. Differences, all from the
-/// native format: it lists .xtp projects (and the older xtreme_project.json), "Abrir…" opens a .xtp from anywhere,
+/// Explorer, delete to the Recycle Bin, forget missing ones. Differences, all from the native format: it lists every
+/// .xtp project made or opened (RecentProjects) wherever it lives, each with its folder, without a projects-folder
+/// setting (asked by the user, 2026-11-03); "Abrir…" opens a .xtp from anywhere,
 /// a new project can go anywhere ("Guardar en…"), and any project can be saved somewhere else ("Guardar como…" goes on
 /// in the copy, "Guardar una copia…" stays here).
 /// The window wires the callbacks; this control never touches the open project directly.
@@ -111,8 +112,6 @@ public sealed partial class ProjectsDialog : UserControl
                 await SubmitDraft();
             }
         };
-        RevealRoot.Click += (_, _) => Reveal(root);
-        ChangeRoot.Click += async (_, _) => await PickRoot();
         SizeChanged += (_, _) => Layout();
     }
 
@@ -575,15 +574,6 @@ public sealed partial class ProjectsDialog : UserControl
             notice = Loc.T("proj.saveCopy.done", dir);
         }, Loc.T("proj.err.saveAs"));
 
-    async Task PickRoot() =>
-        await Run("__root", async () =>
-        {
-            var dir = await PickFolder(Loc.T("proj.pick.root"));
-            if (dir == null) return;
-            await Task.Run(() => ProjectLibrary.SetRoot(dir));
-            await Refresh();
-        }, Loc.T("proj.err.root"));
-
     void RemoveTemplate(ProjectTemplate t)
     {
         myTemplates = ProjectTemplates.DeleteUser(t.Id);
@@ -608,16 +598,11 @@ public sealed partial class ProjectsDialog : UserControl
         UnpackButton.IsEnabled = idle;
         UnpackIcon.IsVisible = busy != "__unpack";
         UnpackSpin.IsVisible = busy == "__unpack";
-        ChangeRoot.IsEnabled = idle;
-        RevealRoot.IsEnabled = root.Length > 0;
         bool picking = busy == "__pick";
         OpenFolderIcon.IsVisible = !picking;
         OpenFolderSpin.IsVisible = picking;
         OpenFolderText.Text = picking ? Loc.T("proj.waiting") : Loc.T("proj.openFile");
         NewWhere.IsEnabled = idle;
-        RootSpin.IsVisible = busy == "__root";
-        RootText.Text = root.Length > 0 ? root : "…";
-        ToolTip.SetTip(RootText, root);
         RenderNewForm(true);
         NoticeText.IsVisible = error != null || notice != null;
         NoticePanel.IsVisible = NoticeText.IsVisible;
@@ -781,8 +766,7 @@ public sealed partial class ProjectsDialog : UserControl
             TextTrimming = TextTrimming.CharacterEllipsis,
             Margin = new Thickness(0, 2, 0, 0),
         });
-        if (!p.InRoot)
-            info.Children.Add(new TextBlock { Text = p.Dir, Classes = { "mono" }, FontSize = 10, Foreground = Res("Faint"), Opacity = 0.8, TextTrimming = TextTrimming.CharacterEllipsis });
+        info.Children.Add(PathLine(p.Dir));
 
         var main = new Button { Classes = { "rowmain" }, Content = info, IsEnabled = p.Exists && busy == null };
         main.Click += async (_, _) => await Open(p);
@@ -851,6 +835,30 @@ public sealed partial class ProjectsDialog : UserControl
         grid.Children.Add(right);
         row.Child = grid;
         return row;
+    }
+
+    /// <summary>Where the project lives: a folder glyph and its folder in mono, quiet under the details.</summary>
+    Control PathLine(string dir)
+    {
+        var text = new TextBlock
+        {
+            Text = dir,
+            Classes = { "mono" },
+            FontSize = 10,
+            Foreground = Res("Faint"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(text, dir);
+        var glyph = Icon("", 10);
+        glyph.Foreground = Res("Faint");
+        glyph.VerticalAlignment = VerticalAlignment.Center;
+        glyph.Margin = new Thickness(0, 1, 6, 0);
+        var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(0, 4, 0, 0), Opacity = 0.85 };
+        line.Children.Add(glyph);
+        Grid.SetColumn(text, 1);
+        line.Children.Add(text);
+        return line;
     }
 
     Control RenameRow(ProjectLibrary.Summary p, Draft d, bool rowBusy)

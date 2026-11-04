@@ -137,6 +137,9 @@ public partial class MainWindow
         bool alone = maxPanel == MaxPanel.Views;
         AudioArea.IsVisible = stackedViews && !ViewsCovered;
         TimelineHost.IsVisible = ToolBox.IsEnabled = TimelineOut || !MixerHere || (stackedViews && !alone);
+        // stacked the timeline is always on screen, so its view button would do nothing (asked by the user): only
+        // maximized, covered by the stage or in its own window does it bring the timeline back
+        TimelineViewButton.IsVisible = !stackedViews || alone || ViewsCovered || TimelineOut;
         miniRow.IsVisible = MixerOut || !stackedViews || alone;
         BottomSplitter.IsVisible = !stackedViews && !BottomEmpty;
         ApplyAudioMixerRows();

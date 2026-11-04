@@ -20,8 +20,9 @@
       </StackPanel>
     </Border>
 
-    <ScrollViewer Grid.Row="2">
-      <StackPanel x:Name="Rows" Margin="10" Spacing="8" />
+    <!-- The right margin keeps the scroll bar off the window's resize border, which takes the outer ~8 px (frame + padding). -->
+    <ScrollViewer Grid.Row="2" Margin="0,0,8,0">
+      <StackPanel x:Name="Rows" Margin="10,10,2,10" Spacing="8" />
     </ScrollViewer>
 
     <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,8">

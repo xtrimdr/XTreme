@@ -93,14 +93,14 @@ public partial class MainWindow
 
     /// <summary>The grip over a bar's inner edge (right for the inspector, left for the project bar).</summary>
     Border SidebarGrip(bool rightEdge, Func<double> get, Func<double> other, Action<double> set, string key) =>
-        SizeGrip(rightEdge, rightEdge, get, w => ClampSidebar(w, other()), set, SidebarWidth, key, "splitter.sidebar");
+        SizeGrip(rightEdge, rightEdge, get, w => ClampSidebar(w, other()), set, SidebarWidth, key);
 
     /// <summary>
     /// A grip on a panel's edge that drags its width: <paramref name="overhang"/> centers it on the border, half
     /// outside the panel; a double click goes back to <paramref name="reset"/>. The width is saved under
     /// <paramref name="key"/> when the drag ends.
     /// </summary>
-    Border SizeGrip(bool rightEdge, bool overhang, Func<double> get, Func<double, double> clamp, Action<double> set, double reset, string key, string tipKey)
+    Border SizeGrip(bool rightEdge, bool overhang, Func<double> get, Func<double, double> clamp, Action<double> set, double reset, string key)
     {
         var line = new Border { Width = GripLine, Background = Brushes.Transparent, HorizontalAlignment = overhang ? HorizontalAlignment.Center : rightEdge ? HorizontalAlignment.Right : HorizontalAlignment.Left };
         var grip = new Border
@@ -109,7 +109,6 @@ public partial class MainWindow
             HorizontalAlignment = rightEdge ? HorizontalAlignment.Right : HorizontalAlignment.Left,
             Margin = overhang ? new Thickness(0, 0, -GripWidth / 2, 0) : default,
         };
-        ToolTip.SetTip(grip, Loc.T(tipKey));
         double startX = 0, startW = 0;
         bool dragging = false;
         void Lit(bool on) => line.Background = on ? Palette.Accent : Brushes.Transparent;

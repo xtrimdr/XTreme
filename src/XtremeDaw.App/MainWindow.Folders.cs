@@ -348,7 +348,6 @@ public partial class MainWindow
         var count = new Run { FontSize = 10.5, Foreground = Palette.Faint };
         var name = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 260, Margin = new Thickness(6, 0, 0, 0) };
         name.Inlines!.AddRange([nameRun, new Run("  "), count]);
-        ToolTip.SetTip(name, Loc.T("mixer.folder.name.tip"));
         RenameOnDoubleClick(name, () => RenameFolder(F(), name, null));
         // the band never widens the group: the strips set the width and the name trims to it
         // the folder strip already shows the folder glyph: the band leaves that room to the name

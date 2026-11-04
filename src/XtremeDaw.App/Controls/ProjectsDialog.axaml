@@ -215,24 +215,11 @@
         </ScrollViewer>
       </Border>
 
-      <!-- footer: projects folder -->
-      <Border Grid.Row="5" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="24,12">
-        <Grid ColumnDefinitions="*,Auto,Auto,Auto">
-          <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="{loc:T proj.root}" FontSize="11" Foreground="{StaticResource Faint}" />
-            <TextBlock x:Name="RootText" Classes="mono" FontSize="11" Foreground="{StaticResource Dim}" TextTrimming="CharacterEllipsis" Text="…" />
-          </StackPanel>
-          <Button Grid.Column="1" x:Name="RevealRoot" Classes="btn sm" Margin="12,0,0,0" Content="{loc:T proj.reveal}" />
-          <Button Grid.Column="2" x:Name="ChangeRoot" Classes="btn sm outline" Margin="12,0,0,0">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <Arc x:Name="RootSpin" Classes="spin" Width="12" Height="12" Stroke="{StaticResource Dim}" IsVisible="False" />
-              <TextBlock Text="{loc:T proj.change}" />
-            </StackPanel>
-          </Button>
-          <!-- off: the window opens straight in an empty project (StartupMode) -->
-          <CheckBox Grid.Column="3" x:Name="ShowAtStart" Margin="20,0,0,0" VerticalAlignment="Center" FontSize="12"
-                    Content="{loc:T proj.showAtStart}" ToolTip.Tip="{loc:T proj.showAtStart.tip}" />
-        </Grid>
+      <!-- footer: no projects folder here (asked by the user, 2026-11-03): the list shows every project, wherever it is -->
+      <Border Grid.Row="5" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="24,10">
+        <!-- off: the window opens straight in an empty project (StartupMode) -->
+        <CheckBox x:Name="ShowAtStart" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12"
+                  Content="{loc:T proj.showAtStart}" ToolTip.Tip="{loc:T proj.showAtStart.tip}" />
       </Border>
     </Grid>
   </Border>

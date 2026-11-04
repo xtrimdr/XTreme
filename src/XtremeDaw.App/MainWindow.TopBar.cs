@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using XtremeDaw.App.Controls;
 using XtremeDaw.App.Audio;
+using XtremeDaw.App.Model;
 using XtremeDaw.Audio;
 using XtremeDaw.Projects;
 
@@ -53,6 +54,7 @@ public partial class MainWindow
         };
         SizeChanged += (_, e) => SysMeter.IsVisible = SysMeterSep.IsVisible = e.NewSize.Width >= SystemMeterMinWidth;
         MonitorToggle.IsCheckedChanged += (_, _) => engine.SoftwareMonitor = MonitorToggle.IsChecked == true;
+        ToolTip.AddToolTipOpeningHandler(DspBox, (_, _) => ToolTip.SetTip(DspBox, DspTip()));
         InitComponents();
     }
 
@@ -70,6 +72,36 @@ public partial class MainWindow
     /// <summary>Above this the callback is close to its deadline and the audio may drop out: the DSP bar goes red.</summary>
     const double DspHotPercent = 80;
     int dspShown = -1;
+
+    /// <summary>How often each track's share of the audio thread is measured for the DSP tooltip.</summary>
+    const double TrackLoadSec = 0.5;
+    long trackLoadAt;
+
+    /// <summary>From the tick: each track's share of real time on the audio thread, every <see cref="TrackLoadSec"/>. Allocates nothing.</summary>
+    void MeasureTrackLoad()
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        long span = now - trackLoadAt;
+        if (span < TrackLoadSec * System.Diagnostics.Stopwatch.Frequency) return;
+        trackLoadAt = now;
+        foreach (var t in tracks)
+        {
+            var (busy, inst) = t.TakeLoad();
+            t.LoadPercent = 100.0 * busy / span;
+            t.InstrumentPercent = 100.0 * inst / span;
+        }
+    }
+
+    /// <summary>The DSP tooltip, when it opens: what the load means, and the track that takes the most of it.</summary>
+    string DspTip()
+    {
+        var tip = Loc.T("title.dsp.tip");
+        LiveTrack? top = null;
+        foreach (var t in tracks)
+            if (top == null || t.LoadPercent > top.LoadPercent) top = t;
+        if (top == null || top.LoadPercent < 0.5) return tip;
+        return tip + "\n" + Loc.T("title.dsp.heaviest", top.Track.Name, $"{top.LoadPercent:0}", $"{top.InstrumentPercent:0}");
+    }
 
     /// <summary>The DSP load as a bar like CPU / GPU / RAM; from the tick, so it only touches the controls when the whole percent changes.</summary>
     void ShowDsp(double pct)

@@ -9,3 +9,9 @@ artifacts/
 promo/
 pruebas/
 lib/
+
+# Manuales de otros programas, para consulta local
+referencia/
+
+# Archivos tomados por cada sesión de Claude (tools/bloqueos.ps1)
+.claude/bloqueos/

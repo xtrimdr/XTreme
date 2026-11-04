@@ -45,7 +45,6 @@ public sealed class PreviewView : Control
     public PreviewView()
     {
         ClipToBounds = true;
-        ToolTip.SetTip(this, Loc.T("insp.frame.hint"));
     }
 
     /// <summary>ExportJobSpec.BorderSize: the gap the export leaves around each panel, in output pixels.</summary>

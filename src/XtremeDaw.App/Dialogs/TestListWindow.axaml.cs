@@ -11,7 +11,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App.Dialogs;
 
 /// <summary>
-/// "Para probar" (asked by the user): the changes waiting to be tried, in tabs, each marked Anda, A mejorar, Anda mal or
+/// The "Banco de pruebas" (asked by the user): the changes waiting to be tried, in tabs, each marked Anda, A mejorar, Anda mal or
 /// No anda. All but Anda open a note and the item stays in place until Guardar, so it does not jump away while being explained;
 /// the note reaches the disk as a draft before that, because the copy being tried can die. A window of its own and not
 /// a dialog, so it stays next to the app while trying things. It opens without taking the focus, and marking gives the

@@ -52,9 +52,10 @@
             "Choose **Video + audio** or **Audio only**.",
             "Choose a template, or start without tracks. Templates bring tracks, effects and the Reverb and Delay buses.",
             "To open an existing one, click it in the list or use **Open…** and choose its **.xtp** file, wherever it is.",
-            "To save it somewhere other than the projects folder, click **Save in…** before creating it."
+            "To save it in another folder, click **Save in…** before creating it."
           ],
           "notes": [
+            "The list shows every project you made or opened, wherever it is, with its folder under the name.",
             "To return to the list from an open project, click the project name in the top bar or open **File → Projects…**.",
             "To start straight in an empty project, turn off **Show at startup** at the bottom of **Projects**, or choose **Empty project** in Settings → Saving and export. **Save** asks where it goes."
           ],
@@ -83,11 +84,11 @@
           "intro": "What each area holds.",
           "steps": [
             "**Top**: project mode, name, save, undo, tools and **Export**.",
-            "**Left**: the selected track's channel, with its volume, effects and sends. {key:leftPanel} folds it.",
+            "**Left**: the selected track's inspector: its name, the track's settings, the selected clip's and, at the bottom, its strip: pan, M and S, the fader, the effects, the sends and the output. The buttons on top show or hide the clip and the strip; the edge between them sets the strip's height. {key:leftPanel} folds it.",
             "**Center**: the video preview and the live camera.",
             "**Below the preview**: the timeline, with tracks and clips. {key:mixer} swaps it for the mixer.",
             "**Right**: project-wide things: Color, Patterns, Library and History. {key:rightPanel} folds it.",
-            "**Bottom**: clock, play, record, tempo, click, tuner and the Timeline, Piano roll, Mixer and Mastering views. Pressing the active view again goes back to the timeline.",
+            "**Bottom**: clock, play, record, tempo, click, tuner and the Timeline, Piano roll, Mixer and Mastering views. Pressing the active view again goes back to the timeline. Without video the timeline is always on screen and its button is hidden.",
             "**Maximize**: {key:maximize} or {icon:E740} gives the whole window to the panel you touched last (video, timeline, piano roll, mixer or mastering). Again, and everything goes back as it was."
           ],
           "see": ["look", "panel-windows", "shortcuts"]
@@ -390,6 +391,7 @@
             "Drag the file onto the timeline, or click **New track → Import audio…**.",
             "For your sound folders, open **Library → Samples** and add a folder.",
             "Listen with **Space** and drag the sample onto a track, from the list or from the player: its name, or the wave pulled up or down.",
+            "To bring several, pick them with **Ctrl** or **Shift** and drag them together: they land one under the other, on new tracks when there are no free ones.",
             "Choose **Copy to project** or **Link**. **Don't show again** keeps that choice; change it in **Settings → Save and export**."
           ],
           "notes": [
@@ -531,7 +533,7 @@
           "intro": "With several tracks picked, the inspector changes what they have in common.",
           "steps": [
             "On the timeline, **Ctrl+click** or **Shift+click** the track headers.",
-            "The inspector shows how many you picked and keeps only what they share: **Mix**, **Output**, the sends they all have and **Transpose**.",
+            "The inspector shows how many you picked and keeps only what they share: the fader, the pan, **Output**, the sends they all have and **Transpose**.",
             "Move a control: every track gets the same value, and **Undo** brings them back together.",
             "If a value differs between them, the control reads **Mixed** until you change it.",
             "Locked tracks don't change: the note on top says how many stay out."
@@ -552,6 +554,7 @@
           ],
           "notes": [
             "{wheel:wheelZoom} over the mixer changes the channel width.",
+            "**Effects** and **Sends**, at the top, show or hide that section on every strip. Drag the line under a list to make it taller or shorter; a double click fits it to the longest list. Right-click the button: the same fit or the default height.",
             "**MONO**, on the master, lets you check the mix in mono.",
             "Right-click a strip: the same actions as on the track header."
           ],
@@ -565,9 +568,9 @@
           "intro": "Each channel has its effect list, which plays from top to bottom.",
           "steps": [
             "Select the track.",
-            "Click **+ Effect** in the channel's **Effects** tray, or the **+** on its mixer strip.",
+            "Click the **+** of **Effects** on the inspector's strip, or the one on its mixer strip.",
             "Pick the effect by category. Your VST plugins are at the end.",
-            "Drag an effect by its handle to move it.",
+            "Click an effect in the list to open it in its window. Drag it to move it.",
             "The **⋯** or right-click turns it off, duplicates or removes it."
           ],
           "notes": [
@@ -616,7 +619,7 @@
             "It follows the project's tempo and lands on the beat wherever you start.",
             "In the fine controls: **Attack** (how fast it drops) and **Offset** (ahead of or behind the beat).",
             "The graph shows the curve over the sound (what comes in, dim; what goes out, in color) and a line that rides it with what is playing. With **Sidechain**, the bar on the right is the driving track's level: it fires when it crosses the accent line.",
-            "With **Sidechain** each hit decides when it ducks and the knobs become a compressor's: **Threshold** (Auto: half the recent peak), **Attack**, **Hold** and **Release**.",
+            "With **Sidechain** the other track shapes it: the louder it plays, the more it ducks (a soft hit ducks less, a long note holds it down) and it comes back along the **Curve**. The knobs become a compressor's: **Threshold** (Auto: 24 dB under its recent peak; 24 dB over the threshold it ducks all the way), **Attack**, **Hold** and **Release**.",
             "The strip's reduction meter shows how far it drops."
           ],
           "see": ["sidechain", "add-fx", "comp-presets"]
@@ -702,7 +705,7 @@
           "steps": [
             "In the mixer, right-click → **New bus / FX channel**. Templates already bring Reverb and Delay.",
             "On the bus, click **+** and add **Reverb** or **Delay**.",
-            "Select a track and click **+ Send** in **Output & sends**. Check the bus.",
+            "Select a track and click the **+** of **Sends** on the inspector's strip. Check the bus.",
             "Raise the send level until it sounds right."
           ],
           "notes": [
@@ -753,7 +756,7 @@
           "intro": "Changes the pitch without changing the length.",
           "steps": [
             "Select the track.",
-            "Move **Pitch** in the channel's **Transpose** section: −12 to +12 semitones.",
+            "In the inspector, drag the **Transpose** value (in the clip section) up or down, use the wheel or double-click to type it: −12 to +12 semitones.",
             "Wait for the notice: while it computes, the track sounds as before."
           ],
           "notes": [
@@ -1015,7 +1018,7 @@
           "intro": "Choose the song's scale and write chords with one click.",
           "steps": [
             "In the **Piano roll**, or on the virtual keyboard, click **Scale** and choose the root and the scale.",
-            "The scale's rows light up, and notes you write or move land on the scale by themselves.",
+            "The piano roll shows only the scale's rows, and notes you write or move land on it by themselves. A note already off the scale stays in sight, on its own row.",
             "Turn on **Chords** ({key:chordTool}) and click a note: it writes the chord that belongs to it in the scale.",
             "The selector appears over the chord: **R** is root position and **1**, **2** and **3** the inversions. Keys 1 to 4 work too, or {wheel:wheelHeight} over the chord (or over the one you are about to write). Each inversion stays close to where it was: the chord doesn't climb.",
             "Drag the chord to move it: up and down it follows the scale, so it changes chord without leaving the key."
@@ -1338,7 +1341,7 @@
           "notes": [
             "**Keyboard shortcuts** has the full list, and any of them can be changed.",
             "In **Key layout**, choose the keys of Cubase, Logic Pro, FL Studio, Reaper or Studio Pro. Your changes are kept in each one. What that DAW doesn't have keeps XTreme's key.",
-            "With a plugin's window in front, the **Transport** group keeps working, except while you type in one of the plugin's text fields."
+            "With a plugin's window in front, the **Transport** group keeps working, except while you type in one of the plugin's text fields. If a plugin doesn't get along with that, **Keys to plugin** on its window's bar leaves it every key and **Keys to XTreme** sends them all to the app (except Alt+Tab and Alt+F4). With both off it goes back to the usual. It applies to every plugin window."
           ],
           "settings": "shortcuts"
         },

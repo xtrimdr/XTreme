@@ -166,7 +166,7 @@
               <c:SystemMeter x:Name="SysMeter" />
               <Border x:Name="SysMeterSep" Classes="tsep" />
               <!-- the audio callback's load, drawn like CPU / GPU / RAM: name, number, bar -->
-              <StackPanel Orientation="Horizontal" Spacing="5" Background="Transparent" ToolTip.Tip="{loc:T title.dsp.tip}">
+              <StackPanel x:Name="DspBox" Orientation="Horizontal" Spacing="5" Background="Transparent" ToolTip.Tip="{loc:T title.dsp.tip}">
                 <TextBlock Text="DSP" Foreground="{StaticResource Faint}" />
                 <TextBlock x:Name="DspText" Classes="mono" Foreground="{StaticResource Dim}" Width="26" Text="–" />
                 <Border Width="32" Height="5" CornerRadius="2" Background="{StaticResource Raised}" ClipToBounds="True" VerticalAlignment="Center">
@@ -319,17 +319,17 @@
       <!-- solo audio: the timeline (or the mixer) moves up here, in the stage's place (MainWindow.Mode.cs) -->
       <Grid Grid.Column="1" x:Name="AudioArea" IsVisible="False" RowDefinitions="*,0,0" Background="{StaticResource App}">
         <!-- the splitters sit in a row of 0 and take the gap between the cards (their margins) -->
-        <GridSplitter x:Name="AudioSplitter" Grid.Row="1" IsVisible="False" ToolTip.Tip="{loc:T splitter.mixer}" Background="Transparent" Margin="0,-4" ResizeDirection="Rows" />
+        <GridSplitter x:Name="AudioSplitter" Grid.Row="1" IsVisible="False" Background="Transparent" Margin="0,-4" ResizeDirection="Rows" />
       </Grid>
     </Grid>
 
     <!-- project bar (Color / Historial): the web's right sidebar, beside the stage and the timeline; filled in MainWindow.Color.cs -->
     <Border Grid.Row="1" Grid.RowSpan="3" Grid.Column="1" x:Name="ProjectBar" Classes="card" Width="290" Background="{StaticResource Panel}" />
 
-    <GridSplitter x:Name="BottomSplitter" Grid.Row="2" ToolTip.Tip="{loc:T splitter.timeline}" Background="Transparent" Margin="0,-4" ResizeDirection="Rows" />
+    <GridSplitter x:Name="BottomSplitter" Grid.Row="2" Background="Transparent" Margin="0,-4" ResizeDirection="Rows" />
 
     <!-- timeline, or the mixer in its place (X) -->
-    <Panel Grid.Row="3" x:Name="MixerHost" IsVisible="False" Margin="4">
+    <Panel Grid.Row="3" x:Name="MixerHost" Classes="notips" IsVisible="False" Margin="4">
       <Border Classes="card-clip" Background="{StaticResource App}">
         <DockPanel x:Name="MixerDock" />
       </Border>

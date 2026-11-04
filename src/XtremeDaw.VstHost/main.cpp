@@ -23,6 +23,8 @@
 //         keys-panel <height>   room at the bottom of the window for a panel of the app, at 100 % (this scales it to the
 //                               window's DPI); 0 = none. It answers "editor-panel <hwnd>"
 //         transport-keys <vk>:<mods> ...   the keys that go to the app instead of the plugin (mods: 1 Ctrl, 2 Shift, 4 Alt)
+//         key-route auto|plugin|app   where the window's keys go: those transport-keys (not while a text field is in
+//                               use; the default), none, or all but the modifiers and the system's (Alt+Tab, Alt+F4...)
 //         snapshot <png>        waits for the open window to settle and saves the plugin's picture there; it answers
 //                               "snapshot-done" or "snapshot-failed" (nothing but a blank window for 12 s)
 //         snapshot-now <png>    the same, of what the window shows right now
@@ -35,7 +37,8 @@
 //       "editor-rect <left> <top> <right> <bottom>" (where its window is now; no numbers = minimized), "editor-active",
 //       "editor-inactive" (it took or lost the keyboard), "toolbar <id>" (a button of the bar was clicked),
 //       "editor-panel <hwnd>" (where the app puts its panel, as a child window), "transport-key <n> <scan>" (the n-th of
-//       transport-keys went down; scan = its scan code, 0 for an extended key).
+//       transport-keys went down; scan = its scan code, 0 for an extended key), "app-key <vk> <mods> <scan>" (with
+//       key-route app, any key that went down).
 //   It exits when stdin closes or the app (--parent) goes away.
 
 #include <windows.h>
@@ -310,8 +313,29 @@ public:
 /// A key of the app's transport: virtual key and modifiers (1 Ctrl, 2 Shift, 4 Alt).
 struct TransportKey { int vk, mods; };
 
-/// The transport's keys while the keyboard is in a window of another process inside the plugin's: a WebView2 or CEF
-/// interface has its own message loop, so those keys never come through this one and Host::TakeKey can't see them. Only a
+/// Where the keys of the plugin's window go: the guess (the transport's to the app, unless a text field is in use), all
+/// to the plugin, or all to the app. The user picks it on the bar: the guess can't see every plugin's text fields.
+enum class KeyRoute { Auto, Plugin, App };
+std::atomic<KeyRoute> keyRoute {KeyRoute::Auto};
+
+/// Keys that stay where Windows sends them even when every key goes to the app: the modifiers (both sides read them as
+/// they are) and the system's own (the Windows key, Alt+Tab, Alt+F4, Alt+Esc, Ctrl+Esc).
+bool SystemKey(int vk, int mods)
+{
+    if (vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU || (vk >= VK_LSHIFT && vk <= VK_RMENU) || vk == VK_LWIN || vk == VK_RWIN) return true;
+    if (GetAsyncKeyState(VK_LWIN) < 0 || GetAsyncKeyState(VK_RWIN) < 0) return true;
+    return ((mods & 4) && (vk == VK_TAB || vk == VK_F4 || vk == VK_ESCAPE)) || ((mods & 1) && vk == VK_ESCAPE);
+}
+
+/// "app-key <vk> <mods> <scan>": a key of the plugin's window for the app (scan 0 for an extended key).
+void SayAppKey(int vk, int mods, int scan)
+{
+    Say("app-key " + std::to_string(vk) + " " + std::to_string(mods) + " " + std::to_string(scan));
+}
+
+/// The app's keys while the keyboard is in a window of another process inside the plugin's, or of a thread the plugin
+/// made: a WebView2 or CEF interface (or a plugin's own UI thread) has its own message loop, so those keys never come
+/// through this one and Host::TakeKey can't see them. Only a
 /// low-level hook can, and it has to answer at once whatever the plugin's window is doing, so it gets a thread of its own,
 /// for as long as the window is open. Whether a text field is in use takes UI Automation, too slow to ask with a key
 /// waiting: another thread keeps the answer ready.
@@ -362,16 +386,17 @@ private:
     /// Taken on the way down, so the release and the repeats stay away from the plugin too. Only the hook's thread.
     bool held[256] = {};
 
-    /// The keyboard is in the plugin's window, in another process that is not the app, with no native caret in it.
-    bool InForeignWindow() const
+    /// The keyboard is in the plugin's window, on a thread whose keys skip Host::TakeKey (another process, or a thread of
+    /// the plugin's own in this one), not the app's; with no native caret in it, unless any caret will do.
+    bool InForeignWindow(bool anyCaret) const
     {
         HWND w = window;
         if (!w || GetForegroundWindow() != w) return false;
+        DWORD main = GetWindowThreadProcessId(w, nullptr);
         GUITHREADINFO gui {sizeof gui};
-        if (!GetGUIThreadInfo(GetWindowThreadProcessId(w, nullptr), &gui) || !gui.hwndFocus || gui.hwndCaret) return false;
-        DWORD process = 0;
-        GetWindowThreadProcessId(gui.hwndFocus, &process);
-        return process != GetCurrentProcessId() && process != parent;
+        if (!GetGUIThreadInfo(main, &gui) || !gui.hwndFocus || (gui.hwndCaret && !anyCaret)) return false;
+        DWORD process = 0, thread = GetWindowThreadProcessId(gui.hwndFocus, &process);
+        return thread != main && process != parent;
     }
 
     static bool TextFieldFocused(IUIAutomation* uia)
@@ -391,7 +416,7 @@ private:
         CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, __uuidof(IUIAutomation), reinterpret_cast<void**>(&uia));
         for (;;)
         {
-            typing = uia && InForeignWindow() && TextFieldFocused(uia);
+            typing = uia && keyRoute == KeyRoute::Auto && InForeignWindow(false) && TextFieldFocused(uia);
             Sleep(TypingCheckMs);
         }
     }
@@ -407,13 +432,22 @@ private:
         }
         if (held[key.vkCode]) return true;
         int mods = (GetAsyncKeyState(VK_CONTROL) < 0 ? 1 : 0) | (GetAsyncKeyState(VK_SHIFT) < 0 ? 2 : 0) | (GetAsyncKeyState(VK_MENU) < 0 ? 4 : 0);
+        auto route = keyRoute.load();
+        if (route == KeyRoute::Plugin) return false;
+        if (route == KeyRoute::App)
+        {
+            if (SystemKey(static_cast<int>(key.vkCode), mods) || !InForeignWindow(true)) return false;
+            SayAppKey(static_cast<int>(key.vkCode), mods, key.flags & LLKHF_EXTENDED ? 0 : static_cast<int>(key.scanCode));
+            held[key.vkCode] = true;
+            return true;
+        }
         size_t index = SIZE_MAX;
         {
             std::lock_guard<std::mutex> g(lock);
             for (size_t i = 0; i < keys.size() && index == SIZE_MAX; i++)
                 if (keys[i].vk == static_cast<int>(key.vkCode) && keys[i].mods == mods) index = i;
         }
-        if (index == SIZE_MAX || typing || !InForeignWindow()) return false;
+        if (index == SIZE_MAX || typing || !InForeignWindow(false)) return false;
         Say("transport-key " + std::to_string(index) + " " + std::to_string(key.flags & LLKHF_EXTENDED ? 0 : key.scanCode));
         held[key.vkCode] = true;
         return true;
@@ -1310,12 +1344,22 @@ struct Host : Vst2Listener
             return taken;
         }
         int mods = (GetKeyState(VK_CONTROL) < 0 ? 1 : 0) | (GetKeyState(VK_SHIFT) < 0 ? 2 : 0) | (GetKeyState(VK_MENU) < 0 ? 4 : 0);
+        bool repeat = (m.lParam & (1 << 30)) != 0, extended = (m.lParam & (1 << 24)) != 0;
+        int scan = extended ? 0 : static_cast<int>((m.lParam >> 16) & 0xFF);
+        auto route = keyRoute.load();
+        if (route == KeyRoute::Plugin) return false;
+        if (route == KeyRoute::App)
+        {
+            if (SystemKey(static_cast<int>(m.wParam), mods)) return false;
+            if (!repeat) SayAppKey(static_cast<int>(m.wParam), mods, scan);
+            transportHeld[m.wParam] = true;
+            return true;
+        }
         for (size_t i = 0; i < transportKeys.size(); i++)
         {
             if (transportKeys[i].vk != static_cast<int>(m.wParam) || transportKeys[i].mods != mods) continue;
             if (Typing()) return false;
-            bool repeat = (m.lParam & (1 << 30)) != 0, extended = (m.lParam & (1 << 24)) != 0;
-            if (!repeat) Say("transport-key " + std::to_string(i) + " " + std::to_string(extended ? 0 : (m.lParam >> 16) & 0xFF));
+            if (!repeat) Say("transport-key " + std::to_string(i) + " " + std::to_string(scan));
             transportHeld[m.wParam] = true;
             return true;
         }
@@ -1623,6 +1667,7 @@ struct Host : Vst2Listener
         else if (cmd == "toolbar-state") SetButtonStates(arg);
         else if (cmd == "keys-panel") SetPanel(std::atoi(arg.c_str()));
         else if (cmd == "transport-keys") SetTransportKeys(arg);
+        else if (cmd == "key-route") keyRoute = arg == "plugin" ? KeyRoute::Plugin : arg == "app" ? KeyRoute::App : KeyRoute::Auto;
         else if (cmd == "state") Say("state " + GetState());
         else if (cmd == "stats") Say(Stats());
         else if (cmd == "params") SayParams();

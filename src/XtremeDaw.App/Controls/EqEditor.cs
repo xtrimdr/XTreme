@@ -248,8 +248,6 @@ sealed class EqGraph : Control
     {
         this.interactive = interactive;
         Height = height; ClipToBounds = true;
-        if (interactive)
-            ToolTip.SetTip(this, Loc.T("eq.graph.tip"));
     }
     double X(double hz) => Math.Log(Math.Clamp(hz, 20, 20000) / 20) / Math.Log(1000) * Bounds.Width;
     double F(double x) => EqEditor.FromPos(x / Math.Max(1, Bounds.Width) * 1000);

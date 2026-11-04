@@ -62,6 +62,13 @@ static class ImportChecks
             Check(t2 != empty && p.Tracks.Count == 2 && t2.Clips[0].AtSec == 0, "con la pista ocupada crea una nueva; nunca antes de 0");
             Check(p.Log.Last().Type == "audio-imported", "queda en la actividad");
 
+            var midi = new Track { Kind = TrackKinds.Midi };
+            p.Tracks.Add(midi);
+            var stack = AudioImport.Stack(p, [empty.Id, t2.Id], 5, [3, 3, 3]);
+            Check(stack is [{ } s0, { } s1, null] && s0 == empty.Id && s1 == t2.Id, "varios caen uno abajo del otro y los que sobran van a pistas nuevas");
+            Check(AudioImport.Stack(p, [empty.Id, midi.Id], 1, [3, 3]) is [null, null], "una pista ocupada o MIDI no los toma");
+            p.Tracks.Remove(midi);
+
             int copies = Directory.GetFiles(Path.Combine(proj, "media")).Length;
             var linked = AudioImport.LinkIn(proj, src);
             Check(linked.RelativePath == Path.GetFullPath(src) && Directory.GetFiles(Path.Combine(proj, "media")).Length == copies, "vincular deja el archivo donde está y no copia nada");

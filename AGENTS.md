@@ -58,7 +58,7 @@ src/
   XtremeDaw.App        la ventana (Avalonia 11.3). Depende de Audio y Projects.
   XtremeDaw.Lab        xtlab.exe: consola para probar audio, DSP y proyectos sin la ventana.
   XtremeDaw.VstHost    xtvsthost.exe (C++, SDK de VST3): abre un plugin en su propio proceso. Lo compila el build de Audio.
-tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que dibuja tools/icon/Vinilo.cs píxel a píxel, cada tamaño a su resolución; no necesita nada instalado; hasta 96 px, una versión plana; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
+tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que dibuja tools/icon/Vinilo.cs píxel a píxel, cada tamaño a su resolución; no necesita nada instalado; hasta 96 px, una versión plana; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador), bloqueos.ps1 (hook: un archivo, una sesión a la vez)
 .github/workflows/instalador.yml   arma el instalador en GitHub Actions (un tag vX.Y.Z → release en borrador; firma con SignPath)
 ```
 
@@ -242,12 +242,11 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
    reintentar ni matar nada mientras esperan (código 4 = el turno no llegó). **Al terminar cada cambio corré
    `tools\probar.ps1 -NoAbrir "qué probar"`** (compila, corre `xtlab comprobar-dsp`, deja una copia en
    `pruebas\`, fuera de AppData a propósito: desde la app de Claude, que es MSIX, lo escrito en AppData queda dentro
-   del paquete y el acceso directo no lo ve, y anota el texto, corto y concreto, en la lista "Para probar",
-   `pruebas\lista.json`, que el usuario marca desde la copia; varias sesiones pueden anotar a la vez) **y preguntale al usuario**
-   (con un cuadro de pregunta, si tu herramienta lo tiene) **si lo abre ahora o lo deja en la lista**: la prueba ya quedó encolada, y con
-   varios agentes trabajando él prueba todo junto después (pedido del usuario). Si elige abrir,
-   `tools\probar.ps1 -Abrir` abre la última copia con la lista a la vista (`-Proyecto carpeta` la abre en ese
-   proyecto); si elige dejarlo, no abras nada ni vuelvas a preguntar por ese cambio. `tools\probar.ps1 -Lista` muestra lo pendiente y lo que el usuario
+   del paquete y el acceso directo no lo ve, y anota el texto, corto y concreto, en el **Banco de pruebas**,
+   `pruebas\lista.json`, que el usuario marca desde la copia; varias sesiones pueden anotar a la vez). **No preguntes si
+   abrirlo**: queda en la lista y el usuario prueba todo junto después (pedido del usuario, 2026-11-03: con varios
+   agentes trabajando). Abrí la copia solo si el usuario lo pide: `tools\probar.ps1 -Abrir` abre la última con la lista a
+   la vista (`-Proyecto carpeta` la abre en ese proyecto). `tools\probar.ps1 -Lista` muestra lo pendiente y lo que el usuario
    marcó como que no anda, con su nota: miralo antes de seguir con algo ya entregado. Si arreglaste un ítem, corré
    `tools\probar.ps1 -NoAbrir -Arregla 12` (con su número): vuelve a por probar en lugar de duplicarse. Si el script dice
    "NO SE PUEDE PROBAR", contale por qué y no abras nada. Nunca abras el exe de `bin\` ni lo mandes a probar desde
@@ -265,6 +264,14 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
    lleva su tema. Lo que el usuario va a notar suma una línea en la versión más nueva de `Assets/News` (todos los idiomas,
    ver "Novedades" en docs/interfaz.md), que puede ser la próxima, aún sin publicar. Al publicar, esa versión tiene que ser
    la de `Directory.Build.props`.
-8. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.
-9. Las skills de este proyecto (`.claude/skills`) llevan el prefijo `xt_`, en la carpeta y en su `name`
+8. **Un archivo, una sesión a la vez** (regla estricta del usuario, 2026-11-03: se perdieron cambios). Un hook
+   (`tools\bloqueos.ps1`, en `.claude\settings.json`) le da cada archivo que tocás a tu sesión hasta que termina el
+   turno: otra sesión que quiera editarlo, o correr un comando que lo nombre, espera sola a que lo sueltes. Lo que
+   cambie un comando o un script también queda tomado, y si pisó algo de otra sesión el hook avisa. Si te dice
+   BLOQUEADO o ATENCIÓN: no lo esquives (ni con shell, ni Write, ni git, ni otro script), no deshagas nada, terminá el
+   turno y avisale al usuario qué quedó sin hacer. `git restore`, `stash`, `clean`, `reset --hard` y `checkout --`
+   están bloqueados: tiran cambios sin commitear que pueden ser de otro; si hacen falta, los corre el usuario.
+   `tools\bloqueos.ps1 -Lista` muestra quién tiene qué; antes de un script que reescribe muchos archivos, miralo.
+9. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.
+10. Las skills de este proyecto (`.claude/skills`) llevan el prefijo `xt_`, en la carpeta y en su `name`
    (`xt_revisar-pruebas`; decisión del usuario, 2026-11-03).

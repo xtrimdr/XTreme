@@ -140,7 +140,7 @@ Diálogo que aparece al arrancar (sin proyecto no se puede hacer nada) y desde e
   para los que ya no existen ("No se encontró la carpeta").
 - **Abrir carpeta…** (selector nativo de Windows): una carpeta vacía crea un proyecto ahí; una con
   proyecto lo abre. En nativo además: una carpeta de la web ofrece importarla.
-- **Carpeta de proyectos**: por defecto `Documentos\XTreme Proyectos`, se cambia desde el pie del diálogo.
+- **Carpeta de proyectos**: `Documentos\XTreme Proyectos` (o la de `projectsRoot` en `config.json`), donde van los nuevos. El diálogo ya no la muestra ni la cambia (pedido del usuario, 2026-11-03): la lista trae todos los proyectos creados o abiertos (`RecentProjects`, hasta 500), estén donde estén, cada uno con su carpeta.
 - Renombrar o duplicar el proyecto abierto guarda antes lo pendiente y pausa el autoguardado; no se
   mueve la carpeta mientras se está guardando una toma.
 - Mientras abre, progreso de carga de tomas.

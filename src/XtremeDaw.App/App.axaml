@@ -722,6 +722,10 @@
     <Style Selector="Button.danger:pointerover, Button.discard:pointerover, Button.purge:pointerover, Button.rec-stop:pointerover">
       <Setter Property="Effect" Value="{StaticResource RecGlow}" />
     </Style>
+    <!-- an effect's ON glows while on, pointer or not (asked by the user): on or off reads at a glance -->
+    <Style Selector="Button.chip.power.on, Button.slothead.power-on">
+      <Setter Property="Effect" Value="{DynamicResource HoverGlow}" />
+    </Style>
     <!-- text never glows: on transparent buttons (whole rows, links, check boxes) the glow would trace the letters.
          Rows answer with their own hover; a check box glows only its box -->
     <Style Selector="Button.swatch:pointerover, Button.rowmain:pointerover, Button.tplmain:pointerover, Button.link:pointerover, ToggleButton.flat:pointerover, CheckBox:pointerover, RadioButton:pointerover">
@@ -733,6 +737,13 @@
     </Style>
     <Style Selector="CheckBox:pointerover /template/ Border#NormalRectangle">
       <Setter Property="Effect" Value="{DynamicResource HoverGlow}" />
+    </Style>
+
+    <!-- no tooltips on the buttons of the mixer, the piano roll and Mastering (asked by the user, 2026-11-03): at the
+         bottom of the window their tooltip window opened by the pointer and a press could land on it instead of the
+         button. The class goes on each view's root, which moves with it to its own window -->
+    <Style Selector=".notips :is(Button)">
+      <Setter Property="ToolTip.ServiceEnabled" Value="False" />
     </Style>
 
     <!-- the save button while there is something to save (asked by the user): it glows and breathes so the pending

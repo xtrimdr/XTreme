@@ -52,7 +52,8 @@ public sealed class MixerMeter : Control
     /// <summary>Each bar's width and the gap between the two (px); a mono bar takes the pair's width.</summary>
     readonly double barW, pairW;
     const double Gap = 1;
-    readonly string barTip, holdTip;
+    /// <summary>Only over the readout: over the bars, beside the fader, a tooltip gets in the way.</summary>
+    readonly string holdTip;
     double levelL, levelR, rmsL, rmsR, hold;
     bool mono, clipL, clipR, overHead;
     /// <summary>The readout as shown, in tenths of a dB (int.MinValue = −∞), and its text.</summary>
@@ -66,9 +67,7 @@ public sealed class MixerMeter : Control
         pairW = 2 * barW + Gap;
         Width = pairW + 2 + ScaleW;
         Cursor = Hand;
-        barTip = Loc.T("meter.mixer.tip");
         holdTip = Loc.T("meter.mixer.hold.tip");
-        ToolTip.SetTip(this, barTip);
     }
 
     /// <summary>The dB marks beside the bars; off, the meter is as wide as its bars and its readout is in whole dB.</summary>
@@ -142,7 +141,7 @@ public sealed class MixerMeter : Control
         bool on = e.GetPosition(this).Y < BarTop;
         if (on == overHead) return;
         overHead = on;
-        ToolTip.SetTip(this, on ? holdTip : barTip);
+        ToolTip.SetTip(this, on ? holdTip : null);
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)

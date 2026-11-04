@@ -146,7 +146,7 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 | `Border.dialog`, `TextBlock.dialog-title`, `Scrim` | la tarjeta de un diálogo, su título (16 SemiBold) y el fondo que oscurece la ventana. Anchos: 440 una pregunta, 512 un formulario, 640 una lista o lectura (Configuración, Proyectos y Ayuda, los suyos) |
 | `Border.notice` + `TextBlock.notice` / `TextBlock.icon.notice` | **el** aviso dentro de un diálogo (un error, un archivo que ya existe, un permiso): caja `Raised` con el signo de advertencia en acento y el texto en `Fg`. Nunca en rojo. Un error de una línea bajo un campo, solo `TextBlock.notice` |
 | `Button.chip.purge` | "Borrar no usadas": contorno tenue que se pone rojo con el hover |
-| `PowerButton` (`Button.chip.power`) | **el** ON/OFF de un efecto, en todo lugar (inspector, Color, mixer, Mastering, banda del EQ): acento lleno prendido, contorno tenue apagado; el tooltip sigue al estado |
+| `PowerButton` (`Button.chip.power`) | **el** ON/OFF de un efecto, en todo lugar (inspector, Color, mixer, Mastering, banda del EQ): acento lleno y con el glow prendido (pedido del usuario, 2026-11-03, con o sin el mouse encima), contorno tenue apagado; el tooltip sigue al estado |
 | `SelectButton` | **el** desplegable (presets, tipos, modos); nunca un `ComboBox` |
 | `TextBlock.label` / `.dim` / `.mono` / `.icon` | etiqueta / secundario / números / ícono |
 | `ToolbarPanel` (código) | barra de herramientas que **nunca se superpone** (pedido del usuario): el primer grupo a la izquierda, los demás a la derecha, y los que no entran bajan a otra fila. Toda barra nueva con varios grupos va así, nunca un `DockPanel` que los pise |
@@ -171,7 +171,13 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
   `Shortcuts.FindWheel` (guardados aparte, "wheel"); no compares `KeyModifiers` a mano para eso.
 - El atajo se muestra **solo en el tooltip**, entre paréntesis y leído de `Shortcuts` (`Shortcuts.Tip(texto, id)`;
   los fijos, registrados en `shortcutTips`). Nunca en el texto visible del control.
-- Todo botón de ícono tiene `ToolTip.Tip`. Los cambios se aplican en vivo (se escucha mientras movés el slider). El
+- Todo botón de ícono tiene `ToolTip.Tip`, salvo en el mixer, el piano roll y Mastering: ahí los botones no muestran tooltip
+  (pedido del usuario, 2026-11-03: abajo de la ventana el tooltip se abría donde ibas a hacer clic y el botón no respondía;
+  la clase `notips` en la raíz de cada vista, estilo en `App.axaml`). **Sin tooltip en lo que se arrastra o se edita con el mouse** (pedido del
+  usuario, 2026-11-03: tapaban lo que ibas a agarrar): perillas, faders, paneos, barras de los medidores, gráficos (EQ, compresor,
+  cruces, envolventes), ondas, divisores y manijas, filas que se arrastran, nombres de las tiras, el timeline y la
+  preview. Lo que explica una perilla va en el tooltip de su etiqueta (`FxCell`); lo que dice el cursor no se repite.
+  Los cambios se aplican en vivo (se escucha mientras movés el slider). El
   paneo se imanta al centro (|x| < 0,04).
 
 ## Menús

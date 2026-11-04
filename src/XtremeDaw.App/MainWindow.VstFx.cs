@@ -274,10 +274,11 @@ public partial class MainWindow
             if (tracks.FirstOrDefault(t => t.Track.Id == owner) is { } track)
             {
                 string listen = ListenBarButton;
-                loaded.Bridge.Command($"toolbar {(listen.Length > 0 ? listen + "|-|" : "")}{ThumbBarButton}");
+                loaded.Bridge.Command($"toolbar {(listen.Length > 0 ? listen + "|-|" : "")}{ThumbBarButton}|-|{KeyRouteBarButtons}");
                 TellPluginTrack(loaded.Bridge, loaded.Bridge.Name, track.Track);
             }
-            else loaded.Bridge.Command($"toolbar {ThumbBarButton}");
+            else loaded.Bridge.Command($"toolbar {ThumbBarButton}|-|{KeyRouteBarButtons}");
+            TellKeyRoute(loaded.Bridge);
             loaded.Bridge.OpenEditor(TryGetPlatformHandle()?.Handle ?? 0);
         }
         else if (EffectSlot(owner, slotId)?.Vst?.Plugin is { } plugin)
@@ -333,24 +334,6 @@ public partial class MainWindow
         });
         panel.Body.Children.Add(open);
         panel.Body.Children.Add(status);
-    }
-
-    /// <summary>A VST3 slot's section in the Canal tab: ON, "Abrir" and how it is going, in one short line.</summary>
-    void VstSection(SlotOwner o, string id, SlotDrag drag)
-    {
-        string owner = o.OwnerId;
-        VstSlotSettings V() => o.Slot(id)?.Vst ?? GoneVst;
-        // its name alone (asked by the user: the maker adds nothing once it is in the chain)
-        var section = SlotSection(o, id, VstTitle(o.Slots(), id), 1, FxIcon.Vst, () => V().On, on => SlotEdit(o, id, s => s.On = on, "vst.on"), drag);
-        var open = EffectOpenButton(owner, id);
-        var status = new TextBlock { FontSize = 12, Foreground = Palette.Dim, TextWrapping = TextWrapping.Wrap };
-        chainRefresh.Add(() =>
-        {
-            status.Text = EffectStatus(owner, id);
-            open.IsEnabled = EffectStateOf(owner, id) == EffectState.Ready;
-        });
-        section.Children.Add(open);
-        section.Children.Add(status);
     }
 
     /// <summary>

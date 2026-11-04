@@ -51,7 +51,6 @@ public sealed class Fader : Control
         Width = CapW + 4;
         MinHeight = CapH + 24;
         Cursor = new Cursor(StandardCursorType.SizeNorthSouth);
-        ToolTip.SetTip(this, Loc.T("fader.tip"));
         AutomationProperties.SetName(this, Loc.T("fader.name"));
     }
 

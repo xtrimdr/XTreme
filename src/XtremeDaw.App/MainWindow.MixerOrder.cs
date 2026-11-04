@@ -413,7 +413,6 @@ public partial class MainWindow
         var box = new Border { Width = SeparatorW, Margin = new Thickness(StripGap / 2, StripGap), Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Cursor = new Cursor(StandardCursorType.Hand),
             Child = new Grid() };
         ((Grid)box.Child).Children.AddRange([.. glow, line, rotated, eye]);
-        ToolTip.SetTip(box, Loc.T("separator.strip.tip"));
         mx.Refresh.Add(() =>
         {
             var s = S();

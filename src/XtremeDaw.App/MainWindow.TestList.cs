@@ -7,7 +7,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App;
 
 /// <summary>
-/// The "Para probar" list in a test copy (<see cref="TestList"/>): the button in the title bar with what is left to
+/// The "Banco de pruebas" list in a test copy (<see cref="TestList"/>): the button in the title bar with what is left to
 /// try, and <see cref="TestListWindow"/>, which opens by itself when something is waiting. Agents add to the list from
 /// other processes, so the file is watched for as long as the window is open. The list is a window of its own, with its
 /// button in the taskbar (asked by the user), like the panels' windows. Outside a test copy none of this runs.

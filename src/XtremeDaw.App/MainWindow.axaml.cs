@@ -968,11 +968,13 @@ public partial class MainWindow : Window
         TickAudioDriver();
         TickTopBar();
         TickInspectorSpectrum();
+        TickInspectorStrip();
         TickMeters();
         // a VST3 effect added, loaded or moved: the rest of the mix waits for it
         engine.UpdateLatency();
         if (Settings.IsVisible) Settings.Meter.Push(m.InL, m.InR);
         if (engine.IsOpen) ShowDsp(engine.LoadPercent);
+        MeasureTrackLoad();
         gapLog.Tick(engine);
 
         if (sel != null)

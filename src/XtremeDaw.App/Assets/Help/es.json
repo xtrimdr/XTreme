@@ -52,9 +52,10 @@
             "Elegí **Video + audio** o **Solo audio**.",
             "Elegí una plantilla, o empezá sin pistas. Las plantillas traen pistas, efectos y los buses de Reverb y Delay.",
             "Para abrir uno que ya existe, tocalo en la lista o usá **Abrir…** y elegí su archivo **.xtp**, esté donde esté.",
-            "Para guardarlo en otro lugar que la carpeta de proyectos, tocá **Guardar en…** antes de crearlo."
+            "Para guardarlo en otra carpeta, tocá **Guardar en…** antes de crearlo."
           ],
           "notes": [
+            "La lista muestra todos los proyectos que creaste o abriste, estén donde estén, con la carpeta de cada uno debajo del nombre.",
             "Para volver a la lista desde un proyecto abierto, tocá el nombre del proyecto en la barra de arriba o abrí **Archivo → Proyectos…**.",
             "Para arrancar directo en un proyecto vacío, apagá **Mostrar al arrancar**, abajo en **Proyectos**, o elegí **Proyecto vacío** en Configuración → Guardado y exportación. **Guardar** te pregunta dónde va."
           ],
@@ -83,11 +84,11 @@
           "intro": "Qué hay en cada zona.",
           "steps": [
             "**Arriba**: modo del proyecto, nombre, guardar, deshacer, herramientas y **Exportar**.",
-            "**Izquierda**: el canal de la pista elegida, con su volumen, efectos y envíos. Se pliega con {key:leftPanel}.",
+            "**Izquierda**: el inspector de la pista elegida: su nombre, lo de la pista, lo del clip elegido y, abajo, su tira: paneo, M y S, el fader, los efectos, los envíos y la salida. Los botones de arriba muestran u ocultan el clip y la tira; el borde entre los dos cambia el alto de la tira. Se pliega con {key:leftPanel}.",
             "**Centro**: la vista previa del video y la cámara en vivo.",
             "**Debajo de la vista previa**: el timeline, con las pistas y sus clips. {key:mixer} lo cambia por el mixer.",
             "**Derecha**: lo que es del proyecto: Color, Patrones, Biblioteca e Historial. Se pliega con {key:rightPanel}.",
-            "**Abajo de todo**: reloj, reproducir, grabar, tempo, click, afinador y las vistas Timeline, Piano roll, Mixer y Mastering. Tocar de nuevo la vista activa vuelve al timeline.",
+            "**Abajo de todo**: reloj, reproducir, grabar, tempo, click, afinador y las vistas Timeline, Piano roll, Mixer y Mastering. Tocar de nuevo la vista activa vuelve al timeline. Sin video el timeline está siempre a la vista y su botón no se muestra.",
             "**Maximizar**: {key:maximize} o {icon:E740} le da toda la ventana al panel que tocaste último (video, timeline, piano roll, mixer o mastering). Otra vez, vuelve todo como estaba."
           ],
           "see": ["look", "panel-windows", "shortcuts"]
@@ -390,6 +391,7 @@
             "Arrastrá el archivo al timeline, o tocá **Nueva pista → Importar audio…**.",
             "Para tus carpetas de sonidos, abrí **Biblioteca → Samples** y sumá una carpeta.",
             "Escuchá con **Espacio** y arrastrá el sample a una pista, desde la lista o desde el reproductor: el nombre, o la onda sacándola hacia arriba o abajo.",
+            "Para traer varios, marcalos con **Ctrl** o **Shift** y arrastralos juntos: caen uno abajo del otro, y si no hay pistas libres se crean nuevas.",
             "Elegí **Copiar al proyecto** o **Vincular**. Con **No mostrar más** queda esa opción; se cambia en **Configuración → Guardado y exportación**."
           ],
           "notes": [
@@ -531,7 +533,7 @@
           "intro": "Con varias pistas elegidas, el inspector cambia lo que tienen en común.",
           "steps": [
             "En el timeline, hacé **Ctrl+clic** o **Shift+clic** en los encabezados de las pistas.",
-            "El inspector muestra arriba cuántas elegiste y deja solo lo común: **Mezcla**, **Salida**, los envíos que tienen todas y **Transponer**.",
+            "El inspector muestra arriba cuántas elegiste y deja solo lo común: el fader, el paneo, **Salida**, los envíos que tienen todas y **Transponer**.",
             "Mové un control: el mismo valor va a todas, y **Deshacer** las vuelve juntas.",
             "Si un valor no coincide entre ellas, el control dice **Varios** hasta que lo cambies.",
             "Las pistas bloqueadas no cambian: el aviso de arriba dice cuántas quedan afuera."
@@ -552,6 +554,7 @@
           ],
           "notes": [
             "{wheel:wheelZoom} sobre el mixer cambia el ancho de los canales.",
+            "**Efectos** y **Envíos**, arriba, muestran u ocultan esa sección en todas las tiras. Arrastrá la línea de abajo de una lista para agrandarla o achicarla; doble clic la ajusta a la lista más larga. Clic derecho en el botón: el mismo ajuste o el alto por defecto.",
             "**MONO**, en el master, sirve para comprobar la mezcla en mono.",
             "Clic derecho en una tira: las mismas acciones que en el encabezado de la pista."
           ],
@@ -565,9 +568,9 @@
           "intro": "Cada canal tiene su lista de efectos, que suena de arriba a abajo.",
           "steps": [
             "Elegí la pista.",
-            "Tocá **+ Efecto** en la bandeja **Efectos** del canal, o el **+** de su tira en el mixer.",
+            "Tocá el **+** de **Efectos** en la tira del inspector, o el de su tira en el mixer.",
             "Elegí el efecto por categoría. Tus VST están al final.",
-            "Arrastrá un efecto por su manija para cambiarlo de lugar.",
+            "Hacé clic en un efecto de la lista para abrirlo en su ventana. Arrastralo para cambiarlo de lugar.",
             "El **⋯** o el clic derecho lo apaga, duplica o elimina."
           ],
           "notes": [
@@ -616,7 +619,7 @@
             "Sigue el tempo del proyecto y cae en el tiempo aunque arranques en cualquier lugar.",
             "En los controles finos: **Ataque** (cuánto tarda en bajar) y **Desplazar** (antes o después del tiempo).",
             "El gráfico muestra la curva sobre el sonido (lo que entra, tenue; lo que sale, en color) y una línea que la recorre con lo que suena. Con **Sidechain**, la barra de la derecha es el nivel de la pista que manda: dispara al pasar la raya de acento.",
-            "Con **Sidechain** cada golpe decide cuándo baja y las perillas pasan a ser las de un compresor: **Umbral** (Auto: la mitad del pico reciente), **Ataque**, **Hold** y **Release**.",
+            "Con **Sidechain** la otra pista le da forma: cuanto más fuerte suena, más baja (un golpe suave baja menos, una nota larga lo mantiene abajo) y vuelve con la **Curva**. Las perillas pasan a ser las de un compresor: **Umbral** (Auto: 24 dB debajo de su pico reciente; a 24 dB sobre el umbral baja toda la profundidad), **Ataque**, **Hold** y **Release**.",
             "El medidor de reducción de la tira muestra cuánto baja."
           ],
           "see": ["sidechain", "add-fx", "comp-presets"]
@@ -702,7 +705,7 @@
           "steps": [
             "En el mixer, clic derecho → **Nuevo bus / canal FX**. Las plantillas ya traen Reverb y Delay.",
             "En el bus, tocá **+** y agregá **Reverb** o **Delay**.",
-            "Elegí una pista y tocá **+ Envío** en **Salida y envíos**. Tildá el bus.",
+            "Elegí una pista y tocá el **+** de **Envíos** en la tira del inspector. Tildá el bus.",
             "Subí el nivel del envío hasta que se oiga como querés."
           ],
           "notes": [
@@ -753,7 +756,7 @@
           "intro": "Cambia el tono sin cambiar el largo.",
           "steps": [
             "Elegí la pista.",
-            "Mové **Tono** en la sección **Transponer** del canal: de −12 a +12 semitonos.",
+            "En el inspector, arrastrá para arriba o para abajo el valor de **Transponer** (en la sección del clip), usá la ruedita o hacé doble clic para escribirlo: de −12 a +12 semitonos.",
             "Esperá el aviso: mientras se calcula, la pista suena como estaba."
           ],
           "notes": [
@@ -1015,7 +1018,7 @@
           "intro": "Elegí la escala de la canción y escribí acordes con un clic.",
           "steps": [
             "En el **Piano roll**, o en el teclado virtual, tocá **Escala** y elegí la tónica y la escala.",
-            "Las filas de la escala se resaltan, y las notas que escribís o movés van solas a la escala.",
+            "El piano roll muestra solo las filas de la escala, y las notas que escribís o movés van solas a ella. Una nota que ya estaba fuera de la escala sigue a la vista, en su fila.",
             "Prendé **Acordes** ({key:chordTool}) y hacé clic en una nota: escribe el acorde que le corresponde en la escala.",
             "Sobre el acorde aparece el selector: **F** es la posición fundamental y **1**, **2** y **3**, las inversiones. También con las teclas 1 a 4, o con {wheel:wheelHeight} sobre el acorde (o sobre el que vas a escribir). Cada inversión queda cerca de donde estaba: el acorde no se va para arriba.",
             "Arrastrá el acorde para moverlo: arriba y abajo sigue la escala, así que cambia de acorde sin salirse de tono."
@@ -1338,7 +1341,7 @@
           "notes": [
             "En **Atajos de teclado** está la lista completa y se cambia cualquiera.",
             "En **Distribución de teclas** elegís las teclas de Cubase, Logic Pro, FL Studio, Reaper o Studio Pro. Tus cambios quedan guardados en cada una. Lo que ese DAW no tiene sigue con la tecla de XTreme.",
-            "Con la ventana de un plugin adelante andan los del grupo **Transporte**, salvo mientras escribís en un campo de texto del plugin."
+            "Con la ventana de un plugin adelante andan los del grupo **Transporte**, salvo mientras escribís en un campo de texto del plugin. Si un plugin no se lleva bien con eso, en la barra de su ventana **Teclas al plugin** le deja todas las teclas y **Teclas a XTreme** las manda todas a la app (salvo Alt+Tab y Alt+F4). Con los dos apagados vuelve a lo de siempre. Vale para todas las ventanas de plugins."
           ],
           "settings": "shortcuts"
         },

@@ -9,8 +9,8 @@ namespace XtremeDaw.App;
 /// <summary>
 /// The folded Canal tab's column also shows the selected channel (asked by the user): under the open/show buttons, one
 /// icon per section of the channel in the order it sounds (Mezcla, the insert slots, the sends, Transponer), with a
-/// line between those groups like the tab's trays, in accent when it's on and faint when it's off. A click opens the
-/// tab, unfolds that section and scrolls it to the top. Rebuilt only when the list of sections changes; edits just
+/// line between those groups, in accent when it's on and faint when it's off. A click opens the inspector (and an
+/// effect, its window). Rebuilt only when the list of sections changes; edits just
 /// repaint it.
 /// </summary>
 public partial class MainWindow
@@ -81,21 +81,11 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>Opens the Canal tab on a section: unfolded and scrolled to the top of the tab.</summary>
+    /// <summary>Opens the inspector on a section: an effect in its window; the mix, the sends and Transponer are in
+    /// sight once it opens.</summary>
     void GoToSection(string title)
     {
         SetInspectorCollapsed(false);
-        // a section inside a folded tray needs its tray open too
-        if (chainSections.Contains(title)) SetTrayCollapsed(chainTray, ChainTrayId, false);
-        if (sendSections.Contains(title)) SetTrayCollapsed(sendsTray, SendsTrayId, false);
-        // a send is a fixed row, never folded
-        if (!sendRows.ContainsKey(title) && IsCollapsed(title)) { SetSectionCollapsed(title, false); SaveCollapsedSections(); }
-        Dispatcher.UIThread.Post(() =>
-        {
-            Control? target = inspectorSections.TryGetValue(title, out var section) ? section.Header : sendRows.GetValueOrDefault(title);
-            if (target == null || inspectorExpanded.Children[^1] is not ScrollViewer scroll
-                || scroll.Content is not Visual content || target.TranslatePoint(new Point(0, 0), content) is not { } at) return;
-            scroll.Offset = new Vector(scroll.Offset.X, Math.Max(0, at.Y));
-        }, DispatcherPriority.Loaded);
+        if (chainSections.Contains(title)) OpenRailSlot(title);
     }
 }

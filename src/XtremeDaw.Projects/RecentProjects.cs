@@ -3,12 +3,16 @@ using System.Text.Json;
 
 namespace XtremeDaw.Projects;
 
-/// <summary>Recently opened native projects, in %APPDATA%\XTreme\recientes.json.</summary>
+/// <summary>
+/// Every project created, opened or saved somewhere else, most recent first, in %APPDATA%\XTreme\recientes.json.
+/// The manager lists projects from here, wherever they live, so it keeps far more than a "recent" menu would.
+/// </summary>
 public static class RecentProjects
 {
     public sealed record Entry(string Dir, string Name, DateTime OpenedAt);
 
-    const int Max = 10;
+    /// <summary>Enough for every project a user makes; past it the oldest is dropped (it can still be opened with "Abrir…").</summary>
+    const int Max = 500;
 
     static string FilePath => Path.Combine(AppConfig.Dir, "recientes.json");
 

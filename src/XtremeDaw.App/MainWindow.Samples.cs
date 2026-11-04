@@ -144,7 +144,7 @@ public partial class MainWindow
         sampleEmpty.Children.Add(sampleEmptyAdd);
         sampleList.Picked += PickSample;
         sampleList.Toggled += ToggleSampleFolder;
-        sampleList.Activated += f => _ = InsertSample(f);
+        sampleList.Activated += f => _ = InsertSamples(f);
         sampleList.ListenPressed += ToggleSampleListen;
         sampleList.FavoritePressed += ToggleSampleFavorite;
         sampleList.MenuRequested += OpenSampleMenu;
@@ -189,7 +189,7 @@ public partial class MainWindow
         };
         sampleScrubber.CarryRequested += e =>
         {
-            if (samplePicked is { } f) DragSample(f, e);
+            if (samplePicked is { } f) DragSample([f], e);
         };
         // The name and the details carry the file too; the buttons, the wave and the slider keep their presses.
         Point? from = null;
@@ -202,7 +202,7 @@ public partial class MainWindow
         {
             if (from is not { } start || Point.Distance(start, e.GetPosition(box)) < LibraryDragStart) return;
             from = null;
-            if (samplePicked is { } f) DragSample(f, e);
+            if (samplePicked is { } f) DragSample([f], e);
         };
 
         sampleLoop.Content = IconText("\uE8EE", Loc.T("smp.loop"));
@@ -462,8 +462,17 @@ public partial class MainWindow
         if (sampleFilter == "favorites") RefreshSamples();
     }
 
-    /// <summary>At the playhead, on the selected track when that stretch is free, like a take.</summary>
-    Task InsertSample(SampleFile f) => ImportAudio([f.Path], engine.PositionSec, sel?.Track.Id, BringsPicture(f.Path));
+    /// <summary>At the playhead, on the selected track when that stretch is free, like a take. Several go one under the
+    /// other from the selected track down, as when they are dropped there.</summary>
+    Task InsertSamples(IReadOnlyList<SampleFile> files, bool? picture = null)
+    {
+        List<string> paths = [.. files.Select(f => f.Path)];
+        bool video = picture ?? BringsPicture(paths[0]);
+        if (paths.Count == 1) return ImportAudio(paths, engine.PositionSec, sel?.Track.Id, video);
+        double at = engine.PositionSec;
+        var targets = store == null ? null : AudioImport.Stack(store.Project, Timeline.TracksFrom(sel?.Track.Id), at, [.. files.Select(f => Math.Max(0, f.DurationSec))]);
+        return ImportAudio(paths, at, sel?.Track.Id, video, targets);
+    }
 
     /// <summary>A video brings its picture unless the user turned that off or the project is audio only.</summary>
     bool BringsPicture(string path) => MediaDecoder.IsVideo(path) && samplePicture.IsChecked == true && !AudioOnly;
@@ -472,13 +481,20 @@ public partial class MainWindow
     /// Carries the file as a plain Windows file drop too, so a plugin's window (a sampler, a drum machine) takes it like
     /// one dragged from the Explorer; the timeline and the native sampler read <see cref="SampleDrag"/> first.
     /// </summary>
-    async void DragSample(SampleFile f, PointerEventArgs e)
+    async void DragSample(IReadOnlyList<SampleFile> files, PointerEventArgs e)
     {
-        var item = DataTransferItem.Create(SampleDrag, f.Path);
-        if (await StorageProvider.TryGetFileFromPathAsync(new Uri(f.Path)) is { } file) item.SetFile(file);
         var data = new DataTransfer();
+        var item = DataTransferItem.Create(SampleDrag, string.Join('\n', files.Select(f => f.Path)));
         data.Add(item);
-        await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy);
+        for (int k = 0; k < files.Count; k++)
+        {
+            if (await StorageProvider.TryGetFileFromPathAsync(new Uri(files[k].Path)) is not { } file) continue;
+            if (k == 0) item.SetFile(file);
+            else data.Add(DataTransferItem.CreateFile(file));
+        }
+        carried = files;
+        try { await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy); }
+        finally { carried = []; }
     }
 
     /// <summary>Starts a drag; MainWindow.Import.cs receives it.</summary>
@@ -501,10 +517,10 @@ public partial class MainWindow
         var items = new List<Control>();
         if (row.File is { } f)
         {
-            items.Add(MenuAction(Loc.T("smp.menu.insert"), () => InsertSample(f), icon: ""));
+            items.Add(MenuAction(Loc.T("smp.menu.insert"), () => InsertSamples(sampleList.WithMarked(f)), icon: ""));
             if (f.IsVideo)
             {
-                items.Add(MenuAction(Loc.T("smp.menu.insertAudio"), () => ImportAudio([f.Path], engine.PositionSec, sel?.Track.Id, false)));
+                items.Add(MenuAction(Loc.T("smp.menu.insertAudio"), () => InsertSamples(sampleList.WithMarked(f), false)));
             }
             items.Add(MenuAction(Loc.T("smp.menu.sampler"), () => SampleToSampler(f.Path)));
             items.Add(MenuAction(Loc.T("smp.menu.granular"), () => SampleToGranular(f.Path)));

@@ -73,7 +73,8 @@ static class SidechainChecks
         var (mix, _) = MixRenderer.Render(tracks, bus, sec, Sr, limit: false);
         int after = hit + (int)(0.004 * Sr), before = hit - 100;
         Row("Sidechain: bombeo en la exportación", $"{mix[after] / mix[before]:0.00}", "< 0.30", mix[after] / mix[before] < 0.3);
-        int back = hit + (int)((pump.Pump.KeyMs + 10) / 1000 * Sr);
+        // the automatic threshold fades with the key's peak, so the way back ends a little after the release
+        int back = hit + (int)((pump.Pump.KeyMs + 30) / 1000 * Sr);
         Row("Sidechain: bombeo vuelve en su largo", $"{mix[back]:0.000}", "0.250", Math.Abs(mix[back] - 0.25f) < 1e-4);
         Row("Sidechain: antes del golpe intacto", $"{mix[before]:0.000}", "0.250", Math.Abs(mix[before] - 0.25f) < 1e-4);
         var (stem, _) = MixRenderer.Render(tracks, bus, sec, Sr, only: 0, limit: false);
@@ -88,16 +89,25 @@ static class SidechainChecks
         for (int i = 0; i < frames; i++) goneDiff = Math.Max(goneDiff, Math.Abs(gone[i] - plain[i]));
         Row("Sidechain: sin fuente, vuelve al tempo", goneDiff == 0 ? "exacto" : $"{goneDiff:0.0e0}", "exacto", goneDiff == 0);
 
-        // the pump as a compressor: a threshold over the kick never fires, one under it does, and the hold keeps it down
-        float[] Keyed(PumpParams p)
+        // the pump as a compressor: a threshold over the kick never ducks, one well under it ducks all the way, a softer
+        // kick ducks less, and the hold keeps it down
+        float[] Keyed(PumpParams p, float level = 1)
         {
-            var t = new[] { new MixTrackSpec { Id = "pad", Name = "Pad", Clips = tracks[0].Clips, Inserts = [pump with { Pump = p }] }, tracks[1] };
+            var key = level == 1 ? tracks[1] : new MixTrackSpec
+            {
+                Id = "kick", Name = "Kick", Muted = true,
+                Clips = [new MixClipSpec { Left = kick.Select(v => v * level).ToArray(), Right = kick.Select(v => v * level).ToArray(), DurationSec = sec }], Inserts = [],
+            };
+            var t = new[] { new MixTrackSpec { Id = "pad", Name = "Pad", Clips = tracks[0].Clips, Inserts = [pump with { Pump = p }] }, key };
             return MixRenderer.Render(t, bus, sec, Sr, limit: false).Item1;
         }
         var over = Keyed(pump.Pump with { ThresholdDb = 0 });
-        var under = Keyed(pump.Pump with { ThresholdDb = -6, HoldMs = 100 });
+        var under = Keyed(pump.Pump with { ThresholdDb = -30, HoldMs = 100 });
+        var soft = Keyed(pump.Pump with { ThresholdDb = -30 }, 0.25f);
         Row("Sidechain: bombeo, umbral arriba", $"{over[after]:0.000}", "0.250", Math.Abs(over[after] - 0.25f) < 1e-4);
         Row("Sidechain: bombeo, umbral abajo", $"{under[after] / mix[before]:0.00}", "< 0.30", under[after] / mix[before] < 0.3);
+        float softDuck = soft[after] / mix[before];
+        Row("Sidechain: bombeo sigue el nivel", $"{softDuck:0.00}", "0.30–0.90", softDuck > 0.3 && softDuck < 0.9);
         int held = hit + (int)(0.09 * Sr);
         Row("Sidechain: bombeo, hold abajo", $"{under[held]:0.000}", "0.050", Math.Abs(under[held] - 0.05f) < 1e-3);
 

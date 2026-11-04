@@ -8,7 +8,7 @@ namespace XtremeDaw.App.Controls;
 
 /// <summary>
 /// The one ON / OFF of an effect, the same in every place that switches one (inspector card, Color, the mixer's effect
-/// panel, mastering, an EQ band): the power glyph and ON / OFF, solid accent while on, a faint outline while off that
+/// panel, mastering, an EQ band): the power glyph and ON / OFF, solid accent and the hover's glow while on, a faint outline while off that
 /// lights up like an active chip under the pointer. Its colors are App.axaml's <c>Button.chip.power</c> (with
 /// <c>on</c>), so the hover never hides the state. The children are made once and <see cref="Refresh"/> only touches
 /// the text, the class and the tooltip when the state changed, so it can run on every refresh without allocating.

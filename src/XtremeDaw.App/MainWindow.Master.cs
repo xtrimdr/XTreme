@@ -80,7 +80,7 @@ public partial class MainWindow
     int masterCorShown = int.MaxValue;
 
     readonly List<Action> masterRefresh = [];
-    readonly ScrollViewer masteringScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, IsVisible = false };
+    readonly ScrollViewer masteringScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, IsVisible = false, Classes = { "notips" } };
     /// <summary>The module whose panel the editor shows (a slot's id, or <see cref="ClipPage"/> / <see cref="LimPage"/>); kept across rebuilds.</summary>
     string? masterPick;
     PagedPanel? masterEditor;
@@ -120,6 +120,15 @@ public partial class MainWindow
         masteringScroll.SizeChanged += (_, e) =>
         {
             if (e.WidthChanged && masteringScroll.IsVisible) Avalonia.Threading.Dispatcher.UIThread.Post(FitMasteringHeight);
+        };
+        // the content keeps one width whether the scroll bar shows or not (see MasteringGutter)
+        masteringScroll.PropertyChanged += (_, e) =>
+        {
+            if ((e.Property == ScrollViewer.ExtentProperty || e.Property == ScrollViewer.ViewportProperty) && masteringScroll.Content is Border b)
+            {
+                var pad = MasteringGutter();
+                if (b.Padding != pad) b.Padding = pad;
+            }
         };
         MasteringViewButton.Click += (_, _) =>
         {
@@ -183,6 +192,8 @@ public partial class MainWindow
     /// which a double click on the splitter goes back to.
     /// </summary>
     double masteringH = double.NaN;
+    /// <summary>A splitter of the mixer's place is being dragged: the Mastering view leaves its height alone until it lets go.</summary>
+    bool splitterDragging;
     /// <summary>How low the splitters take the Mastering view: its bar and a row of the chain; the rest scrolls.</summary>
     const double MasteringMinH = 140;
 
@@ -192,7 +203,8 @@ public partial class MainWindow
     /// </summary>
     void FitMasteringHeight()
     {
-        if (MasteringOut || masteringScroll.Content is not Control body) return;
+        // a splitter being dragged sets the height: fitting it back on every size change fought the drag
+        if (splitterDragging || MasteringOut || masteringScroll.Content is not Control body) return;
         if (!double.IsNaN(masteringH))
         {
             SetBottomRowHeight(masteringH, MasteringMinH);
@@ -203,6 +215,17 @@ public partial class MainWindow
         double tallest = masterEditor == null ? 0 : Math.Max(0, masterEditor.Tallest - masterEditor.DesiredSize.Height);
         SetBottomRowHeight(Math.Ceiling(body.DesiredSize.Height + tallest + (stackedViews ? 0 : miniRow.Height)), MasteringMinH);
     }
+
+    /// <summary>Room on the content's right for the scroll bar (App.axaml: ScrollBarSize, 8).</summary>
+    const double MasteringScrollRoom = 8;
+
+    /// <summary>
+    /// The room the scroll bar would take, kept on the content's right while the bar is hidden: the chain and the knobs
+    /// wrap by the width, so a bar that came and went with the height changed the width, the wrap and the height again,
+    /// and a window being resized flickered between the two.
+    /// </summary>
+    Thickness MasteringGutter() =>
+        new(0, 0, masteringScroll.Extent.Height > masteringScroll.Viewport.Height + 0.5 ? 0 : MasteringScrollRoom, 0);
 
     /// <summary>The Mastering view in the mixer's place got a height from a splitter (<paramref name="h"/>), or NaN: fitted again.</summary>
     void KeepMasteringHeight(double h)
@@ -277,7 +300,7 @@ public partial class MainWindow
         var body = MasterBody();
         // a panel that grows (the compressor's fine controls) takes the view with it
         body.SizeChanged += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() => { if (masteringScroll.IsVisible) FitMasteringHeight(); });
-        masteringScroll.Content = body;
+        masteringScroll.Content = new Border { Child = body, Padding = MasteringGutter() };
         masteringPin.Child = LiveMeter();
         PickModule(masterPick != null && masterPages.Contains(masterPick) ? masterPick : masterPages.FirstOrDefault());
         RefreshMasterPanel();
@@ -366,7 +389,6 @@ public partial class MainWindow
             for (int k = 0; k < i; k++) if (slots[k].Type == slot.Type) nth++;
             string id = slot.Id;
             var grip = new GripDots { Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
-            ToolTip.SetTip(grip, Loc.T("mix.slot.drag.tip"));
             bool reduces = slot.Type is TrackInserts.Clip or TrackInserts.Limit or TrackInserts.Bands or InsertSlot.CompKind or InsertSlot.GateKind;
             var tile = Tile(id, $"{++n}", slot.Type, SlotTitle(SlotName(slot.Type), nth), SlotHint(slot.Type), () => o.Slot(id)?.On == true,
                 () => SlotEdit(o, id, s => s.On = !s.On, "on"), grip, reduces, out var meter);
@@ -635,7 +657,7 @@ public partial class MainWindow
     Control MasterKnob(string label, double min, double max, double reset, Func<double> get, Func<string> readout, Action<double> set, string tip,
         bool small = false, Func<bool>? enabled = null)
     {
-        var knob = new Knob(small ? 30 : MasterKnobSize, tip) { Min = min, Max = max, ResetTo = reset, HorizontalAlignment = HorizontalAlignment.Center };
+        var knob = new Knob(small ? 30 : MasterKnobSize, label) { Min = min, Max = max, ResetTo = reset, HorizontalAlignment = HorizontalAlignment.Center };
         knob.Changed += set;
         bool editable = store is { ReadOnly: false };
         knob.IsEnabled = editable;
@@ -646,7 +668,7 @@ public partial class MainWindow
             value.Text = readout();
             if (enabled != null) knob.IsEnabled = editable && enabled();
         });
-        var col = FxCell(label, knob, value);
+        var col = FxCell(label, knob, value, tip);
         col.MinWidth = small ? 72 : MasterKnobColW;
         col.Width = FxCellW;
         return col;
@@ -678,7 +700,6 @@ public partial class MainWindow
         }
         body.Children.Add(meters);
         var graph = new MasterBandsGraph { IsEnabled = store is { ReadOnly: false } };
-        ToolTip.SetTip(graph, Loc.T("master.cross.tip"));
         var ps = FxDefs.Params(TrackInserts.Bands);
         FxParam low = ps.First(p => p.Id == "lowX"), high = ps.First(p => p.Id == "highX");
         graph.CrossoverDragged += (isHigh, hz) => FxEdit(o, id, isHigh ? high : low, isHigh ? Math.Round(hz / 100) * 100 : Math.Round(hz));

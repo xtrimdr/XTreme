@@ -50,7 +50,7 @@ public partial class MainWindow
     /// <summary>The default heights of the effects and sends lists (px): four effects and two sends.</summary>
     const double FxListH = 4 * (CompactRowH + 1), SendsListH = 2 * (CompactRowH + 1);
     /// <summary>The most a list can be stretched to (px).</summary>
-    const double ListMaxH = 400;
+    const double ListMaxH = 600;
 
     /// <summary>
     /// The compact strips' controls row (px), the same on every strip so faders stay level: the effects and the sends
@@ -76,18 +76,14 @@ public partial class MainWindow
     const double MixerChromeGuess = 92;
     /// <summary>The share of the window the mixer's minimum never goes past, so a small window can still show the timeline.</summary>
     const double MixerMinShare = 0.7;
-    /// <summary>
-    /// Stacked, the share of the place it splits with the timeline: there the header wraps beside the video's column and
-    /// the window's share left the splitter no room to move.
-    /// </summary>
-    const double MixerStackedShare = 0.5;
     double mixerChromeH = MixerChromeGuess;
     /// <summary>What a strip takes besides its fader (px): card margin and border, the grid's margin, head, controls, the fader's margin and the foot.</summary>
     double StripFixedH => StripGap * 2 + 2 + 14 + StripHeadH + StripTopH + 6 + StripFootH;
 
     /// <summary>
     /// The mixer's least height: room for every strip's head, its shown lists and a usable fader, so it grows with the
-    /// lists (dragging a list taller pushes the timeline instead of crushing the faders). Capped in a small window.
+    /// lists (dragging a list taller pushes the timeline instead of crushing the faders). Capped in a small window;
+    /// stacked, by what the timeline above keeps (a share of the place there took the faders' room).
     /// </summary>
     double MixerMinH
     {
@@ -95,7 +91,7 @@ public partial class MainWindow
         {
             if (masteringView || pianoView) return ViewMinH;
             double min = Math.Ceiling(mixerChromeH + StripFixedH + FaderRoomH);
-            if (stackedViews && AudioArea.Bounds.Height > 0) min = Math.Min(min, AudioArea.Bounds.Height * MixerStackedShare);
+            if (stackedViews && AudioArea.Bounds.Height > 0) min = Math.Min(min, AudioArea.Bounds.Height - TimelineMinH);
             else if (Root.Bounds.Height > 0) min = Math.Min(min, Root.Bounds.Height * MixerMinShare);
             return Math.Max(ViewMinH, min);
         }
@@ -127,6 +123,8 @@ public partial class MainWindow
         /// <summary>Every strip's controls row and the compact lists' rows with what they hold, resized in place (<see cref="ApplyMixerHeights"/>).</summary>
         public readonly List<RowDefinition> TopRows = [];
         public readonly List<(RowDefinition Row, Control What, bool Head)> FxRows = [], SendRows = [];
+        /// <summary>The effects and sends lists themselves, to fit their sections to the longest one (<see cref="FitListH"/>).</summary>
+        public readonly List<Panel> FxLists = [], SendLists = [];
         /// <summary>The folders' and buses' meters, by node id (<see cref="Audio.PlaybackEngine.Node"/>), and what writes a bus's "Comprime".</summary>
         public readonly List<(string Id, MixerMeter Meter, Action<double>? Gr)> NodeMeters = [];
         /// <summary>What a strip changes with its width (the zoom) without being rebuilt.</summary>
@@ -217,9 +215,16 @@ public partial class MainWindow
         bottom.MinHeight = TimelineMinH;
         bottom.Height = new GridLength(timelineH);
         // Like the web's resize handle: the bottom view keeps its height, double click goes back to the default.
-        BottomSplitter.DragCompleted += (_, _) => SaveBottomHeight();
+        BottomSplitter.DragStarted += (_, _) => splitterDragging = true;
+        AudioSplitter.DragStarted += (_, _) => splitterDragging = true;
+        BottomSplitter.DragCompleted += (_, _) =>
+        {
+            splitterDragging = false;
+            SaveBottomHeight();
+        };
         AudioSplitter.DragCompleted += (_, _) =>
         {
+            splitterDragging = false;
             double h = AudioArea.RowDefinitions[2].ActualHeight;
             if (masteringView) { KeepMasteringHeight(h); return; }
             mixerH = h;
@@ -347,7 +352,6 @@ public partial class MainWindow
         if (!stackedViews) ApplyBottomRow();
         MixerHost.IsVisible = mixer;
         ApplyViewHosts();
-        ToolTip.SetTip(BottomSplitter, Loc.T(MixerHere ? "splitter.mixer" : "splitter.timeline"));
         TimelineViewButton.Classes.Set("on", !mixer);
         MixerViewButton.Classes.Set("on", mixer);
         SaveViewPref(mixer ? "timelineHeight" : "mixerHeight", (mixer ? timelineH : mixerH).ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -398,8 +402,8 @@ public partial class MainWindow
         row.Children.Add(new Border { Width = 1, Height = 20, Background = Palette.Line });
         row.Children.Add(panButton = BuildPanMenu());
         row.Children.Add(AddSeparatorButton());
-        row.Children.Add(SectionSwitch(FxIcon.Eq, "mixer.fx", () => mixerFx, v => mixerFx = v, "mixer.fx"));
-        row.Children.Add(SectionSwitch(FxIcon.Reverb, "mixer.sends", () => mixerSends, v => mixerSends = v, "mixer.sends"));
+        row.Children.Add(SectionSwitch(FxIcon.Eq, "mixer.fx", () => mixerFx, v => mixerFx = v, false));
+        row.Children.Add(SectionSwitch(FxIcon.Reverb, "mixer.sends", () => mixerSends, v => mixerSends = v, true));
 
         // the strips' width, like the timeline's zoom bar (the header's own refreshers survive strip rebuilds)
         var zoom = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
@@ -493,9 +497,10 @@ public partial class MainWindow
 
     /// <summary>
     /// A switch of the mixer's header (asked by the user): "Efectos" or "Envíos" shows or hides that section on every
-    /// strip. <paramref name="key"/> names its text, its tooltips (".show" / ".hide") and its config.json entry.
+    /// strip. <paramref name="key"/> names its text, its tooltips (".show" / ".hide") and its config.json entry. Its
+    /// right click sets the section's height on every strip: fitted to the longest list, or back to the default.
     /// </summary>
-    ToggleButton SectionSwitch(string iconKey, string key, Func<bool> get, Action<bool> set, string configKey)
+    ToggleButton SectionSwitch(string iconKey, string key, Func<bool> get, Action<bool> set, bool sends)
     {
         var icon = FxIcon.Create(iconKey, 12);
         icon.VerticalAlignment = VerticalAlignment.Center;
@@ -505,15 +510,33 @@ public partial class MainWindow
         b.Click += (_, _) =>
         {
             set(!get());
-            SaveViewPref(configKey, get() ? "on" : "off");
+            SaveViewPref(key, get() ? "on" : "off");
             ApplyMixerHeights();
             RefreshMixer();
         };
+        // the toggle may take the release as its own: listened to even when handled
+        b.AddHandler(PointerReleasedEvent, (object? _, PointerReleasedEventArgs e) =>
+        {
+            if (e.InitialPressMouseButton != MouseButton.Right) return;
+            e.Handled = true;
+            void Height(double h)
+            {
+                // a hidden section comes back to show the height it got
+                if (!get()) { set(true); SaveViewPref(key, "on"); }
+                SetListH(sends, h, true);
+                RefreshMixer();
+            }
+            OpenAnchoredMenu(Popup(new object[]
+            {
+                MenuAction(Loc.T("mixer.section.fit"), () => { Height(FitListH(sends)); return Task.CompletedTask; }, icon: ""),
+                MenuAction(Loc.T("mixer.section.default"), () => { Height(sends ? SendsListH : FxListH); return Task.CompletedTask; }, icon: ""),
+            }, 220), b);
+        }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
         headerRefresh.Add(() =>
         {
             b.IsChecked = get();
             FxIcon.SetColor(icon, get() ? Palette.Accent : Palette.Faint);
-            ToolTip.SetTip(b, Loc.T(get() ? key + ".hide" : key + ".show"));
+            ToolTip.SetTip(b, Loc.T(get() ? key + ".hide" : key + ".show") + " · " + Loc.T("mixer.section.tip"));
         });
         return b;
     }
@@ -577,11 +600,11 @@ public partial class MainWindow
 
     void RefreshMixer()
     {
-        if (!mixerView && !MasteringOut) return;
-        miniTimeline.SetTracks(tracks);
-        if (masteringView || MasteringOut)
+        if (mixerView || MasteringOut) miniTimeline.SetTracks(tracks);
+        bool stripsShown = mixerView && !masteringView;
+        if (!stripsShown || MasteringOut)
         {
-            // an effect's window over the Mastering view follows its slot
+            // an effect's window opened from the inspector, the timeline or the Mastering view follows its slot
             bool quiet = syncing;
             syncing = true;
             try { if (slotWindowRefresh is { } open) foreach (var r in open) r(); }
@@ -810,6 +833,8 @@ public partial class MainWindow
         l.TopRows.Clear();
         l.FxRows.Clear();
         l.SendRows.Clear();
+        l.FxLists.Clear();
+        l.SendLists.Clear();
         l.NodeMeters.Clear();
         l.Resize.Clear();
         l.Order.Top.Clear();
@@ -947,7 +972,7 @@ public partial class MainWindow
         bool empty = !t.Track.HasContent;
         bool Silent() => empty || t.Silenced || (tracks.Any(x => x.Track.HasContent && x.Soloed) && !t.Soloed);
         var name = new TextBlock { Text = t.Track.Name, FontSize = 11, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent };
-        mx.Refresh.Add(() => { name.Text = t.Track.Name; name.Foreground = Silent() ? Palette.Faint : Palette.Fg; ToolTip.SetTip(name, Loc.T("mix.name.tip", t.Track.Name)); });
+        mx.Refresh.Add(() => { name.Text = t.Track.Name; name.Foreground = Silent() ? Palette.Faint : Palette.Fg; });
         RenameOnDoubleClick(name, () => RenameTrackIn(t, name));
         box.PointerReleased += (_, e) =>
         {
@@ -1146,7 +1171,6 @@ public partial class MainWindow
             double v = panOf();
             pan.Value = v;
             pan.Readout = ValueFormat.PanShort(v);
-            ToolTip.SetTip(pan, Loc.T("tl.tip.pan", ValueFormat.Pan(v)));
         });
         Grid.SetRow(pan, g.RowDefinitions.Count); g.RowDefinitions.Add(new RowDefinition(PanRowH, GridUnitType.Pixel)); g.Children.Add(pan);
 
@@ -1203,7 +1227,6 @@ public partial class MainWindow
                 row.Child = null;
                 row.Child = new Panel { Children = { line, grBar } };
             }
-            ToolTip.SetTip(row, Loc.T(slot.Type == InsertSlot.VstKind ? "mix.list.vst.tip" : "mix.list.fx.tip", name));
             row.Tag = id;
             row.PointerReleased += (_, e) =>
             {
@@ -1239,7 +1262,7 @@ public partial class MainWindow
     }
 
     /// <summary>The compact strip's sends: a bar per bus in the list of <paramref name="router"/> (a track or a folder), its power switch turning it on or off.</summary>
-    StackPanel CompactSends(Router router)
+    StackPanel CompactSends(Router router, List<Action>? refresh = null, Action<string, Control>? rowAdded = null)
     {
         var sends = new StackPanel { Spacing = 1 };
         foreach (var bus in SendTargets(router))
@@ -1248,7 +1271,7 @@ public partial class MainWindow
             (double Level, bool On, bool Pre) S() => router.Get() is { } r ? ProjectBuses.SendOf(r, id) : (0, true, false);
             var bar = new HBar { ResetTo = 0 };
             bar.Changed += v => router.Edit((p, x) => ProjectBuses.SetSend(p, x, id, v, v > 0 ? true : null) != null, $"send.{id}.level");
-            var power = ListPower(() => S().On && S().Level > 0, () => router.Edit((p, x) => ProjectBuses.SetSend(p, x, id, on: !S().On) != null, $"send.{id}.on"));
+            var power = ListPower(() => S().On && S().Level > 0, () => router.Edit((p, x) => ProjectBuses.SetSend(p, x, id, on: !S().On) != null, $"send.{id}.on"), refresh);
             // a send taken before the fader says so after its bar, like the inspector's PRE chip, while the strip has room
             var preTag = new TextBlock { Text = "PRE", Classes = { "mono" }, FontSize = 9, FontWeight = FontWeight.SemiBold, Foreground = Palette.Dim,
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0), IsHitTestVisible = false };
@@ -1285,7 +1308,7 @@ public partial class MainWindow
                 bar.Value = k;
                 ShowPercent(k);
             });
-            mx.Refresh.Add(() =>
+            (refresh ?? mx.Refresh).Add(() =>
             {
                 var (level, on, pre) = S();
                 bar.Value = level;
@@ -1296,6 +1319,7 @@ public partial class MainWindow
                 preTag.Foreground = on ? Palette.Dim : Palette.Faint;
                 ToolTip.SetTip(bar, $"{Loc.T("mix.list.send.tip", bar.Label, $"{level * 100:0}")} · {ValueFormat.Db(level)} · {Loc.T(pre ? "mix.list.send.pre" : "mix.list.send.post")}");
             });
+            rowAdded?.Invoke(id, line);
             sends.Children.Add(line);
         }
         return sends;
@@ -1319,19 +1343,23 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// A compact list in its section: it scrolls when it holds more than fits, and a grip along its bottom stretches the
-    /// section on every strip at once (asked by the user), remembered in config.json; a double click puts it back.
+    /// A compact list in its section: it scrolls when it holds more than fits, and a grip along its bottom (the divider
+    /// to the next section, with a handle in its middle so it is found) stretches the section on every strip at once
+    /// (asked by the user), remembered in config.json; a double click fits it to the longest list, and a second one
+    /// puts the default back.
     /// </summary>
     Control ListBox(Control list, bool sends)
     {
+        if (list is Panel panel) (sends ? mx.SendLists : mx.FxLists).Add(panel);
         var scroll = new ScrollViewer { Content = list, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Margin = new Thickness(0, 0, 0, 6) };
         var line = new Border { Height = 1, Background = Palette.Line, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-        var grip = new Border { Height = 6, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Bottom, Child = line,
+        var handle = new Border { Width = 18, Height = 3, CornerRadius = new CornerRadius(1.5), Background = Palette.Hover,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        var grip = new Border { Height = 6, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Bottom, Child = new Panel { Children = { line, handle } },
             Cursor = new Cursor(StandardCursorType.SizeNorthSouth) };
-        ToolTip.SetTip(grip, Loc.T("mix.list.resize.tip"));
-        grip.PointerEntered += (_, _) => line.Background = Palette.Accent;
-        grip.PointerExited += (_, _) => line.Background = Palette.Line;
+        grip.PointerEntered += (_, _) => line.Background = handle.Background = Palette.Accent;
+        grip.PointerExited += (_, _) => { line.Background = Palette.Line; handle.Background = Palette.Hover; };
         double fromY = 0, fromH = 0;
         bool dragging = false;
         grip.PointerPressed += (_, e) =>
@@ -1340,7 +1368,8 @@ public partial class MainWindow
             e.Handled = true;
             if (e.ClickCount == 2)
             {
-                SetListH(sends, sends ? SendsListH : FxListH, true);
+                double fit = FitListH(sends);
+                SetListH(sends, Math.Round(fit) == (sends ? mixerSendsH : mixerFxH) ? sends ? SendsListH : FxListH : fit, true);
                 return;
             }
             dragging = true;
@@ -1361,6 +1390,15 @@ public partial class MainWindow
         };
         grip.PointerCaptureLost += (_, _) => dragging = false;
         return new Grid { Children = { scroll, grip } };
+    }
+
+    /// <summary>The height (px) that shows the longest effects or sends list of the mixer whole; the default with none.</summary>
+    double FitListH(bool sends)
+    {
+        int n = 0;
+        foreach (var l in (sends ? mixerLayout.SendLists : mixerLayout.FxLists)) n = Math.Max(n, l.Children.Count);
+        // the rows, the 1 px between them and the room the grip keeps under the list (ListBox)
+        return n == 0 ? sends ? SendsListH : FxListH : Math.Min(ListMaxH, n * (CompactRowH + 1) - 1 + 6);
     }
 
     /// <summary>A list section's new height, on every strip (and saved when <paramref name="save"/>).</summary>
@@ -1431,25 +1469,30 @@ public partial class MainWindow
 
     /// <summary>
     /// The power switch of a list's row (asked by the user: the ⏻ of a real switch, the same glyph as an effect panel's
-    /// ON/OFF): accent when on, grey when off.
+    /// ON/OFF): accent and the glow when on (class power-on, App.axaml), grey when off.
     /// </summary>
     Button ListPower(Func<bool> on, Action toggle, List<Action>? refresh = null)
     {
+        const double PowerW = 20;
         var glyph = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        var b = new Button { Classes = { "ghost", "slothead" }, Width = 16, Height = 16, MinHeight = 16, Padding = new Thickness(0), Focusable = false, Margin = new Thickness(0, 0, 3, 0),
-            Cursor = new Cursor(StandardCursorType.Hand), Content = glyph, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
+        // the row's whole left end, full height, with the plain arrow (asked by the user: the hand and the drag's cursor
+        // start after it, so it never reads as part of what is dragged)
+        var b = new Button { Classes = { "ghost", "slothead" }, Width = PowerW, MinHeight = 0, VerticalAlignment = VerticalAlignment.Stretch, Padding = new Thickness(0), Focusable = false,
+            Margin = new Thickness(0, 0, 3, 0), Cursor = new Cursor(StandardCursorType.Arrow), Content = glyph,
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
         b.Click += (_, _) => toggle();
         (refresh ?? mx.Refresh).Add(() =>
         {
             bool lit = on();
             glyph.Foreground = lit ? Palette.Accent : Palette.Faint;
+            b.Classes.Set("power-on", lit);
             ToolTip.SetTip(b, Loc.T(lit ? "mix.list.off" : "mix.list.on"));
         });
         return b;
     }
 
     /// <summary>A row of the compact effects list: its power switch and its name, on a block that lights under the pointer.</summary>
-    Border ListRow(string name, string type, Func<bool> on, Action toggle, Func<string> brief)
+    Border ListRow(string name, string type, Func<bool> on, Action toggle, Func<string> brief, List<Action>? refresh = null)
     {
         // its icon stays at any width (asked by the user); the name and what it is set to come in as the row widens
         var icon = FxIcon.Create(type, 11);
@@ -1459,7 +1502,7 @@ public partial class MainWindow
         var detail = new TextBlock { FontSize = 10.5, Foreground = Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(6, 0, 0, 0), IsVisible = false };
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto") };
-        var power = ListPower(on, toggle);
+        var power = ListPower(on, toggle, refresh);
         g.Children.Add(power);
         Grid.SetColumn(icon, 1); g.Children.Add(icon);
         Grid.SetColumn(text, 2); g.Children.Add(text);
@@ -1480,7 +1523,7 @@ public partial class MainWindow
             icon.HorizontalAlignment = alone ? HorizontalAlignment.Center : HorizontalAlignment.Left;
             icon.Margin = new Thickness(0, 0, alone ? 0 : 5, 0);
         };
-        mx.Refresh.Add(() =>
+        (refresh ?? mx.Refresh).Add(() =>
         {
             bool lit = on();
             text.Foreground = lit ? Palette.Fg : Palette.Faint;

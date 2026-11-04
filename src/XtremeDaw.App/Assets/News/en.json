@@ -1,6 +1,77 @@
 {
   "releases": [
     {
+      "version": "0.9.15",
+      "items": [
+        {
+          "icon": "E962",
+          "title": "Buttons without tooltips",
+          "text": "In the **mixer**, the **piano roll** and **Mastering**, buttons no longer show a tooltip.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "E8B7",
+          "title": "Several samples at once",
+          "text": "In **Library → Samples**, pick several with **Ctrl** or **Shift**. Dragged together they land one under the other, with a ghost per file while you carry them; when there aren't enough tracks, new ones are made.",
+          "topic": "import"
+        },
+        {
+          "icon": "E765",
+          "title": "Plugin keys, your choice",
+          "text": "A plugin window's bar adds **Keys to plugin** and **Keys to XTreme**: they send every key to one side, for when the plugin won't let them through or loses too many. Off, as before.",
+          "topic": "shortcuts"
+        },
+        {
+          "icon": "E9E9",
+          "title": "Resizable mixer sections",
+          "text": "**Effects** and **Sends**, above the mixer, show or hide that section on every strip. Drag the line under each list to make it taller; a double click fits it to the longest list, and the height is remembered.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "EA37",
+          "title": "Piano roll in key",
+          "text": "With a **scale** picked, the piano roll shows only its rows and keys. Notes already off the scale stay, each on its own row.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E9E9",
+          "title": "New inspector",
+          "text": "The inspector is now in sections: the track, the selected clip and, at the bottom, the strip with the fader, pan, M and S, the effects, the sends and the output. Values are compact rows you drag. Show or hide the clip and the strip from the top, and drag the strip's edge to resize it.",
+          "topic": "window"
+        },
+        {
+          "icon": "E8A9",
+          "title": "No redundant view button",
+          "text": "Without video the timeline is always on screen, so the transport's **Timeline** button is hidden: press **Mixer**, **Piano roll** or **Mastering** again to close them.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "E7E8",
+          "title": "Effects on at a glance",
+          "text": "Each effect's **ON** button glows while it is on. The **Mastering** window resizes without flickering.",
+          "topic": "mastering"
+        },
+        {
+          "icon": "E70F",
+          "title": "Fewer tooltips",
+          "text": "Knobs, faders, pan, effect graphs, sampler waveforms and dividers no longer pop up a tooltip on hover, so nothing covers what you are about to grab. What a knob does shows over its name.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "E8F1",
+          "title": "Clearer Library",
+          "text": "In the **Library**, each channel's tags sit in their own box under the name and light up while the channel is in the timeline.",
+          "topic": "library"
+        },
+        {
+          "icon": "E8B7",
+          "title": "All your projects",
+          "text": "**Projects** shows every project you made or opened, in whatever folder it is, with its path under the name.",
+          "topic": "new-project"
+        }
+      ]
+    },
+    {
       "version": "0.9.14",
       "items": [
         {

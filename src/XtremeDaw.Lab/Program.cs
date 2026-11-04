@@ -198,7 +198,7 @@ static class Program
                                            el enlace que abre "Enviar comentarios", sin abrir nada
               reporte comprobar            comprueba ese enlace: textos, codificación y largo
               lista [ver | agregar "qué probar" | arreglado número [--texto t]] --archivo pruebas\lista.json [--copia nombre]
-                                           la lista "Para probar" de las copias de prueba (lo usa tools\probar.ps1)
+                                           el Banco de pruebas de las copias de prueba (lo usa tools\probar.ps1)
               lista comprobar              comprueba la lista sobre un archivo temporal
               atajos comprobar             ninguna distribución de otro DAW repite una tecla
               proyecto abrir    carpeta    abre un proyecto nativo y muestra pistas, avisos e historial

@@ -111,7 +111,7 @@ public partial class MainWindow
         // the knobs: on the beat the curve's; with a sidechain a compressor's, its attack out of the fine controls
         var knobs = new List<Knob>();
         var grid = FxGrid(knobs, 6);
-        void Add(UniformGrid to, List<Knob> list, string pid, Func<bool>? shown)
+        void Add(Panel to, List<Knob> list, string pid, Func<bool>? shown)
         {
             var (cell, knob) = FxKnobCell(o, id, P(pid), refresh, shown: shown);
             to.Children.Add(cell);

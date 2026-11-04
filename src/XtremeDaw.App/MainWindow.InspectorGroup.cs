@@ -46,7 +46,7 @@ public partial class MainWindow
     void InitGroupInspector()
     {
         groupHead.Child = groupNote;
-        Inspector.Children.Add(groupHead);
+        inspectorTop.Children.Add(groupHead);
     }
 
     /// <summary>"3 pistas · los cambios se aplican a todas", or who stays out.</summary>

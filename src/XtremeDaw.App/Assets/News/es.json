@@ -1,6 +1,77 @@
 {
   "releases": [
     {
+      "version": "0.9.15",
+      "items": [
+        {
+          "icon": "E962",
+          "title": "Botones sin tooltip",
+          "text": "En el **mixer**, el **piano roll** y **Mastering** los botones ya no muestran tooltip.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "E8B7",
+          "title": "Varios samples a la vez",
+          "text": "En **Biblioteca → Samples** se marcan varios con **Ctrl** o **Shift**. Arrastrados juntos caen uno abajo del otro, con un fantasma por archivo mientras los llevás; si no alcanzan las pistas, se crean nuevas.",
+          "topic": "import"
+        },
+        {
+          "icon": "E765",
+          "title": "Teclas de los plugins a elección",
+          "text": "La barra de la ventana de un plugin suma **Teclas al plugin** y **Teclas a XTreme**: mandan todas las teclas a un lado, para cuando el plugin no las deja pasar o se las saca de más. Apagados, como hasta ahora.",
+          "topic": "shortcuts"
+        },
+        {
+          "icon": "E9E9",
+          "title": "Secciones del mixer ajustables",
+          "text": "**Efectos** y **Envíos**, arriba del mixer, muestran u ocultan esa sección en todas las tiras. La línea de abajo de cada lista se arrastra para agrandarla; doble clic la ajusta a la lista más larga, y el alto queda guardado.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "EA37",
+          "title": "Piano roll a la escala",
+          "text": "Con una **escala** elegida, el piano roll muestra solo sus filas y sus teclas. Las notas que ya estaban fuera de la escala quedan, cada una en su fila.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E9E9",
+          "title": "Inspector nuevo",
+          "text": "El inspector se ordena en secciones: la pista, el clip elegido y, abajo, la tira con el fader, el paneo, M y S, los efectos, los envíos y la salida. Los valores son filas compactas que se arrastran. El clip y la tira se muestran u ocultan desde arriba, y el alto de la tira se ajusta con su borde.",
+          "topic": "window"
+        },
+        {
+          "icon": "E8A9",
+          "title": "Vistas sin repetir",
+          "text": "Sin video, el timeline está siempre a la vista y el botón **Timeline** del transporte no se muestra: tocar de nuevo **Mixer**, **Piano roll** o **Mastering** lo cierra.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "E7E8",
+          "title": "Efectos prendidos a la vista",
+          "text": "El botón **ON** de cada efecto brilla mientras está prendido. La ventana de **Mastering** cambia de tamaño sin parpadear.",
+          "topic": "mastering"
+        },
+        {
+          "icon": "E70F",
+          "title": "Menos carteles",
+          "text": "Las perillas, los faders, el paneo, los gráficos de los efectos, las ondas del sampler y los divisores ya no muestran un cartel al pasar el mouse: no tapan lo que vas a agarrar. Lo que explica una perilla sale sobre su nombre.",
+          "topic": "mixer"
+        },
+        {
+          "icon": "E8F1",
+          "title": "Biblioteca más clara",
+          "text": "En la **Biblioteca**, los tags de cada canal van en su cajita debajo del nombre y se prenden mientras el canal está en el timeline.",
+          "topic": "library"
+        },
+        {
+          "icon": "E8B7",
+          "title": "Todos tus proyectos",
+          "text": "**Proyectos** muestra todos los proyectos que creaste o abriste, estén en la carpeta que estén, con su ruta debajo del nombre.",
+          "topic": "new-project"
+        }
+      ]
+    },
+    {
       "version": "0.9.14",
       "items": [
         {

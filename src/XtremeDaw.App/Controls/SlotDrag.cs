@@ -41,7 +41,7 @@ public sealed class SlotDrag(double gap, bool sideways = false)
     {
         int index = items.Count;
         items.Add((card, id));
-        handle.Cursor = new Cursor(sideways ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth);
+        handle.Cursor = new Cursor(StandardCursorType.Hand);
         handle.PointerPressed += (_, e) =>
         {
             if (e.Handled || settling || !e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed || card.Parent is not Visual host) return;
@@ -194,7 +194,7 @@ public sealed class GripDots : Control
     {
         Width = 12;
         Height = 16;
-        Cursor = new Cursor(StandardCursorType.SizeNorthSouth);
+        Cursor = new Cursor(StandardCursorType.Hand);
     }
 
     protected override void OnPointerEntered(PointerEventArgs e) { base.OnPointerEntered(e); hover = true; InvalidateVisual(); }

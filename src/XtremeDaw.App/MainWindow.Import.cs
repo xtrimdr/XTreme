@@ -14,7 +14,9 @@ namespace XtremeDaw.App;
 /// copied into the project's media/ or linked where it is (asking first, by default). Each one is decoded in the
 /// background, with a progress toast, and lands on its own track at the playhead, as one undo step; the
 /// selected empty track takes the first one, like a take does. Dropped on the timeline it lands there instead, on the
-/// track under it when that stretch is free. The decoded audio goes straight to the clip, so the file is read once.
+/// track under it when that stretch is free. Several files dropped together go one under the other, from the track
+/// under the pointer down, and the ones that find no free track there make new ones (<see cref="AudioImport.Stack"/>,
+/// drawn as ghosts while they are carried). The decoded audio goes straight to the clip, so the file is read once.
 /// </summary>
 public partial class MainWindow
 {
@@ -23,7 +25,7 @@ public partial class MainWindow
         Patterns = [.. MediaDecoder.AudioExtensions.Concat(MediaDecoder.VideoExtensions).Select(e => "*" + e)],
     };
 
-    /// <summary>A sample carried from the Biblioteca: its path.</summary>
+    /// <summary>Samples carried from the Biblioteca: their paths, one per line, in the order of the list.</summary>
     static readonly DataFormat<string> SampleDrag = DataFormat.CreateStringApplicationFormat("xtreme-sample");
     /// <summary>A take of the project carried from the Biblioteca: its media id. It is already in media/, so nothing is copied.</summary>
     static readonly DataFormat<string> TakeDrag = DataFormat.CreateStringApplicationFormat("xtreme-take");
@@ -33,6 +35,11 @@ public partial class MainWindow
 
     /// <summary>Audio decoded by an import, by media id, for <see cref="ApplyTracks"/> to take instead of reading the file again.</summary>
     readonly Dictionary<string, MediaAudio> importedAudio = [];
+
+    /// <summary>The Biblioteca's files being carried, whose lengths the ghosts take; empty for a drag from elsewhere.</summary>
+    IReadOnlyList<SampleFile> carried = [];
+    /// <summary>The last plan shown while dragging, made again only when the place or the files change.</summary>
+    (double Sec, string? TrackId, int Count, string?[] Targets)? dropPlan;
 
     void InitImport()
     {
@@ -50,10 +57,11 @@ public partial class MainWindow
             // what comes from the Biblioteca only lands on the timeline: letting go of it over the list must do nothing
             bool can = CanImport() && (FromLibrary(e) ? Timeline.DropTarget(e.GetPosition(Timeline), e.KeyModifiers) != null : DroppedFiles(e).Any());
             e.DragEffects = can ? DragDropEffects.Copy : DragDropEffects.None;
-            if (can) Timeline.ShowDrop(e.GetPosition(Timeline), e.KeyModifiers);
-            else Timeline.HideDrop();
+            if (!can) Timeline.HideDrop();
+            else if (e.DataTransfer.Contains(TakeDrag)) Timeline.ShowDrop(e.GetPosition(Timeline), e.KeyModifiers);
+            else ShowDropGhosts(e);
         });
-        AddHandler(DragDrop.DragLeaveEvent, (_, _) => Timeline.HideDrop());
+        AddHandler(DragDrop.DragLeaveEvent, (_, _) => { Timeline.HideDrop(); dropPlan = null; });
         AddHandler(DragDrop.DropEvent, async (_, e) =>
         {
             if (e.DataTransfer.TryGetValue(PatternDrag) is { } pattern)
@@ -67,19 +75,21 @@ public partial class MainWindow
             var files = DroppedFiles(e).ToList();
             e.Handled = true;
             var place = Timeline.DropTarget(e.GetPosition(Timeline), e.KeyModifiers);
+            var targets = place is { } planned ? DropTargets(files, planned.Sec, planned.TrackId) : null;
             Timeline.HideDrop();
+            dropPlan = null;
             if (e.DataTransfer.TryGetValue(TakeDrag) is { } take)
             {
                 if (place is { } spot && CanImport()) await EditTimeline(p => ClipEditing.PlaceMedia(p, take, spot.Sec, spot.TrackId), null);
                 return;
             }
             if (files.Count == 0) return;
-            if (place?.TrackId is { } onto && tracks.FirstOrDefault(t => t.Track.Id == onto) is { Track.IsMidi: true, Track.Instrument: null } && CanImport())
+            if (files.Count == 1 && place?.TrackId is { } onto && tracks.FirstOrDefault(t => t.Track.Id == onto) is { Track.IsMidi: true, Track.Instrument: null } && CanImport())
             {
                 await LoadSample(onto, files[0]);
                 return;
             }
-            if (place is { } at) await ImportAudio(files, at.Sec, at.TrackId, BringsPicture(files[0]));
+            if (place is { } at) await ImportAudio(files, at.Sec, at.TrackId, BringsPicture(files[0]), targets);
             else if (!e.DataTransfer.Contains(SampleDrag)) await ImportAudio(files, picture: BringsPicture(files[0]));
         });
     }
@@ -87,8 +97,37 @@ public partial class MainWindow
     static bool FromLibrary(DragEventArgs e) => e.DataTransfer.Contains(SampleDrag) || e.DataTransfer.Contains(TakeDrag);
 
     static IEnumerable<string> DroppedFiles(DragEventArgs e) =>
-        e.DataTransfer.TryGetValue(SampleDrag) is { } sample ? [sample]
+        e.DataTransfer.TryGetValue(SampleDrag) is { } sample ? sample.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             : (e.DataTransfer.TryGetFiles() ?? []).Select(f => f.TryGetLocalPath()).OfType<string>().Where(f => File.Exists(f));
+
+    /// <summary>Where each file lands, one under the other from <paramref name="trackId"/> down (null = a new track).</summary>
+    string?[]? DropTargets(IReadOnlyList<string> files, double sec, string? trackId)
+    {
+        if (store == null || files.Count == 0) return null;
+        if (dropPlan is { } last && last.Sec == sec && last.TrackId == trackId && last.Count == files.Count) return last.Targets;
+        var lengths = files.Select(f => carried.FirstOrDefault(c => c.Path == f)?.DurationSec is > 0 and var d ? d : 0).ToList();
+        var targets = AudioImport.Stack(store.Project, Timeline.TracksFrom(trackId), sec, lengths);
+        dropPlan = (sec, trackId, files.Count, targets);
+        return targets;
+    }
+
+    /// <summary>The files being carried as ghosts where they would land: on their track, or new rows under the last.</summary>
+    void ShowDropGhosts(DragEventArgs e)
+    {
+        var files = DroppedFiles(e).ToList();
+        if (Timeline.DropTarget(e.GetPosition(Timeline), e.KeyModifiers) is not { } at || DropTargets(files, at.Sec, at.TrackId) is not { } targets)
+        {
+            Timeline.HideDrop();
+            return;
+        }
+        var ghosts = new Controls.TimelineView.DropGhost[files.Count];
+        for (int k = 0; k < files.Count; k++)
+        {
+            var file = carried.FirstOrDefault(c => c.Path == files[k]);
+            ghosts[k] = new(targets[k], file?.DurationSec is > 0 and var d ? d : 0, Path.GetFileName(files[k]));
+        }
+        Timeline.ShowDrop(at.Sec, ghosts);
+    }
 
     bool CanImport() => store != null && !store.ReadOnly && !restoring && !Projects.IsVisible && !RecordingBusy;
 
@@ -120,8 +159,9 @@ public partial class MainWindow
     /// <param name="atSec">Where they land; null = the playhead.</param>
     /// <param name="trackId">The track it was asked on, which takes it when that stretch is free; null = the rule above.</param>
     /// <param name="picture">A video brings its picture too; without it, only its sound.</param>
+    /// <param name="targets">The track each file goes to (<see cref="AudioImport.Stack"/>, null = a new one), instead of the rule above.</param>
     /// <returns>The id of the last clip it made; null if none.</returns>
-    async Task<string?> ImportAudio(IReadOnlyList<string> paths, double? atSec = null, string? trackId = null, bool picture = false)
+    async Task<string?> ImportAudio(IReadOnlyList<string> paths, double? atSec = null, string? trackId = null, bool picture = false, IReadOnlyList<string?>? targets = null)
     {
         if (!CanImport()) { Toast(Loc.T("imp.busy")); return null; }
         if (await LinkOrCopy(paths) is not { } link) return null;
@@ -178,10 +218,10 @@ public partial class MainWindow
                 if (store != st || !CanImport()) { Toast(Loc.T(link && !wav ? "imp.switched.link" : "imp.switched", name)); return null; }
                 if (link && wav) Toast(Loc.T("imp.link.wav", name));
                 double at = atSec ?? engine.PositionSec;
-                string? selected = done == 0 ? trackId ?? sel?.Track.Id : null;
+                string? selected = targets != null ? (i < targets.Count ? targets[i] : null) : done == 0 ? trackId ?? sel?.Track.Id : null;
                 await EditTimeline(p =>
                 {
-                    var track = AudioImport.AddClip(p, file, at, selected, fit: trackId != null);
+                    var track = AudioImport.AddClip(p, file, at, selected, fit: trackId != null || targets != null);
                     importedAudio[track.Clips[^1].MediaId] = audio;
                     last = track.Clips[^1].Id;
                     return track.Id;

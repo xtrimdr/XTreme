@@ -46,7 +46,6 @@ public sealed class CompGraph : Control
     {
         Height = 128;
         ClipToBounds = true;
-        ToolTip.SetTip(this, Loc.T("fx.comp.graph.tip"));
         timer.Tick += (_, _) =>
         {
             int w = (Live?.Invoke())?.Scope.Written ?? -1;

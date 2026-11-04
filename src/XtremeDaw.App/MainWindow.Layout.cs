@@ -46,8 +46,8 @@ public partial class MainWindow
         if (double.TryParse(AppConfig.Get("stageWidth"), NumberStyles.Float, CultureInfo.InvariantCulture, out var w))
             stageWidth = Math.Clamp(w, StageSideMinWidth, StageSideMaxWidth);
         // inside the column on its inner edge: the timeline's headers sit right past it
-        stageGripLeft = SizeGrip(false, false, () => stageWidth, ClampStage, SetStageWidth, StageSideWidth, "stageWidth", "splitter.stage");
-        stageGripRight = SizeGrip(true, false, () => stageWidth, ClampStage, SetStageWidth, StageSideWidth, "stageWidth", "splitter.stage");
+        stageGripLeft = SizeGrip(false, false, () => stageWidth, ClampStage, SetStageWidth, StageSideWidth, "stageWidth");
+        stageGripRight = SizeGrip(true, false, () => stageWidth, ClampStage, SetStageWidth, StageSideWidth, "stageWidth");
         foreach (var g in new[] { stageGripLeft, stageGripRight })
         {
             Grid.SetRowSpan(g, 3);

@@ -31,7 +31,6 @@ public sealed class MiniTimeline : Control
     {
         Height = 40;
         Cursor = new Cursor(StandardCursorType.Hand);
-        ToolTip.SetTip(this, Loc.T("mini.tip"));
     }
 
     public void SetTracks(IReadOnlyList<LiveTrack> list) { tracks = list; InvalidateVisual(); }

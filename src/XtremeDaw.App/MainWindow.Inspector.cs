@@ -47,25 +47,16 @@ public partial class MainWindow
     const double InspectorCollapsedWidth = 44;
     readonly DockPanel inspectorExpanded = new();
     readonly StackPanel inspectorCollapsed = new() { Spacing = 4, Margin = new Thickness(0, 8), HorizontalAlignment = HorizontalAlignment.Center };
-    EqEditor? eqEditor;
     readonly SpectrumTap spectrumTap = new();
     readonly float[] spectrumBins = new float[SpectrumTap.Bins];
     LiveTrack? spectrumTrack;
     long spectrumFrom;
 
-    /// <summary>
-    /// The effect and send cards (<see cref="Section"/> with <c>card</c>): they start folded (asked by the user, so a
-    /// chain or a list of sends doesn't fill the tab), so the saved list keeps the ones opened, as "open:" + title.
-    /// </summary>
-    readonly HashSet<string> cardSections = [];
-    const string OpenPrefix = "open:";
-
-    bool IsCollapsed(string title) => cardSections.Contains(title) ? !collapsedSections.Contains(OpenPrefix + title) : collapsedSections.Contains(title);
+    bool IsCollapsed(string title) => collapsedSections.Contains(title);
 
     void SetSectionCollapsed(string title, bool hide)
     {
-        if (cardSections.Contains(title)) { if (hide) collapsedSections.Remove(OpenPrefix + title); else collapsedSections.Add(OpenPrefix + title); }
-        else if (hide) collapsedSections.Add(title); else collapsedSections.Remove(title);
+        if (hide) collapsedSections.Add(title); else collapsedSections.Remove(title);
         if (inspectorSections.TryGetValue(title, out var section))
         {
             section.Body.IsVisible = !hide;
@@ -88,10 +79,13 @@ public partial class MainWindow
     void UpdateCollapseButton()
     {
         if (collapseAll == null) return;
-        bool all = inspectorSections.Keys.All(IsCollapsed);
+        bool all = FoldableSections.All(IsCollapsed);
         ToolTip.SetTip(collapseAll, all ? Loc.T("insp.sections.show") : Loc.T("insp.sections.hide"));
         collapseAllIcon.Data = (Geometry)Application.Current!.FindResource(all ? "ExpandAllIcon" : "CollapseAllIcon")!;
     }
+
+    /// <summary>The sections "plegar todo" folds.</summary>
+    IEnumerable<string> FoldableSections => inspectorSections.Keys;
 
     /// <summary>A quiet chip under the take name (duration, format…): Hover fill, Dim mono text.</summary>
     static Border FactBadge(string glyph, TextBlock text)
@@ -116,11 +110,14 @@ public partial class MainWindow
         shortcutTips.Add((hide, Loc.T("insp.hide"), "leftPanel"));
         hide.Foreground = Palette.Faint;
         var floatButton = FloatButton(FloatInspector, chip: false);
+        var panes = InspectorPaneButtons();
+        Grid.SetColumn(panes, 2); header.Children.Add(panes);
         Grid.SetColumn(hide, 3); header.Children.Add(hide);
         Grid.SetColumn(floatButton, 4); header.Children.Add(floatButton);
         var top = new Border { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = header };
         DockPanel.SetDock(top, Dock.Top);
-        inspectorExpanded.Children.Add(top); inspectorExpanded.Children.Add(scroll);
+        inspectorExpanded.Children.Add(top);
+        inspectorExpanded.Children.Add(InspectorBody((ScrollViewer)scroll));
         foreach (var (glyph, tip) in new[] { ("", Loc.T("insp.rail.show")), ("", Loc.T("insp.title")) })
         {
             var b = RailButton(glyph, tip, () => SetInspectorCollapsed(false));
@@ -155,11 +152,11 @@ public partial class MainWindow
         inspectorCollapsed.IsVisible = folded;
     }
 
-    /// <summary>EqEditor's draw loop fed from the selected track: the tap hangs on that track's chain only while its EQ
-    /// is on screen, and the spectrum counts as live (the web's readSpectrum ok) while the transport plays.</summary>
+    /// <summary>The big EQ's draw loop fed from the selected track: the tap hangs on that track's chain only while the big
+    /// view is open, and the spectrum counts as live (the web's readSpectrum ok) while the transport plays.</summary>
     void TickInspectorSpectrum()
     {
-        var want = (eqEditor is { IsEffectivelyVisible: true } || eqBig != null) && SelectedInspectorClip != null ? sel : null;
+        var want = eqBig != null && SelectedInspectorClip != null ? sel : null;
         if (spectrumTrack != want)
         {
             if (spectrumTrack != null) spectrumTrack.Chain.Spectrum = null;
@@ -168,10 +165,9 @@ public partial class MainWindow
             spectrumFrom = spectrumTap.Written;
             if (want != null) want.Chain.Spectrum = spectrumTap;
         }
-        if (eqEditor == null) return;
+        if (eqBig == null) return;
         bool live = want != null && engine.Playing && spectrumTap.Written > spectrumFrom;
         if (live) spectrumTap.Read(spectrumBins);
-        eqEditor.PushSpectrum(live ? spectrumBins : null, Audio.PlaybackEngine.SampleRate);
         eqBig?.PushSpectrum(live ? spectrumBins : null, Audio.PlaybackEngine.SampleRate);
     }
     LiveClip? SelectedInspectorClip => sel?.Clips.FirstOrDefault(c => c.Clip.Id == Timeline.SelectedClipId)
@@ -201,31 +197,18 @@ public partial class MainWindow
     /// <summary>"EQ 2" → "EQ": a repeated slot's section, without its number.</summary>
     static string BaseTitle(string id) => id.LastIndexOf(' ') is int sp && sp > 0 && int.TryParse(id[(sp + 1)..], out _) ? id[..sp] : id;
 
-    /// <param name="card">An effect or send card in a tray: compact, its own rounded box, folded until opened.</param>
+    /// <summary>A flat section of the inspector: its foldable title (icon, label, an action and its power) over its
+    /// rows, tight like a console's inspector (asked by the user, after Fender Studio Pro's).</summary>
     StackPanel Section(string title, string icon, Func<bool>? on = null, Action<bool>? power = null, Control? action = null,
-        StackPanel? host = null, List<Action>? refresh = null, bool card = false)
+        StackPanel? host = null, List<Action>? refresh = null)
     {
         var refreshes = refresh ?? inspectorRefresh;
-        // the cards are tighter than the flat sections (asked by the user: a few effects and sends filled the tab)
-        var content = card ? new StackPanel { Spacing = 10, Margin = new Thickness(12, 0, 12, 12) }
-            : new StackPanel { Spacing = 12, Margin = new Thickness(16, 0, 16, 14) };
+        var content = new StackPanel { Spacing = 2, Margin = new Thickness(16, 0, 16, 10) };
         var outer = new StackPanel();
         var border = new Border { Classes = { "section" }, Child = outer, Background = Palette.Panel,
             BorderThickness = new Thickness(0, 0, 0, 1), CornerRadius = new CornerRadius(0),
             Padding = new Thickness(0), Margin = new Thickness(-14, 0) };
-        var header = new SectionHeader(SectionTitle(title), icon);
-        if (card)
-        {
-            cardSections.Add(title);
-            InspectorTray.Card(border);
-            header.Padding = new Thickness(10, 5);
-            header.MinHeight = 36;
-        }
-        else
-        {
-            header.Padding = new Thickness(16, 10);
-            header.MinHeight = 44;
-        }
+        var header = new SectionHeader(SectionTitle(title), icon) { Padding = new Thickness(16, 6), MinHeight = 36 };
         var sectionIcon = header.Icon;
         inspectorSections[title] = (content, action, header);
         sectionLooks[title] = (icon, on);
@@ -234,7 +217,7 @@ public partial class MainWindow
         if (on != null && power != null)
         {
             var toggle = powerButton = new PowerButton(on, () => { if (!syncing) power(!on()); },
-                lit => SendTitles.TryGetValue(title, out var send) ? Loc.T(lit ? "send.power.off" : "send.power.on", send) : Loc.T(lit ? "mix.list.off" : "mix.list.on"))
+                lit => Loc.T(lit ? "mix.list.off" : "mix.list.on"))
                 { Margin = new Thickness(6, 0, 0, 0) };
             refreshes.Add(toggle.Refresh);
         }
@@ -247,9 +230,10 @@ public partial class MainWindow
     }
 
     InspectorSlider Slider(StackPanel host, string label, double min, double max, double step, double reset,
-        Func<double> get, Action<double> set, Func<double, string> format, string? hint = null, Func<double>? maximum = null, List<Action>? refresh = null, Func<bool>? mixed = null)
+        Func<double> get, Action<double> set, Func<double, string> format, string? hint = null, Func<double>? maximum = null, List<Action>? refresh = null, Func<bool>? mixed = null,
+        bool onRelease = false)
     {
-        var slider = new InspectorSlider(label, min, max, step, reset, format, v => { if (!syncing) set(v); }, hint);
+        var slider = new InspectorSlider(label, min, max, step, reset, format, v => { if (!syncing) set(v); }, hint, compact: true) { OnRelease = onRelease };
         host.Children.Add(slider); (refresh ?? inspectorRefresh).Add(() => slider.Set(get(), maximum?.Invoke(), mixed?.Invoke() == true ? Loc.T("insp.mixed") : null)); return slider;
     }
     void ClipEdit(Action<Clip, Media?> edit, string key)
@@ -303,10 +287,8 @@ public partial class MainWindow
             HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
         collapseAll.Click += (_, _) =>
         {
-            bool hide = !inspectorSections.Keys.All(IsCollapsed);
-            foreach (string title in inspectorSections.Keys) SetSectionCollapsed(title, hide);
-            SetTrayCollapsed(chainTray, ChainTrayId, hide);
-            SetTrayCollapsed(sendsTray, SendsTrayId, hide);
+            bool hide = !FoldableSections.All(IsCollapsed);
+            foreach (string title in FoldableSections.ToList()) SetSectionCollapsed(title, hide);
             SaveCollapsedSections();
         };
         Grid.SetColumn(collapseAll, 2); header.Children.Add(collapseAll);
@@ -316,9 +298,16 @@ public partial class MainWindow
         noSelection.Children.Add(new TextBlock { Text = Loc.T("insp.none"), FontSize = 14, Foreground = Palette.Dim, TextAlignment = TextAlignment.Center });
         noSelection.Children.Add(noSelectionHint);
         Inspector.Children.Add(noSelection);
-        takeHead.Child = new StackPanel { Children = { header, takeInfo, takeFacts } };
-        Inspector.Children.Add(takeHead);
+        // the channel's name, fixed over the editor (MainWindow.InspectorStrip.cs); the file's facts go with its clip
+        takeHead.Child = new StackPanel { Children = { header, takeInfo } };
+        takeHead.Margin = new Thickness(0);
+        takeHead.Padding = new Thickness(0);
+        takeHead.BorderThickness = new Thickness(0);
+        inspectorTop.Children.Add(takeHead);
         InitGroupInspector();
+        inspectorTop.Children.Add(groupMuted);
+        inspectorTop.Children.Add(busHead);
+        InitInspectorStrip();
         var recordHint = new TextBlock { FontSize = 12, Foreground = Palette.Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
         recordHint.Inlines!.Add(new Avalonia.Controls.Documents.Run(Loc.T("insp.empty.a")));
         recordHint.Inlines.Add(new Avalonia.Controls.Documents.Run(Shortcuts.First("record")) { FontFamily = Palette.Mono.FontFamily, Foreground = Palette.Fg });
@@ -328,26 +317,9 @@ public partial class MainWindow
         var removeEmpty = RemoveButton(Loc.T("insp.removeTrack")); removeEmpty.Margin = new Thickness(0, 12, 0, 0);
         removeEmpty.Click += (_, _) => { if (sel != null) AskRemoveTrack(sel.Track.Id, null, removeEmpty); }; emptySections.Children.Add(removeEmpty);
         // an empty track shows its channel too, with how to fill it and its remove button below
-        Inspector.Children.Add(takeSections); Inspector.Children.Add(clipSections); Inspector.Children.Add(emptySections);
-        var mute = InspectorIcon("\uE74F", Loc.T("insp.mute.tip"), () => TogglePicked(false));
-        var mix = Section("Mezcla", "\uE9E9", action: mute);
-        inspectorRefresh.Add(() =>
-        {
-            var picked = PickTargets();
-            bool muted = picked.Count > 0 && picked.All(t => t.Channel.Muted);
-            mute.Classes.Set("muted", muted);
-            ToolTip.SetTip(mute, Loc.T(muted ? "insp.unmute.tip" : "insp.mute.tip"));
-        });
-        // the volume travels like the mixer's fader (its position, 0..1, the same as a volume lane's) and reads in dB
-        var volumeSlider = Slider(mix, Loc.T("insp.volume"), 0, 1, VolumeStep, Fader.ToPos(1), () => Fader.ToPos(PickLead.Channel.Volume),
-            p => EditPicked(t => t.Channel.Volume = Fader.ToVol(p), "volume"), p => ValueFormat.Db(Fader.ToVol(p)),
-            mixed: () => PicksDiffer(t => t.Channel.Volume));
-        AutomateOn(volumeSlider, () => SingleTrack, AutoTarget.Volume, k => { syncing = true; volumeSlider.Set(k, null); syncing = false; });
-        var panSlider = Slider(mix, Loc.T("insp.pan"), -1, 1, 0.05, 0, () => PickLead.Channel.Pan, v => EditPicked(t => t.Channel.Pan = Math.Abs(v) < 0.04 ? 0 : v, "pan"), ValueFormat.Pan,
-            mixed: () => PicksDiffer(t => t.Channel.Pan));
-        AutomateOn(panSlider, () => SingleTrack, AutoTarget.Pan, k => { syncing = true; panSlider.Set(k * 2 - 1, null); syncing = false; });
-        // several tracks picked: the section's mute shows no state of its own, so this says how many are muted
-        mix.Children.Add(groupMuted);
+        // the track's section, then the clip's (MainWindow.InspectorStrip.cs); the strip is under both
+        Inspector.Children.Add(takeSections); Inspector.Children.Add(emptySections); Inspector.Children.Add(clipArea);
+        // several tracks picked: the strip's mute shows them all muted or not, so this says how many are
         inspectorRefresh.Add(() =>
         {
             var group = PickedGroup();
@@ -365,139 +337,27 @@ public partial class MainWindow
             else await SetInVideo(PickTargets(), inVideo.IsChecked == true);
         };
         // its own row: videoOnly already rules the box itself, and a MIDI track has no panel
-        var inVideoRow = new Panel { Children = { inVideo } };
+        var inVideoRow = new Panel { Children = { inVideo }, Margin = new Thickness(0, 4, 0, 4) };
         inspectorRefresh.Add(() =>
         {
             inVideoRow.IsVisible = PickTargets().All(t => !t.Track.IsMidi);
             inVideo.IsChecked = PicksDiffer(t => t.Track.Video ? 1 : 0) ? null : PickLead.Track.Video;
         });
-        mix.Children.Add(inVideoRow);
+        takeSections.Children.Add(inVideoRow);
         videoOnly.Add(inVideo);
-        // the insert slots, in their order (RebuildInspectorChain), and where the track goes and its sends, one section
-        // per bus (RebuildInspectorSends; every send can be taken before the fader: its PRE chip, in the section's
-        // header): each in a tray of its own, so the effects and the sends never read as one list (asked by the user)
-        chainTray = new InspectorTray(Loc.T("mix.list.fx"), Loc.T("insp.tray.fx.empty"), inspectorChain);
-        sendsTray = new InspectorTray(Loc.T("insp.tray.sends"), Loc.T("insp.tray.sends.empty"), inspectorSends);
-        foreach (var (tray, id) in new[] { (chainTray, ChainTrayId), (sendsTray, SendsTrayId) })
-        {
-            tray.SetCollapsed(collapsedSections.Contains(id));
-            tray.Toggled += () => SetTrayCollapsed(tray, id, !tray.Collapsed);
-            takeSections.Children.Add(tray);
-        }
-        chainTrayAt = takeSections.Children.IndexOf(chainTray);
-        // native only: the track's pitch, same length (MainWindow.Transpose.cs). A card of its own beside the other
-        // effects (asked by the user); it reads as off (dimmed) while the track plays at its original pitch.
-        var transpose = Section("Transponer", FxIcon.Transpose, () => PickTargets().Any(t => t.Track.Transpose != 0));
-        Slider(transpose, Loc.T("insp.transpose.semis"), -PitchShifter.MaxSemitones, PitchShifter.MaxSemitones, 1, 0,
-            () => PickLead.Track.Transpose, SetTranspose, TransposeText, Loc.T("insp.transpose.tip"), mixed: () => PicksDiffer(t => t.Track.Transpose));
-        InitTranspose(transpose);
+        // native only: the track's pitch, same length (MainWindow.Transpose.cs). It comes first in the strip's chain and
+        // reads as off (dimmed) while the track plays at its original pitch.
+        // the track's Transponer: with an audio track's clip (like Studio Pro's Transpose per event), else in the track's section
+        var transpose = trackTranspose;
+        takeSections.Children.Add(transpose);
+        // the folded inspector's column still shows it, lit while the track is transposed
+        sectionLooks["Transponer"] = (FxIcon.Transpose, () => PickTargets().Any(t => t.Track.Transpose != 0));
+        Slider(transpose, SectionTitle("Transponer"), -PitchShifter.MaxSemitones, PitchShifter.MaxSemitones, 1, 0,
+            () => PickLead.Track.Transpose, SetTranspose, TransposeText, Loc.T("insp.transpose.tip"), mixed: () => PicksDiffer(t => t.Track.Transpose), onRelease: true);
+        InitTranspose();
         InitClipInspector();
         InitMidiInspector();
         UpdateCollapseButton();
-    }
-
-    /// <summary>
-    /// The Canal tab's effects, of a track or a bus: one section per insert slot, in the order the sound goes through them,
-    /// each with the same panel as anywhere else (<see cref="FxBody"/>), then "+ Efecto".
-    /// Rebuilt only when the channel or its list of slots changes (<see cref="inspectorChainKey"/>); every other edit just
-    /// refreshes it. A repeated kind is numbered ("EQ 2") and remembers its own folded state.
-    /// </summary>
-    void RebuildInspectorChain(SlotOwner o, object owner)
-    {
-        // the object itself too: a reopened project builds new ones with the same ids
-        string key = $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(owner)}|{o.OwnerId}|" + string.Join("/", o.Slots().Select(s => s.Id));
-        if (key == inspectorChainKey) return;
-        inspectorChainKey = key;
-        foreach (string title in chainSections) inspectorSections.Remove(title);
-        chainSections.Clear();
-        chainRefresh.Clear();
-        inspectorChain.Children.Clear();
-        eqEditor = null;
-        var drag = new SlotDrag(InspectorTray.Gap);
-        drag.Moved += (id, anchor, after) => SlotsEdit(o, x => ChannelInserts.MoveNextTo(x, id, anchor, after), "move");
-        var slots = o.Slots();
-        for (int i = 0; i < slots.Count; i++)
-        {
-            var slot = slots[i];
-            if (!slot.Known) continue;
-            int nth = 1;
-            for (int k = 0; k < i; k++) if (slots[k].Type == slot.Type) nth++;
-            string id = slot.Id;
-            if (slot.Type == InsertSlot.VstKind)
-            {
-                VstSection(o, id, drag);
-                continue;
-            }
-            // the title stays the id it always was, so what was folded stays folded
-            string title = slot.Type switch { InsertSlot.SatKind => "Saturación", InsertSlot.CompKind => "Compresor", InsertSlot.EqKind => "EQ", InsertSlot.ReverbKind => "Reverb", InsertSlot.DelayKind => "Delay", _ => SlotName(slot.Type) };
-            var body = SlotSection(o, id, title, nth, slot.Type, () => o.Slot(id)?.On == true, on => SlotEdit(o, id, s => s.On = on, "on"), drag,
-                slot.Type == InsertSlot.EqKind ? null : () => o.Slot(id) is { } s ? SlotBrief(s) : "");
-            FxBody(body, o, slot, chainRefresh, eq => eqEditor ??= eq);
-        }
-        chainTray.Set(chainSections.Count, AddSlotButton(o));
-        UpdateCollapseButton();
-    }
-
-    /// <summary>Puts the effects tray where the selected channel shows it: a track's Canal tab or a bus's panel. One set of sections, moved, not two.</summary>
-    void PlaceInspectorChain(Panel host)
-    {
-        if (chainTray.Parent == host) return;
-        (chainTray.Parent as Panel)?.Children.Remove(chainTray);
-        if (host == takeSections) takeSections.Children.Insert(chainTrayAt, chainTray);
-        else host.Children.Add(chainTray);
-    }
-
-    /// <summary>The tray's place among the Canal tab's sections.</summary>
-    int chainTrayAt;
-
-    readonly StackPanel inspectorChain = new();
-    /// <summary>The Canal tab's areas for the effect slots and for the output and sends.</summary>
-    InspectorTray chainTray = null!, sendsTray = null!;
-    /// <summary>The trays' ids among the folded sections (never a section's title).</summary>
-    const string ChainTrayId = "tray:fx", SendsTrayId = "tray:sends";
-
-    void SetTrayCollapsed(InspectorTray tray, string id, bool hide)
-    {
-        if (tray.Collapsed == hide) return;
-        if (hide) collapsedSections.Add(id); else collapsedSections.Remove(id);
-        tray.SetCollapsed(hide);
-        SaveCollapsedSections();
-    }
-    readonly List<Action> chainRefresh = [];
-    readonly List<string> chainSections = [];
-    string inspectorChainKey = "";
-
-    /// <summary>
-    /// A slot's section: numbered when its kind repeats, dragged by its grip, with the slot's ⋯ menu and, folded, its
-    /// <paramref name="summary"/> beside the title (how much, which style).
-    /// </summary>
-    StackPanel SlotSection(SlotOwner o, string id, string baseTitle, int nth, string icon, Func<bool> on, Action<bool> power, SlotDrag drag,
-        Func<string>? summary = null)
-    {
-        string title = nth > 1 ? $"{baseTitle} {nth}" : baseTitle;
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        actions.Children.Add(SlotMenuButton(o, id));
-        var content = Section(title, icon, on, power, actions, inspectorChain, chainRefresh, card: true);
-        chainSections.Add(title);
-        var card = (Border)content.Parent!.Parent!;
-        var header = inspectorSections[title].Header;
-        // a right click on its title: the same menu as its ⋯ (asked by the user)
-        header.PointerReleased += (_, e) =>
-        {
-            if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Right || store == null) return;
-            e.Handled = true;
-            ShowSlotMenu(o, id, header, null);
-        };
-        if (summary != null) chainRefresh.Add(() => header.SetSummary(summary()));
-        // its ⋯ stays at hand when the section is folded (moving or removing a folded slot is the common case)
-        inspectorSections[title] = (content, null, header);
-        actions.IsVisible = true;
-        var grip = new GripDots { Margin = new Thickness(-10, 0, 2, 0), VerticalAlignment = VerticalAlignment.Center };
-        ToolTip.SetTip(grip, Loc.T("mix.slot.drag.tip"));
-        header.SetGrip(grip);
-        inspectorChain.Children.Remove(card);
-        inspectorChain.Children.Add(drag.Add(card, id, grip));
-        return content;
     }
 
     void InitClipInspector()
@@ -508,6 +368,9 @@ public partial class MainWindow
         double Len() { var w = ClipEditing.Window(C(), M(), Dur()); return Math.Max(.01, w.End - w.Start); }
         // the clip's sections go apart from the channel's, refreshed only while there is a clip
         StackPanel ClipSection(string title, string icon, Control? action = null) => Section(title, icon, action: action, host: clipSections, refresh: clipRefresh);
+        // what the file is (length, format, sides), over the clip's settings
+        takeFacts.Margin = new Thickness(0, 0, 0, 6);
+        clipSections.Children.Add(takeFacts);
         InspectorSlider ClipSlider(StackPanel host, string label, double min, double max, double step, double reset, Func<double> get, Action<double> set,
             Func<double, string> format, string? hint = null, Func<double>? maximum = null) => Slider(host, label, min, max, step, reset, get, set, format, hint, maximum, clipRefresh);
         var sync = ClipSection("Sincronización", "\uE823");
@@ -525,7 +388,7 @@ public partial class MainWindow
             Loc.T("insp.sync.camera.hint"));
         videoOnly.Add(cameraLatency);
         var resetClip = InspectorIcon("\uE777", Loc.T("insp.clip.reset"), () => ClipEdit((c, _) => ClipEditing.Reset(store!.Project, c.Id), "reset"));
-        var clip = ClipSection("Clip", "\uE8C6", resetClip);
+        var clip = ClipSection("Clip", "\uE8D6", resetClip);
         ClipSlider(clip, Loc.T("insp.clip.gain"), XtremeDaw.Projects.Clip.MinGainDb, XtremeDaw.Projects.Clip.MaxGainDb, .5, 0, () => C().GainDb, v => ClipEdit((c, _) => c.GainDb = v, "gain"), Db,
             Loc.T("insp.clip.gain.hint"));
         ClipSlider(clip, Loc.T("insp.clip.trimStart"), 0, 10, .01, 0, () => C().TrimStartSec, v => ClipEdit((c, _) => c.TrimStartSec = v, "trim-start"), Sec,
@@ -600,14 +463,10 @@ public partial class MainWindow
             noSelection.IsVisible = sel == null && folder == null && bus == null;
             folderPanel.IsVisible = folder != null;
             if (folder != null) foreach (var refresh in folderRefresh) refresh();
-            busPanel.IsVisible = bus != null;
             if (bus != null)
             {
                 foreach (var refresh in busRefresh) refresh();
-                PlaceInspectorChain(busChain);
-                chainTray.IsVisible = true;
                 RebuildInspectorChain(SlotsOf(bus), bus);
-                foreach (var refresh in chainRefresh) refresh();
             }
             noSelectionHint.Text = tracks.Any(t => t.Track.HasContent) ? Loc.T("insp.none.hint") : Loc.T("insp.none.empty");
             takeHead.IsVisible = sel != null && group == null;
@@ -630,29 +489,25 @@ public partial class MainWindow
                 EnsurePlugins();
                 RefreshMidiInspector();
             }
-            // an empty audio track is still a channel: its mix, effects and sends show (only the clip's sections wait)
-            // a MIDI track too, under its instrument (decisión del usuario, 2026-11-03: alone it showed none of it, picked with
-            // others it did); several tracks, of any kind: only what they all have (MainWindow.InspectorGroup.cs)
+            // an empty audio track is still a channel: its strip and Transponer show (its clip section says there is none)
+            // a MIDI track too, under its instrument (decisión del usuario, 2026-11-03); several tracks, of any kind:
+            // only what they all have (MainWindow.InspectorGroup.cs)
             bool channel = sel != null || group != null;
-            takeSections.IsVisible = channel;
-            takeSections.IsEnabled = group == null || group.Any(t => !t.Track.Locked);
-            clipSections.IsVisible = channel && c != null && group == null;
             if (collapseAll != null) collapseAll.IsVisible = channel;
             if (channel)
             {
-                PlaceInspectorChain(takeSections);
-                chainTray.IsVisible = group == null;
                 if (group == null) RebuildInspectorChain(SlotsOf(sel!), sel!);
-                PlaceInspectorSends(takeSections);
                 RebuildInspectorSends(sel!, group == null ? null : GroupRouter(group));
+            }
+            LayoutInspector(c, group, bus);
+            if (channel)
+            {
                 foreach (var refresh in inspectorRefresh) refresh();
-                if (group == null)
-                {
-                    if (c != null) foreach (var refresh in clipRefresh) refresh();
-                    foreach (var refresh in chainRefresh) refresh();
-                }
+                if (group == null && c != null) foreach (var refresh in clipRefresh) refresh();
                 foreach (var refresh in sendRefresh) refresh();
             }
+            if (channel && group == null || bus != null) foreach (var refresh in chainRefresh) refresh();
+            if (stripWanted) foreach (var refresh in stripRefresh) refresh();
         }
         finally { syncing = false; }
         RefreshInspectorRail();

@@ -23,17 +23,15 @@ public partial class MainWindow
     /// <summary>A knob's size in a panel, from its smallest to what a cell from <see cref="FxBigCellW"/> gets.</summary>
     const double FxKnobW = 36, FxKnobBigW = 44, FxBigCellW = 76;
 
-    /// <summary>A knob with its label on top and its value under it, in the effect panels and the Mastering view.</summary>
-    static StackPanel FxCell(string label, Control knob, TextBlock value) => new()
+    /// <summary>A knob with its label on top and its value under it, in the effect panels and the Mastering view.
+    /// What it does (<paramref name="tip"/>) shows over the label, never over the knob: there it would cover the drag.</summary>
+    static StackPanel FxCell(string label, Control knob, TextBlock value, string? tip = null)
     {
-        Spacing = 5,
-        Children =
-        {
-            new TextBlock { Text = label.ToUpperInvariant(), FontSize = 10, LetterSpacing = 0.8, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis },
-            knob, value,
-        },
-    };
+        var name = new TextBlock { Text = label.ToUpperInvariant(), FontSize = 10, LetterSpacing = 0.8, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent };
+        ToolTip.SetTip(name, tip);
+        return new() { Spacing = 5, Children = { name, knob, value } };
+    }
 
     static TextBlock FxValue() => new() { Classes = { "mono" }, FontSize = 11, Foreground = Palette.Dim, HorizontalAlignment = HorizontalAlignment.Center };
 
@@ -77,19 +75,17 @@ public partial class MainWindow
     /// <summary>One knob of the list; hidden and disabled as <paramref name="shown"/> and <paramref name="enabled"/> say.</summary>
     (Control Cell, Knob Knob) FxKnobCell(SlotOwner o, string id, FxParam p, List<Action> refresh, Func<bool>? enabled = null, Func<bool>? shown = null)
     {
-        var knob = new Knob(FxKnobBigW) { Min = 0, Max = 1, ResetTo = p.ToKnob(p.Default), HorizontalAlignment = HorizontalAlignment.Center };
+        string label = Loc.T(p.Label);
+        var knob = new Knob(FxKnobBigW, label) { Min = 0, Max = 1, ResetTo = p.ToKnob(p.Default), HorizontalAlignment = HorizontalAlignment.Center };
         knob.Changed += k => { if (!syncing) FxEdit(o, id, p, p.FromKnob(k)); };
         var value = FxValue();
-        string label = Loc.T(p.Label);
-        string tip = p.Tip != null ? Loc.T(p.Tip) : label;
-        var cell = FxCell(label, knob, value);
+        var cell = FxCell(label, knob, value, p.Tip != null ? Loc.T(p.Tip) : null);
         refresh.Add(() =>
         {
             if (o.Slot(id) is not { } s) return;
             double v = p.Get(s);
             knob.Value = p.ToKnob(v);
             value.Text = FxText(p, v);
-            knob.Tip = $"{label}: {value.Text}" + (tip == label ? "" : $"\n{tip}");
             if (enabled != null) { bool e = enabled(); knob.IsEnabled = e; cell.Opacity = e ? 1 : 0.4; }
             if (shown != null) cell.IsVisible = shown();
         });
@@ -101,25 +97,9 @@ public partial class MainWindow
         return (cell, knob);
     }
 
-    /// <summary>
-    /// A grid of knobs that deals out its width: as many columns as fit, each knob growing with its cell, so the same
-    /// panel works in a narrow window or a wide inspector.
-    /// </summary>
-    static UniformGrid FxGrid(List<Knob> knobs, double top = 2)
-    {
-        var grid = new UniformGrid { Columns = 3, Margin = new Thickness(0, top, 0, 0) };
-        grid.SizeChanged += (_, e) =>
-        {
-            double w = e.NewSize.Width;
-            int visible = Math.Max(1, grid.Children.Count(c => c.IsVisible));
-            int cols = Math.Clamp((int)Math.Ceiling(w / FxCellW), 1, Math.Max(1, (int)(w / FxCellMinW)));
-            cols = Math.Min(cols, visible);
-            if (cols != grid.Columns) grid.Columns = cols;
-            double size = w / Math.Max(1, grid.Columns) >= FxBigCellW ? FxKnobBigW : FxKnobW;
-            foreach (var k in knobs) k.Resize(size);
-        };
-        return grid;
-    }
+    /// <summary>A grid of knobs that deals out its width (<see cref="KnobGrid"/>).</summary>
+    static KnobGrid FxGrid(List<Knob> knobs, double top = 2) =>
+        new(knobs, FxCellW, FxCellMinW, FxBigCellW, FxKnobW, FxKnobBigW) { Margin = new Thickness(0, top, 0, 0) };
 
     /// <summary>A segmented choice (the modes of a saturation, a gate or a delay) that fills the width it has.</summary>
     Control FxSegments((string Id, string Label, string? Tip)[] items, Func<string> get, Action<string> pick, List<Action> refresh)
@@ -150,7 +130,7 @@ public partial class MainWindow
         }
         var knobs = new List<Knob>();
         var grid = FxGrid(knobs);
-        void Add(FxParam p, UniformGrid to, List<Knob> list, Func<bool>? enabled = null, Func<bool>? shown = null)
+        void Add(FxParam p, Panel to, List<Knob> list, Func<bool>? enabled = null, Func<bool>? shown = null)
         {
             var (cell, knob) = FxKnobCell(o, id, p, refresh, enabled, shown);
             to.Children.Add(cell);
@@ -181,7 +161,7 @@ public partial class MainWindow
                 var eq = new EqEditor { Live = () => LiveEq(o, id) };
                 onEq?.Invoke(eq);
                 eq.Changed += value => SlotEdit(o, id, s => s.Eq = value, "eq");
-                eq.BigRequested += () => ShowEqBig(o, id, ReferenceEquals(eq, eqEditor));
+                eq.BigRequested += () => ShowEqBig(o, id, o.OwnerId == sel?.Track.Id);
                 refresh.Add(() => eq.Set(o.Slot(id)?.Eq ?? GoneEq));
                 body.Children.Add(eq);
                 break;

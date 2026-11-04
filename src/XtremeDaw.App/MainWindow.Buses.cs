@@ -355,7 +355,6 @@ public partial class MainWindow
         {
             name.Text = B().Name;
             name.Foreground = B().Muted ? Palette.Faint : Palette.Fg;
-            ToolTip.SetTip(name, Loc.T("mix.name.tip", B().Name));
         });
         var badge = new TrackBadge { Width = 22, Height = 22 };
         ToolTip.SetTip(badge, Loc.T("look.bus.tip"));
@@ -438,8 +437,8 @@ public partial class MainWindow
     readonly List<Action> busRefresh = [];
 
     /// <summary>
-    /// The inspector of the selected bus, like a folder's: its badge (the color and icon picker) and name, what it
-    /// holds, its effects (the same tray as a track's, moved here), its color and icon, where it goes, and "Quitar bus".
+    /// The inspector of the selected bus, like a track's: its badge (the color and icon picker), name and what it holds
+    /// on top, its fader and effects in the strip, and in its tab its color and icon, where it goes and "Quitar bus".
     /// </summary>
     void InitBusInspector()
     {
@@ -457,10 +456,11 @@ public partial class MainWindow
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("28,*") };
         head.Children.Add(badge);
         Grid.SetColumn(busName, 1); head.Children.Add(busName);
-        var info = new TextBlock { FontSize = 11, Foreground = Palette.Faint, Margin = new Thickness(36, -6, 0, 0) };
-        busPanel.Children.Add(head);
-        busPanel.Children.Add(info);
-        busPanel.Children.Add(busChain);
+        var info = new TextBlock { FontSize = 11, Foreground = Palette.Faint, Margin = new Thickness(36, 4, 0, 0) };
+        // its name over the editor, like a track's (MainWindow.InspectorStrip.cs); its fader and effects go in the strip
+        busHead.Children.Add(head);
+        busHead.Children.Add(info);
+        // busHead takes its place over the tabs in InitInspector, which runs after this
 
         var card = new StackPanel { Spacing = 14 };
         card.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("look.color").ToUpperInvariant() });
@@ -472,7 +472,7 @@ public partial class MainWindow
         card.Children.Add(icon);
         card.Children.Add(Help(Loc.T("bus.route.hint")));
         busPanel.Children.Add(new Border { Classes = { "section" }, Background = Palette.Panel, BorderThickness = new Thickness(0, 1), CornerRadius = new CornerRadius(0),
-            Margin = new Thickness(-14, 4, -14, 0), Padding = new Thickness(16, 14, 16, 16), Child = card });
+            Margin = new Thickness(-14, 0, -14, 0), Padding = new Thickness(16, 14, 16, 16), Child = card });
 
         var remove = RemoveButton(Loc.T("mix.bus.remove"));
         ToolTip.SetTip(remove, Loc.T("mix.bus.remove.tip"));
@@ -489,8 +489,8 @@ public partial class MainWindow
         Inspector.Children.Add(busPanel);
     }
 
-    /// <summary>Where the effects tray goes while a bus is selected.</summary>
-    readonly StackPanel busChain = new();
+    /// <summary>The bus's badge, name and what it holds, fixed over the editor.</summary>
+    readonly StackPanel busHead = new() { IsVisible = false };
 
     /// <summary>Called from the mixer's tick: the folders' and buses' meters.</summary>
     void TickNodes()
@@ -528,12 +528,12 @@ public partial class MainWindow
     static readonly ReverbSettings GoneReverb = new();
     static readonly DelaySettings GoneDelay = new();
 
-    // --- the Canal tab's output and send sections -----------------------------------------------------
+    // --- the strip's output and sends -------------------------------------------------------------------
 
     /// <summary>
-    /// The Canal tab's routing: the track's output (or "through its folder") and a fixed row per bus in its list
-    /// (<see cref="InspectorSendRow"/>). Rebuilt only when the track, its folder or the buses (a name, a slot, the routing between them)
-    /// change; every other edit just refreshes them.
+    /// The strip's routing: a bar per bus in the track's list (the mixer's compact rows: power, level, PRE; a right click
+    /// opens its menu) and the track's output (or "through its folder"). Rebuilt only when the track, its folder or the
+    /// buses (a name, a slot, the routing between them) change; every other edit just refreshes them.
     /// </summary>
     /// <param name="group">The picked tracks' router, when several are edited together; they show the sends they share, and an output only if none is in a folder.</param>
     void RebuildInspectorSends(LiveTrack t, Router? group = null)
@@ -544,106 +544,46 @@ public partial class MainWindow
             + string.Join("/", targets.Select(b => b.Id + ":" + b.Name)) + "|" + Targets(router).Count;
         if (key == inspectorSendsKey) return;
         inspectorSendsKey = key;
-        foreach (string title in sendSections) { inspectorSections.Remove(title); sectionLooks.Remove(title); }
+        stripRouter = router;
+        foreach (string title in sendSections) sectionLooks.Remove(title);
         sendSections.Clear();
         sendRows.Clear();
         sendRefresh.Clear();
-        inspectorSends.Children.Clear();
+        stripSends.Children.Clear();
+
+        var sends = CompactSends(router, sendRefresh, (id, line) =>
+        {
+            string title = "bus:" + id;
+            SendTitles[title] = BusById(id)?.Name ?? "";
+            sectionLooks[title] = (FxIcon.Bus, () => router.Get() is { } x && ProjectBuses.SendOf(x, id) is var s && s.On && s.Level > 0);
+            sendSections.Add(title);
+            sendRows[title] = line;
+        });
+        foreach (var line in sends.Children.ToList())
+        {
+            sends.Children.Remove(line);
+            line.Height = StripRowH;
+            stripSends.Children.Add(line);
+        }
 
         // where the track's output goes: its folder's, or its own choice
-        var output = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(8, 0, 2, 4) };
-        output.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("route.output.upper"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+        Control? output = null;
         if (group == null && t.Track.FolderId is { } folder)
         {
             var through = new TextBlock { Classes = { "dim" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             sendRefresh.Add(() => through.Text = Loc.T("route.throughFolder", FolderById(folder)?.Name ?? ""));
             ToolTip.SetTip(through, Loc.T("route.throughFolder.tip"));
-            Grid.SetColumn(through, 1); output.Children.Add(through);
+            output = through;
         }
-        else if (group == null || PickedGroup()?.All(x => x.Track.FolderId == null) == true)
-        {
-            var select = OutputSelect(router, sendRefresh);
-            Grid.SetColumn(select, 1); output.Children.Add(select);
-        }
-        if (output.Children.Count > 1) inspectorSends.Children.Add(output);
-
-        foreach (var bus in targets) inspectorSends.Children.Add(InspectorSendRow(router, bus));
-        sendsTray.Set(targets.Count, Targets(router).Count > 0 ? AddSendButton(router) : null);
-        UpdateCollapseButton();
+        else if (group == null || PickedGroup()?.All(x => x.Track.FolderId == null) == true) output = OutputSelect(router, sendRefresh);
+        stripOutput.Child = output == null ? null : StripOutputRow(output);
     }
 
-    readonly StackPanel inspectorSends = new();
     readonly List<Action> sendRefresh = [];
     readonly List<string> sendSections = [];
     /// <summary>The send rows by their stable id "bus:&lt;bus id&gt;", for the collapsed inspector's icons (<see cref="GoToSection"/>).</summary>
     readonly Dictionary<string, Control> sendRows = [];
 
-    /// <summary>
-    /// A send in the Canal tab as one fixed row (asked by the user: small enough not to fold): its power, the bus's icon
-    /// and name, its level as a bar with its % (drag, wheel with Shift for fine, double click: 0; the dB in its tooltip),
-    /// PRE and ×. A right click opens its menu (<see cref="ShowSendMenu"/>). It also feeds the collapsed inspector's
-    /// icons, like a section.
-    /// </summary>
-    Border InspectorSendRow(Router router, Bus bus)
-    {
-        string id = bus.Id, title = "bus:" + id;
-        SendTitles[title] = bus.Name;
-        (double Level, bool On, bool Pre) S() => router.Get() is { } x ? ProjectBuses.SendOf(x, id) : (0, true, false);
-        void Set(double? level = null, bool? on = null, bool? pre = null, string k = "level") =>
-            router.Edit((p, x) => ProjectBuses.SetSend(p, x, id, level, on, pre) != null, $"send.{id}.{k}");
-        bool Lit() => S().On && S().Level > 0;
-        var power = ListPower(Lit, () => Set(on: !S().On, k: "on"), sendRefresh);
-        power.Width = power.Height = power.MinHeight = 22;
-        var icon = FxIcon.Create(FxIcon.Bus, 12);
-        icon.VerticalAlignment = VerticalAlignment.Center;
-        icon.Margin = new Thickness(2, 0, 6, 0);
-        var name = new TextBlock { Text = bus.Name, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
-        ToolTip.SetTip(name, Loc.T("insp.send.hint", bus.Name));
-        var bar = new HBar { ResetTo = 0, Height = 20, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 6, 0) };
-        bar.Changed += v => Set(level: v, on: v > 0 ? true : null);
-        var pre = PreChip(() => S().Pre, () => Set(pre: !S().Pre, k: "pre"), sendRefresh);
-        var remove = RemoveSendButton(router, id, bus.Name);
-        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,4*,5*,Auto,Auto") };
-        g.Children.Add(power);
-        Grid.SetColumn(icon, 1); g.Children.Add(icon);
-        Grid.SetColumn(name, 2); g.Children.Add(name);
-        Grid.SetColumn(bar, 3); g.Children.Add(bar);
-        Grid.SetColumn(pre, 4); g.Children.Add(pre);
-        Grid.SetColumn(remove, 5); g.Children.Add(remove);
-        var row = new Border { Child = g, Height = 36, Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 0, 0, 6), CornerRadius = new CornerRadius(6),
-            BorderThickness = new Thickness(1) };
-        sendRefresh.Add(() =>
-        {
-            var (level, on, _) = S();
-            bool lit = on && level > 0;
-            // tracks edited together that don't share it: the bar says so instead of a number
-            var others = router.Group?.Invoke().Select(x => ProjectBuses.SendOf(x, id)).ToList();
-            bool mixed = others?.Any(s => s.Level != level || s.On != on) == true;
-            bool mixedPre = others?.Any(s => s.Pre != others[0].Pre) == true;
-            bar.Value = level;
-            bar.Lit = on;
-            bar.Opacity = mixed ? 0.6 : 1;
-            bar.Readout = mixed ? Loc.T("insp.mixed") : ValueFormat.Percent(level);
-            ToolTip.SetTip(bar, mixed ? Loc.T("insp.mixed") : $"{Loc.T("mix.list.send.tip", bus.Name, $"{level * 100:0}")} · {ValueFormat.Db(level)}");
-            pre.Content = mixedPre ? "–" : "PRE";
-            if (mixedPre) ToolTip.SetTip(pre, Loc.T("insp.mixed"));
-            FxIcon.SetColor(icon, lit ? Palette.Accent : Palette.Faint);
-            name.Foreground = lit ? Palette.Fg : Palette.Faint;
-            // like an effect's panel: a step above the inspector, sinking back while it is off
-            row.Background = Palette.Alpha(Palette.HoverColor, lit ? 0.45 : 0.18);
-            row.BorderBrush = lit ? Palette.Line : Palette.Alpha(Palette.LineColor, 0.6);
-        });
-        row.PointerReleased += (_, e) =>
-        {
-            if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Right || store == null) return;
-            e.Handled = true;
-            ShowSendMenu(router, id, row);
-        };
-        sectionLooks[title] = (FxIcon.Bus, Lit);
-        sendSections.Add(title);
-        sendRows[title] = row;
-        return row;
-    }
     string inspectorSendsKey = "";
     /// <summary>The send sections' shown titles (the buses' names), by their stable id "bus:&lt;bus id&gt;".</summary>
     static readonly Dictionary<string, string> SendTitles = [];

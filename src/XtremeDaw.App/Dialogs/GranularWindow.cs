@@ -126,7 +126,6 @@ public sealed class GranularWindow : Window
             if (m == SamplerWaveView.Marker.Start) Edit(g => g.Start = f, "start");
             else if (m == SamplerWaveView.Marker.End) Edit(g => g.End = f, "end");
         };
-        ToolTip.SetTip(wave, Loc.T("granular.wave.tip"));
         top.Children.Add(wave);
         var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         bar.Children.Add(markerInfo);
@@ -336,7 +335,7 @@ public sealed class GranularWindow : Window
     Control Dial(string label, string tip, Scale scale, double reset, Func<GranularSettings, double> get, Action<GranularSettings, double> set, Func<double, string> text, string key, GranularKnob? lane = null)
     {
         var value = new TextBlock { Classes = { "dim", "mono" }, FontSize = 10.5, HorizontalAlignment = HorizontalAlignment.Center };
-        var knob = new Knob(KnobSize, tip) { Min = 0, Max = 1, ResetTo = Math.Clamp(scale.ToKnob(reset), 0, 1) };
+        var knob = new Knob(KnobSize, label) { Min = 0, Max = 1, ResetTo = Math.Clamp(scale.ToKnob(reset), 0, 1) };
         knob.Changed += x => Edit(g => set(g, scale.ToValue(x)), key);
         refresh.Add(() =>
         {
@@ -345,7 +344,9 @@ public sealed class GranularWindow : Window
             value.Text = text(get(g));
         });
         var cell = new StackPanel { Spacing = 3, HorizontalAlignment = HorizontalAlignment.Center };
-        cell.Children.Add(new TextBlock { Text = label, FontSize = 10.5, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
+        var name = new TextBlock { Text = label, FontSize = 10.5, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center, Background = Brushes.Transparent };
+        ToolTip.SetTip(name, tip);
+        cell.Children.Add(name);
         knob.HorizontalAlignment = HorizontalAlignment.Center;
         cell.Children.Add(knob);
         cell.Children.Add(value);

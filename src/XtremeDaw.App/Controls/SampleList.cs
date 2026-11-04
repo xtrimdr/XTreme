@@ -11,6 +11,8 @@ namespace XtremeDaw.App.Controls;
 /// view, because a library holds a hundred thousand rows and neither a control per row nor a virtualized list keeps up
 /// with holding an arrow key. It sits in a <see cref="ScrollViewer"/> at the full height of its rows and paints the
 /// stretch the viewer shows. It raises events; the window plays, inserts and remembers.
+/// Files are marked like in any file list (asked by the user): a click marks one, Ctrl+click adds or takes one out,
+/// Shift+click and Shift+arrows mark the stretch from the anchor. Dragging or inserting one of the marked takes them all.
 /// </summary>
 public sealed class SampleList : Control
 {
@@ -31,13 +33,19 @@ public sealed class SampleList : Control
     ScrollViewer host = new();
     IReadOnlyList<SampleRow> rows = [];
     int selected = -1, hover = -1, pressed = -1;
+    /// <summary>Where Shift marks from: the last row clicked without Shift.</summary>
+    int anchor = -1;
+    /// <summary>The marked files, by path: they outlive a new list of rows when their file is still in it.</summary>
+    readonly HashSet<string> marked = [];
+    /// <summary>A plain press on a marked file keeps the others until it is let go without dragging.</summary>
+    bool narrowOnRelease;
     Point pressAt;
     string? playing;
 
     /// <summary>A row was picked by click or by keyboard.</summary>
     public event Action<SampleRow>? Picked;
-    /// <summary>Double click or Enter on a file.</summary>
-    public event Action<SampleFile>? Activated;
+    /// <summary>Double click or Enter on a file: it, or every marked file when it is one of them.</summary>
+    public event Action<IReadOnlyList<SampleFile>>? Activated;
     /// <summary>A folder wants to open or close.</summary>
     public event Action<SampleNode>? Toggled;
     /// <summary>Space on the list.</summary>
@@ -45,7 +53,8 @@ public sealed class SampleList : Control
     /// <summary>F on a file.</summary>
     public event Action<SampleFile>? FavoritePressed;
     public event Action<SampleRow, Point>? MenuRequested;
-    public event Action<SampleFile, PointerEventArgs>? DragRequested;
+    /// <summary>A file was carried off: it, or every marked file when it is one of them, in the order of the list.</summary>
+    public event Action<IReadOnlyList<SampleFile>, PointerEventArgs>? DragRequested;
     /// <summary>A row on screen doesn't know its length yet.</summary>
     public Action<SampleFile>? NeedsInfo { get; set; }
     public Func<SampleFile, bool>? IsFavorite { get; set; }
@@ -54,6 +63,16 @@ public sealed class SampleList : Control
     public string OfflineText { get; set; } = "";
 
     public SampleRow? Selected => selected >= 0 && selected < rows.Count ? rows[selected] : null;
+
+    /// <summary><paramref name="f"/>, or every marked file in the order of the list when it is one of them.</summary>
+    public IReadOnlyList<SampleFile> WithMarked(SampleFile f)
+    {
+        if (marked.Count < 2 || !marked.Contains(f.Path)) return [f];
+        var list = new List<SampleFile>(marked.Count);
+        foreach (var r in rows)
+            if (r.File is { } file && marked.Contains(file.Path)) list.Add(file);
+        return list;
+    }
 
     public SampleList()
     {
@@ -75,10 +94,18 @@ public sealed class SampleList : Control
         var was = Selected;
         rows = list;
         selected = -1;
+        anchor = -1;
         hover = -1;
         if (was is { } w)
             for (int i = 0; i < list.Count; i++)
-                if (list[i].File == w.File && (w.File != null || list[i].Folder?.Path == w.Folder?.Path)) { selected = i; break; }
+                if (list[i].File == w.File && (w.File != null || list[i].Folder?.Path == w.Folder?.Path)) { selected = anchor = i; break; }
+        if (marked.Count > 0)
+        {
+            var still = new HashSet<string>();
+            foreach (var r in list)
+                if (r.File is { } f && marked.Contains(f.Path)) still.Add(f.Path);
+            marked.IntersectWith(still);
+        }
         InvalidateMeasure();
         InvalidateVisual();
     }
@@ -104,7 +131,7 @@ public sealed class SampleList : Control
     void DrawRow(DrawingContext ctx, int i, double y, double w)
     {
         var row = rows[i];
-        if (i == selected) ctx.FillRectangle(Palette.Raised, new Rect(0, y, w, RowH));
+        if (i == selected || row.File is { } m && marked.Contains(m.Path)) ctx.FillRectangle(Palette.Raised, new Rect(0, y, w, RowH));
         else if (i == hover) ctx.FillRectangle(Palette.Alpha(Palette.RaisedColor, 0.6), new Rect(0, y, w, RowH));
         double x = Pad + row.Depth * Indent;
         double right = w - Pad;
@@ -168,9 +195,18 @@ public sealed class SampleList : Control
         return p.Y >= 0 && i < rows.Count ? i : -1;
     }
 
-    void Select(int i, bool scroll = true)
+    /// <summary>Moves the cursor to row <paramref name="i"/>, marking only its file; <paramref name="extend"/> marks
+    /// the stretch from the anchor instead.</summary>
+    void Select(int i, bool scroll = true, bool extend = false)
     {
         selected = i;
+        if (i >= 0 && extend && anchor >= 0 && anchor < rows.Count) MarkRange(anchor, i);
+        else
+        {
+            anchor = i;
+            marked.Clear();
+            if (i >= 0 && rows[i].File is { } f) marked.Add(f.Path);
+        }
         InvalidateVisual();
         if (i < 0) return;
         if (scroll)
@@ -182,6 +218,21 @@ public sealed class SampleList : Control
         Picked?.Invoke(rows[i]);
     }
 
+    void MarkRange(int a, int b)
+    {
+        marked.Clear();
+        for (int k = Math.Min(a, b); k <= Math.Max(a, b); k++)
+            if (rows[k].File is { } f) marked.Add(f.Path);
+    }
+
+    /// <summary>Puts the cursor on row <paramref name="i"/> keeping what was marked.</summary>
+    void SelectKeeping(int i)
+    {
+        var keep = new HashSet<string>(marked);
+        Select(i, false);
+        marked.UnionWith(keep);
+    }
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         var point = e.GetCurrentPoint(this);
@@ -191,7 +242,8 @@ public sealed class SampleList : Control
         e.Handled = true;
         if (point.Properties.IsRightButtonPressed)
         {
-            Select(i, false);
+            if (rows[i].File is { } held && marked.Contains(held.Path)) SelectKeeping(i);
+            else Select(i, false);
             MenuRequested?.Invoke(rows[i], point.Position);
             return;
         }
@@ -202,14 +254,31 @@ public sealed class SampleList : Control
             Toggled?.Invoke(folder);
             return;
         }
+        var file = rows[i].File!;
         if (e.ClickCount == 2)
         {
-            Activated?.Invoke(rows[i].File!);
+            Activated?.Invoke(WithMarked(file));
             return;
         }
         pressed = i;
         pressAt = point.Position;
-        Select(i, false);
+        narrowOnRelease = false;
+        if ((e.KeyModifiers & KeyModifiers.Shift) != 0) Select(i, false, extend: true);
+        else if ((e.KeyModifiers & KeyModifiers.Control) != 0)
+        {
+            // Ctrl takes one file in or out and keeps the rest; the cursor (and what plays) goes to it either way
+            bool had = marked.Contains(file.Path);
+            SelectKeeping(i);
+            if (had) marked.Remove(file.Path);
+            InvalidateVisual();
+        }
+        else if (marked.Contains(file.Path) && marked.Count > 1)
+        {
+            // pressing one of several marked files may start carrying them all
+            SelectKeeping(i);
+            narrowOnRelease = true;
+        }
+        else Select(i, false);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
@@ -218,7 +287,8 @@ public sealed class SampleList : Control
         if (pressed >= 0 && pressed < rows.Count && rows[pressed].File is { } f && Point.Distance(p, pressAt) >= DragStart)
         {
             pressed = -1;
-            DragRequested?.Invoke(f, e);
+            narrowOnRelease = false;
+            DragRequested?.Invoke(WithMarked(f), e);
             return;
         }
         int i = RowAt(p);
@@ -227,7 +297,17 @@ public sealed class SampleList : Control
         InvalidateVisual();
     }
 
-    protected override void OnPointerReleased(PointerReleasedEventArgs e) => pressed = -1;
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        if (narrowOnRelease && pressed >= 0 && pressed < rows.Count && rows[pressed].File is { } f)
+        {
+            marked.Clear();
+            marked.Add(f.Path);
+            InvalidateVisual();
+        }
+        narrowOnRelease = false;
+        pressed = -1;
+    }
 
     protected override void OnPointerExited(PointerEventArgs e)
     {
@@ -238,8 +318,19 @@ public sealed class SampleList : Control
     /// <summary>The list's own keys. The window asks first, because Space and the arrows are also shortcuts of the project.</summary>
     public bool HandleKey(KeyEventArgs e)
     {
-        if (e.KeyModifiers != KeyModifiers.None) return false;
         int page = host.Viewport.Height > 0 ? (int)(host.Viewport.Height / RowH) : PageRows;
+        if (e.KeyModifiers == KeyModifiers.Shift)
+            switch (e.Key)
+            {
+                case Key.Down: Move(selected + 1, true); return true;
+                case Key.Up: Move(selected < 0 ? 0 : selected - 1, true); return true;
+                case Key.PageDown: Move(selected + page, true); return true;
+                case Key.PageUp: Move(selected - page, true); return true;
+                case Key.Home: Move(0, true); return true;
+                case Key.End: Move(rows.Count - 1, true); return true;
+                default: return false;
+            }
+        if (e.KeyModifiers != KeyModifiers.None) return false;
         switch (e.Key)
         {
             case Key.Down: Move(selected + 1); return true;
@@ -259,7 +350,7 @@ public sealed class SampleList : Control
                 return true;
             case Key.Enter:
                 if (Selected?.Folder is { } folder) Toggled?.Invoke(folder);
-                else if (Selected?.File is { } file) Activated?.Invoke(file);
+                else if (Selected?.File is { } file) Activated?.Invoke(WithMarked(file));
                 return Selected != null;
             case Key.F:
                 if (Selected?.File is { } star) FavoritePressed?.Invoke(star);
@@ -268,9 +359,9 @@ public sealed class SampleList : Control
         }
     }
 
-    void Move(int i)
+    void Move(int i, bool extend = false)
     {
-        if (rows.Count > 0) Select(Math.Clamp(i, 0, rows.Count - 1));
+        if (rows.Count > 0) Select(Math.Clamp(i, 0, rows.Count - 1), extend: extend);
     }
 
     void GoToParent()

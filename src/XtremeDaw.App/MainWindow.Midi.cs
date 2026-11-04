@@ -27,7 +27,7 @@ namespace XtremeDaw.App;
 public partial class MainWindow
 {
     readonly PianoRollView pianoRoll = new();
-    readonly DockPanel pianoHost = new() { IsVisible = false };
+    readonly DockPanel pianoHost = new() { IsVisible = false, Classes = { "notips" } };
     readonly TextBlock pianoTitle = new() { FontSize = 12, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
     bool pianoView;
     /// <summary>The MIDI clip the piano roll shows (it stays when the view closes, so it reopens on it).</summary>

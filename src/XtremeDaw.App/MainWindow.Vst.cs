@@ -271,7 +271,8 @@ public partial class MainWindow
         {
             DressPluginWindow(loaded.Bridge, loaded.Plugin.Name);
             string listen = ListenBarButton;
-            loaded.Bridge.Command($"toolbar {(listen.Length > 0 ? listen + "|-|" : "")}keys=\uE765:{Loc.T("vst.bar.keys")}|-|mute=:M|solo=:S|-|panic=\uE71A:{Loc.T("vst.bar.panic")}|-|{ThumbBarButton}");
+            loaded.Bridge.Command($"toolbar {(listen.Length > 0 ? listen + "|-|" : "")}keys=\uE765:{Loc.T("vst.bar.keys")}|-|mute=:M|solo=:S|-|panic=\uE71A:{Loc.T("vst.bar.panic")}|-|{ThumbBarButton}|-|{KeyRouteBarButtons}");
+            TellKeyRoute(loaded.Bridge);
             TellPluginTrack(loaded.Bridge, loaded.Plugin.Name, track.Track);
             pluginBars.Remove(track.Track.Id);
             TellPluginPanel(loaded.Bridge);
@@ -484,8 +485,8 @@ public partial class MainWindow
 /// <summary>
 /// The inspector of a MIDI track (asked by the user: choosing its instrument has to be easy and in sight, but not as a
 /// list that fills the panel once there are many): the instrument it plays with as a dropdown (the same menu as the
-/// timeline's chip, native and VST3 apart), how it is going, its window, and below, where the track goes and its sends
-/// (the same sections as an audio track's, <see cref="RebuildInspectorSends"/>, moved here while a MIDI track is shown).
+/// timeline's chip, native and VST3 apart), how it is going and its window, in the Pista tab; its fader, effects and
+/// sends go in the strip like an audio track's (MainWindow.InspectorStrip.cs).
 /// </summary>
 public partial class MainWindow
 {
@@ -571,13 +572,4 @@ public partial class MainWindow
         midiOpen.IsEnabled = state == TimelineView.InstrumentState.Ready;
     }
 
-    /// <summary>Puts the output and sends tray in <paramref name="host"/>: the Canal tab's place, right after the
-    /// effects, or a group's. One set of sections, moved, not two.</summary>
-    void PlaceInspectorSends(Panel host)
-    {
-        if (sendsTray.Parent == host) return;
-        (sendsTray.Parent as Panel)?.Children.Remove(sendsTray);
-        if (host == takeSections) takeSections.Children.Insert(takeSections.Children.IndexOf(chainTray) + 1, sendsTray);
-        else host.Children.Add(sendsTray);
-    }
 }

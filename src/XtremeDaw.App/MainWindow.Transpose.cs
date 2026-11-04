@@ -52,13 +52,11 @@ public partial class MainWindow
     readonly Dictionary<TransposeKey, TransposeJob> transposing = [];
     readonly HashSet<TransposeKey> transposeFailed = [];
     ProjectStore? transposeStore;
-    readonly TextBlock transposeNote = new() { FontSize = 11, Foreground = Palette.Faint, IsVisible = false };
-    /// <summary>Refreshes the "Transponiendo… 40%" note while something is being moved.</summary>
+    /// <summary>Refreshes the transposing marks (timeline, mixer) while something is being moved.</summary>
     readonly DispatcherTimer transposeClock = new() { Interval = TimeSpan.FromMilliseconds(250) };
 
-    void InitTranspose(StackPanel host)
+    void InitTranspose()
     {
-        host.Children.Add(transposeNote);
         transposeClock.Tick += (_, _) => RefreshTransposeNote();
         inspectorRefresh.Add(RefreshTransposeNote);
         Timeline.TransposeProgress = TransposeProgress;
@@ -240,15 +238,11 @@ public partial class MainWindow
             }), TaskScheduler.Default);
     }
 
-    /// <summary>The selected track's note (or the picked ones', together): how far its transpose is, hidden when it plays
-    /// what it should. The channel's tags (timeline header, mixer strip) show the same progress.</summary>
+    /// <summary>How far the transposes are, on the channel's tags (timeline header and clips, mixer strip). The inspector
+    /// shows nothing of it (asked by the user: a note there moved everything under it).</summary>
     void RefreshTransposeNote()
     {
-        var working = PickTargets().Select(TransposeProgress).OfType<float>().ToList();
-        float? progress = working.Count == 0 ? null : working.Average();
         RefreshStretchToast();
-        transposeNote.IsVisible = progress != null;
-        if (progress is { } p) transposeNote.Text = Loc.T("insp.transpose.working", $"{p * 100:0}");
         if (mx != null && mixerView && !masteringView) foreach (var r in mx.Transpose) r();
         Timeline.InvalidateVisual();
     }

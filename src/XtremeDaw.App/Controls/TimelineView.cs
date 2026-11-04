@@ -2392,7 +2392,7 @@ public sealed partial class TimelineView : Control
     /// <summary>
     /// The badge in a clip's top right corner (native only): a camera when its media has video, a note when it is
     /// audio only, so you can tell them apart without opening anything. It sits left of the edge handles and only
-    /// says something; hovering it gives the tooltip (<see cref="UpdateMediaTip"/>).
+    /// says something, with no tooltip: over a clip it would cover what you are about to grab.
     /// </summary>
     static Rect? MediaBadge(Rect clip) => clip.Width >= 48 && clip.Height >= 24 ? new Rect(clip.Right - 30, clip.Top + 4, 18, 16) : null;
 
@@ -2401,20 +2401,6 @@ public sealed partial class TimelineView : Control
         bool over = badge.Contains(lastPointer);
         ctx.DrawRectangle(Palette.Alpha(Colors.Black, over ? 0.75 : 0.55), null, badge, 4, 4);
         ctx.DrawText(video ? "" : "", 10, over ? Palette.Fg : Palette.Dim, new Point(badge.X + 4, badge.Y + 3), Icons);
-    }
-
-    /// <summary>The tooltip the timeline shows right now: the media badge's under the pointer, or none.</summary>
-    string? mediaTip;
-
-    void UpdateMediaTip()
-    {
-        string? tip = null;
-        if (gesture == null && lastPointer.X >= HeaderW && HitTrack(lastPointer.Y) is var i and >= 0
-            && ClipAt(i, lastPointer.X) is { Offline: false } c && MediaBadge(ClipRect(i, Window(c))) is { } badge && badge.Contains(lastPointer))
-            tip = c.VideoPath == null ? "tl.media.audio" : tracks[i].Track.Video ? "tl.media.video" : "tl.media.videoOff";
-        if (tip == mediaTip) return;
-        mediaTip = tip;
-        ToolTip.SetTip(this, tip == null ? null : Loc.T(tip));
     }
 
     /// <summary>"Transponiendo… 0%" to "100%", and the knob's bare "0%" to "100%", made once (nothing is built per frame).</summary>
@@ -3462,7 +3448,6 @@ public sealed partial class TimelineView : Control
             if (tool == TimelineTool.Split) UpdateSplitHover();
             if (Drawing) UpdatePencilHover();
         }
-        UpdateMediaTip();
         InvalidateVisual();
     }
 
@@ -3485,7 +3470,6 @@ public sealed partial class TimelineView : Control
         splitHover = null;
         pencilHover = null;
         hoverPattern = null;
-        UpdateMediaTip();
         InvalidateVisual();
     }
 

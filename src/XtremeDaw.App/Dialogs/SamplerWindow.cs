@@ -143,7 +143,6 @@ public sealed class SamplerWindow : Window
                 case SamplerWaveView.Marker.LoopEnd: Edit(s => s.LoopEnd = point, "loopEnd"); break;
             }
         };
-        ToolTip.SetTip(wave, Loc.T("sampler.wave.tip"));
         top.Children.Add(wave);
         top.Children.Add(WaveBar());
         refresh.Add(() =>
@@ -370,7 +369,6 @@ public sealed class SamplerWindow : Window
         box.Children.Add(type);
         var rest = new StackPanel { Spacing = 8 };
         var env = new SamplerEnvelopeView(SamplerSettings.MaxEnvSec) { Height = 60 };
-        ToolTip.SetTip(env, Loc.T("sampler.filterShape.tip"));
         env.Moved += (a, d, s, r) => Edit(x => (x.FilterAttack, x.FilterDecay, x.FilterSustain, x.FilterRelease) = (a, d, s, r), "filterShape");
         refresh.Add(() => { if (Current() is { } s) env.Set(s.FilterAttack, s.FilterDecay, s.FilterSustain, s.FilterRelease); });
         rest.Children.Add(Dials(
@@ -469,7 +467,7 @@ public sealed class SamplerWindow : Window
     Control Dial(string label, string tip, Scale scale, double reset, Func<SamplerSettings, double> get, Action<SamplerSettings, double> set, Func<double, string> text, string key, SamplerKnob? lane = null)
     {
         var value = new TextBlock { Classes = { "dim", "mono" }, FontSize = 10.5, HorizontalAlignment = HorizontalAlignment.Center };
-        var knob = new Knob(KnobSize, tip) { Min = 0, Max = 1, ResetTo = Math.Clamp(scale.ToKnob(reset), 0, 1) };
+        var knob = new Knob(KnobSize, label) { Min = 0, Max = 1, ResetTo = Math.Clamp(scale.ToKnob(reset), 0, 1) };
         knob.Changed += x => Edit(s => set(s, scale.ToValue(x)), key);
         refresh.Add(() =>
         {
@@ -478,7 +476,9 @@ public sealed class SamplerWindow : Window
             value.Text = text(get(s));
         });
         var cell = new StackPanel { Spacing = 3, HorizontalAlignment = HorizontalAlignment.Center };
-        cell.Children.Add(new TextBlock { Text = label, FontSize = 10.5, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center });
+        var name = new TextBlock { Text = label, FontSize = 10.5, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center, Background = Brushes.Transparent };
+        ToolTip.SetTip(name, tip);
+        cell.Children.Add(name);
         knob.HorizontalAlignment = HorizontalAlignment.Center;
         cell.Children.Add(knob);
         cell.Children.Add(value);

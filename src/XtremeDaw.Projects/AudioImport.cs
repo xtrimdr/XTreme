@@ -223,6 +223,25 @@ public static class AudioImport
         return path;
     }
 
+    /// <summary>Whether <paramref name="t"/> takes an imported clip at <paramref name="at"/>; see <see cref="AddClip"/>.</summary>
+    static bool Takes(Project p, Track t, double at, double lengthSec, bool fit) =>
+        !t.IsMidi && (t.Clips.Count == 0 || (fit && ClipEditing.IsFree(p, t, at, at + lengthSec)));
+
+    /// <summary>
+    /// Where several files dropped together land, one under the other (asked by the user): the k-th on the k-th of
+    /// <paramref name="trackIds"/> (the track dropped on and the ones under it, as the timeline shows them) when that one
+    /// takes it, as <see cref="AddClip"/> with <c>fit</c> decides; null = a new track, made after the last. A length of
+    /// 0 (not known yet) only asks for the start to be free. The timeline draws this and the import follows it.
+    /// </summary>
+    public static string?[] Stack(Project p, IReadOnlyList<string> trackIds, double atSec, IReadOnlyList<double> lengths)
+    {
+        var to = new string?[lengths.Count];
+        double at = Math.Max(0, Math.Round(atSec, 3));
+        for (int k = 0; k < to.Length && k < trackIds.Count; k++)
+            if (p.Tracks.Find(t => t.Id == trackIds[k]) is { } t && Takes(p, t, at, Math.Max(lengths[k], 0.001), true)) to[k] = t.Id;
+        return to;
+    }
+
     /// <summary>
     /// Adds the media and a clip of it at <paramref name="atSec"/> on a new track at the end (with its video panel only
     /// when it brought a picture); with <paramref name="trackId"/> of an empty track it takes that one instead (like a
@@ -247,7 +266,7 @@ public static class AudioImport
         };
         p.Media.Add(media);
         double at = Math.Max(0, Math.Round(atSec, 3));
-        var track = p.Tracks.Find(t => t.Id == trackId && !t.IsMidi && (t.Clips.Count == 0 || (fit && ClipEditing.IsFree(p, t, at, at + file.DurationSec))));
+        var track = p.Tracks.Find(t => t.Id == trackId && Takes(p, t, at, file.DurationSec, fit));
         if (track == null)
         {
             track = new Track { Video = false };

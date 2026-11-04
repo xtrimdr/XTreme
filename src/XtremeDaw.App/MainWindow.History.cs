@@ -256,37 +256,45 @@ public partial class MainWindow
         grid.Children.Add(play);
 
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        var nameLine = new TrimRow { Spacing = 8 };
-        nameLine.Children.Add(new TextBlock { Text = m.Name, FontSize = 13, Foreground = inTimeline ? Palette.Fg : Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis });
-        Border Badge(string text, string? glyph = null)
+        text.Children.Add(new TextBlock { Text = m.Name, FontSize = 13, Foreground = inTimeline ? Palette.Fg : Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis });
+        // the tags go in their own boxes under the name, lit while the take is in the timeline (asked by the user: the
+        // list has to read at a glance); an offline file never lights up
+        var tags = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        Border Badge(string text, string? glyph = null, bool lit = false)
         {
-            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-            if (glyph != null) label.Children.Add(HistoryIcon(glyph, 10, Palette.Faint));
-            label.Children.Add(new TextBlock { Text = text, FontSize = 10, FontWeight = FontWeight.Medium, Foreground = Palette.Faint });
-            return new() { Background = Palette.Hover, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1), VerticalAlignment = VerticalAlignment.Center, Child = label };
+            var fg = lit ? Palette.Accent : Palette.Faint;
+            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3 };
+            if (glyph != null) label.Children.Add(HistoryIcon(glyph, 9, fg));
+            label.Children.Add(new TextBlock { Text = text, FontSize = 10, FontWeight = FontWeight.Medium, Foreground = fg });
+            var box = new Border
+            {
+                Background = lit ? Palette.AccentSoft : Brushes.Transparent, BorderBrush = lit ? Palette.Alpha(Palette.AccentColor, 0.4) : Palette.Line,
+                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(5), Padding = new Thickness(5, 0, 5, 1), Child = label,
+            };
+            tags.Children.Add(box);
+            return box;
         }
         // where it came from (native only: the web has no imports)
-        nameLine.Children.Add(Badge(m.Kind == "import" ? Loc.T("hist.kind.import") : Loc.T("hist.kind.recording"), m.Video != null ? "\uE714" : m.Kind == "import" ? "\uE896" : "\uE720"));
+        Badge(m.Kind == "import" ? Loc.T("hist.kind.import") : Loc.T("hist.kind.recording"), m.Video != null ? "\uE714" : m.Kind == "import" ? "\uE896" : "\uE720", inTimeline);
         if (m.Linked)
         {
-            var linked = Badge(Loc.T("hist.kind.linked"), "");
+            var linked = Badge(Loc.T("hist.kind.linked"), "", inTimeline);
             ToolTip.SetTip(linked, st.Resolve(m.Video) ?? st.Resolve(m.Audio));
-            nameLine.Children.Add(linked);
         }
         bool lost = historyMissing.Contains(m.Id);
         if (lost)
         {
             var offline = Badge(Loc.T("hist.kind.offline"), "");
             ToolTip.SetTip(offline, st.Resolve(m.Video) is { } picture && !File.Exists(picture) ? picture : st.Resolve(m.Audio));
-            nameLine.Children.Add(offline);
         }
-        if (!inTimeline) nameLine.Children.Add(Badge(Loc.T("hist.unusedBadge")));
-        text.Children.Add(nameLine);
-        text.Children.Add(new TextBlock
+        if (!inTimeline) Badge(Loc.T("hist.unusedBadge"));
+        var info = new TextBlock
         {
-            Classes = { "mono" }, FontSize = 10, Foreground = Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis,
+            Classes = { "mono" }, FontSize = 10, Foreground = Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
             Text = $"{m.CreatedAt.ToLocalTime():HH:mm} · {ProjectHistory.FormatDuration(m.DurationSec)} · {ProjectHistory.FormatBytes(historyBytes.GetValueOrDefault(m.Id))}",
-        });
+        };
+        Grid.SetColumn(info, 1);
+        text.Children.Add(new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 8, Margin = new Thickness(0, 3, 0, 0), Children = { tags, info } });
         Grid.SetColumn(text, 1); grid.Children.Add(text);
 
         var reveal = RowButton("\uE838", Loc.T("hist.reveal"), () => RevealInExplorer(st.Dir, m.Video ?? m.Audio));

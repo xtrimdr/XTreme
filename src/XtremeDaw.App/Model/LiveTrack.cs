@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
@@ -737,6 +738,7 @@ public sealed class LiveTrack
         long turnTo = 0,
         long loopEnd = 0)
     {
+        long t0 = Stopwatch.GetTimestamp();
         var bl = Chain.BufferL(n);
         var br = Chain.BufferR(n);
         bl.Clear();
@@ -745,9 +747,11 @@ public sealed class LiveTrack
         var seq = notes;
         var inst = instrument;
         var own = native;
+        long played;
         if (fromFrame == NoSecondRead)
         {
             AddClips(posFrame, n, bl, br, default);
+            played = Stopwatch.GetTimestamp();
             if (inst != null) inst.Play(posFrame, n, bl, br, Keys, turnTo, loopEnd);
             else if (own != null) own.Play(posFrame, n, bl, br, Keys);
             else if (seq != null) NoteSynth.Render(seq, posFrame, n, sampleRate, bl, br);
@@ -756,6 +760,7 @@ public sealed class LiveTrack
         {
             AddClips(fromFrame, n, bl, br, wOut);
             AddClips(posFrame, n, bl, br, wIn);
+            played = Stopwatch.GetTimestamp();
             // a plugin can't play two places at once: in a seek it jumps (its notes go off) and plays on from the new
             // one; a loop's turn it already played, ahead of the playhead
             if (inst != null) inst.Play(posFrame, n, bl, br, Keys, turnTo, loopEnd);
@@ -767,11 +772,13 @@ public sealed class LiveTrack
                 NoteSynth.Render(seq, posFrame, n, sampleRate, bl, br, wIn);
             }
         }
+        Interlocked.Add(ref instrumentTicks, Stopwatch.GetTimestamp() - played);
         // the keyboard: through the plugin above, or the test tone here
         if (inst != null || own != null) Keys.Skip(n);
         else Keys.Render(n, bl, br);
         Preview.Mix(n, bl, br);
         Output(n, anySolo, masterL, masterR, sendOffset);
+        Interlocked.Add(ref busyTicks, Stopwatch.GetTimestamp() - t0);
     }
 
     /// <summary>
@@ -782,15 +789,26 @@ public sealed class LiveTrack
     /// </summary>
     public void MixIdle(int n, bool anySolo, Span<float> masterL, Span<float> masterR)
     {
+        long t0 = Stopwatch.GetTimestamp();
+        MixIdleTimed(n, anySolo, masterL, masterR, t0);
+        Interlocked.Add(ref busyTicks, Stopwatch.GetTimestamp() - t0);
+    }
+
+    void MixIdleTimed(int n, bool anySolo, Span<float> masterL, Span<float> masterR, long t0)
+    {
         if (instrument is { } inst)
         {
-            if (inst.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys)) Output(n, anySolo, masterL, masterR, 0);
+            bool sounds = inst.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys);
+            Interlocked.Add(ref instrumentTicks, Stopwatch.GetTimestamp() - t0);
+            if (sounds) Output(n, anySolo, masterL, masterR, 0);
             Keys.Skip(n);
             return;
         }
         if (native is { } own)
         {
-            if (own.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys, Chain.Frame)) Output(n, anySolo, masterL, masterR, 0);
+            bool sounds = own.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys, Chain.Frame);
+            Interlocked.Add(ref instrumentTicks, Stopwatch.GetTimestamp() - t0);
+            if (sounds) Output(n, anySolo, masterL, masterR, 0);
             Keys.Skip(n);
             return;
         }
@@ -803,6 +821,15 @@ public sealed class LiveTrack
         Preview.Mix(n, bl, br);
         Output(n, anySolo, masterL, masterR, 0);
     }
+
+    // time spent on the audio thread, written there and taken by the UI (TakeLoad)
+    long busyTicks, instrumentTicks;
+
+    /// <summary>The audio thread's time on this track since the last call, and on its instrument (plugin, sampler or test tone) alone, in <see cref="Stopwatch"/> ticks. UI thread.</summary>
+    public (long Busy, long Instrument) TakeLoad() => (Interlocked.Exchange(ref busyTicks, 0), Interlocked.Exchange(ref instrumentTicks, 0));
+
+    /// <summary>The share of real time the last <see cref="TakeLoad"/> measured, for the DSP tooltip: the whole track and its instrument, in %.</summary>
+    public double LoadPercent, InstrumentPercent;
 
     /// <summary>The engine runs <see cref="MixIdle"/> for it: an instrument, or the keyboard or the piano roll still sounding.</summary>
     public bool RunsIdle => instrument != null || native != null || Keys.Active || Preview.Active;

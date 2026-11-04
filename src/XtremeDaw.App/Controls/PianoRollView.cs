@@ -46,7 +46,8 @@ namespace XtremeDaw.App.Controls;
 /// timeline's start, so they line up with the timeline's.
 /// </para>
 /// <para>
-/// With a <see cref="Scale"/> the rows of its notes stand out and the root's are lit, notes written or moved land on it
+/// With a <see cref="Scale"/> only its notes have rows (the root's lit), plus those of notes already off it
+/// (<see cref="SyncRows"/>); notes written or moved land on it
 /// and moving goes along it (a chord stays in key), the ↑ ↓ keys too; Alt is free. A note outside it is drawn hollow.
 /// With <see cref="ChordTool"/> a click writes a whole chord, previewed under the pointer. Any stack of selected notes
 /// that makes a chord gets a small bar over it with its name and its inversions (<see cref="DrawChordBar"/>), keys 1 to
@@ -226,6 +227,7 @@ public sealed partial class PianoRollView : Control
     {
         Focusable = true;
         ClipToBounds = true;
+        for (int p = 0; p < Pitches; p++) rowPitch[p] = rowOf[p] = p;
         // a scrub held against the ruler's ends keeps the view (and the playhead) going that way, as the timeline's
         edgeScroll = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Input, (_, _) =>
         {
@@ -356,10 +358,58 @@ public sealed partial class PianoRollView : Control
     double X(double beat) => XA(Origin + beat);
     double BeatA(double x) => (x - KeyW + scrollX) / beatW;
     double Beat(double x) => BeatA(x) - Origin;
-    double Y(int pitch) => RulerH + (Pitches - 1 - pitch) * rowH - scrollY;
-    int PitchAt(double y) => Math.Clamp(Pitches - 1 - (int)Math.Floor((y + scrollY - RulerH) / rowH), 0, Pitches - 1);
+    double Y(int pitch) => RulerH + (rowCount - 1 - rowOf[Math.Clamp(pitch, 0, Pitches - 1)]) * rowH - scrollY;
+    int PitchAt(double y) => rowPitch[Math.Clamp(rowCount - 1 - (int)Math.Floor((y + scrollY - RulerH) / rowH), 0, rowCount - 1)];
     Rect NoteRect(MidiNote n) => new(X(n.Beat), Y(n.Pitch) + 1, Math.Max(3, n.Beats * beatW - 1), rowH - 2);
-    double ContentH => Pitches * rowH;
+    double ContentH => rowCount * rowH;
+
+    /// <summary>
+    /// The rows on screen, lowest first (<see cref="rowPitch"/>), and each pitch's row (<see cref="rowOf"/>; a hidden one
+    /// gets the nearest row under it). With a scale only its notes have a row (asked by the user: the rest of the keyboard
+    /// isn't there), plus the pitches of notes already drawn off it, so those stay in sight; without one, all 128.
+    /// </summary>
+    readonly int[] rowPitch = new int[Pitches], rowOf = new int[Pitches];
+    readonly bool[] rowShown = new bool[Pitches];
+    int rowCount = Pitches;
+
+    /// <summary>
+    /// Makes the rows again from the scale and the notes drawn. Not during a gesture: a row coming or going under the
+    /// pointer would move everything being dragged. When they change, the pitch in the middle of the grid stays there.
+    /// Allocates nothing: it runs on every render.
+    /// </summary>
+    void SyncRows()
+    {
+        if (gesture != null) return;
+        for (int p = 0; p < Pitches; p++) rowShown[p] = scale == null || scale.Contains(p);
+        if (scale != null)
+        {
+            foreach (var n in notes) rowShown[Math.Clamp(n.Pitch, 0, Pitches - 1)] = true;
+            foreach (var c in others)
+                foreach (var n in c.Notes) rowShown[Math.Clamp(n.Pitch, 0, Pitches - 1)] = true;
+            foreach (var (list, _) in ghostParts)
+                foreach (var n in list) rowShown[Math.Clamp(n.Pitch, 0, Pitches - 1)] = true;
+        }
+        int count = 0;
+        bool same = true;
+        for (int p = 0; p < Pitches; p++)
+            if (rowShown[p])
+            {
+                same &= count < rowCount && rowPitch[count] == p;
+                count++;
+            }
+        if (same && count == rowCount) return;
+        double midY = (RulerH + GridBottom) / 2;
+        int mid = PitchAt(midY);
+        double offset = midY - Y(mid);
+        rowCount = 0;
+        for (int p = 0; p < Pitches; p++)
+        {
+            if (rowShown[p]) rowPitch[rowCount++] = p;
+            rowOf[p] = Math.Max(0, rowCount - 1);
+        }
+        scrollY = (rowCount - 1 - rowOf[mid]) * rowH + RulerH - midY + offset;
+        ClampScroll();
+    }
     /// <summary>Up to the last clip's end, with two bars to spare.</summary>
     double ContentW
     {
@@ -420,8 +470,8 @@ public sealed partial class PianoRollView : Control
         }
         if (pitches.Any() || frame != Frame.Reveal)
         {
-            double mid = pitches.Any() ? (pitches.Min() + pitches.Max()) / 2.0 : 60;
-            scrollY = (Pitches - 1 - mid) * rowH - (GridBottom - RulerH) / 2;
+            double mid = pitches.Any() ? (rowOf[pitches.Min()] + rowOf[pitches.Max()]) / 2.0 : rowOf[60];
+            scrollY = (rowCount - 1 - mid) * rowH - (GridBottom - RulerH) / 2;
         }
         ClampScroll();
     }
@@ -475,15 +525,17 @@ public sealed partial class PianoRollView : Control
             ctx.DrawText(Loc.T("piano.empty.hint"), 12, Palette.Faint, new Point(24, 52));
             return;
         }
+        SyncRows();
         Fit();
         double gb = GridBottom;
         var line = Palette.Pen(Palette.Line);
 
         using (ctx.PushClip(new Rect(KeyW, RulerH, Math.Max(0, W - KeyW), Math.Max(0, gb - RulerH))))
         {
-            // rows: the black keys' rows darker, a line under every B (between octaves)
-            for (int p = 0; p < Pitches; p++)
+            // rows: the white keys' rows lifted so the black keys' stay darker, a line where an octave ends (under every C's row, or what is left of it)
+            for (int r = 0; r < rowCount; r++)
             {
+                int p = rowPitch[r];
                 double y = Y(p);
                 if (y + rowH < RulerH || y > gb) continue;
                 if (scale != null)
@@ -492,8 +544,8 @@ public sealed partial class PianoRollView : Control
                     if (scale.IsRoot(p)) ctx.FillRectangle(Palette.Alpha(Palette.AccentColor, 0.14), new Rect(KeyW, y, W - KeyW, rowH));
                     else if (scale.Contains(p)) ctx.FillRectangle(Palette.Raised, new Rect(KeyW, y, W - KeyW, rowH));
                 }
-                else if (MidiNote.IsBlack(p)) ctx.FillRectangle(Palette.Panel, new Rect(KeyW, y, W - KeyW, rowH));
-                if (p % 12 == 0) ctx.DrawLine(line, new Point(KeyW, y + rowH - 0.5), new Point(W, y + rowH - 0.5));
+                else if (!MidiNote.IsBlack(p)) ctx.FillRectangle(Palette.Panel, new Rect(KeyW, y, W - KeyW, rowH));
+                if (r > 0 && rowPitch[r - 1] / 12 != p / 12) ctx.DrawLine(line, new Point(KeyW, y + rowH - 0.5), new Point(W, y + rowH - 0.5));
             }
             DrawColumns(ctx, RulerH, gb, W);
             DrawBackWave(ctx, gb, W);
@@ -836,8 +888,9 @@ public sealed partial class PianoRollView : Control
         using var clip = ctx.PushClip(new Rect(0, RulerH, KeyW, Math.Max(0, gb - RulerH)));
         ctx.FillRectangle(Palette.Fg, new Rect(0, RulerH, KeyW, gb - RulerH));
         var line = Palette.Pen(Palette.Alpha(Palette.AppColor, 0.35));
-        for (int p = 0; p < Pitches; p++)
+        for (int r = 0; r < rowCount; r++)
         {
+            int p = rowPitch[r];
             double y = Y(p);
             if (y + rowH < RulerH || y > gb) continue;
             bool lit = p == heardPitch;
@@ -845,8 +898,10 @@ public sealed partial class PianoRollView : Control
             else
             {
                 if (lit) ctx.FillRectangle(Palette.Accent, new Rect(0, y, KeyW, rowH));
-                // the line between two white keys (E–F and B–C have no black key between them)
-                if (!MidiNote.IsBlack(p + 1)) ctx.DrawLine(line, new Point(0, y + 0.5), new Point(KeyW, y + 0.5));
+                // the line between two white keys (E–F and B–C have no black key between them); with rows hidden, the
+                // one above is whatever key comes next, so the line goes whenever that is white
+                int above = r + 1 < rowCount ? rowPitch[r + 1] : p + 1;
+                if (!MidiNote.IsBlack(above)) ctx.DrawLine(line, new Point(0, y + 0.5), new Point(KeyW, y + 0.5));
             }
             // with a scale: what isn't in it goes dark, its root gets a mark and every note its name
             bool inScale = scale == null || scale.Contains(p);
@@ -1687,7 +1742,7 @@ public sealed partial class PianoRollView : Control
                 int at = PitchAt(p.Y);
                 double offset = p.Y - Y(at);
                 rowH = Math.Clamp(rowH + d * Shortcuts.WheelSign("wheelHeight"), MinRowH, MaxRowH);
-                scrollY = (Pitches - 1 - at) * rowH + RulerH - p.Y + offset;
+                scrollY = (rowCount - 1 - rowOf[at]) * rowH + RulerH - p.Y + offset;
                 break;
             }
             default:

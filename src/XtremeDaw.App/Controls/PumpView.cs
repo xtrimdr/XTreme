@@ -10,8 +10,9 @@ namespace XtremeDaw.App.Controls;
 /// The pump's display, laid out like KickStart's (asked by the user): one period of the curve, from the duck to the next,
 /// drawn big over the sound that goes through it (what comes in, dim, and what goes out, in the accent: the effect's
 /// <see cref="PumpInsert.WaveIn"/> / <see cref="PumpInsert.WaveOut"/>), and a line with a dot that rides it with what is
-/// sounding now. On the beat the line follows the song; with a sidechain it starts over on each of the key's hits, and a
-/// bar on the right shows the key's level with where a hit fires (accent) and where it can fire again. The curve is built
+/// sounding now. On the beat the line follows the song; with a sidechain it sits where the key's level puts the gain, and
+/// a bar on the right shows the key's level with where it starts to duck (accent) and where it ducks all of its depth
+/// (faint). The curve is built
 /// only when its settings or its size change; a frame only reads the effect's numbers and redraws if they moved, so it
 /// allocates nothing. Without a running effect (stopped, off) the line goes away and the sound fades.
 /// </summary>
@@ -142,12 +143,11 @@ public sealed class PumpView : Control
         ctx.DrawRectangle(Palette.Hover, null, new Rect(bx, Pad, KeyBarW, h), 2, 2);
         if (running && key > 0)
             ctx.DrawRectangle(Palette.Dim, null, new Rect(bx, Pad + (1 - key) * h, KeyBarW, key * h), 2, 2);
-        bool auto = settings.ThresholdDb <= PumpParams.ThresholdAutoDb;
-        double hitAt = auto ? PumpInsert.HitAt : PumpInsert.KeyMeter(settings.ThresholdDb);
-        double rearmAt = auto ? PumpInsert.RearmAt : PumpInsert.KeyMeter(settings.ThresholdDb - 6);
-        double hit = Math.Round(Pad + (1 - hitAt) * h) + 0.5, rearm = Math.Round(Pad + (1 - rearmAt) * h) + 0.5;
-        ctx.DrawLine(Palette.Pen(Palette.Accent), new Point(bx - 2, hit), new Point(bx + KeyBarW + 2, hit));
-        ctx.DrawLine(Palette.Pen(Palette.Faint), new Point(bx - 2, rearm), new Point(bx + KeyBarW + 2, rearm));
+        // automatic: the bar is against the key's recent peak, and the threshold sits a span under it
+        double thr = settings.ThresholdDb <= PumpParams.ThresholdAutoDb ? -PumpInsert.SpanDb : settings.ThresholdDb;
+        double from = Math.Round(Pad + (1 - PumpInsert.KeyMeter(thr)) * h) + 0.5, full = Math.Round(Pad + (1 - PumpInsert.KeyMeter(thr + PumpInsert.SpanDb)) * h) + 0.5;
+        ctx.DrawLine(Palette.Pen(Palette.Accent), new Point(bx - 2, from), new Point(bx + KeyBarW + 2, from));
+        ctx.DrawLine(Palette.Pen(Palette.Faint), new Point(bx - 2, full), new Point(bx + KeyBarW + 2, full));
     }
 
     /// <summary>The sound that went through each slice of the curve: what came in, dim, and what went out over it.</summary>

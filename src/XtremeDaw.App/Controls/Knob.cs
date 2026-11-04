@@ -15,6 +15,7 @@ namespace XtremeDaw.App.Controls;
 /// Avalonia only hit-tests what is painted (the web's svg takes its whole box), so the knob paints a transparent
 /// square <see cref="HitPad"/> px bigger than itself to catch the pointer anywhere around it, and its track lights up
 /// while hovered or dragged.
+/// No tooltip: it would cover the knob while it is dragged; what it is goes on the label beside it.
 /// </summary>
 public sealed class Knob : Control
 {
@@ -32,13 +33,13 @@ public sealed class Knob : Control
     /// <summary>A look of its own instead of the chosen one (null = the chosen one).</summary>
     public string? Look { get; init; }
 
-    public Knob(double size = 22, string? tip = null)
+    public Knob(double size = 22, string? name = null)
     {
         Size = size;
         Width = Height = size;
         Focusable = true;
         Cursor = new Cursor(StandardCursorType.SizeNorthSouth);
-        Tip = tip;
+        AccessibleName = name;
     }
 
     /// <summary>Follows the room it has (the effect panels scale with their width).</summary>
@@ -50,9 +51,10 @@ public sealed class Knob : Control
         InvalidateVisual();
     }
 
-    public string? Tip
+    /// <summary>What a screen reader calls it.</summary>
+    public string? AccessibleName
     {
-        set { ToolTip.SetTip(this, value); AutomationProperties.SetName(this, value); }
+        set => AutomationProperties.SetName(this, value);
     }
 
     public double Value

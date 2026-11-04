@@ -12,10 +12,10 @@ La guía de arriba manda; esto es solo la referencia rápida.
 # Compilar (solo la compilación; si hay otra sesión espera su turno: timeout de 10 minutos)
 dotnet build XtremeDaw.slnx
 
-# Al terminar cada cambio: compila, corre comprobar-dsp, deja la copia en pruebas\ y lo anota en la lista "Para probar"
+# Al terminar cada cambio: compila, corre comprobar-dsp, deja la copia en pruebas\ y lo anota en el Banco de pruebas
 tools\probar.ps1 -NoAbrir "qué probar"
 
-# Después preguntale si lo abre ahora o lo deja en la lista. Si elige abrir: la última copia con la lista a la vista
+# No preguntes si lo abre: queda en la lista. Solo si el usuario lo pide: la última copia con la lista a la vista
 tools\probar.ps1 -Abrir
 
 # Qué falta probar y qué marcó el usuario como que no anda o anda mal; un arreglo vuelve a por probar con su número
