@@ -42,9 +42,11 @@ from the best DAWs on the market, but is not based on the code of any of them.
 More details in [Requirements](DETALLES_EN.md#requirements).
 </details>
 
-![The timeline: audio and MIDI tracks in folders, markers and VST3 instruments](docs/screenshots/xtreme-timeline-en.png)
+![The timeline: audio and MIDI tracks in folders, markers, sends and VST3 instruments](docs/screenshots/xtreme-timeline.png)
 
-![The mixer while playing: effects, sends, folders, reverb and delay buses and the master](docs/screenshots/xtreme-mixer-en.png)
+![The mixer while playing: effects, sends, folders, reverb and delay buses and the master](docs/screenshots/xtreme-mixer.png)
+
+![The piano roll: a MIDI track's notes with its VST3 instrument and velocities](docs/screenshots/xtreme-piano.png)
 
 *The screenshots show a demo project.*
 

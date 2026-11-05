@@ -42,9 +42,11 @@ Toma ideas de los mejores DAWs del mercado, pero no se basa en el código de nin
 Más detalles en [Requisitos](DETALLES.md#requisitos).
 </details>
 
-![El timeline: pistas de audio y MIDI en carpetas, marcadores e instrumentos VST3](docs/screenshots/xtreme-timeline-es.png)
+![El timeline: pistas de audio y MIDI en carpetas, marcadores, envíos e instrumentos VST3](docs/screenshots/xtreme-timeline.png)
 
-![El mixer sonando: efectos, envíos, carpetas, buses de reverb y delay y el master](docs/screenshots/xtreme-mixer-es.png)
+![El mixer sonando: efectos, envíos, carpetas, buses de reverb y delay y el master](docs/screenshots/xtreme-mixer.png)
+
+![El piano roll: las notas de una pista MIDI con su instrumento VST3 y las velocidades](docs/screenshots/xtreme-piano.png)
 
 *Las capturas son de un proyecto de demo.*
 
