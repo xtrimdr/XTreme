@@ -103,12 +103,9 @@ public partial class MainWindow
                 Grid.SetRow(TimelineHost, 0);
                 AudioArea.Children.Add(TimelineHost);
             }
-            if (!MixerOut)
-            {
-                Root.Children.Remove(MixerHost);
-                Grid.SetRow(MixerHost, 2);
-                AudioArea.Children.Add(MixerHost);
-            }
+            Root.Children.Remove(MixerHost);
+            Grid.SetRow(MixerHost, 2);
+            AudioArea.Children.Add(MixerHost);
             row.MinHeight = 0;
             row.Height = new GridLength(0);
         }
@@ -117,7 +114,7 @@ public partial class MainWindow
             // under the dialogs and toasts: added at the end they'd be drawn over them and keep taking the clicks
             foreach (var host in new Control[] { TimelineHost, MixerHost })
             {
-                if (host == TimelineHost ? TimelineOut : MixerOut) continue;
+                if (host == TimelineHost && TimelineOut) continue;
                 AudioArea.Children.Remove(host);
                 Grid.SetRow(host, 3);
                 Root.Children.Insert(Root.Children.IndexOf(Projects), host);
@@ -130,7 +127,7 @@ public partial class MainWindow
 
     /// <summary>
     /// Which of the timeline and the mixer's place is on screen. Stacked shows both; a maximized view, only itself; one
-    /// in its own window, always (and the mixer's window its mini timeline).
+    /// in its own window, always (and the mixer's window its own mini timeline).
     /// </summary>
     void ApplyViewHosts()
     {
@@ -140,7 +137,7 @@ public partial class MainWindow
         // stacked the timeline is always on screen, so its view button would do nothing (asked by the user): only
         // maximized, covered by the stage or in its own window does it bring the timeline back
         TimelineViewButton.IsVisible = !stackedViews || alone || ViewsCovered || TimelineOut;
-        miniRow.IsVisible = MixerOut || !stackedViews || alone;
+        miniRow.IsVisible = !stackedViews || alone;
         BottomSplitter.IsVisible = !stackedViews && !BottomEmpty;
         ApplyAudioMixerRows();
         if (mixerView && masteringView) FitMasteringHeight();
@@ -168,7 +165,7 @@ public partial class MainWindow
     {
         get
         {
-            double h = Math.Max(MixerMinH, mixerH), area = AudioArea.Bounds.Height;
+            double h = Math.Max(MixerMinH, PlaceH), area = AudioArea.Bounds.Height;
             return area > 0 ? Math.Max(MixerMinH, Math.Min(h, area - TimelineMinH)) : h;
         }
     }

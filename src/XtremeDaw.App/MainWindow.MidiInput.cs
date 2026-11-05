@@ -32,7 +32,7 @@ public partial class MainWindow
         {
             midiListenKey = 0;
             Timeline.InvalidateVisual();
-            if (mixerView) RefreshMixer();
+            if (mixerView || MixerOut) RefreshMixer();
         };
         MidiSetup.Start();
     }
@@ -173,7 +173,7 @@ public partial class MainWindow
         UpdateUndoButtons();
         ShowMidiListeners();
         Timeline.InvalidateVisual();
-        if (mixerView) RefreshMixer();
+        if (mixerView || MixerOut) RefreshMixer();
         Status(Loc.T("midi.in.playsFrom", t.Track.Name, MidiInputLabel(t.Track)));
     }
 

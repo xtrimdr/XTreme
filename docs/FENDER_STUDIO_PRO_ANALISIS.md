@@ -1,5 +1,10 @@
 # Opcional — ideas del manual de Fender Studio Pro para XTreme Native
 
+> **Desactualizado (2026-11-05).** Casi todo lo que propone ya está hecho (rango A–B, marcadores, bloqueo, presets de
+> canal, exportar un tramo, comparar mezclas, compuerta). Lo que falta de Studio Pro está en
+> [PENDIENTES.md](../PENDIENTES.md), sección "Funciones grandes de Fender Studio Pro que faltan". Este documento queda
+> como historia del primer relevamiento.
+
 Relevamiento: **2026-10-24**. Las propuestas nuevas de este informe son opcionales, sin compromiso de
 implementación ni cambios en el funcionamiento de la app. Las funciones ya pedidas conservan su estado
 en `PENDIENTES.md`.

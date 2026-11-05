@@ -13,14 +13,6 @@ public partial class App : Application
     {
         Loc.Load();
         UiTheme.Apply(UiTheme.Read(), persist: false);
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime bench && Bench.In(bench.Args ?? []))
-        {
-            // the bench alone: the same look (theme, fonts, size) and nothing of the DAW
-            Controls.UiFonts.Load();
-            Bench.Run(bench);
-            base.OnFrameworkInitializationCompleted();
-            return;
-        }
         Shortcuts.Load();
         SaveMode.Load();
         ImportMode.Load();
@@ -29,12 +21,13 @@ public partial class App : Application
         Controls.FaderLooks.Load();
         Controls.MeterLooks.Load();
         Controls.WaveLooks.Load();
+        Controls.TrackColorLooks.Load();
         NoteNames.Load();
         Controls.UiFonts.Load();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // XTreme.exe [carpeta | proyecto.xtp] (a double click on a .xtp passes the file)
-            var dir = desktop.Args?.FirstOrDefault() is { Length: > 0 } arg ? XtremeDaw.Projects.ProjectStore.DirOf(arg) : null;
+            var dir = MainWindow.ProjectArg(desktop.Args ?? []) is { Length: > 0 } arg ? XtremeDaw.Projects.ProjectStore.DirOf(arg) : null;
             // the splash paints first; the main window (slow to build) comes once it is on screen
             var splash = new SplashWindow();
             splash.Opened += (_, _) => Dispatcher.UIThread.Post(() =>

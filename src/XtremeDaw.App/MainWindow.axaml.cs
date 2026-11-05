@@ -85,6 +85,9 @@ public partial class MainWindow : Window
         Settings.Attach(engine, camera, () => RecordingBusy);
         Settings.AudioChanged += ShowAudioStatus;
         Settings.Dismissed += () => Timeline.Focus();
+        // the floating Configuración (#184) leaves the menus free: the manager and Exportar, which cover the window, close it
+        foreach (var cover in new Control[] { Projects, Export })
+            cover.PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && cover.IsVisible && Settings.IsVisible) Settings.HideDialog(); };
         SettingsButton.Click += (_, _) =>
         {
             if (!MenuFree) return;
@@ -93,7 +96,7 @@ public partial class MainWindow : Window
         About.Dismissed += () => Timeline.Focus();
         LogoButton.Click += (_, _) =>
         {
-            if (Projects.IsVisible || Export.IsVisible || Settings.IsVisible || RecordingBusy) return;
+            if (Projects.IsVisible || Export.IsVisible || RecordingBusy) return;
             About.Show();
         };
         About.FeedbackRequested += OpenFeedback;
@@ -330,7 +333,7 @@ public partial class MainWindow : Window
             timer.Stop();
             SaveWindowPlace();
             // stacked (solo audio, Vertical layout) the bottom row is closed: the heights remembered before stay
-            try { if (!stackedViews && !BottomEmpty && !(MixerHere && masteringView)) AppConfig.Set(MixerHere ? "mixerHeight" : "timelineHeight", Root.RowDefinitions[3].ActualHeight.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
+            try { if (!stackedViews && !BottomEmpty && !(MixerHere && masteringView)) AppConfig.Set(MixerHere ? PlaceKey : "timelineHeight", Root.RowDefinitions[3].ActualHeight.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* View preference only. */ }
             MidiSetup.Stop();
             engine.Dispose();
@@ -480,6 +483,7 @@ public partial class MainWindow : Window
         DropAllInstruments();
         DropAllSamplers();
         DropAllEffects();
+        CloseSlotWindows();
         historyConfirmPurge = false;
         historyDeletingExport = null;
         FlushSave();
@@ -663,21 +667,21 @@ public partial class MainWindow : Window
     /// <summary>Over the manager too, the first thing someone new sees; not while a dialog or a take has the keys.</summary>
     void OpenHelp()
     {
-        if (Export.IsVisible || Settings.IsVisible || About.IsVisible || RecordingBusy) return;
+        if (Export.IsVisible || About.IsVisible || RecordingBusy) return;
         HelpPanel.Show(canOpenSettings: !Projects.IsVisible);
     }
 
     /// <summary>Like the help: over the manager too, and over the help itself.</summary>
     void OpenNews()
     {
-        if (Export.IsVisible || Settings.IsVisible || About.IsVisible || RecordingBusy) return;
+        if (Export.IsVisible || About.IsVisible || RecordingBusy) return;
         News.Show();
     }
 
     /// <summary>Over the manager and "Acerca de" too; not while a dialog or a take has the keys.</summary>
     void OpenFeedback()
     {
-        if (Export.IsVisible || Settings.IsVisible || RecordingBusy) return;
+        if (Export.IsVisible || RecordingBusy) return;
         Feedback.Show([$"XTreme {Dialogs.AboutDialog.AppVersion()}", System.Runtime.InteropServices.RuntimeInformation.OSDescription, $"ASIO: {engine.DriverName ?? "-"}"]);
     }
 
@@ -702,11 +706,8 @@ public partial class MainWindow : Window
             Export.HandleKey(e);
             return;
         }
-        if (Settings.IsVisible)
-        {
-            Settings.HandleKey(e);
-            return;
-        }
+        // Configuración floats over a usable window (#184): it takes the keys only while it has the focus
+        if (Settings.HandleKey(e)) return;
         if (About.IsVisible)
         {
             About.HandleKey(e);
@@ -990,6 +991,7 @@ public partial class MainWindow : Window
         TickTopBar();
         TickInspectorSpectrum();
         TickInspectorStrip();
+        TickInspectorPointer();
         TickMeters();
         // a VST3 effect added, loaded or moved: the rest of the mix waits for it
         engine.UpdateLatency();
@@ -1177,6 +1179,9 @@ public partial class MainWindow : Window
                     tracks[i].Track.Icon = restored.Icon;
                     tracks[i].Track.Input = restored.Input;
                     tracks[i].Track.Transpose = restored.Transpose;
+                    // the lanes before the channel: ApplyChannel hands them to the engine
+                    tracks[i].Track.Automation = restored.Automation;
+                    tracks[i].Track.AutomationFolded = restored.AutomationFolded;
                     tracks[i].ApplyChannel(restored.Channel);
                     tracks[i].Track.Extra = restored.Extra;
                 }

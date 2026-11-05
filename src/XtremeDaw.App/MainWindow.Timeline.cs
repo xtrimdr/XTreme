@@ -68,7 +68,9 @@ public partial class MainWindow
         TimeRulerButton.Classes.Set("on", !bars);
         miniBarsButton.Classes.Set("on", bars);
         miniTimeButton.Classes.Set("on", !bars);
-        miniTimeline.RulerInBars = bars;
+        mixerMiniBars.Classes.Set("on", bars);
+        mixerMiniTime.Classes.Set("on", !bars);
+        miniTimeline.RulerInBars = mixerMini.RulerInBars = bars;
     }
 
     /// <summary>One button of a ruler switch built in code, like BarsRulerButton / TimeRulerButton in the XAML.</summary>
@@ -263,6 +265,13 @@ public partial class MainWindow
                 ProjectBuses.SetSend(store!.Project, x, busId, amount, toggle ? !on : amount > 0 ? true : null);
             }, $"send.{busId}.{(toggle ? "on" : "level")}");
         };
+        // a folder's volume and pan in its header, like a track's (#136), following its lanes while they play
+        Timeline.FolderShown = f => folderShown.TryGetValue(f.Id, out var a) ? (a.Volume ?? f.Volume, a.Pan ?? f.Pan) : (f.Volume, f.Pan);
+        Timeline.FolderChannelRequested += (f, volume, pan) => FolderChannelEdit(f.Id, x =>
+        {
+            if (volume is { } v) x.Volume = v;
+            if (pan is { } p) x.Pan = p;
+        }, volume != null ? "volume" : "pan");
         Timeline.HeaderWidthChanged += w =>
         {
             TimelineToolbar.Width = TimelineFooter.Width = w;
@@ -381,7 +390,7 @@ public partial class MainWindow
             restoring = false;
             Inspector.IsEnabled = sel != null || SelectedFolder != null;
             // the mixer refreshed while restoring (disabled): bring it back, or it stays dead until the next refresh
-            if (mixerView) RefreshMixer();
+            if (mixerView || MixerOut) RefreshMixer();
             MarkDirty();
             UpdateUndoButtons();
             RefreshHistory();
@@ -768,6 +777,7 @@ public partial class MainWindow
     /// mixer), so any press in the window closes it. Presses inside the menu land on its own popup root, not here.</summary>
     void OnWindowPressCloseMenu(object? sender, PointerPressedEventArgs e)
     {
+        if (sender is Visual pressed) lastPressScreen = pressed.PointToScreen(e.GetPosition(pressed));
         menuDismissedBy = null;
         if (timelineMenu is not { IsOpen: true } menu) return;
         if (menuAnchor != null && e.Source is Visual v && (v == menuAnchor || menuAnchor.IsVisualAncestorOf(v))) menuDismissedBy = menuAnchor;
@@ -908,7 +918,7 @@ public partial class MainWindow
     }
 
     /// <summary>The menu of a track picked with others: only what makes sense for all of them, each entry acting on all.</summary>
-    List<object> TrackGroupItems(LiveTrack track, List<string> group)
+    List<object> TrackGroupItems(LiveTrack track, List<string> group, Control anchor, Point? point)
     {
         bool enabled = store is { ReadOnly: false };
         var picked = tracks.Where(t => group.Contains(t.Track.Id)).ToList();
@@ -945,6 +955,13 @@ public partial class MainWindow
             _ = EditGroup(p => Each(p, picked, t => t.Locked = !locked), locked ? "track-unlocked" : "track-locked");
         }, refresh, tip: Loc.T("lock.track.tip"), enabled: enabled));
         list.AddRange(DuplicateTrackItems(group, enabled));
+        list.Add(MenuAction(Loc.T("look.tracks.gradient", picked.Count), () => { PaintTracksGradient(group); return Task.CompletedTask; },
+            enabled: enabled, icon: "", tip: Loc.T("look.tracks.gradient.tip")));
+        list.Add(MenuAction(Loc.T("look.tracks.one", picked.Count), () =>
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => ShowTracksColor(group, anchor, point));
+            return Task.CompletedTask;
+        }, enabled: enabled, tip: Loc.T("look.tracks.one.tip")));
         list.Add(new Separator());
         list.AddRange(FolderItems(track, enabled));
         list.Add(new Separator());
@@ -1013,6 +1030,7 @@ public partial class MainWindow
                 await EditTimeline(p => { right = ClipEditing.Split(p, id, at, clip.LengthSec); return track.Track.Id; }, "clip-split");
                 if (right != null) Timeline.SelectClip(Timeline.Selected, right);
             }, Shortcuts.First("split"), enabled && under && free));
+            list.Add(MenuAction(Loc.T("menu.renameClip.more"), () => { BeginClipRename(id, point); return Task.CompletedTask; }, enabled: enabled, icon: "\uE8AC"));
             list.Add(new Separator());
             list.Add(MenuAction(Loc.T("menu.toStart"), () => Command(p => ClipEditing.ToStart(p, id, clip.LengthSec), "clip-moved"), enabled: enabled && free));
             // where clips overlap the last one shows: this is on only when one over it covers part of it
@@ -1102,7 +1120,7 @@ public partial class MainWindow
     /// its color and icon, for the strip (the timeline's header has its badge for that).</summary>
     List<object> TrackMenuItems(LiveTrack track, Control anchor, Point? point, Action rename, bool look = false)
     {
-        if (TrackGroup(track) is { } group) return TrackGroupItems(track, group);
+        if (TrackGroup(track) is { } group) return TrackGroupItems(track, group, anchor, point);
         bool enabled = store is { ReadOnly: false };
         var list = new List<object>();
         list.Add(MenuAction(Loc.T("menu.paste"), PasteClips, Shortcuts.Label("paste"), enabled && clipboard != null, icon: "", tip: Loc.T("menu.paste.tip")));
@@ -1148,7 +1166,7 @@ public partial class MainWindow
         var fxIcon = FxIcon.Create(FxIcon.Eq, 12);
         fxIcon.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
         list.Add(new MenuItem { Header = MenuHeader(Loc.T("mix.list.fx"), fxIcon), ItemsSource = TrackFxItems(track, anchor), IsEnabled = enabled });
-        list.Add(new MenuItem { Header = MenuHeader(Loc.T("auto.menu"), new TextBlock { Classes = { "icon" }, Text = "\uE9D2", FontSize = 12 }), ItemsSource = AutomationItems(track), IsEnabled = enabled });
+        list.Add(new MenuItem { Header = MenuHeader(Loc.T("auto.menu"), new TextBlock { Classes = { "icon" }, Text = "\uE9D2", FontSize = 12 }), ItemsSource = AutomationItems(track.Track), IsEnabled = enabled });
         list.Add(new Separator());
         list.AddRange(FolderItems(track, enabled));
         list.Add(MenuAction(Loc.T("separator.addAbove"), () => NewSeparatorAbove(track), enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")));

@@ -110,16 +110,22 @@ public partial class MainWindow
     string TransposeTagTip(LiveTrack t) => TransposeProgress(t) is { } p
         ? Loc.T("insp.transpose.working", $"{p * 100:0}") : Loc.T("mix.transpose.tag.tip", TransposeText(t.Track.Transpose));
 
-    /// <summary>The compact strip's mark of a transposed track ("+2" in the accent, under its name), hidden at 0.</summary>
-    TextBlock TransposeTagText(LiveTrack t)
+    /// <summary>The compact strip's mark of a transposed track (the transpose icon and "+2" in the accent, under its
+    /// name), hidden at 0. The icon says what the number is (asked by the user, #165: the mixer shows no tooltips).</summary>
+    Control TransposeTagText(LiveTrack t)
     {
-        var tag = new TextBlock { Classes = { "mono" }, FontSize = 10, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        var text = new TextBlock { Classes = { "mono" }, FontSize = 10, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        var icon = FxIcon.Create(FxIcon.Transpose, 8);
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        var tag = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Children = { icon, text } };
         void Show()
         {
             double v = t.Track.Transpose;
             tag.IsVisible = v != 0;
-            tag.Text = TransposeTag(v);
-            tag.Foreground = TransposeProgress(t) != null ? Palette.Faint : Palette.Accent;
+            text.Text = TransposeTag(v);
+            var brush = TransposeProgress(t) != null ? Palette.Faint : Palette.Accent;
+            text.Foreground = brush;
+            FxIcon.SetColor(icon, brush);
             ToolTip.SetTip(tag, TransposeTagTip(t));
         }
         mx.Refresh.Add(Show);
@@ -243,7 +249,7 @@ public partial class MainWindow
     void RefreshTransposeNote()
     {
         RefreshStretchToast();
-        if (mx != null && mixerView && !masteringView) foreach (var r in mx.Transpose) r();
+        if (mx != null && StripsLive) foreach (var r in mx.Transpose) r();
         Timeline.InvalidateVisual();
     }
 

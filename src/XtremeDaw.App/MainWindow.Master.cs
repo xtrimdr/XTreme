@@ -141,7 +141,7 @@ public partial class MainWindow
     /// <summary>Mixer or Mastering: both live in the mixer's place, with different content.</summary>
     void ShowBottomView(bool mastering)
     {
-        if (mastering && ActivatePanel(FloatMastering)) return;
+        if (ActivatePanel(mastering ? FloatMastering : FloatMixer)) return;
         masteringView = mastering;
         pianoView = false;
         SetMixerView(true);
@@ -155,14 +155,13 @@ public partial class MainWindow
         // in the mixer's place; one in its own window shows there whatever the place does
         bool m = masteringView && mixerView, piano = pianoView && mixerView;
         masteringScroll.IsVisible = masteringPin.IsVisible = m || MasteringOut;
-        masterPin.IsVisible = mixerView && !m && !piano;
         pianoHost.IsVisible = piano || PianoOut;
-        mixerScroll.IsVisible = !m && !piano;
-        if (mixerHeader != null) mixerHeader.IsVisible = !m && !piano;
-        MixerViewButton.Classes.Set("on", mixerView && !m && !piano);
+        // the mixer in its own window is always on screen there; in the place, when neither of the others is
+        mixerPane.IsVisible = MixerOut || (!m && !piano);
+        mixerMiniRow.IsVisible = MixerOut;
+        MixerViewButton.Classes.Set("on", MixerOut || (mixerView && !m && !piano));
         MasteringViewButton.Classes.Set("on", m || MasteringOut);
         PianoViewButton.Classes.Set("on", piano || PianoOut);
-        ShowMixerWindowTitle();
         if (m || MasteringOut)
         {
             if (m || masteringScroll.Content == null) BuildMastering();
@@ -180,7 +179,7 @@ public partial class MainWindow
         }
         if (!m)
         {
-            if (mixerView) SetBottomRowHeight(mixerH);
+            if (mixerView) SetBottomRowHeight(PlaceH);
             RefreshMixer();
             ApplyMixerMinHeight();
         }
@@ -239,7 +238,7 @@ public partial class MainWindow
     void SetBottomRowHeight(double h, double? min = null)
     {
         // it fills the place, whatever its height: maximized, alone under no timeline, or in its own window
-        if (maxPanel == MaxPanel.Views || MixerOut || (stackedViews && TimelineOut)) return;
+        if (maxPanel == MaxPanel.Views || (stackedViews && TimelineOut)) return;
         var row = stackedViews ? AudioArea.RowDefinitions[2] : Root.RowDefinitions[3];
         row.MinHeight = Math.Min(min ?? MixerMinH, Math.Max(0, h));
         row.Height = new GridLength(Math.Max(0, h));

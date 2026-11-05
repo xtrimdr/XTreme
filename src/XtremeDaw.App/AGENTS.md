@@ -3,7 +3,9 @@
 Se suma a la guía de la raíz ([AGENTS.md](../../AGENTS.md)). Cómo es y dónde vive cada parte de la ventana (barra de
 título, transporte, inspector, timeline, mixer, carpetas, grabación…) está en [docs/interfaz.md](../../docs/interfaz.md):
 leé el apartado de lo que vas a tocar, y si cambiás cómo funciona, actualizalo. Los controles que dibujan a mano tienen
-sus reglas en [Controls/AGENTS.md](Controls/AGENTS.md).
+sus reglas en [Controls/AGENTS.md](Controls/AGENTS.md). El motor en vivo (`Audio/`: `PlaybackEngine`, `LiveTrack`)
+sigue la [guía del motor](../XtremeDaw.Audio/AGENTS.md); el modelo que edita la ventana, la de
+[Projects](../XtremeDaw.Projects/AGENTS.md).
 
 ## Principios
 
@@ -24,7 +26,8 @@ sus reglas en [Controls/AGENTS.md](Controls/AGENTS.md).
 
 Los textos salen de `Loc` (`Loc.T("clave")`, o `{loc:T clave}` en XAML) y viven en `Assets/Lang/<código>.json`;
 **es.json es la referencia** (lo que falta en otro idioma cae al español). Texto nuevo → clave nueva en todos los
-idiomas. Los nombres que vienen del motor en español (estilos del compresor, presets de EQ, reverb y delay,
+idiomas. Los del Banco de pruebas (`test.*`) van aparte, en `Assets/Lang/Bench/<código>.json`: `Loc` lee los dos
+archivos de cada idioma. Los nombres que vienen del motor en español (estilos del compresor, presets de EQ, reverb y delay,
 divisiones) se traducen al mostrarlos con `Loc.Or(clave, texto del motor)`. Los títulos de sección del inspector,
 de Color y de Historial son ids estables en español (`SectionTitle` y `bar.section.*` los traducen al mostrarlos),
 porque con ellos se recuerda qué secciones están plegadas. El idioma se elige en Configuración, se guarda en
@@ -153,7 +156,7 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 | `Border.section` (+ `.off`) | tarjeta del inspector |
 | `TextBox.field`, `Button.btn` (`.sm`, `.primary`, `.outline`, `.danger`), `Button.act` (`.danger`, `.close`) | campos y botones de diálogos y listas: botón de fila 28×28, confirmación roja; `.close` es la cruz de un diálogo (32×32). Viven solo en `App.axaml`: un diálogo no los redefine |
 | `Button.link` (`.accent`) | enlace de texto: tenue (migas, "Restablecer") o en acento (el que se sigue: "Ver en la ayuda") |
-| `Border.dialog`, `TextBlock.dialog-title`, `Scrim` | la tarjeta de un diálogo, su título (16 SemiBold) y el fondo que oscurece la ventana. Anchos: 440 una pregunta, 512 un formulario, 640 una lista o lectura (Configuración, Proyectos y Ayuda, los suyos) |
+| `Border.dialog`, `TextBlock.dialog-title`, `Scrim` | la tarjeta de un diálogo, su título (16 SemiBold) y el fondo que oscurece la ventana. Anchos: 440 una pregunta, 512 un formulario, 640 una lista o lectura (Configuración, Proyectos y Ayuda, los suyos). Configuración va sin `Scrim`: flota sobre la ventana, que sigue andando, se mueve desde el título y cambia de tamaño desde la esquina (pedido del usuario, #184) |
 | `Border.notice` + `TextBlock.notice` / `TextBlock.icon.notice` | **el** aviso dentro de un diálogo (un error, un archivo que ya existe, un permiso): caja `Raised` con el signo de advertencia en acento y el texto en `Fg`. Nunca en rojo. Un error de una línea bajo un campo, solo `TextBlock.notice` |
 | `Button.chip.purge` | "Borrar no usados": un chip común (mismo texto que "Desvincular no usados" al lado) que se pone rojo con el hover. Los dos van en un `EvenRow`: lado a lado si entran, si no uno abajo del otro |
 | `PowerButton` (`Button.chip.power`) | **el** ON/OFF de un efecto, en todo lugar (inspector, Color, mixer, Mastering, banda del EQ): acento lleno y con el glow prendido (pedido del usuario, 2026-11-03, con o sin el mouse encima), contorno tenue apagado; el tooltip sigue al estado. Hereda de `Button` con `StyleKeyOverride` = `Button`: sin eso los selectores `Button.…` no lo alcanzan (vale para todo control nuevo que herede de un control con estilo). El ⏻ de las filas de efectos y envíos del mixer (`ListPower`) prendido lleva un bloque `Accent25` y el glifo en acento, sin glow (la fila lo cortaría); apagado, transparente con el glifo `Faint` |

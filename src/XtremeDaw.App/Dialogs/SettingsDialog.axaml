@@ -3,7 +3,7 @@
              xmlns:loc="using:XtremeDaw.App"
              x:Class="XtremeDaw.App.Dialogs.SettingsDialog"
              AutomationProperties.Name="{loc:T settings.title}"
-             Background="{StaticResource Scrim}" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+             KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
 
   <!-- Port of SettingsDialog from the web app's SettingsDialog.tsx; "Atajos de teclado" and "Idioma" are native only -->
   <UserControl.Styles>
@@ -41,13 +41,15 @@
     </Style>
   </UserControl.Styles>
 
-  <Border x:Name="Panel" Width="768" Height="640" HorizontalAlignment="Center" VerticalAlignment="Center"
+  <!-- a floating panel without a scrim (#184): the window behind stays usable; the header moves it, the corner grip resizes it -->
+  <Border x:Name="Panel" Width="768" Height="640" HorizontalAlignment="Left" VerticalAlignment="Top"
           Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <Panel>
     <Grid RowDefinitions="Auto,*">
-      <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="20,10,12,10">
+      <Border x:Name="Header" Background="Transparent" Cursor="SizeAll" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="20,10,12,10">
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Classes="dialog-title" Text="{loc:T settings.title}" />
-          <Button Grid.Column="1" x:Name="CloseButton" Classes="act close" ToolTip.Tip="{loc:T common.close}" AutomationProperties.Name="{loc:T common.close}">
+          <Button Grid.Column="1" x:Name="CloseButton" Cursor="Arrow" Classes="act close" ToolTip.Tip="{loc:T common.close}" AutomationProperties.Name="{loc:T common.close}">
             <TextBlock Classes="icon" Text="&#xE711;" FontSize="13" />
           </Button>
         </Grid>
@@ -90,5 +92,9 @@
         <ScrollViewer Grid.Column="1" x:Name="Body" HorizontalScrollBarVisibility="Disabled" />
       </Grid>
     </Grid>
+    <Border x:Name="Grip" Width="16" Height="16" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="Transparent" Cursor="BottomRightCorner">
+      <Path Data="M14,4 L4,14 M14,9 L9,14" Stroke="{StaticResource Faint}" StrokeThickness="1.2" />
+    </Border>
+    </Panel>
   </Border>
 </UserControl>

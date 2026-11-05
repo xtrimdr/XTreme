@@ -196,7 +196,7 @@ public partial class MainWindow
             ClearSample = () => EditGranular(trackId, g => g.MediaId = null, "clear"),
             Shortcut = e => OnKey(this, e),
             Front = on => SamplerInFront(trackId, on),
-            Automate = (control, knob, show) => AutomateOn(control, () => tracks.FirstOrDefault(t => t.Track.Id == trackId), AutoTarget.Granular(knob), show),
+            Automate = (control, knob, show) => AutomateOn(control, () => tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track, AutoTarget.Granular(knob), show),
         };
         window.IsEnabledForEdits = store is { ReadOnly: false };
         window.Closed += (_, _) =>

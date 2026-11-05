@@ -27,8 +27,9 @@ public static class ChannelDsp
     /// <summary>A bus's slots; its delays follow <paramref name="bpm"/>.</summary>
     public static InsertSpec[] BusSpecs(Bus b, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) => Specs(b.Inserts, BusRmsDb, bpm, live, bypass);
 
-    /// <summary>A folder's slots, like a bus's: no take of its own, so its Vida reads <see cref="BusRmsDb"/>.</summary>
-    public static InsertSpec[] FolderSpecs(Folder f, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) => Specs(f.Inserts, BusRmsDb, bpm, live, bypass);
+    /// <summary>A folder's slots, like a bus's: no take of its own, so its Vida reads <see cref="BusRmsDb"/>. Its VST3 effects carry their automated parameters.</summary>
+    public static InsertSpec[] FolderSpecs(Folder f, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) =>
+        WithCurves(f, Specs(f.Inserts, BusRmsDb, bpm, live, bypass));
 
     /// <summary>
     /// A track counts as soloed when its channel is or its folder is (the user's call: soloing a folder solos its
@@ -60,7 +61,7 @@ public static class ChannelDsp
     public static string? TrackOutput(Track t) => t.FolderId ?? t.Channel.Output;
 
     /// <summary>What <paramref name="r"/> sends, as indexes into <paramref name="nodes"/> (sends to a missing bus are left out); <paramref name="track"/> brings its lanes.</summary>
-    public static MixSendSpec[] Sends(IReadOnlyList<string> nodes, IRouted r, Track? track = null)
+    public static MixSendSpec[] Sends(IReadOnlyList<string> nodes, IRouted r, IAutomated? track = null)
     {
         var list = new List<MixSendSpec>(r.Sends.Count);
         foreach (var s in r.Sends)
@@ -72,9 +73,12 @@ public static class ChannelDsp
     }
 
     /// <summary>A track's slots with their lanes: what <see cref="Specs(Channel, double, double, Func{InsertSlot, VstBridge?}?, bool)"/> gives, its VST3 effects carrying their automated parameters.</summary>
-    public static InsertSpec[] Specs(Track t, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false)
+    public static InsertSpec[] Specs(Track t, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) =>
+        WithCurves(t, Specs(t.Channel, rmsDb, bpm, live, bypass));
+
+    /// <summary>The VST3 effects of <paramref name="specs"/> with their lanes from <paramref name="t"/>.</summary>
+    static InsertSpec[] WithCurves(IAutomated t, InsertSpec[] specs)
     {
-        var specs = Specs(t.Channel, rmsDb, bpm, live, bypass);
         if (t.Automation == null) return specs;
         for (int i = 0; i < specs.Length; i++)
             if (specs[i].Vst is { } v && Automations.VstCurves(t, specs[i].Id) is { } c) specs[i] = specs[i] with { Vst = v with { Curves = c } };
@@ -155,16 +159,21 @@ public static class ChannelDsp
         foreach (var id in nodes)
         {
             if (p.Folders.Find(f => f.Id == id) is { } f)
+            {
+                var automator = InsertAutomator.Create(f, BusRmsDb, p.Settings.Bpm);
                 list.Add(new MixNodeSpec
                 {
                     Name = f.Name,
                     Volume = f.Volume,
                     Pan = f.Pan,
                     Muted = f.Muted,
-                    Inserts = FolderSpecs(f, p.Settings.Bpm),
+                    Inserts = automator?.At(0, force: true) ?? FolderSpecs(f, p.Settings.Bpm),
                     Output = IndexOf(nodes, f.Output),
-                    Sends = Sends(nodes, f),
+                    Sends = Sends(nodes, f, f),
+                    Automation = Automations.Compile(f),
+                    InsertsAt = automator == null ? null : sec => automator.At(sec),
                 });
+            }
             else if (p.Settings.Buses.Find(b => b.Id == id) is { } b)
                 list.Add(new MixNodeSpec
                 {

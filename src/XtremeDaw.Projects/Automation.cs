@@ -99,6 +99,18 @@ public sealed class AutomationBlock
         Points = [.. Points.Select(p => p.At(p.Sec))],
     };
 
+    /// <summary>
+    /// A looped block's pass set to <paramref name="passSec"/> (the original's edge, asked by the user, #171): every repeat
+    /// follows and the block keeps how many passes it had. Points past the new pass wait outside it.
+    /// </summary>
+    public void SetPass(double passSec)
+    {
+        if (LoopSec is not { } pass) return;
+        double cell = Math.Max(MinSec, passSec);
+        LengthSec = LengthSec * cell / pass;
+        LoopSec = cell;
+    }
+
     /// <summary>A time inside the block (relative) as a time inside its pass.</summary>
     public double InPass(double sec) => LoopSec is > 0 && sec >= 0 ? sec % PassSec : sec;
 
@@ -223,7 +235,8 @@ public sealed class AutomationLane
     /// <summary>Out of the timeline: it keeps playing.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Hidden { get; set; }
-    /// <summary>Its own height in the timeline, as a multiple of <see cref="DefaultHeight"/>; null = 1.</summary>
+    /// <summary>Its own height in the timeline, as a multiple of <see cref="DefaultHeight"/> at the tracks' default
+    /// height (it follows the vertical zoom like a track); null = 1.</summary>
     public double? HeightScale { get; set; }
     public const double DefaultHeight = 52, MinHeight = 32, MaxHeight = 200;
     public List<AutomationBlock> Blocks { get; set; } = [];
@@ -283,6 +296,23 @@ public sealed class AutomationLane
         foreach (var b in Blocks) b.Normalize();
         Touch();
     }
+}
+
+/// <summary>
+/// What carries lanes (<see cref="Automations"/>): a track or a folder, both channels (asked by the user, #136: a folder's
+/// lanes are like a track's). Its slots, routing, fader, pan and mute are what a lane drives and starts from; the
+/// instrument targets are a track's alone.
+/// </summary>
+public interface IAutomated
+{
+    string Id { get; }
+    List<AutomationLane>? Automation { get; set; }
+    bool AutomationFolded { get; set; }
+    IReadOnlyList<InsertSlot> AutoSlots { get; }
+    IRouted AutoRouted { get; }
+    double AutoVolume { get; }
+    double AutoPan { get; }
+    bool AutoMuted { get; }
 }
 
 /// <summary>
@@ -350,14 +380,14 @@ public static class Automations
     /// <summary>The most copies one "Repetir" makes.</summary>
     public const int MaxRepeat = 512;
 
-    public static AutomationLane? Find(Track t, string target)
+    public static AutomationLane? Find(IAutomated t, string target)
     {
         if (t.Automation is not { } list) return null;
         for (int i = 0; i < list.Count; i++) if (list[i].Target == target) return list[i]; // read every tick: no closure
         return null;
     }
 
-    public static AutomationLane? ById(Track t, string id) => t.Automation?.Find(l => l.Id == id);
+    public static AutomationLane? ById(IAutomated t, string id) => t.Automation?.Find(l => l.Id == id);
 
     public static AutomationBlock? BlockById(AutomationLane lane, string id) => lane.Blocks.Find(b => b.Id == id);
 
@@ -365,7 +395,7 @@ public static class Automations
     /// A lane for <paramref name="target"/>: the one it has, shown, or a new one with a block over <paramref name="lengthSec"/>
     /// holding <paramref name="position"/>, so nothing changes until a point moves.
     /// </summary>
-    public static AutomationLane Show(Track t, string target, double position, string? name = null, double lengthSec = 0)
+    public static AutomationLane Show(IAutomated t, string target, double position, string? name = null, double lengthSec = 0)
     {
         t.AutomationFolded = false;
         if (Find(t, target) is { } had)
@@ -379,7 +409,7 @@ public static class Automations
         return lane;
     }
 
-    public static void Remove(Track t, string id)
+    public static void Remove(IAutomated t, string id)
     {
         t.Automation?.RemoveAll(l => l.Id == id);
         if (t.Automation is { Count: 0 }) t.Automation = null;
@@ -424,6 +454,15 @@ public static class Automations
         lane.Touch();
     }
 
+    /// <summary>A looped block's pass changed, its repeats with it (<see cref="AutomationBlock.SetPass"/>).</summary>
+    public static void Pass(AutomationLane lane, string id, double passSec)
+    {
+        if (BlockById(lane, id) is not { } b) return;
+        b.SetPass(passSec);
+        b.Normalize();
+        lane.Touch();
+    }
+
     /// <summary>A block in two at a timeline time, sounding the same. False when the time isn't inside it.</summary>
     public static bool Split(AutomationLane lane, string id, double sec, bool stepped)
     {
@@ -459,8 +498,8 @@ public static class Automations
     }
 
     /// <summary>A switch: it holds each point until the next one, and only 0 and 1 mean anything.</summary>
-    public static bool Stepped(Track t, string target) =>
-        target == AutoTarget.Mute || FxParamOf(t.Channel.Slots, target) is { Param.Toggle: true };
+    public static bool Stepped(IAutomated t, string target) =>
+        target == AutoTarget.Mute || FxParamOf(t.AutoSlots, target) is { Param.Toggle: true };
 
     /// <summary>The native parameter of a lane's target, with its slot; null for anything else or a slot that is gone.</summary>
     public static (InsertSlot Slot, FxParam Param)? FxParamOf(IReadOnlyList<InsertSlot> slots, string target)
@@ -476,31 +515,30 @@ public static class Automations
     }
 
     /// <summary>The bus of a send lane the channel still has a place for (a send there, or a bus to add one to).</summary>
-    static Send? SendOf(Channel c, string bus) => c.Sends.Find(s => s.BusId == bus);
+    static Send? SendOf(IRouted c, string bus) => c.Sends.Find(s => s.BusId == bus);
 
     /// <summary>Whether the lane still has something to drive.</summary>
-    public static bool Exists(Track t, string target)
+    public static bool Exists(IAutomated t, string target)
     {
         if (target is AutoTarget.Volume or AutoTarget.Pan or AutoTarget.Mute) return true;
-        if (AutoTarget.BusOf(target) is { } bus) return SendOf(t.Channel, bus) != null;
-        if (AutoTarget.VstOf(target) is { } v) return t.Channel.Slots.Exists(s => s.Id == v.Slot && s.Type == InsertSlot.VstKind);
-        if (AutoTarget.InstrumentOf(target) != null) return t.Instrument != null;
-        if (AutoTarget.SamplerOf(target) != null) return t.Sampler != null;
-        if (AutoTarget.GranularOf(target) != null) return t.Granular != null;
-        return FxParamOf(t.Channel.Slots, target) != null;
+        if (AutoTarget.BusOf(target) is { } bus) return SendOf(t.AutoRouted, bus) != null;
+        if (AutoTarget.VstOf(target) is { } v) return t.AutoSlots.Any(s => s.Id == v.Slot && s.Type == InsertSlot.VstKind);
+        if (AutoTarget.InstrumentOf(target) != null) return t is Track { Instrument: not null };
+        if (AutoTarget.SamplerOf(target) != null) return t is Track { Sampler: not null };
+        if (AutoTarget.GranularOf(target) != null) return t is Track { Granular: not null };
+        return FxParamOf(t.AutoSlots, target) != null;
     }
 
     /// <summary>Where the control is now, for a new lane's first point. A plugin's parameter starts from what the caller knows.</summary>
-    public static double Position(Track t, string target)
+    public static double Position(IAutomated t, string target)
     {
-        var c = t.Channel;
-        if (target == AutoTarget.Volume) return Math.Sqrt(Math.Max(0, c.Volume) / 1.5);
-        if (target == AutoTarget.Pan) return (c.Pan + 1) / 2;
-        if (target == AutoTarget.Mute) return c.Muted ? 1 : 0;
-        if (AutoTarget.BusOf(target) is { } bus) return SendOf(c, bus)?.Level ?? 0;
-        if (AutoTarget.SamplerOf(target) is { } knob) return t.Sampler is { } s ? SamplerKnobs.Position(knob, s.Knob(knob)) : 0.5;
-        if (AutoTarget.GranularOf(target) is { } grain) return t.Granular is { } g ? GranularKnobs.Position(grain, g.Knob(grain)) : 0.5;
-        return FxParamOf(c.Slots, target) is { } f ? f.Param.ToKnob(f.Param.Get(f.Slot)) : 0.5;
+        if (target == AutoTarget.Volume) return Math.Sqrt(Math.Max(0, t.AutoVolume) / 1.5);
+        if (target == AutoTarget.Pan) return (t.AutoPan + 1) / 2;
+        if (target == AutoTarget.Mute) return t.AutoMuted ? 1 : 0;
+        if (AutoTarget.BusOf(target) is { } bus) return SendOf(t.AutoRouted, bus)?.Level ?? 0;
+        if (AutoTarget.SamplerOf(target) is { } knob) return t is Track { Sampler: { } s } ? SamplerKnobs.Position(knob, s.Knob(knob)) : 0.5;
+        if (AutoTarget.GranularOf(target) is { } grain) return t is Track { Granular: { } g } ? GranularKnobs.Position(grain, g.Knob(grain)) : 0.5;
+        return FxParamOf(t.AutoSlots, target) is { } f ? f.Param.ToKnob(f.Param.Get(f.Slot)) : 0.5;
     }
 
     /// <summary>The lane as the engine reads it; null when it does nothing (off, or without points).</summary>
@@ -524,8 +562,8 @@ public static class Automations
         return new AutoCurve(sec, pos, stepped, law, shapes, tension);
     }
 
-    /// <summary>What the track's fader follows; null without a lane for it.</summary>
-    public static TrackAutomation? Compile(Track t)
+    /// <summary>What the track's (or folder's) fader follows; null without a lane for it.</summary>
+    public static TrackAutomation? Compile(IAutomated t)
     {
         var volume = Curve(Find(t, AutoTarget.Volume), law: AutoLaw.Fader);
         var pan = Curve(Find(t, AutoTarget.Pan), law: AutoLaw.Pan);
@@ -534,10 +572,10 @@ public static class Automations
     }
 
     /// <summary>A send's lane by its bus; null without one.</summary>
-    public static AutoCurve? SendCurve(Track t, string busId) => Curve(Find(t, AutoTarget.Send(busId)));
+    public static AutoCurve? SendCurve(IAutomated t, string busId) => Curve(Find(t, AutoTarget.Send(busId)));
 
     /// <summary>A VST3 effect slot's lanes, or null.</summary>
-    public static VstParamCurves? VstCurves(Track t, string slotId) => Plugin(t, l => AutoTarget.VstOf(l) is { } v && v.Slot == slotId ? v.Id : null);
+    public static VstParamCurves? VstCurves(IAutomated t, string slotId) => Plugin(t, l => AutoTarget.VstOf(l) is { } v && v.Slot == slotId ? v.Id : null);
 
     /// <summary>The instrument's lanes, or null.</summary>
     public static VstParamCurves? InstrumentCurves(Track t) => Plugin(t, AutoTarget.InstrumentOf);
@@ -572,7 +610,7 @@ public static class Automations
         return any ? new GranularCurves(byKnob) : null;
     }
 
-    static VstParamCurves? Plugin(Track t, Func<string, uint?> idOf)
+    static VstParamCurves? Plugin(IAutomated t, Func<string, uint?> idOf)
     {
         if (t.Automation == null) return null;
         var ids = new List<uint>();
@@ -590,7 +628,7 @@ public static class Automations
     /// A gap closed on the track (<see cref="ClipEditing.DeleteRangeClosing"/>): the points inside go, what follows slides
     /// left with the audio, and each side keeps the value it had at the cut.
     /// </summary>
-    public static void CloseGap(Track t, double startSec, double endSec)
+    public static void CloseGap(IAutomated t, double startSec, double endSec)
     {
         if (t.Automation == null) return;
         double len = endSec - startSec;
@@ -627,7 +665,7 @@ public sealed class InsertAutomator
 
     readonly record struct Lane(InsertSlot Slot, FxParam Param, AutoCurve Curve, bool Slow);
 
-    readonly Channel channel;
+    readonly IReadOnlyList<InsertSlot> slots;
     readonly Lane[] lanes;
     readonly double[] last;
     readonly double rmsDb, bpm;
@@ -635,9 +673,9 @@ public sealed class InsertAutomator
     readonly bool bypass, wait;
     readonly Dictionary<string, VstParamCurves> plugins = [];
 
-    InsertAutomator(Channel channel, Lane[] lanes, Track track, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live, bool bypass)
+    InsertAutomator(IReadOnlyList<InsertSlot> slots, Lane[] lanes, IAutomated track, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live, bool bypass)
     {
-        this.channel = channel;
+        this.slots = slots;
         this.lanes = lanes;
         this.rmsDb = rmsDb;
         this.bpm = bpm;
@@ -646,7 +684,7 @@ public sealed class InsertAutomator
         wait = live == null;
         last = new double[lanes.Length];
         Array.Fill(last, double.NaN);
-        foreach (var s in channel.Slots)
+        foreach (var s in slots)
             if (s.Type == InsertSlot.VstKind && Automations.VstCurves(track, s.Id) is { } c) plugins[s.Id] = c;
     }
 
@@ -654,17 +692,26 @@ public sealed class InsertAutomator
     /// For a track with lanes on its native effects; null without any. <paramref name="live"/> as in
     /// <see cref="ChannelDsp.Specs(Channel, double, double, Func{InsertSlot, VstBridge?}?, bool)"/>: without it, the export.
     /// </summary>
-    public static InsertAutomator? Create(Track t, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false)
+    public static InsertAutomator? Create(IAutomated t, double rmsDb, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false)
     {
         if (t.Automation == null) return null;
-        var channel = ProjectLibrary.Clone(t.Channel);
-        channel.Normalize();
-        var slots = channel.Slots;
+        List<InsertSlot> slots;
+        if (t is Track track)
+        {
+            var channel = ProjectLibrary.Clone(track.Channel);
+            channel.Normalize();
+            slots = channel.Slots;
+        }
+        else
+        {
+            slots = ProjectLibrary.Clone(new List<InsertSlot>(t.AutoSlots));
+            InsertSlot.NormalizeList(slots);
+        }
         var list = new List<Lane>();
         foreach (var l in t.Automation)
             if (Automations.FxParamOf(slots, l.Target) is { } f && Automations.Curve(l, f.Param.Toggle) is { } c)
                 list.Add(new(f.Slot, f.Param, c, f.Slot.Type == InsertSlot.ReverbKind && f.Param.Id is "decay" or "tone" or "width"));
-        return list.Count == 0 ? null : new InsertAutomator(channel, [.. list], t, rmsDb, bpm, live, bypass);
+        return list.Count == 0 ? null : new InsertAutomator(slots, [.. list], t, rmsDb, bpm, live, bypass);
     }
 
     /// <summary>The slots at <paramref name="sec"/> if a lane moved since the last call; with <paramref name="force"/>, always.</summary>
@@ -686,7 +733,7 @@ public sealed class InsertAutomator
         if (recalc)
             foreach (var l in lanes)
                 if (l.Slot.Comp is { Preset: not "custom" } c && l.Param.Id == "amount") ChannelDsp.RecalculateComp(c);
-        var specs = ChannelDsp.Specs(channel, rmsDb, bpm, live, bypass);
+        var specs = ChannelDsp.Specs(slots, rmsDb, bpm, live, bypass);
         for (int i = 0; i < specs.Length; i++)
         {
             if (plugins.TryGetValue(specs[i].Id, out var c) && specs[i].Vst is { } v) specs[i] = specs[i] with { Vst = v with { Curves = c } };

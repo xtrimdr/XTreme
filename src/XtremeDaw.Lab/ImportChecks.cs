@@ -55,11 +55,13 @@ static class ImportChecks
             p.Tracks.Add(empty);
             var t = AudioImport.AddClip(p, a, 1.2344, empty.Id);
             Check(t == empty && t.Clips.Count == 1 && t.Clips[0].AtSec == 1.234, "cae en la pista vacía elegida, en su tiempo");
-            Check(!t.Video && t.Name == a.Name && !t.Channel.Comp.On && !t.Channel.Sat.On, "pista de audio, sin compresor ni saturación");
+            Check(!t.Video && !t.Channel.Comp.On && !t.Channel.Sat.On, "pista de audio, sin compresor ni saturación");
+            Check(t.Name == "Pista 1", "la pista vacía conserva su nombre");
             Check(p.FindMedia(t.Clips[0].MediaId) is { Kind: "import", SyncMs: 0 }, "el medio queda como importado y sin sincronía");
 
             var t2 = AudioImport.AddClip(p, b, -5, empty.Id);
             Check(t2 != empty && p.Tracks.Count == 2 && t2.Clips[0].AtSec == 0, "con la pista ocupada crea una nueva; nunca antes de 0");
+            Check(t2.Name == b.Name, "la pista nueva toma el nombre del audio");
             Check(p.Log.Last().Type == "audio-imported", "queda en la actividad");
 
             var midi = new Track { Kind = TrackKinds.Midi };

@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -7,7 +7,7 @@ namespace XtremeDaw.App.Controls;
 
 /// <summary>
 /// A mixer strip's meter (from the web's Meter in Mixer.tsx, completed in the native app): two bars, left and right,
-/// from -48 to +3 dBFS over the green → yellow → red gradient, each solid up to its RMS and dimmed from there up to its
+/// from -48 to +3 dBFS over the green â†’ yellow â†’ red gradient, each solid up to its RMS and dimmed from there up to its
 /// peak (with a thin line on the peak), and a dB scale beside them that only shows the marks that fit. A
 /// <see cref="Mono"/> source (a track whose takes are mono) shows one bar as wide as the pair, with the louder side,
 /// so every strip keeps its width and the faders stay level. Over the bars: the peak-hold readout (the highest peak
@@ -31,7 +31,7 @@ public sealed class MixerMeter : Control
     /// <summary>Peaks above this light the clip light (dBFS), as in <see cref="StereoMeter"/>.</summary>
     public const double ClipDb = -0.3;
     static readonly double ClipAmp = Math.Pow(10, ClipDb / 20);
-    /// <summary>Under this (−100 dBFS) the readout says −∞.</summary>
+    /// <summary>Under this (âˆ’100 dBFS) the readout says âˆ’âˆž.</summary>
     const double SilentAmp = 1e-5;
     /// <summary>How much of the gradient the stretch between RMS and peak shows.</summary>
     const double PeakOpacity = 0.4;
@@ -57,9 +57,9 @@ public sealed class MixerMeter : Control
     readonly string holdTip;
     double levelL, levelR, rmsL, rmsR, hold;
     bool mono, clipL, clipR, overHead;
-    /// <summary>The readout as shown, in tenths of a dB (int.MinValue = −∞), and its text.</summary>
+    /// <summary>The readout as shown, in tenths of a dB (int.MinValue = âˆ’âˆž), and its text.</summary>
     int holdTenths = int.MinValue;
-    string holdText = "-∞";
+    string holdText = "-âˆž";
     bool scale = true;
 
     public MixerMeter(bool wide = false)
@@ -69,6 +69,10 @@ public sealed class MixerMeter : Control
         Width = pairW + 2 + ScaleW;
         Cursor = Hand;
         holdTip = Loc.T("meter.mixer.hold.tip");
+        levels = new Layer(this, false) { IsHitTestVisible = false };
+        marksLayer = new Layer(this, true) { IsHitTestVisible = false };
+        VisualChildren.Add(levels);
+        VisualChildren.Add(marksLayer);
     }
 
     /// <summary>The dB marks beside the bars; off, the meter is as wide as its bars and its readout is in whole dB.</summary>
@@ -107,7 +111,7 @@ public sealed class MixerMeter : Control
         MeterLooks.Changed -= InvalidateVisual;
     }
 
-    string HoldText(int tenths) => tenths == int.MinValue ? "-∞" : scale ? $"{tenths / 10.0:+0.0;-0.0;0.0}" : $"{Math.Round(tenths / 10.0):+0;-0;0}";
+    string HoldText(int tenths) => tenths == int.MinValue ? "-âˆž" : scale ? $"{tenths / 10.0:+0.0;-0.0;0.0}" : $"{Math.Round(tenths / 10.0):+0;-0;0}";
 
     /// <summary>One bar with the louder side instead of two (a mono source); the light is lit if either side clipped.</summary>
     public bool Mono
@@ -126,7 +130,7 @@ public sealed class MixerMeter : Control
     /// </summary>
     public void Set(double peakL, double peakR, double rmsL, double rmsR)
     {
-        bool dirty = Moved(peakL, levelL) || Moved(peakR, levelR) || Moved(rmsL, this.rmsL) || Moved(rmsR, this.rmsR);
+        bool moved = Moved(peakL, levelL) || Moved(peakR, levelR) || Moved(rmsL, this.rmsL) || Moved(rmsR, this.rmsR), dirty = false;
         levelL = peakL; levelR = peakR;
         this.rmsL = rmsL; this.rmsR = rmsR;
         double peak = Math.Max(peakL, peakR);
@@ -143,7 +147,9 @@ public sealed class MixerMeter : Control
         }
         if (peakL >= ClipAmp && !clipL) { clipL = true; dirty = true; }
         if (peakR >= ClipAmp && !clipR) { clipR = true; dirty = true; }
-        if (dirty) InvalidateVisual();
+        // the levels on their own layer; the rest (readout, lights) only when they changed
+        if (moved) levels.InvalidateVisual();
+        if (dirty) base.InvalidateVisual();
     }
 
     static bool Moved(double now, double was) => Math.Abs(Pct(now) - Pct(was)) >= 0.002;
@@ -153,7 +159,7 @@ public sealed class MixerMeter : Control
     {
         hold = 0;
         holdTenths = int.MinValue;
-        holdText = "-∞";
+        holdText = "-âˆž";
         clipL = clipR = false;
         InvalidateVisual();
     }
@@ -178,6 +184,51 @@ public sealed class MixerMeter : Control
     static double DbToPct(double db) => (db + 48) / 51;
     static double Pct(double amp) => amp <= 0.0001 ? 0 : Math.Clamp(DbToPct(20 * Math.Log10(amp)), 0, 1);
 
+    // Three layers, so a moving level redraws only what moves (asked for by #138: a full meter per strip and per frame
+    // was most of the garbage whose collections stalled the audio): this control draws what changes only with the
+    // readout, the clip lights, the look or the size (readout, lights, bar backgrounds, scale); `levels` draws the bars'
+    // levels, every frame they move; `marks` draws the dB lines over them and never redraws on its own.
+    sealed class Layer(MixerMeter owner, bool front) : Control
+    {
+        public override void Render(DrawingContext ctx)
+        {
+            if (front) owner.RenderMarks(ctx);
+            else owner.RenderLevels(ctx);
+        }
+    }
+
+    readonly Layer levels, marksLayer;
+
+    /// <summary>Redraws every layer: the look, the scale or the layout changed.</summary>
+    new void InvalidateVisual()
+    {
+        base.InvalidateVisual();
+        levels.InvalidateVisual();
+        marksLayer.InvalidateVisual();
+    }
+
+    /// <summary>The bars' height and the marks that fit at it (indices into <see cref="ScaleMarks"/>).</summary>
+    int Marks(double h, Span<int> marks)
+    {
+        int n = 0;
+        for (int i = 0; i < ScaleMarks.Length; i++)
+        {
+            bool fits = true;
+            for (int k = 0; k < n; k++) if (Math.Abs(DbToPct(ScaleMarks[marks[k]]) - DbToPct(ScaleMarks[i])) * h < 9) { fits = false; break; }
+            if (fits) marks[n++] = i;
+        }
+        return n;
+    }
+
+    /// <summary>Where each bar goes: one as wide as the pair (mono) or two.</summary>
+    int Bars(Span<double> x, Span<double> w)
+    {
+        if (mono) { x[0] = 0; w[0] = pairW; return 1; }
+        x[0] = 0; w[0] = barW;
+        x[1] = barW + Gap; w[1] = barW;
+        return 2;
+    }
+
     public override void Render(DrawingContext ctx)
     {
         // a transparent backdrop so the whole meter (readout included) takes the click
@@ -187,63 +238,97 @@ public sealed class MixerMeter : Control
 
         double h = Bounds.Height - BarTop;
         if (h <= 0) return;
-        double Y(int db) => BarTop + h - DbToPct(db) * h;
-        // the marks that fit (indices into ScaleMarks), without a list: each is checked against the ones already kept
-        Span<int> marks = stackalloc int[ScaleMarks.Length];
-        int nMarks = 0;
-        for (int i = 0; i < ScaleMarks.Length; i++)
+        string lk = look ?? MeterLooks.Current;
+        Span<double> xs = stackalloc double[2], ws = stackalloc double[2];
+        int n = Bars(xs, ws);
+        for (int b = 0; b < n; b++)
         {
-            bool fits = true;
-            for (int k = 0; k < nMarks; k++) if (Math.Abs(Y(ScaleMarks[marks[k]]) - Y(ScaleMarks[i])) < 9) { fits = false; break; }
-            if (fits) marks[nMarks++] = i;
+            bool clip = mono ? clipL || clipR : b == 0 ? clipL : clipR;
+            ctx.DrawRectangle(clip ? Palette.Rec : Palette.Hover, null, new Rect(xs[b], ReadoutH + 1, ws[b], LightH), 2, 2);
+            var bar = new Rect(xs[b], BarTop, ws[b], h);
+            using (ctx.PushClip(new RoundedRect(bar, 2)))
+                Background(ctx, bar, lk);
         }
+        if (!scale) return;
+        Span<int> marks = stackalloc int[ScaleMarks.Length];
+        int nMarks = Marks(h, marks);
+        for (int k = 0; k < nMarks; k++)
+        {
+            int db = ScaleMarks[marks[k]];
+            var m = Palette.Text(MarkTexts[marks[k]], 8, db == 0 ? Palette.Fg : Palette.Dim, Palette.Mono);
+            ctx.DrawText(m, new Point(pairW + 2, BarTop + h - DbToPct(db) * h - m.Height / 2));
+        }
+    }
 
+    /// <summary>The bars' levels: the RMS solid, the stretch up to the peak dimmed.</summary>
+    void RenderLevels(DrawingContext ctx)
+    {
+        double h = Bounds.Height - BarTop;
+        if (h <= 0) return;
         string lk = look ?? MeterLooks.Current;
         if (lk == MeterLooks.Led)
         {
             var area = new Rect(0, BarTop, pairW, h);
             if (leds == null || area != ledsFor) { leds = MeterLooks.Segments(area, true); ledsFor = area; }
         }
-        if (mono)
-            Bar(ctx, 0, pairW, h, Math.Max(levelL, levelR), Math.Max(rmsL, rmsR), clipL || clipR, marks[..nMarks], lk);
-        else
+        Span<double> xs = stackalloc double[2], ws = stackalloc double[2];
+        int n = Bars(xs, ws);
+        for (int b = 0; b < n; b++)
         {
-            Bar(ctx, 0, barW, h, levelL, rmsL, clipL, marks[..nMarks], lk);
-            Bar(ctx, barW + Gap, barW, h, levelR, rmsR, clipR, marks[..nMarks], lk);
-        }
-        for (int k = 0; k < nMarks && scale; k++)
-        {
-            int db = ScaleMarks[marks[k]];
-            var m = Palette.Text(MarkTexts[marks[k]], 8, db == 0 ? Palette.Fg : Palette.Dim, Palette.Mono);
-            ctx.DrawText(m, new Point(pairW + 2, Y(db) - m.Height / 2));
-        }
-    }
-
-    /// <summary>One bar at <paramref name="x"/>: its clip light, the RMS solid, the stretch up to the peak dimmed, the marks.</summary>
-    void Bar(DrawingContext ctx, double x, double w, double h, double peak, double rms, bool clip, ReadOnlySpan<int> marks, string lk)
-    {
-        ctx.DrawRectangle(clip ? Palette.Rec : Palette.Hover, null, new Rect(x, ReadoutH + 1, w, LightH), 2, 2);
-        var bar = new Rect(x, BarTop, w, h);
-        double peakPct = Pct(peak), rmsPct = Math.Min(Pct(rms), peakPct);
-        using (ctx.PushClip(new RoundedRect(bar, 2)))
-        {
-            if (lk == MeterLooks.Led && leds != null)
-                using (ctx.PushGeometryClip(leds))
-                    Fill(ctx, bar, peakPct, rmsPct, lk);
-            else Fill(ctx, bar, peakPct, rmsPct, lk);
-            foreach (int i in marks)
+            double peak = mono ? Math.Max(levelL, levelR) : b == 0 ? levelL : levelR;
+            double rms = mono ? Math.Max(rmsL, rmsR) : b == 0 ? rmsL : rmsR;
+            double peakPct = Pct(peak), rmsPct = Math.Min(Pct(rms), peakPct);
+            if (peakPct <= 0) continue; // silence: nothing over the background
+            var bar = new Rect(xs[b], BarTop, ws[b], h);
+            using (ctx.PushClip(new RoundedRect(bar, 2)))
             {
-                int db = ScaleMarks[i];
-                double y = Math.Round(BarTop + h - DbToPct(db) * h) + 0.5;
-                ctx.DrawLine(Palette.Pen(Palette.Alpha(db == 0 ? Palette.FgColor : Palette.AppColor, db == 0 ? 0.4 : 0.6)), new Point(x, y), new Point(x + w, y));
+                if (lk == MeterLooks.Led && leds != null)
+                    using (ctx.PushGeometryClip(leds))
+                        Fill(ctx, bar, peakPct, rmsPct, lk);
+                else Fill(ctx, bar, peakPct, rmsPct, lk);
             }
         }
     }
 
+    /// <summary>The dB lines over the bars.</summary>
+    void RenderMarks(DrawingContext ctx)
+    {
+        double h = Bounds.Height - BarTop;
+        if (h <= 0) return;
+        Span<int> marks = stackalloc int[ScaleMarks.Length];
+        int nMarks = Marks(h, marks);
+        Span<double> xs = stackalloc double[2], ws = stackalloc double[2];
+        int n = Bars(xs, ws);
+        for (int b = 0; b < n; b++)
+            using (ctx.PushClip(new RoundedRect(new Rect(xs[b], BarTop, ws[b], h), 2)))
+                for (int k = 0; k < nMarks; k++)
+                {
+                    int db = ScaleMarks[marks[k]];
+                    double y = Math.Round(BarTop + h - DbToPct(db) * h) + 0.5;
+                    ctx.DrawLine(Palette.Pen(Palette.Alpha(db == 0 ? Palette.FgColor : Palette.AppColor, db == 0 ? 0.4 : 0.6)), new Point(xs[b], y), new Point(xs[b] + ws[b], y));
+                }
+    }
+
+    /// <summary>A bar's empty background in <paramref name="lk"/>: <see cref="MeterLooks.Thin"/> a narrow strip in the middle,
+    /// <see cref="MeterLooks.Gradient"/> the whole scale faintly.</summary>
+    static void Background(DrawingContext ctx, Rect bar, string lk)
+    {
+        if (lk == MeterLooks.Thin)
+        {
+            double lw = Math.Max(2, Math.Round(bar.Width * MeterLooks.ThinShare));
+            ctx.FillRectangle(Palette.Hover, new Rect(bar.X + Math.Floor((bar.Width - lw) / 2), bar.Y, lw, bar.Height));
+        }
+        // Hover, a step above both a strip's card and a selected one (Raised), in every surface palette
+        else ctx.FillRectangle(Palette.Hover, bar);
+        if (lk == MeterLooks.Gradient)
+            using (ctx.PushOpacity(MeterLooks.GhostOpacity))
+                ctx.FillRectangle(Gradient, bar);
+    }
+
     /// <summary>
-    /// A bar's levels in <paramref name="lk"/>: the RMS solid, the stretch up to the peak dimmed with a line on the peak.
-    /// <see cref="MeterLooks.Thin"/> lights a narrow strip in the middle; <see cref="MeterLooks.Led"/> (clipped to its
-    /// LEDs by the caller) lights whole LEDs; <see cref="MeterLooks.Gradient"/> shows the whole scale faintly under them.
+    /// A bar's levels in <paramref name="lk"/>, over its background: the RMS solid, the stretch up to the peak dimmed with
+    /// a line on the peak. <see cref="MeterLooks.Thin"/> lights a narrow strip in the middle; <see cref="MeterLooks.Led"/>
+    /// (clipped to its LEDs by the caller) lights whole LEDs.
     /// </summary>
     static void Fill(DrawingContext ctx, Rect bar, double peakPct, double rmsPct, string lk)
     {
@@ -252,13 +337,7 @@ public sealed class MixerMeter : Control
         {
             lw = Math.Max(2, Math.Round(bar.Width * MeterLooks.ThinShare));
             lx = bar.X + Math.Floor((bar.Width - lw) / 2);
-            ctx.FillRectangle(Palette.Hover, new Rect(lx, bar.Y, lw, h));
         }
-        // Hover, a step above both a strip's card and a selected one (Raised), in every surface palette
-        else ctx.FillRectangle(Palette.Hover, bar);
-        if (lk == MeterLooks.Gradient)
-            using (ctx.PushOpacity(MeterLooks.GhostOpacity))
-                ctx.FillRectangle(Gradient, bar);
         // the gradient is laid over the whole bar and clipped to each stretch, so its colors stay where the dB are
         double yPeak = bar.Y + h * (1 - peakPct), yRms = bar.Y + h * (1 - rmsPct);
         bool led = lk == MeterLooks.Led;

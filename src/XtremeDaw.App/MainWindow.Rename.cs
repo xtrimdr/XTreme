@@ -70,7 +70,7 @@ public partial class MainWindow
         EndNameEdit(true);
         var marker = store.Project.Markers.Find(m => m.Id == id);
         var chord = store.Project.ChordMarkers.Find(c => c.Id == id);
-        string? name = FolderById(id)?.Name ?? tracks.Find(t => t.Track.Id == id)?.Track.Name ?? marker?.Name ?? chord?.Name;
+        string? name = FolderById(id)?.Name ?? tracks.Find(t => t.Track.Id == id)?.Track.Name ?? marker?.Name ?? chord?.Name ?? ClipNameOf(id);
         if (name == null) return;
         // a marker's flag is as wide as its name: the box leaves room to write a longer one
         OpenNameEditor(id, r, marker != null ? Math.Max(r.Width, MarkerEditorW) : chord != null ? Math.Max(r.Width, ChordEditorW) : r.Width, name);
@@ -98,7 +98,14 @@ public partial class MainWindow
         nameEditor.IsVisible = false;
         Timeline.EditingNameId = null;
         if (focused) Timeline.Focus();
-        if (!keep || text.Length == 0) return;
+        if (!keep) return;
+        // a blank name takes a clip's away; anything else needs one
+        if (ClipNameOf(id) is { } was)
+        {
+            if (text != was) _ = RenameClip(id, text);
+            return;
+        }
+        if (text.Length == 0) return;
         if (id == NewChordId)
         {
             var (sec, end) = newChord;
@@ -117,5 +124,39 @@ public partial class MainWindow
             if (c.Name != text) MarkerEdit(p => ProjectMarkers.RenameChord(p, id, text), $"chord:{id}:name");
         }
         else if (tracks.Find(t => t.Track.Id == id) is { } t && t.Track.Name != text) EditTrack(t, x => x.Track.Name = text, "name");
+    }
+
+    /// <summary>
+    /// What the box starts with on a clip: its own name ("" without one), its loop's source's on a repeat, its
+    /// pattern's on a pattern's clip; null when <paramref name="id"/> is no clip.
+    /// </summary>
+    string? ClipNameOf(string id)
+    {
+        if (store == null) return null;
+        if (MidiEditing.TryFind(store.Project, id) is { } midi) return MidiEditing.Label(midi) ?? "";
+        foreach (var t in store.Project.Tracks)
+            if (t.Clips.Find(c => c.Id == id) is { } c)
+                return (c.LoopOf != null ? t.Clips.Find(o => o.Id == c.LoopOf) ?? c : c).Name ?? "";
+        return null;
+    }
+
+    /// <summary>"Renombrar…" on a clip: the box over its top, or the name dialog when it is off screen.</summary>
+    void BeginClipRename(string id, Point point) => RenameInPlace(id, () =>
+    {
+        if (ClipNameOf(id) is { } name)
+            AskName(Timeline, point, Loc.T("menu.renameClip"), name, Loc.T("common.ok"), text => _ = RenameClip(id, text));
+    });
+
+    /// <summary>One undo step; a blank name takes the clip's own away (a pattern keeps its name).</summary>
+    Task RenameClip(string id, string text)
+    {
+        if (store == null || store.ReadOnly) return Task.CompletedTask;
+        if (MidiEditing.TryFind(store.Project, id) != null)
+        {
+            string trackId = MidiEditing.Find(store.Project, id).Track.Id;
+            return EditTimeline(p => { MidiEditing.Rename(p, id, text); return trackId; }, "clip-renamed");
+        }
+        if (store.Project.Tracks.Find(t => t.Clips.Any(c => c.Id == id)) is not { } track) return Task.CompletedTask;
+        return EditTimeline(p => { ClipEditing.Rename(p, id, text); return track.Id; }, "clip-renamed", id);
     }
 }

@@ -6,7 +6,7 @@
         ShowInTaskbar="True" ShowActivated="False" WindowStartupLocation="Manual"
         Background="{StaticResource App}" ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="44">
 
-  <Grid RowDefinitions="44,Auto,Auto,Auto,*,Auto">
+  <Grid RowDefinitions="44,*,Auto">
     <!-- The accent line under the title gives the window its own face next to the app. -->
     <Border x:Name="Header" Background="{StaticResource Panel}" BorderBrush="{StaticResource Accent40}" BorderThickness="0,0,0,2">
       <Grid ColumnDefinitions="*,Auto">
@@ -21,7 +21,7 @@
           </Border>
         </StackPanel>
         <!-- The window's own buttons, left of the system's (minimize, maximize, close take ~138 px). -->
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="8,0,142,0" VerticalAlignment="Center">
+        <StackPanel x:Name="HeaderButtons" Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="8,0,142,0" VerticalAlignment="Center">
           <Button x:Name="NewRequestButton" Classes="ghost" AutomationProperties.Name="{loc:T test.list.request.new}">
             <TextBlock Classes="icon" Text="&#xE710;" FontSize="13" />
           </Button>
@@ -38,8 +38,11 @@
       </Grid>
     </Border>
 
+    <!-- The bench's own text size (asked by the user, #143: the slider by Historial), over the app's: header and footer stay. -->
+    <LayoutTransformControl x:Name="Zoomed" Grid.Row="1">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
     <!-- What arrived while the bench was open, or while it was closed: says it, and "Ver" goes to it. -->
-    <Border x:Name="NewsBar" Grid.Row="1" IsVisible="False" Margin="10,10,10,0" Background="{StaticResource AccentSoft}"
+    <Border x:Name="NewsBar" Grid.Row="0" IsVisible="False" Margin="10,10,10,0" Background="{StaticResource AccentSoft}"
             BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="12,6,6,6">
       <Grid ColumnDefinitions="Auto,*,Auto,Auto">
         <TextBlock Classes="icon" Text="&#xEA8F;" FontSize="12" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
@@ -52,7 +55,7 @@
     </Border>
 
     <!-- No tabs (asked by the user, #125: all of it in one vertical list); the search filters the whole list. -->
-    <Grid Grid.Row="2" Margin="10,10,18,0" ColumnDefinitions="*,Auto">
+    <Grid Grid.Row="1" Margin="10,10,18,0" ColumnDefinitions="*,Auto">
       <!-- Folds every topic, or opens them all when they are all folded (asked by the user, #126). -->
       <Button x:Name="FoldAllButton" Grid.Column="1" Classes="chip" Width="30" Height="30" MinHeight="30" Padding="0" Margin="6,0,0,0"
               VerticalAlignment="Top" HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
@@ -67,7 +70,7 @@
     </Grid>
 
     <!-- Outside the rows, so a list that changes while typing never takes the box away. A request, or a new skill. -->
-    <Border x:Name="Composer" Grid.Row="3" IsVisible="False" Margin="10,10,18,0" Background="{StaticResource Raised}"
+    <Border x:Name="Composer" Grid.Row="2" IsVisible="False" Margin="10,10,18,0" Background="{StaticResource Raised}"
             BorderBrush="{StaticResource Accent40}" BorderThickness="1" CornerRadius="8" Padding="12,10">
       <StackPanel Spacing="8">
         <StackPanel Orientation="Horizontal" Spacing="6">
@@ -84,21 +87,32 @@
     </Border>
 
     <!-- The right margin keeps the scroll bar off the window's resize border, which takes the outer ~8 px (frame + padding). -->
+    <!-- The open ticket's back link and "⋯", outside the scroll: a long conversation never hides the way back (#175). -->
+    <Decorator x:Name="TicketBar" Grid.Row="3" Margin="10,10,18,0" IsVisible="False" />
+
     <ScrollViewer x:Name="Scroller" Grid.Row="4" Margin="0,0,8,0">
       <StackPanel x:Name="Rows" Margin="10,10,2,10" Spacing="8" />
     </ScrollViewer>
+    </Grid>
+    </LayoutTransformControl>
 
-    <Border Grid.Row="5" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,8">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+    <Border Grid.Row="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,8">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
         <WrapPanel x:Name="Totals" VerticalAlignment="Center" ItemSpacing="12" />
         <TextBlock x:Name="ErrorText" Grid.Column="1" Classes="notice" VerticalAlignment="Center" Margin="10,0" TextWrapping="Wrap" />
-        <ToggleButton x:Name="HistoryButton" Grid.Column="2" Classes="chip" MinHeight="26" Margin="0,0,8,0">
+        <StackPanel x:Name="ZoomPanel" Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="0,0,10,0" VerticalAlignment="Center">
+          <TextBlock Classes="icon" Text="&#xE8D2;" FontSize="11" Foreground="{StaticResource Faint}" VerticalAlignment="Center" />
+          <Slider x:Name="ZoomSlider" Width="80" Minimum="0.8" Maximum="1.6" SmallChange="0.05" LargeChange="0.1"
+                  TickFrequency="0.05" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+          <TextBlock x:Name="ZoomText" Classes="dim mono" FontSize="11" MinWidth="34" VerticalAlignment="Center" />
+        </StackPanel>
+        <ToggleButton x:Name="HistoryButton" Grid.Column="3" Classes="chip" MinHeight="26" Margin="0,0,8,0">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <TextBlock Classes="icon" Text="&#xE81C;" FontSize="11" VerticalAlignment="Center" />
             <TextBlock Text="{loc:T test.list.history}" FontSize="12" VerticalAlignment="Center" />
           </StackPanel>
         </ToggleButton>
-        <Button x:Name="ClearButton" Grid.Column="3" Classes="btn sm" Content="{loc:T test.list.clear}" />
+        <Button x:Name="ClearButton" Grid.Column="4" Classes="btn sm" Content="{loc:T test.list.clear}" />
       </Grid>
     </Border>
   </Grid>

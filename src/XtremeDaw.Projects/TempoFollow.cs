@@ -48,19 +48,26 @@ public static class TempoFollow
         {
             foreach (var c in t.Clips) Rescale(c, f);
             foreach (var c in t.MidiClips ?? []) c.AtSec *= f;
-            foreach (var lane in t.Automation ?? [])
-            {
-                foreach (var b in lane.Blocks)
-                {
-                    b.AtSec *= f;
-                    b.LengthSec *= f;
-                    foreach (var point in b.Points) point.Sec *= f;
-                }
-                lane.Touch();
-            }
+            Rescale(t.Automation, f);
         }
+        foreach (var folder in p.Folders) Rescale(folder.Automation, f);
         foreach (var m in p.Markers) m.Sec *= f;
         foreach (var m in p.ChordMarkers) { m.Sec *= f; m.EndSec *= f; }
+    }
+
+    /// <summary>A track's or a folder's lanes, every time in them multiplied by <paramref name="f"/>.</summary>
+    static void Rescale(List<AutomationLane>? lanes, double f)
+    {
+        foreach (var lane in lanes ?? [])
+        {
+            foreach (var b in lane.Blocks)
+            {
+                b.AtSec *= f;
+                b.LengthSec *= f;
+                foreach (var point in b.Points) point.Sec *= f;
+            }
+            lane.Touch();
+        }
     }
 
     /// <summary>The clip's own times and its <see cref="Clip.Stretch"/>: also what a stretch by hand does (<see cref="ClipEditing"/>).</summary>

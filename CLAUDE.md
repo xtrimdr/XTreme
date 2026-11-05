@@ -14,10 +14,12 @@ dotnet build XtremeDaw.slnx
 
 # Al terminar cada cambio: compila, corre comprobar-dsp, deja la copia en pruebas\ y lo anota en el Banco de pruebas
 tools\probar.ps1 -NoAbrir "qué probar"
+# Un cambio del Banco solo (XT-WorkBench, xtlab, herramientas): compila el Banco y xtlab, sin copia de XTreme
+tools\probar.ps1 -NoAbrir -Tema banco "qué probar"
 
 # No preguntes si lo abre: queda en la lista. Solo si el usuario lo pide: la última copia con la lista a la vista
 tools\probar.ps1 -Abrir
-# O el Banco de pruebas solo, sin XTreme (XTreme.exe --banco, un programa aparte)
+# O el Banco de pruebas solo, sin XTreme (xtbench.exe, un programa aparte en pruebas\banco\: compilar no lo cierra)
 tools\probar.ps1 -Banco
 
 # Los pedidos del usuario (de ahí sale el trabajo), qué falta probar y qué marcó como que no anda o anda mal

@@ -72,9 +72,19 @@ public sealed class SectionHeader : Border
         ToolTip.SetTip(this, Loc.T(collapsed ? "section.show" : "section.hide"));
     }
 
+    IBrush? tint;
+
+    /// <summary>The band's fill while the pointer is away (a track's color in the inspector, #162); null = none.</summary>
+    public void SetTint(IBrush? brush)
+    {
+        if (tint == brush) return;
+        tint = brush;
+        Paint();
+    }
+
     void Paint()
     {
-        Background = hover ? Palette.Raised : Brushes.Transparent;
+        Background = hover ? Palette.Raised : tint ?? Brushes.Transparent;
         label.Foreground = hover ? Palette.Fg : Palette.Dim;
         chevron.Foreground = hover ? Palette.Dim : Palette.Faint;
     }

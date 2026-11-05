@@ -50,13 +50,16 @@ public sealed class EqEditor : StackPanel
     public Func<EqSettings?>? Follow { get; init; }
     /// <summary>The graph's height in the big view.</summary>
     public double GraphHeight { set => graph.Height = value; }
+    /// <summary>Its own preset row (the big window's); an effect panel has the preset bar every effect has instead (#141).</summary>
+    public bool ShowsPresets { init => presetRow.IsVisible = value; }
+    readonly Grid presetRow = new() { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
 
     public EqEditor(bool big = false)
     {
         Spacing = 10;
         graph = new EqGraph(height: big ? BigGraphH : 150);
         liveTimer.Tick += (_, _) => TickLive();
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        var row = presetRow;
         row.Children.Add(new TextBlock { Text = Loc.T("eq.preset"), Classes = { "dim" }, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
         preset.SetItems(TrackEq.Presets.Select(p => p.Label).ToArray());
         Grid.SetColumn(preset, 1); row.Children.Add(preset); Children.Add(row);
@@ -340,19 +343,28 @@ sealed class EqGraph : Control
     static double Hz(double x, double w) => 20 * Math.Pow(1000, x / w);
     static readonly IBrush SpectrumFill = Palette.Alpha(Colors.White, 0.07);
     static readonly IPen SpectrumLine = Palette.Pen(Palette.Alpha(Colors.White, 0.18));
+    /// <summary>The grid and its labels, made once: the graph redraws every frame while the spectrum moves.</summary>
+    static readonly double[] GridHz = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
+    static readonly string[] GridHzText = [.. GridHz.Select(f => f >= 1000 ? $"{f / 1000:0}k" : $"{f:0}")];
+    static readonly int[] GridDb = [-12, -6, 0, 6, 12];
+    static readonly string[] GridDbText = [.. GridDb.Select(db => $"{db:+0;-0}")];
+    static readonly string[] BandNumbers = [.. Enumerable.Range(1, 16).Select(n => n.ToString())];
+    static string BandNumber(int i) => i < BandNumbers.Length ? BandNumbers[i] : (i + 1).ToString();
 
     public override void Render(DrawingContext ctx)
     {
         ctx.DrawRectangle(Palette.App, Palette.Pen(Palette.Line), new Rect(Bounds.Size), 6, 6);
-        foreach (double f in new double[] { 50, 100, 200, 500, 1000, 2000, 5000, 10000 })
+        for (int i = 0; i < GridHz.Length; i++)
         {
+            double f = GridHz[i];
             ctx.DrawLine(Palette.Pen(Palette.Line), new Point(X(f), 0), new Point(X(f), Height));
-            if (interactive) ctx.DrawText(f >= 1000 ? $"{f / 1000:0}k" : $"{f:0}", 9, Palette.Faint, new Point(X(f) + 2, Height - 12));
+            if (interactive) ctx.DrawText(GridHzText[i], 9, Palette.Faint, new Point(X(f) + 2, Height - 12));
         }
-        foreach (int db in new[] { -12, -6, 0, 6, 12 })
+        for (int i = 0; i < GridDb.Length; i++)
         {
+            int db = GridDb[i];
             ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, Y(db)), new Point(Bounds.Width, Y(db)));
-            if (interactive && db != 0) ctx.DrawText($"{db:+0;-0}", 9, Palette.Faint, new Point(3, Y(db) - 10));
+            if (interactive && db != 0) ctx.DrawText(GridDbText[i], 9, Palette.Faint, new Point(3, Y(db) - 10));
         }
         if (hadSpectrum)
         {
@@ -372,8 +384,8 @@ sealed class EqGraph : Control
         ctx.DrawGeometry(null, Palette.Pen(eq.On ? Palette.Accent : Palette.Dim, interactive ? 2 : 1.5), curve);
         if (!interactive)
         {
-            foreach (var b in eq.Bands.Where(b => b.On))
-                ctx.DrawEllipse(Palette.Alpha(Palette.AccentColor, 0.75), null, new Point(X(b.Freq), Y(Handle(b))), 2.5, 2.5);
+            for (int i = 0; i < eq.Bands.Count; i++)
+                if (eq.Bands[i] is { On: true } b) ctx.DrawEllipse(Palette.Alpha(Palette.AccentColor, 0.75), null, new Point(X(b.Freq), Y(Handle(b))), 2.5, 2.5);
             return;
         }
         for (int i = 0; i < eq.Bands.Count; i++)
@@ -387,7 +399,7 @@ sealed class EqGraph : Control
             }
             if (i == selected) ctx.DrawEllipse(null, Palette.Pen(Palette.Fg, 1.5), p, r + 3, r + 3);
             ctx.DrawEllipse(b.On ? Palette.Accent : Palette.App, b.On ? null : Palette.Pen(Palette.Dim), p, r, r);
-            ctx.DrawText((i + 1).ToString(), 9, b.On ? Palette.App : Palette.Dim, new Point(p.X - 3, p.Y - 6), Palette.UiBold);
+            ctx.DrawText(BandNumber(i), 9, b.On ? Palette.App : Palette.Dim, new Point(p.X - 3, p.Y - 6), Palette.UiBold);
         }
     }
     protected override void OnPointerPressed(PointerPressedEventArgs e)

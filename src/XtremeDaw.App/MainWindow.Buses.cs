@@ -67,8 +67,10 @@ public partial class MainWindow
         public required Action<Func<Project, IRouted, bool>, string> Edit { get; init; }
         /// <summary>A bus's own id: it never sends to itself.</summary>
         public string? BusId { get; init; }
-        /// <summary>The track it is: only a track's sends have lanes.</summary>
+        /// <summary>The track it is, when it is one.</summary>
         public LiveTrack? Track { get; init; }
+        /// <summary>Whose sends have lanes: the track or the folder (a bus's have none).</summary>
+        public IAutomated? Lanes { get; init; }
         /// <summary>Several picked tracks edited as one (<see cref="GroupRouter"/>): their channels; null = just this one.</summary>
         public Func<IReadOnlyList<IRouted>>? Group { get; init; }
         /// <summary>A group's identity, for what is rebuilt when it changes.</summary>
@@ -78,6 +80,7 @@ public partial class MainWindow
     Router RouterOf(LiveTrack t) => new()
     {
         Track = t,
+        Lanes = t.Track,
         Get = () => t.Channel,
         Edit = (change, key) =>
         {
@@ -94,6 +97,7 @@ public partial class MainWindow
         string id = folder.Id;
         return new()
         {
+            Lanes = folder,
             Get = () => FolderById(id),
             Edit = (change, key) => { if (FolderById(id) is { } f) FolderEdit(f, x => change(store!.Project, x), key); },
         };
@@ -120,7 +124,6 @@ public partial class MainWindow
             Insert = slot => engine.Node(id)?.Find(slot),
             AddTip = Loc.T("mix.slot.add.bus.tip"),
             ReturnKinds = true,
-            DefaultPreset = () => "bus-glue",
         };
     }
 
@@ -218,23 +221,6 @@ public partial class MainWindow
         return items;
     }
 
-    /// <summary>"+ Envío" under the sends: the buses to tick (<see cref="SendChoices"/>).</summary>
-    Button AddSendButton(Router r)
-    {
-        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center,
-            Children = { new TextBlock { Classes = { "icon" }, Text = "\ue710", FontSize = 11, VerticalAlignment = VerticalAlignment.Center },
-                new TextBlock { Text = Loc.T("send.add"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center } } };
-        var b = new Button { Classes = { "chip" }, Content = label, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
-            MinHeight = 30, Focusable = false };
-        ToolTip.SetTip(b, Loc.T("send.add.tip"));
-        b.Click += (_, _) =>
-        {
-            if (PressClosedMenuOf(b)) return;
-            OpenAnchoredMenu(Popup(SendChoices(r), 220), b);
-        };
-        return b;
-    }
-
     /// <summary>
     /// A send's actions, from a right click on it in the mixer or the inspector (asked by the user, like an effect's):
     /// turn it on or off, take it before or after the fader, go to its bus, take it
@@ -253,7 +239,7 @@ public partial class MainWindow
                 return Task.CompletedTask;
             }, enabled: enabled, icon: "\ue7e8"),
         };
-        if (r.Track is { } automated) items.Add(AutomateItem(automated, AutoTarget.Send(busId)));
+        if (r.Lanes is { } automated) items.Add(AutomateItem(automated, AutoTarget.Send(busId)));
         items.Add(MenuAction(Loc.T(pre ? "send.menu.post" : "send.menu.pre"), () =>
         {
             r.Edit((p, y) => ProjectBuses.SetSend(p, y, busId, pre: !pre) != null, $"send.{busId}.pre");
@@ -449,9 +435,11 @@ public partial class MainWindow
             string name = busName.Text?.Trim() ?? "";
             if (name.Length > 0 && name != b.Name) BusEdit(b.Id, x => x.Name = name, "name");
         };
-        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("28,*") };
+        var pickColor = ColorPickButton(() => SelectedBus?.Color, hex => { if (selBusId is { } id) BusEdit(id, x => x.Color = hex, "color"); }, busRefresh);
+        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("28,*,Auto") };
         head.Children.Add(badge);
         Grid.SetColumn(busName, 1); head.Children.Add(busName);
+        Grid.SetColumn(pickColor, 2); head.Children.Add(pickColor);
         var info = new TextBlock { FontSize = 11, Foreground = Palette.Faint, Margin = new Thickness(36, 4, 0, 0) };
         // its name over the editor, like a track's (MainWindow.InspectorStrip.cs); its fader and effects go in the strip
         busHead.Children.Add(head);
@@ -459,12 +447,10 @@ public partial class MainWindow
         // busHead takes its place over the tabs in InitInspector, which runs after this
 
         var card = new StackPanel { Spacing = 14 };
-        card.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("look.color").ToUpperInvariant() });
-        card.Children.Add(ColorChips(() => SelectedBus?.Color, hex => { if (selBusId is { } id) BusEdit(id, x => x.Color = hex, "color"); }, busRefresh, 16));
         var icon = new Button { Classes = { "chip" }, Content = Loc.T("bus.icon"), MinHeight = 30, Padding = new Thickness(12, 0), HorizontalAlignment = HorizontalAlignment.Left };
         ToolTip.SetTip(icon, Loc.T("look.bus.tip"));
         icon.Click += (_, _) => { if (selBusId is { } id) ShowBusLook(id, icon); };
-        card.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("look.icon").ToUpperInvariant(), Margin = new Thickness(0, 4, 0, 0) });
+        card.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("look.icon").ToUpperInvariant() });
         card.Children.Add(icon);
         card.Children.Add(Help(Loc.T("bus.route.hint")));
         busPanel.Children.Add(new Border { Classes = { "section" }, Background = Palette.Panel, BorderThickness = new Thickness(0, 1), CornerRadius = new CornerRadius(0),
@@ -532,12 +518,17 @@ public partial class MainWindow
     /// buses (a name, a slot, the routing between them) change; every other edit just refreshes them.
     /// </summary>
     /// <param name="group">The picked tracks' router, when several are edited together; they show the sends they share, and an output only if none is in a folder.</param>
-    void RebuildInspectorSends(LiveTrack t, Router? group = null)
+    void RebuildInspectorSends(LiveTrack t, Router? group = null) =>
+        RebuildStripSends(group ?? RouterOf(t), group?.Key ?? $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(t)}|{t.Track.FolderId}", t, group);
+
+    /// <summary>A folder's sends and output in the strip, the same rows as a track's (#149: one way for every channel).</summary>
+    void RebuildInspectorSends(Folder f) =>
+        RebuildStripSends(RouterOf(f), $"folder:{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(f)}|{f.Id}", null, null);
+
+    void RebuildStripSends(Router router, string owner, LiveTrack? t, Router? group)
     {
-        var router = group ?? RouterOf(t);
         var targets = SendTargets(router);
-        string key = (group?.Key ?? $"{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(t)}|{t.Track.FolderId}") + "|"
-            + string.Join("/", targets.Select(b => b.Id + ":" + b.Name)) + "|" + Targets(router).Count;
+        string key = owner + "|" + string.Join("/", targets.Select(b => b.Id + ":" + b.Name)) + "|" + Targets(router).Count;
         if (key == inspectorSendsKey) return;
         inspectorSendsKey = key;
         stripRouter = router;
@@ -571,7 +562,7 @@ public partial class MainWindow
 
         // where the track's output goes: its folder's, or its own choice
         Control? output = null;
-        if (group == null && t.Track.FolderId is { } folder)
+        if (group == null && t?.Track.FolderId is { } folder)
         {
             var through = new TextBlock { Classes = { "dim" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
             sendRefresh.Add(() => through.Text = Loc.T("route.throughFolder", FolderById(folder)?.Name ?? ""));

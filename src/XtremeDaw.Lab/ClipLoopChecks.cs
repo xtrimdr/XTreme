@@ -87,6 +87,11 @@ static class ClipLoopChecks
             && heard.Exists(n => n.Pitch == 60 && n.Beat == 12) && !heard.Exists(n => n.Beat >= 14));
         MidiEditing.Loop(p, midi.Id, 20);
         Check("alargarlo de nuevo sigue con la misma vuelta", midi.LoopBeats == 4 && midi.LengthBeats == 20);
+        MidiEditing.Pass(p, midi.Id, 2);
+        Check($"acortar el original acorta todas las vueltas ({midi.LengthBeats} tiempos)",
+            midi.LoopBeats == 2 && midi.LengthBeats == 10 && MidiFiles.Heard(midi).Count == 5 && midi.Notes.Count == 2);
+        MidiEditing.Pass(p, midi.Id, 4);
+        Check("alargarlo de nuevo trae lo que había", midi.LoopBeats == 4 && midi.LengthBeats == 20 && MidiFiles.Heard(midi).Count == 10);
         string right = MidiEditing.Split(p, midi.Id, 9 * 60 / p.Settings.Bpm);
         var rightClip = MidiEditing.Find(p, right).Clip;
         Check("dividirlo deja todo sonando igual",
@@ -103,6 +108,11 @@ static class ClipLoopChecks
         Automations.Loop(lane, block.Id, 5);
         Check("un bloque de automatización en bucle repite su curva",
             block.LoopSec == 2 && Near(Automations.PositionAt(lane, false, 2), 0.5) && Near(Automations.PositionAt(lane, false, 4), 0.5) && Near(Automations.PositionAt(lane, false, 5.5), 0.25));
+        Automations.Pass(lane, block.Id, 1);
+        Check("cambiar el largo del original rehace todo el bucle",
+            block.LoopSec == 1 && Near(block.LengthSec, 2.5) && Near(Automations.PositionAt(lane, false, 2.5), 0.25) && Near(Automations.PositionAt(lane, false, 3.4), 0.2));
+        Automations.Pass(lane, block.Id, 2);
+        Check("y volverlo a su largo lo deja como estaba", block.LoopSec == 2 && Near(block.LengthSec, 5) && Near(Automations.PositionAt(lane, false, 4), 0.5));
         Automations.Split(lane, block.Id, 4, false);
         Check("dividirlo suena igual", lane.Blocks.Count == 2 && Near(Automations.PositionAt(lane, false, 3.5), 0.25) && Near(Automations.PositionAt(lane, false, 4.5), 0.75));
 

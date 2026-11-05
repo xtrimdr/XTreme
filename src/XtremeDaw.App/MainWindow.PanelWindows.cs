@@ -13,14 +13,14 @@ namespace XtremeDaw.App;
 /// Every panel of the window can go to a window of its own and come back (asked by the user: "Todos los paneles.
 /// Todos."), the way the virtual keyboard does (<see cref="OpenVirtualWindow"/>): a button in the panel (and Ver →
 /// "Paneles en ventana") moves it out, the same button or the window's X brings it back. The panels are the inspector,
-/// the stage (preview and "En vivo"), the timeline, the mixer's place (mixer, piano roll and Mastering) and the project
-/// bar. The panel itself moves, nothing is rebuilt, so it keeps its state; its window's place and size, and which
+/// the stage (preview and "En vivo"), the timeline, the mixer, the piano roll, Mastering and the project bar: the three
+/// views of the mixer's place each go to a window of their own (asked by the user, #139), and the place stays in the main
+/// window for those that are still there. The panel itself moves, nothing is rebuilt, so it keeps its state; its window's place and size, and which
 /// panels are out, live in config.json ("panelsOut", "panelWindow.&lt;id&gt;") and come back on the next start.
 /// <para>
 /// What stays in the main window takes the room left (decision of the user): with the stage out the window stacks
 /// like solo audio (<see cref="StageHere"/>), with the timeline out the bottom row holds the mixer's place or closes
-/// (<see cref="BottomEmpty"/>), and with the mixer's place out the timeline stays while the view buttons change what
-/// its window shows. Maximizing (<see cref="ToggleMaxPanel"/>) inside a panel's window maximizes that window (decision of
+/// (<see cref="BottomEmpty"/>), and a view in its own window brings that window up from its button. Maximizing (<see cref="ToggleMaxPanel"/>) inside a panel's window maximizes that window (decision of
 /// the user); in the main window it works on what is still there. Moving a panel restores a maximized one first.
 /// </para>
 /// </summary>
@@ -59,7 +59,7 @@ public partial class MainWindow
     bool InspectorOut => PanelOut(FloatInspector);
     bool StageOut => PanelOut(FloatStage);
     bool TimelineOut => PanelOut(FloatTimeline);
-    /// <summary>The mixer's place is out: the mixer, and the piano roll or Mastering when they are shown there.</summary>
+    /// <summary>The mixer is in its own window (only the mixer: the piano roll and Mastering keep the place).</summary>
     bool MixerOut => PanelOut(FloatMixer);
     bool PianoOut => PanelOut(FloatPiano);
     bool MasteringOut => PanelOut(FloatMastering);
@@ -141,14 +141,8 @@ public partial class MainWindow
         FloatProject => Loc.T("panel.project"),
         FloatPiano => Loc.T("transport.view.piano"),
         FloatMastering => Loc.T("transport.view.mastering"),
-        _ => Loc.T(masteringView ? "transport.view.mastering" : pianoView ? "transport.view.piano" : "transport.view.mixer"),
+        _ => Loc.T("transport.view.mixer"),
     };
-
-    /// <summary>The mixer's window is named after what it shows (the piano roll or Mastering, when they aren't out on their own).</summary>
-    void ShowMixerWindowTitle()
-    {
-        if (panelWindows.TryGetValue(FloatMixer, out var w)) w.Window.Title = w.Caption.Text = PanelTitle(FloatMixer);
-    }
 
     /// <summary>Moves a panel to its window or back, and lays the main window out again for what stays.</summary>
     void SetPanelOut(string id, bool outside, bool save = true)
@@ -163,10 +157,11 @@ public partial class MainWindow
         Timeline.CancelGesture();
         Preview.CancelGesture();
         if (maxPanel != MaxPanel.None) RestoreMaxPanel();
-        bool views = id is FloatTimeline or FloatMixer;
+        bool views = id is FloatTimeline;
         if (views && !stackedViews) KeepBottomRow();
-        // the piano roll and Mastering leave the mixer's place, or come back to it
-        bool own = id is FloatPiano or FloatMastering, inPlace = mixerView && (id == FloatPiano ? pianoView : id == FloatMastering && masteringView);
+        // each view leaves the mixer's place, or comes back to it
+        bool own = id is FloatMixer or FloatPiano or FloatMastering,
+            inPlace = mixerView && (id == FloatPiano ? pianoView : id == FloatMastering ? masteringView : !pianoView && !masteringView);
         // a window lays out what it holds in its own pass: a pass still pending for the panel would reach it in the other
         // window, and Avalonia throws ("wrong LayoutManager"). So the window it leaves lays out once it is gone, before
         // the panel goes in the other one: a pass skips what isn't in its window
@@ -189,16 +184,16 @@ public partial class MainWindow
             PutPanel(id, content);
         }
         PanelMoved(id, views);
-        if (outside && id == FloatMixer && !mixerView) ShowBottomView(mastering: false);
         if (own)
         {
             if (outside)
             {
                 if (id == FloatPiano) pianoView = false;
-                else masteringView = false;
-                // what stays takes the room: the place closes, or the mixer's window shows the mixer
-                if (inPlace && !MixerOut) SetMixerView(false);
+                else if (id == FloatMastering) masteringView = false;
+                // what stays takes the room: the place closes
+                if (inPlace) SetMixerView(false);
                 ApplyMasteringView();
+                if (id == FloatMixer) RefreshMixer();
                 if (id == FloatPiano)
                 {
                     pianoRoll.SetPlayhead(engine.PositionSec);
@@ -207,7 +202,7 @@ public partial class MainWindow
             }
             // back in the mixer's place, and shown there
             else if (id == FloatPiano) OpenPianoView(PianoRollView.Frame.Keep);
-            else ShowBottomView(mastering: true);
+            else ShowBottomView(mastering: id == FloatMastering);
         }
         if (save) SaveViewPref("panelsOut", string.Join(",", FloatPanels.Where(PanelOut)));
     }
@@ -219,6 +214,7 @@ public partial class MainWindow
         FloatProject => ProjectBar,
         FloatPiano => pianoHost,
         FloatMastering => masteringScroll,
+        FloatMixer => mixerPane,
         _ => PanelHost(id),
     };
 
@@ -231,6 +227,9 @@ public partial class MainWindow
         Control c;
         switch (id)
         {
+            case FloatMixer:
+                mixerViews.Children.Remove(mixerPane);
+                return mixerPane;
             case FloatPiano:
                 mixerViews.Children.Remove(pianoHost);
                 return pianoHost;
@@ -255,9 +254,9 @@ public partial class MainWindow
         }
     }
 
-    Control PanelHost(string id) => id switch { FloatStage => StageArea, FloatTimeline => TimelineHost, _ => MixerHost };
+    Control PanelHost(string id) => id == FloatStage ? StageArea : TimelineHost;
 
-    /// <summary>Puts a panel back where the main window keeps it now (the timeline and the mixer's place move with <see cref="MoveBottomView"/>).</summary>
+    /// <summary>Puts a panel back where the main window keeps it now (the timeline moves with <see cref="MoveBottomView"/>).</summary>
     void PutPanel(string id, Control c)
     {
         switch (id)
@@ -271,6 +270,9 @@ public partial class MainWindow
             case FloatStage:
                 Workspace.Children.Insert(Workspace.Children.IndexOf(AudioArea), c);
                 break;
+            case FloatMixer:
+                mixerViews.Children.Insert(0, c);
+                break;
             case FloatPiano:
                 mixerViews.Children.Add(c);
                 break;
@@ -282,7 +284,7 @@ public partial class MainWindow
             default:
                 if (stackedViews)
                 {
-                    Grid.SetRow(c, id == FloatTimeline ? 0 : 2);
+                    Grid.SetRow(c, 0);
                     AudioArea.Children.Add(c);
                 }
                 else
@@ -415,7 +417,7 @@ public partial class MainWindow
         var items = new List<object>();
         foreach (string id in FloatPanels)
         {
-            string label = id == FloatMixer ? Loc.T("transport.view.mixer") : PanelTitle(id);
+            string label = PanelTitle(id);
             bool enabled = PanelOut(id) || id != FloatStage || !AudioOnly;
             items.Add(Check(label, PanelOut(id), () => SetPanelOut(id, !PanelOut(id)), enabled: enabled));
         }

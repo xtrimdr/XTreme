@@ -93,7 +93,7 @@ public partial class MainWindow
             return;
         }
         string target = l.Target(id);
-        await Automate(l.Track, target, p.Title, p.Value);
-        Toast(Loc.T("auto.listen.done", LaneName(l.Track, new AutomationLane { Target = target, Name = p.Title })));
+        await Automate(l.Track.Track, target, p.Title, p.Value);
+        Toast(Loc.T("auto.listen.done", LaneName(l.Track.Track, new AutomationLane { Target = target, Name = p.Title })));
     }
 }

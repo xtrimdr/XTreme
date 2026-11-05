@@ -32,6 +32,8 @@ public sealed partial class TimelineView
     public event Action<string, double>? MidiClipTrimmed;
     /// <summary>A MIDI clip of its own looped from its top right corner: its id and its new length in beats (<see cref="MidiEditing.Loop"/>).</summary>
     public event Action<string, double>? MidiClipLooped;
+    /// <summary>A looped clip's original resized at its first seam: its id and its new pass in beats (<see cref="MidiEditing.Pass"/>).</summary>
+    public event Action<string, double>? MidiClipPassChanged;
     /// <summary>A double click on a MIDI clip: open it in the piano roll.</summary>
     public event Action<LiveTrack, string>? MidiClipOpenRequested;
     /// <summary>A double click on an empty stretch of a MIDI lane: a new clip there (seconds, already snapped).</summary>
@@ -67,7 +69,7 @@ public sealed partial class TimelineView
         double right = armed.Contains(i) && !Recording && InputLabel != null ? InputRect(i).X - 4 : ArmRect(i).X - 6;
         double w = Math.Min(ChipMaxW, right - (58 + Indent(i) + NameShift(i) + ChipNameW));
         if (w < ChipTextW) w = ChipFoldedW;
-        return right - w < BadgeRect(i).Right ? NoRect : new(right - w, LaneY(i) + 8, w, 24);
+        return right - w < BadgeRect(i).Right ? NoRect : HeadBtn(i, right - w, w);
     }
 
     InstrumentState StateOf(LiveTrack t) =>
@@ -94,7 +96,7 @@ public sealed partial class TimelineView
             InstrumentState.Failed => Palette.Mute, _ => Palette.Faint,
         };
         string name = t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Granular != null ? Loc.T("granular.name") : t.Track.Instrument?.Name ?? Loc.T("vst.testTone");
-        ctx.DrawText(name, 11, brush, new Point(r.X + 8, r.Y + 5), ready ? Palette.UiBold : Palette.Ui, Math.Max(0, r.Width - ChipArrowW - 10));
+        ctx.DrawText(name, 11, brush, new Point(r.X + 8, r.Center.Y - 7), ready ? Palette.UiBold : Palette.Ui, Math.Max(0, r.Width - ChipArrowW - 10));
         double ax = r.Right - ChipArrowW;
         ctx.DrawLine(Palette.Pen(ready ? Palette.Alpha(Palette.AccentColor, 0.3) : Palette.Line), new Point(ax + 0.5, r.Y + 5), new Point(ax + 0.5, r.Bottom - 5));
         DrawChevron(ctx, new Point(ax + ChipArrowW / 2, r.Center.Y + 1), ready ? Palette.Accent : Palette.Dim);
@@ -126,6 +128,10 @@ public sealed partial class TimelineView
     bool midiTrimStart;
     /// <summary>The held clip is grabbed by its loop corner: it resizes like the edge, and what it held repeats.</summary>
     bool midiLoop;
+    /// <summary>The held clip loops and is grabbed by its original's end, its first seam (#171): its pass goes to
+    /// <see cref="midiCell"/> and its length with it, so it keeps how many passes it had.</summary>
+    bool midiPass;
+    double midiCell;
     /// <summary>The MIDI track the held clip is over, or -1.</summary>
     int midiOver = -1;
     /// <summary>The held MIDI clip is one of several boxed ones: it carries them all.</summary>
@@ -300,11 +306,19 @@ public sealed partial class TimelineView
         return !tracks[i].Track.Locked && p.X <= right && right - p.X <= LoopGrab && p.Y >= top && p.Y < top + LoopBand(LaneH(i) - 10);
     }
 
+    /// <summary>Where a looped clip's original ends (its first seam), as drawn; null on a clip that doesn't loop by itself.</summary>
+    double? MidiPassEnd(MidiClip c)
+    {
+        if (c.PatternId != null || c.LoopBeats is not { } cell) return null;
+        if (c == midiHeld && midiPass && moved) cell = midiCell;
+        return MidiSpan(c).Start + cell * BeatSec;
+    }
+
+    /// <summary>The original's end of a looped clip: dragging it resizes the pass, and every repeat follows.</summary>
+    bool OnMidiPass(MidiClip c, double x) => MidiPassEnd(c) is { } end && Math.Abs(x - X(end)) <= MidiEdgeGrab && !OnMidiEdge(c, x);
+
     /// <summary>The left edge of a clip that can be trimmed from it (a pattern's can't: its notes count from its start).</summary>
     bool OnMidiStartEdge(MidiClip c, double x) => c.PatternId == null && Math.Abs(x - X(MidiSpan(c).Start)) <= MidiEdgeGrab;
-
-    /// <summary>Px from a clip's edge where its handle is drawn: a short tab on each side, centered vertically.</summary>
-    const double MidiHandleW = 3, MidiHandleH = 12;
 
     void DrawMidiClips(DrawingContext ctx, int i, double y, double W)
     {
@@ -327,29 +341,28 @@ public sealed partial class TimelineView
         double x0 = X(start), x1 = X(end);
         if (x1 < HeaderW || x0 > W) return;
         bool sel = c.Id == SelectedMidiId || boxed.Contains(c.Id);
-        var color = TrackIcons.ColorOf(t.Track) ?? Palette.AccentColor;
+        var tint = TrackIcons.ColorOf(t.Track);
+        var color = tint ?? Palette.AccentColor;
         bool silent = t.Silenced || anySoloed && !t.Soloed;
         var r = new Rect(x0, y + 5, Math.Max(2, x1 - x0), lh - 10);
         using var opacity = ctx.PushOpacity((silent ? 0.5 : held ? 0.85 : 1) * (erasing.Contains(c.Id) ? 0.25 : 1));
         bool lit = c.PatternId != null && c.PatternId == litPattern;
-        var outline = lit ? Palette.Pen(Palette.Accent, 1.5) : Palette.Pen(Palette.Alpha(color, sel ? 0.95 : 0.45), sel ? 1.5 : 1);
-        ctx.DrawRectangle(Palette.Alpha(color, sel ? 0.24 : 0.14), outline, r, 5, 5);
-        // the edge handles of a selected clip: the right one changes its length, the left one (not on a pattern) trims it
-        if (sel && r.Width >= 3 * MidiHandleW + 2)
-        {
-            var grip = Palette.Alpha(color, 0.95);
-            double cy = r.Center.Y - MidiHandleH / 2;
-            ctx.FillRectangle(grip, new Rect(r.Right - MidiHandleW - 2, cy, MidiHandleW, MidiHandleH));
-            if (c.PatternId == null) ctx.FillRectangle(grip, new Rect(r.Left + 2, cy, MidiHandleW, MidiHandleH));
-        }
+        // a colored track paints its parts in the look chosen in Apariencia (TrackColorLooks, #162)
+        var look = tint != null ? TrackColorLooks.Clip(color, sel) : default;
+        var outline = lit ? Palette.Pen(Palette.Accent, 1.5) : tint != null ? look.Border : Palette.Pen(Palette.Alpha(color, sel ? 0.95 : 0.45), sel ? 1.5 : 1);
+        ctx.DrawRectangle(tint != null ? look.Fill : Palette.Alpha(color, sel ? 0.24 : 0.14), outline, r, 5, 5);
         using (ctx.PushClip(new RoundedRect(r, 5)))
         {
+            if (tint != null) TrackColorLooks.DrawBar(ctx, r, color, sel);
             var notes = c.Notes;
             if (notes.Count == 0)
             {
+                DrawMidiHandles(ctx, t, c, r, sel);
                 if (r.Height >= 26 && r.Width > 60)
                 {
-                    if (c.PatternName is { } empty) DrawPatternName(ctx, empty, Math.Max(x0, HeaderW) + LinkInset + 6, y + 9);
+                    if (c.Id == editingNameId) { }
+                    else if (c.PatternName is { } empty) DrawPatternName(ctx, empty, Math.Max(x0, HeaderW) + LinkInset + 6, y + 9);
+                    else if (c.Name is { } own) ctx.DrawText(own, 11, Palette.Dim, new Point(Math.Max(x0, HeaderW) + 8, y + 9), Palette.Ui);
                     else ctx.DrawText(Loc.T("midi.clip.empty"), 11, Palette.Faint, new Point(Math.Max(x0, HeaderW) + 8, y + 9), Palette.Ui);
                 }
                 return;
@@ -359,12 +372,13 @@ public sealed partial class TimelineView
             // a range of at least an octave, so a single note doesn't fill the clip from top to bottom
             int span = Math.Max(12, hi - lo + 1);
             lo -= (span - (hi - lo + 1)) / 2;
-            double top = r.Top + 4, h = Math.Max(4, r.Height - 8);
+            double bar = tint != null ? TrackColorLooks.Top(r.Height) : 0;
+            double top = r.Top + 4 + bar, h = Math.Max(4, r.Height - 8 - bar);
             double rowH = Math.Max(1, Math.Min(4, h / span));
-            var fill = Palette.Alpha(color, sel ? 1 : 0.85);
+            var fill = tint != null && TrackColorLooks.Clips != TrackColorLooks.Soft ? look.Content : Palette.Alpha(color, sel ? 1 : 0.85);
             double beatPx = BeatSec * pps;
             // as the gesture has it: a pattern's or a looped clip dragged longer shows its repeats while it moves
-            double length = (end - start) / BeatSec, cell = c.Repeats ? c.CellBeats : held && midiLoop ? midiFromBeats
+            double length = (end - start) / BeatSec, cell = held && midiPass ? midiCell : c.Repeats ? c.CellBeats : held && midiLoop ? midiFromBeats
             : groupMode == ClipEditMode.Loop && moved && midiGroup.TryGetValue(c, out var g) ? g.FromBeats : length;
             var seam = Palette.Pen(Palette.Alpha(color, 0.45));
             for (int pass = Math.Max(0, (int)Math.Floor((HeaderW - x0) / (cell * beatPx))); pass * cell < length - 1e-9; pass++)
@@ -388,9 +402,44 @@ public sealed partial class TimelineView
                     ctx.FillRectangle(fill, new Rect(nx, ny, nw, rowH));
                 }
             }
-            if (c.PatternName is { } name && r.Height >= 26 && r.Width > 60)
-                DrawPatternName(ctx, name, Math.Max(x0, HeaderW) + LinkInset + 6, y + 7);
+            if (r.Height >= 26 && r.Width > 60 && c.Id != editingNameId)
+            {
+                if (c.PatternName is { } name) DrawPatternName(ctx, name, Math.Max(x0, HeaderW) + LinkInset + 6, y + 7);
+                else if (c.Name is { } own) ctx.DrawText(own, 11, Palette.Dim, new Point(Math.Max(x0, HeaderW) + 8, y + 7), Palette.Ui);
+            }
         }
+        DrawMidiHandles(ctx, t, c, r, sel);
+    }
+
+    /// <summary>What a MIDI clip's handles light up: what a press there does, or what the clip's own drag is doing.</summary>
+    enum MidiGrip { None, Start, End, Loop, Pass }
+
+    /// <summary>
+    /// A hovered or selected clip's handles, like an audio clip's (asked by the user, #171): a tab on each edge, centered
+    /// (the left one not on a pattern: its notes count from its start), and the loop corner at its top right. The one a
+    /// press would grab, or the one being dragged, lights up. A locked track's clips keep their length: none.
+    /// </summary>
+    void DrawMidiHandles(DrawingContext ctx, LiveTrack t, MidiClip c, Rect r, bool sel)
+    {
+        if (t.Track.Locked) return;
+        bool dragging = gesture == "midi" && c == midiHeld;
+        bool hover = gesture == null && r.Contains(lastPointer);
+        if (!sel && !hover && !dragging) return;
+        var p = lastPointer;
+        var lit = dragging ? (midiLoop ? MidiGrip.Loop : midiPass ? MidiGrip.Pass : midiTrimStart ? MidiGrip.Start : midiEdge ? MidiGrip.End : MidiGrip.None)
+            : !hover ? MidiGrip.None
+            : p.X <= r.Right && r.Right - p.X <= LoopGrab && p.Y >= r.Top && p.Y < r.Top + LoopBand(r.Height) ? MidiGrip.Loop
+            : OnMidiPass(c, p.X) ? MidiGrip.Pass
+            : c.PatternId == null && Math.Abs(p.X - r.Left) <= MidiEdgeGrab && !(Math.Abs(p.X - r.Right) <= MidiEdgeGrab && r.Right - p.X < p.X - r.Left) ? MidiGrip.Start
+            : Math.Abs(p.X - r.Right) <= MidiEdgeGrab ? MidiGrip.End : MidiGrip.None;
+        DrawLoopCorner(ctx, r, lit == MidiGrip.Loop);
+        if (r.Width < 4 * MidiEdgeGrab) return;
+        double h = Math.Round(Math.Min(16, r.Height / 2 - 4));
+        if (c.PatternId == null) DrawGripTab(ctx, r.Left + 5, r.Center.Y, h, lit == MidiGrip.Start, Palette.FgColor);
+        DrawGripTab(ctx, r.Right - 5, r.Center.Y, h, lit == MidiGrip.End, Palette.FgColor);
+        // a looped clip's original keeps its own end tab, at its first seam
+        if (MidiPassEnd(c) is { } pass && X(pass) - r.Left >= 4 * MidiEdgeGrab)
+            DrawGripTab(ctx, Math.Round(X(pass)) - 4, r.Center.Y, h, lit == MidiGrip.Pass, Palette.FgColor);
     }
 
     /// <summary>A left press on a MIDI lane (past the headers). Always handles it.</summary>
@@ -422,14 +471,16 @@ public sealed partial class TimelineView
         }
         // the nearer edge wins when both are in reach (a short clip)
         midiLoop = OnMidiLoop(i, c, p);
-        midiTrimStart = !midiLoop && OnMidiStartEdge(c, p.X) && !(OnMidiEdge(c, p.X) && X(MidiSpan(c).End) - p.X < p.X - X(MidiSpan(c).Start));
-        midiEdge = midiLoop || !midiTrimStart && OnMidiEdge(c, p.X);
-        bool edge = midiEdge || midiTrimStart;
+        midiPass = !midiLoop && OnMidiPass(c, p.X);
+        midiCell = c.LoopBeats ?? c.CellBeats;
+        midiTrimStart = !midiLoop && !midiPass && OnMidiStartEdge(c, p.X) && !(OnMidiEdge(c, p.X) && X(MidiSpan(c).End) - p.X < p.X - X(MidiSpan(c).Start));
+        midiEdge = midiLoop || !midiTrimStart && !midiPass && OnMidiEdge(c, p.X);
+        bool edge = midiEdge || midiTrimStart || midiPass;
         cloning = (modifiers & KeyModifiers.Shift) != 0 && !edge;
         if (midiEdge && (modifiers & KeyModifiers.Shift) == 0)
             midiAlong.UnionWith(UseOf(c).Where(o => Math.Abs(o.LengthBeats - c.LengthBeats) < 1e-9));
         // a boxed clip grabbed by its body carries the other boxed ones; by its edge or its loop, it edits them all
-        bool group = GroupEdits(c.Id);
+        bool group = !midiPass && GroupEdits(c.Id);
         midiCarrying = group && !edge;
         SelectedMidiId = c.Id;
         if (group)
@@ -464,7 +515,7 @@ public sealed partial class TimelineView
         double dxPx = lastPointer.X - down.X + scrollX - downScrollX;
         if (!moved && Math.Abs(dxPx) < 3 && Math.Abs(lastPointer.Y - down.Y) < 3) return;
         // a pattern's clip dragged by its body brings its other instruments: only now, so a click still picks it alone
-        if (!moved && !midiEdge && !midiCarrying && UseOf(midiHeld) is { Count: > 0 } use)
+        if (!moved && !midiEdge && !midiPass && !midiCarrying && UseOf(midiHeld) is { Count: > 0 } use)
         {
             boxed.Clear();
             boxed.Add(midiHeld.Id);
@@ -496,6 +547,14 @@ public sealed partial class TimelineView
             midiAtSec = Math.Clamp(ClipEditing.Snap(midiFromSec + dxPx / pps, grid, free), 0, end - MidiClip.MinBeats * BeatSec);
             midiBeats = midiFromBeats - (midiAtSec - midiFromSec) / BeatSec;
         }
+        else if (midiPass && midiHeld.LoopBeats is { } fromCell)
+        {
+            // the pass goes by grid steps like an edge; the clip keeps how many passes it had
+            double step = free || grid.Step <= 0 ? MidiClip.MinBeats : Math.Max(MidiClip.MinBeats, grid.Step / BeatSec);
+            double beats = fromCell + dxPx / pps / BeatSec;
+            midiCell = Math.Clamp(Math.Round(beats / step) * step, MidiClip.MinBeats, MidiClip.MaxBeats);
+            midiBeats = Math.Min(MidiClip.MaxBeats, midiFromBeats * midiCell / fromCell);
+        }
         else if (midiEdge)
         {
             // the length goes by grid steps (a sixteenth when the magnet is off), never under a sixteenth
@@ -519,7 +578,7 @@ public sealed partial class TimelineView
         if (i < 0 || i >= tracks.Count || !tracks[i].Track.IsMidi || p.X < HeaderW) return null;
         if (MidiClipAt(i, p.X) is not { } c) return StandardCursorType.Arrow;
         if (OnMidiStartEdge(c, p.X) && !OnMidiEdge(c, p.X)) return StandardCursorType.LeftSide;
-        return OnMidiEdge(c, p.X) ? StandardCursorType.RightSide : StandardCursorType.Hand;
+        return OnMidiEdge(c, p.X) || OnMidiPass(c, p.X) ? StandardCursorType.RightSide : StandardCursorType.Hand;
     }
 
     /// <summary>Selects a MIDI clip by id (after the window made or moved it).</summary>
@@ -530,19 +589,21 @@ public sealed partial class TimelineView
     }
 
     /// <summary>What the "midi" gesture ends in (taken before the gesture is cleared), or null when the clip didn't change.</summary>
-    (string Id, double At, double Beats, string? To, bool Trim, bool Loop)? MidiResult()
+    (string Id, double At, double Beats, string? To, bool Trim, bool Loop, double? Pass)? MidiResult()
     {
         var c = midiHeld;
         if (c == null || !moved) return null;
+        if (midiPass) return midiCell != c.LoopBeats ? (c.Id, c.AtSec, midiBeats, null, false, false, midiCell) : null;
         string? to = midiOver >= 0 && midiOver < tracks.Count && midiOver != fromIndex ? tracks[midiOver].Track.Id : null;
         resizedAlong = [.. midiAlong.Select(o => o.Id)];
-        return midiAtSec != c.AtSec || midiBeats != c.LengthBeats || to != null ? (c.Id, midiAtSec, midiBeats, to, midiTrimStart, midiLoop && c.PatternId == null) : null;
+        return midiAtSec != c.AtSec || midiBeats != c.LengthBeats || to != null ? (c.Id, midiAtSec, midiBeats, to, midiTrimStart, midiLoop && c.PatternId == null, null) : null;
     }
 
-    void ReleaseMidi((string Id, double At, double Beats, string? To, bool Trim, bool Loop)? result)
+    void ReleaseMidi((string Id, double At, double Beats, string? To, bool Trim, bool Loop, double? Pass)? result)
     {
         if (result is not { } r) return;
-        if (r.Trim) MidiClipTrimmed?.Invoke(r.Id, r.At);
+        if (r.Pass is { } cell) MidiClipPassChanged?.Invoke(r.Id, cell);
+        else if (r.Trim) MidiClipTrimmed?.Invoke(r.Id, r.At);
         else if (r.Loop) MidiClipLooped?.Invoke(r.Id, r.Beats);
         else MidiClipChanged?.Invoke(r.Id, r.At, r.Beats, r.To);
     }
@@ -554,6 +615,7 @@ public sealed partial class TimelineView
         midiEdge = false;
         midiTrimStart = false;
         midiLoop = false;
+        midiPass = false;
         midiCarrying = false;
         midiCarried.Clear();
         midiAlong.Clear();

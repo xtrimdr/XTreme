@@ -148,12 +148,14 @@ static class Program
                                            (Basic Pitch); --melodia deja una nota a la vez; --inicio y --nota son
                                            qué tan seguro tiene que estar de que una nota empieza y sigue sonando
               componentes [estado | instalar id [--paquete p] [--url u] | convertir carpeta-th salida | comprobar]
-              separar   archivo [--stems 2|4|6] [--calidad rapida|alta|maxima] [--sin-desplazar]
+              separar   archivo [--stems 2|4|6] [--calidad rapida|alta|maxima] [--modelo general|porstem|6]
+                        [--solo voz,bateria,bajo,guitarra,piano] [--pasadas n] [--sin-desplazar]
                         [--desde s] [--hasta s] [--salida carpeta] [--cancelar s] [--cpu]
                                            separa el archivo en stems y deja un WAV por stem, como "Separar en stems"
                                            en un clip (Demucs); --sin-desplazar hace una sola pasada sin correr el
                                            audio (para comparar con otra versión); --cancelar corta a los s segundos y
-                                           dice cuánto tardó en parar; --cpu no usa la placa de video; --comprobar corre
+                                           dice cuánto tardó en parar; --cpu no usa la placa de video; --modelo, --solo
+                                           y --pasadas son el modo Avanzado; --comprobar corre
                                            sus comprobaciones
                                            (más bajo = más notas); --midi las guarda en un .mid
               extraer-midi --comprobar     solo las comprobaciones del extractor (las de comprobar-dsp)

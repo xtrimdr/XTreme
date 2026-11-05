@@ -4,6 +4,9 @@ using NAudio.Wave;
 
 namespace XtremeDaw.Projects;
 
+/// <summary>What "Separar en stems" does with the clip it separated (#146): mute its track, leave it, or take the clip out.</summary>
+public enum StemOriginal { Mute, Keep, Remove }
+
 /// <summary>
 /// Brings an audio file from outside (a backing track, a loop, a take made elsewhere) into the project
 /// (native only: the web only plays what it records). Three steps so the slow ones can run off the UI thread:
@@ -184,9 +187,11 @@ public static class AudioImport
     /// <summary>
     /// The stems of a clip: a track each, in a new folder right after the clip's track, with a clip at
     /// <paramref name="atSec"/> as loud as the original. The clip's track is muted, since together they would sound
-    /// twice. Returns the folder's id.
+    /// twice; <paramref name="original"/> can leave it as it is or take the clip out instead (#146: a locked clip or
+    /// track is muted instead). Returns the folder's id.
     /// </summary>
-    public static string AddStems(Project p, string trackId, string clipId, double atSec, IReadOnlyList<Imported> files, string folderName)
+    public static string AddStems(Project p, string trackId, string clipId, double atSec, IReadOnlyList<Imported> files, string folderName,
+        StemOriginal original = StemOriginal.Mute)
     {
         var source = p.Tracks.Find(t => t.Id == trackId);
         double gain = source?.Clips.Find(c => c.Id == clipId)?.GainDb ?? 0;
@@ -210,7 +215,9 @@ public static class AudioImport
             p.Tracks.Insert(at + ids.Count, track);
             ids.Add(track.Id);
         }
-        if (source != null) source.Channel.Muted = true;
+        if (source?.Clips.Find(c => c.Id == clipId) is { } clip && original == StemOriginal.Remove && !ClipEditing.IsLocked(source, clip))
+            ClipEditing.RemoveClip(p, clipId);
+        else if (source != null && original != StemOriginal.Keep) source.Channel.Muted = true;
         string folder = TrackFolders.Add(p, folderName, ids);
         p.AddLog("stems-separated", folderName);
         return folder;
@@ -245,7 +252,7 @@ public static class AudioImport
     /// <summary>
     /// Adds the media and a clip of it at <paramref name="atSec"/> on a new track at the end (with its video panel only
     /// when it brought a picture); with <paramref name="trackId"/> of an empty track it takes that one instead (like a
-    /// take does). With <paramref name="fit"/> a track that already has clips also takes it, when it isn't locked and
+    /// take does), keeping its name. With <paramref name="fit"/> a track that already has clips also takes it, when it isn't locked and
     /// that stretch is free: dropping on a track never covers what is there. Returns the track.
     /// </summary>
     public static Track AddClip(Project p, Imported file, double atSec, string? trackId = null, bool fit = false)
@@ -269,14 +276,11 @@ public static class AudioImport
         var track = p.Tracks.Find(t => t.Id == trackId && Takes(p, t, at, file.DurationSec, fit));
         if (track == null)
         {
-            track = new Track { Video = false };
+            // only a track made here takes the file's name: an existing one keeps its own (asked by the user, #163)
+            track = new Track { Video = false, Name = file.Name };
             p.Tracks.Add(track);
         }
-        if (track.Clips.Count == 0)
-        {
-            track.Name = file.Name;
-            track.Video = file.Video != null;
-        }
+        if (track.Clips.Count == 0) track.Video = file.Video != null;
         track.Clips.Add(new Clip { MediaId = media.Id, AtSec = at });
         p.AddLog("audio-imported", file.Name);
         return track;

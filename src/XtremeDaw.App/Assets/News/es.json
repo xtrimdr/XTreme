@@ -1,6 +1,81 @@
 {
   "releases": [
     {
+      "version": "0.9.17",
+      "items": [
+        {
+          "icon": "E713",
+          "title": "Configuración flotante",
+          "text": "**Configuración** ya no oscurece la ventana: queda abierta mientras usás el resto. Se mueve desde su título y cambia de tamaño desde la esquina de abajo a la derecha."
+        },
+        {
+          "icon": "E790",
+          "title": "Colorear varias pistas",
+          "text": "Con varias pistas elegidas (Ctrl o Shift en los encabezados), el clic derecho ofrece **Colorear en degradé** y **Un color para todas**."
+        },
+        {
+          "icon": "E9E9",
+          "title": "Separar en stems: modo Avanzado",
+          "text": "En **Separar en stems**, **Avanzado** elige el modelo, qué stems, cuántas pasadas, separar solo la selección del timeline y qué pasa con el original: silenciar la pista, dejarla sonando o quitar el clip."
+        },
+        {
+          "icon": "E790",
+          "title": "Color de pista a gusto",
+          "text": "En **Configuración → Apariencia → Color de pista** se elige cómo pinta el color de cada pista: clips tenues, llenos, solo la onda o con barra de título, y además franja o tinte en el encabezado, carril teñido y la selección en su color. En **Color de pista en el inspector**, lo mismo para el inspector: línea y tinte, solo línea, encabezado lleno o sin color, con franja al costado, secciones teñidas e íconos en su color. Una línea del color de la pista va de su encabezado al del inspector, para ver de un vistazo qué pista muestra; se apaga en la misma tarjeta."
+        },
+        {
+          "icon": "E8FD",
+          "title": "Pistas más bajas",
+          "text": "El alto de las pistas baja hasta **24 px**: en una pista fina el ícono, el nombre y M, S y ● se achican y quedan centrados."
+        },
+        {
+          "icon": "E8AB",
+          "title": "Manijas en clips MIDI y automatización",
+          "text": "Los clips MIDI y los bloques de automatización muestran las mismas manijas que el audio: una en cada borde para recortar y el loop arriba a la derecha. En bucle, la manija del final de la primera vuelta cambia el largo del original y todas las repeticiones lo siguen."
+        },
+        {
+          "icon": "E8AC",
+          "title": "La pista conserva su nombre",
+          "text": "Un audio que entra en una pista vacía ya no la renombra."
+        },
+        {
+          "icon": "E790",
+          "title": "Color en el inspector",
+          "text": "Al lado del nombre de todo canal, pista, bus o carpeta, un **cuadrito de color** despliega la paleta, ahora de **48 colores** en orden de tono, más un **color personalizado**. En una carpeta, el botón de al lado pasa su color a las pistas."
+        },
+        {
+          "icon": "E74D",
+          "title": "Borrar un carril de automatización",
+          "text": "Cada carril tiene un **tacho** en su encabezado, al lado de ON. Pide confirmación antes de borrarlo."
+        },
+        {
+          "icon": "E9D2",
+          "title": "Automatización de carpetas",
+          "text": "Una carpeta tiene carriles como una pista: volumen, paneo, mute, envíos y efectos, debajo de su fila. Se agregan desde su menú → **Automatización** o con clic derecho en su control. La flecha con el ícono de automatización, al pie del agarre de una pista o una carpeta, pliega sus carriles."
+        },
+        {
+          "icon": "E74E",
+          "title": "Presets: Default y los tuyos",
+          "text": "Todo efecto propio arranca en **Default**, neutro: ya no arranca para guitarra. Guardá tus ajustes con **Guardar preset**; quedan en **Mis presets** para todos tus proyectos."
+        },
+        {
+          "icon": "E740",
+          "title": "Compresor compacto o completo",
+          "text": "La ventana del **Compresor** muestra lo principal. El botón de agrandar, en su barra, la abre con todos los controles en paneles: Dinámica, Tiempos, Salida, EQ interno y Sidechain. Cada efecto propio se abre en su ventana, que se mueve como la de un VST y queda abierta."
+        },
+        {
+          "icon": "E8AC",
+          "title": "Nombrar clips",
+          "text": "Clic derecho en un clip de audio o MIDI → **Renombrar…**. El nombre se ve en el clip; en un clip de patrón, renombra el patrón."
+        },
+        {
+          "icon": "E710",
+          "title": "Agregar efectos y envíos",
+          "text": "El **+** para sumar un efecto o un envío está al final de su lista, en el inspector y en el mixer."
+        }
+      ]
+    },
+    {
       "version": "0.9.16",
       "items": [
         {

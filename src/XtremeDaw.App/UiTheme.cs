@@ -45,7 +45,8 @@ static class UiTheme
 
     public static readonly Settings Default = new("#22d3ee", "neutral");
 
-    const string ConfigKey = "theme";
+    /// <summary>Where the theme is kept in config.json: the bench keeps its own (asked by the user, #151).</summary>
+    public static string ConfigKey { get; set; } = "theme";
 
     public static Settings Current { get; private set; } = Default;
     static Task saving = Task.CompletedTask;

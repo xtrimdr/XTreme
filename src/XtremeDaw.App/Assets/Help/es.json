@@ -301,6 +301,7 @@
             "Pasá el mouse por la esquina de arriba a la derecha del clip: aparece el puntero de las dos flechas.",
             "Arrastrá hacia la derecha: el clip se repite hasta donde soltás y la última vuelta queda cortada ahí.",
             "Cada repetición muestra el ícono del bucle.",
+            "Para cambiar el largo del original, arrastrá la manija del final de la primera vuelta: todas las repeticiones lo siguen.",
             "Para sacarlo, arrastrá la esquina hasta el final de la primera vuelta."
           ],
           "notes": [
@@ -421,6 +422,24 @@
           "see": ["automation", "move-trim"]
         },
         {
+          "id": "clip-name",
+          "icon": "E8AC",
+          "title": "Nombrar un clip",
+          "keywords": "nombre renombrar etiqueta titulo clip region midi patron",
+          "intro": "Un clip de audio o MIDI puede llevar un nombre propio, que se ve arriba a la izquierda del clip.",
+          "steps": [
+            "Clic derecho en el clip → **Renombrar…**.",
+            "Escribí el nombre y apretá **Enter**. **Esc** cancela.",
+            "Para sacarle el nombre, dejalo en blanco."
+          ],
+          "notes": [
+            "En un clip de patrón, renombra el patrón en todos sus usos.",
+            "En un clip en bucle, el nombre es el del original y lo llevan todas las vueltas.",
+            "Un clip sin nombre propio no muestra texto."
+          ],
+          "see": ["move-trim", "loop-clip"]
+        },
+        {
           "id": "reverse",
           "icon": "EF3B",
           "title": "Invertir un clip",
@@ -476,7 +495,7 @@
           "intro": "Para que un proyecto grande siga siendo fácil de leer.",
           "steps": [
             "Doble clic en el nombre de una pista la renombra.",
-            "Tocá su insignia para elegir color e ícono.",
+            "Tocá su insignia para elegir color e ícono. En el inspector, el cuadrito al lado del nombre cambia el color; en una carpeta, el botón de al lado se lo pasa a sus pistas.",
             "Arrastrá una pista por su manija para cambiarla de lugar.",
             "**Nueva pista → Carpeta** agrupa pistas: arrastralas adentro por la manija.",
             "Clic derecho en la pista → **Duplicar pista** ({key:duplicateTrack}) la copia debajo con todo; **Duplicar sin contenido**, solo con su sonido."
@@ -576,7 +595,8 @@
             "El **⋯** o el clic derecho lo apaga, duplica o elimina."
           ],
           "notes": [
-            "Los efectos propios van por grupos: **Dinámica**, **Compresores clásicos**, **EQ**, **Saturación**, **Modulación** y **Espacio y estéreo**."
+            "Los efectos propios van por grupos: **Dinámica**, **Compresores clásicos**, **EQ**, **Saturación**, **Modulación** y **Espacio y estéreo**.",
+            "Un clic en un efecto propio abre su ventana, abajo de donde hiciste clic. Se mueve desde su barra, queda abierta mientras trabajás y podés tener varias. Se cierra con su X o con **Esc**."
           ],
           "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
         },
@@ -667,8 +687,8 @@
           "id": "comp-presets",
           "icon": "E8FD",
           "title": "Elegir un preset del compresor",
-          "keywords": "compresor preset voz bajo bateria bombo caja percusion piano sinte cuerdas vientos bus mezcla locucion podcast categorias",
-          "intro": "El compresor trae presets por instrumento y por uso. Se aplican directo.",
+          "keywords": "compresor preset voz bajo bateria bombo caja percusion piano sinte cuerdas vientos bus mezcla locucion podcast categorias agrandar compacto full paneles umbral ratio ataque release",
+          "intro": "El compresor arranca en **Default** y trae presets por instrumento y por uso. Se aplican directo.",
           "steps": [
             "Agregá un **Compresor** a la pista.",
             "Abrí la lista de presets y pasá por una categoría: **Voces**, **Guitarras**, **Bajo**, **Batería**, **Percusión** y las demás.",
@@ -677,9 +697,29 @@
             "En un bus o en el master usá **Buses y mezcla**: une el sonido sin cambiar el volumen."
           ],
           "notes": [
-            "**Usos generales** sirve para cualquier sonido."
+            "**Usos generales** sirve para cualquier sonido.",
+            "La ventana del compresor muestra lo principal: **Cantidad**, **Ganancia** y **Wet**. El botón de agrandar, en su barra, la abre con todos los controles en paneles: **Dinámica**, **Tiempos**, **Salida**, **EQ interno** y **Sidechain**. Cada compresor recuerda su tamaño."
           ],
-          "see": ["add-fx", "guitar-tone"]
+          "see": ["add-fx", "guitar-tone", "fx-presets"]
+        },
+        {
+          "id": "fx-presets",
+          "icon": "E74E",
+          "title": "Presets de efectos: Default y los tuyos",
+          "keywords": "preset presets default guardar mis presets efecto compresor eq reverb delay saturacion gate plantilla ajustes",
+          "intro": "Todo efecto propio arranca en **Default**: neutro, para cualquier sonido. Desde la lista de presets elegís otro o guardás los tuyos.",
+          "steps": [
+            "Abrí el efecto y ajustalo.",
+            "Tocá **Guardar preset**, al lado de la lista, y ponele un nombre.",
+            "Tus presets aparecen en la lista de ese efecto, en **Mis presets**, en todos tus proyectos.",
+            "Para borrar uno, elegilo y tocá la papelera."
+          ],
+          "notes": [
+            "Con el mismo nombre, el preset se reemplaza.",
+            "Elegir **Default** devuelve el efecto a como arranca.",
+            "Un preset no cambia el ON del efecto ni su sidechain."
+          ],
+          "see": ["comp-presets", "add-fx"]
         },
         {
           "id": "guitar-tone",
@@ -723,12 +763,13 @@
           "keywords": "curva forma tension escalones pulsos onda mantener mover solo fade envolvente parametro sampler corte resonancia",
           "intro": "Hace que un control cambie solo a lo largo del tema.",
           "steps": [
-            "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista → **Automatización**. En un plugin: tocá **Automatizar** en la barra de su ventana y mové el parámetro.",
-            "Aparece un carril debajo de la pista.",
+            "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista o de la carpeta → **Automatización**. En un plugin: tocá **Automatizar** en la barra de su ventana y mové el parámetro.",
+            "Aparece un carril debajo de la pista, o debajo de la fila de la carpeta. Los de una carpeta se ocultan al plegarla; **Ver la automatización**, en su menú, los muestra u oculta.",
             "Clic agrega un punto, arrastrar lo mueve y doble clic lo borra. Shift+arrastrar dibuja.",
             "Arrastrá el círculo en medio de un tramo para darle tensión: curvarlo, o cambiar cuántos escalones, pulsos u ondas tiene. Doble clic la vuelve a cero.",
             "Clic derecho sobre un punto o un tramo → su forma: **Curva**, **Curva doble**, **Mantener**, **Escalones**, **Escalones suaves**, **Pulsos** u **Onda**. La de un punto es la del tramo que llega a él.",
-            "Arrastrá la esquina de arriba a la derecha de un bloque para repetirlo en bucle."
+            "Arrastrá la esquina de arriba a la derecha de un bloque para repetirlo en bucle.",
+            "Para borrar un carril, tocá el tacho en su encabezado y confirmá."
           ],
           "notes": [
             "Con un carril prendido, mover ese control a mano no sirve: manda el carril.",
@@ -1205,12 +1246,13 @@
           "id": "stems",
           "icon": "E81E",
           "title": "Separar voz, batería y bajo",
-          "keywords": "stems demucs quitar voz karaoke aislar instrumentos backing track",
+          "keywords": "stems demucs quitar voz karaoke aislar instrumentos backing track avanzado modelo pasadas selección",
           "intro": "Separa un audio en pistas. La original queda silenciada y sin tocar.",
           "steps": [
             "Clic derecho en un clip de audio → **Separar en stems…**.",
             "Elegí cuántos: 2, 4 o 6.",
             "Elegí la calidad. Se muestra el tiempo estimado.",
+            "En **Avanzado**: el modelo (General, Por stem o 6 stems), qué stems, cuántas pasadas, solo la selección del timeline en vez del clip entero, y si la pista original se silencia, queda sonando o se quita el clip.",
             "Cada stem queda en su pista, dentro de una carpeta nueva."
           ],
           "notes": [
@@ -1353,14 +1395,14 @@
           "id": "look",
           "icon": "E771",
           "title": "Cambiar el color y el diseño",
-          "keywords": "tema acento apariencia vertical paneles ocultar pantalla completa perillas knobs estilo neumorfico faders medidores ondas fuente letra números digital segmentos lcd orbitron restablecer fábrica tamaño escala zoom",
+          "keywords": "tema acento apariencia vertical paneles ocultar pantalla completa perillas knobs estilo neumorfico faders medidores ondas color pista clips teñido franja fuente letra números digital segmentos lcd orbitron restablecer fábrica tamaño escala zoom",
           "intro": "Casi todo está en la barra de título.",
           "steps": [
             "El selector de tema elige el color de acento y el fondo.",
             "El botón de diseño {icon:E80A} cambia entre **Clásico** y **Vertical**.",
             "Los dos botones de panel ocultan los costados.",
             "{key:fullScreen} pasa a pantalla completa.",
-            "En **Configuración → Apariencia** se elige el estilo de las perillas, los faders, los medidores y las ondas, la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica."
+            "En **Configuración → Apariencia** se elige el estilo de las perillas, los faders, los medidores, las ondas y cómo se ve el color de cada pista en el timeline (clips tenues, llenos, solo la onda o con barra de título; franja o tinte en el encabezado, carril teñido y la selección en su color) y en el inspector (línea y tinte, solo línea, lleno o sin color; franja al costado, secciones teñidas e íconos en su color), la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica."
           ],
           "settings": "view"
         },
@@ -1373,7 +1415,7 @@
           "steps": [
             "Tocá {icon:E8A7}, arriba a la derecha de cada panel. También desde **Ver → Paneles en ventana**.",
             "Lo que queda en la ventana principal ocupa el lugar libre. Con el video afuera, el timeline sube y el mixer va debajo.",
-            "Mixer, piano roll y mastering salen cada uno a su ventana, así podés tener los tres a la vista. Con el mixer afuera, el piano roll y mastering que no salieron solos se muestran en su ventana.",
+            "Mixer, piano roll y mastering salen cada uno a su ventana, así podés tener los tres a la vista. Cada ventana muestra solo su vista: lo que sigue adentro se abre abajo, en la ventana principal.",
             "{key:maximize} dentro de una de estas ventanas la agranda; otra vez, vuelve a su tamaño.",
             "{icon:E944} o la X de la ventana lo devuelven a la ventana principal. La ventana recuerda su lugar y su tamaño, y lo que quedó afuera vuelve a salir al abrir XTreme."
           ],

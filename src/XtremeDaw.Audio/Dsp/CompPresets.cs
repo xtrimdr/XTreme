@@ -37,7 +37,7 @@ public readonly record struct CompState(
 {
     public static readonly CompState Defaults = new(
         On: false,
-        Preset: "rhythm",
+        Preset: CompPresets.DefaultId,
         Amount: 0.5,
         Limit: true,
         Threshold: -18,
@@ -87,6 +87,9 @@ public static class CompPresets
     /// <summary>A preset's <see cref="CompPresetDef.TargetRmsDb"/> when the make-up only gives back what it took off.</summary>
     public const double SameLevel = double.NaN;
 
+    /// <summary>The preset every compressor starts at (#141): neutral, never an instrument's.</summary>
+    public const string DefaultId = "default";
+
     public static CompPresetGroup[] Groups => CompPresetTable.Groups;
 
     public static CompPresetDef[] All => CompPresetTable.All;
@@ -96,10 +99,10 @@ public static class CompPresets
         if (id == "custom") return "Manual";
         foreach (var p in All)
             if (p.Id == id) return p.Label;
-        return id ?? "Rasgueo";
+        return id ?? "Default";
     }
 
-    public static string NormalizePreset(string? id, string fallback = "rhythm")
+    public static string NormalizePreset(string? id, string fallback = DefaultId)
     {
         if (string.IsNullOrEmpty(id)) return fallback;
         if (id == "custom") return "custom";

@@ -409,7 +409,7 @@
               <Slider x:Name="ZoomSlider" Grid.Column="2" Minimum="0" Maximum="1" Value="0"
                       VerticalAlignment="Center" Margin="0,0,16,0" AutomationProperties.Name="{loc:T timeline.zoom}" />
               <TextBlock x:Name="HeightIcon" Grid.Column="3" Classes="icon" Text="&#xE8FD;" FontSize="15" Foreground="{StaticResource Dim}" VerticalAlignment="Center" Margin="0,0,8,0" />
-              <Slider x:Name="TrackHeightSlider" Grid.Column="4" Minimum="40" Maximum="320" Value="64" TickFrequency="2" IsSnapToTickEnabled="True"
+              <Slider x:Name="TrackHeightSlider" Grid.Column="4" Minimum="24" Maximum="320" Value="64" TickFrequency="2" IsSnapToTickEnabled="True"
                       VerticalAlignment="Center" AutomationProperties.Name="{loc:T timeline.height}" />
               <!-- native only: every track and folder back to the shared height (rows get their own by dragging their bottom edge) -->
               <Button x:Name="ResetHeightsButton" Grid.Column="5" Classes="ghost" Width="30" Height="30" MinHeight="0" Padding="0" Margin="8,0,0,0"
@@ -578,6 +578,9 @@
     <!-- the "Proyectos" manager covers the whole window, like in the web app -->
     <!-- the virtual keyboard (Ctrl+K), under the transport -->
     <Border Grid.Row="5" Grid.ColumnSpan="2" x:Name="VirtualKeysHost" IsVisible="False" Height="84" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="14,6" />
+
+    <!-- the line from the selected track's header to the inspector's (#180, MainWindow.InspectorPointer.cs): over the panels, under the dialogs -->
+    <c:InspectorPointer Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="InspPointer" />
 
     <c:ProjectsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Projects" IsVisible="False" />
     <d:ExportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Export" IsVisible="False" AutomationProperties.Name="{loc:T export.name}" />

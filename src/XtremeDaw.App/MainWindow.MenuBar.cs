@@ -83,7 +83,7 @@ public partial class MainWindow
     static void Press(Button b) => b.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
     /// <summary>Nothing covers the window: no dialog open and no take running.</summary>
-    bool MenuFree => !Projects.IsVisible && !Export.IsVisible && !Settings.IsVisible && !RecordingBusy;
+    bool MenuFree => !Projects.IsVisible && !Export.IsVisible && !RecordingBusy;
     bool HasProject => store != null && !restoring;
     bool CanEdit => store is { ReadOnly: false } && !restoring && MenuFree;
 
@@ -142,7 +142,7 @@ public partial class MainWindow
     {
         bool piano = PianoShown && !ViewsCovered, mastering = MasteringShown && !ViewsCovered;
         // a view in its own window is on screen along with what the place shows
-        bool mixer = MixerShown && !ViewsCovered, timeline = !mixerView || TimelineOut || MixerOut;
+        bool mixer = MixerShown && !ViewsCovered, timeline = !mixerView || TimelineOut;
         bool audioOnly = store != null && AudioOnly, modes = store is { ReadOnly: false } && MenuFree;
         return
         [

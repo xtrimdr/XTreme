@@ -131,7 +131,10 @@ public sealed class StemsComponent() : OptionalComponent("stems")
 
     /// <summary>What one option of the dialog still needs.</summary>
     public static ComponentPackage For(StemSeparator.Layout layout, StemSeparator.Quality quality) =>
-        Package("stemsOption", StemSeparator.Files(layout, quality));
+        For(new StemSeparator.Settings(layout, quality));
+
+    /// <summary>What an option of the advanced mode still needs.</summary>
+    public static ComponentPackage For(StemSeparator.Settings settings) => Package("stemsOption", StemSeparator.Files(settings));
 
     static ComponentPackage Package(string id, IEnumerable<string> files)
     {

@@ -502,7 +502,7 @@ public sealed class Media
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-public sealed class Track
+public sealed class Track : IAutomated
 {
     public string Id { get; set; } = Ids.New("trk");
     public string Name { get; set; } = "";
@@ -539,7 +539,7 @@ public sealed class Track
     /// A view setting like its height: saved, without undo. Native only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool SplitWave { get; set; }
-    public const double MinHeight = 40, MaxHeight = 320;
+    public const double MinHeight = 24, MaxHeight = 320;
     /// <summary>The shared height a new timeline starts at; a folder's heights are its px at this zoom.</summary>
     public const double DefaultHeight = 64;
     /// <summary>
@@ -573,6 +573,11 @@ public sealed class Track
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<AutomationLane>? Automation { get; set; }
     /// <summary>Its lanes are folded under it (they keep playing). A view setting, like a folder's fold.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool AutomationFolded { get; set; }
+    IReadOnlyList<InsertSlot> IAutomated.AutoSlots => Channel.Slots;
+    IRouted IAutomated.AutoRouted => Channel;
+    double IAutomated.AutoVolume => Channel.Volume;
+    double IAutomated.AutoPan => Channel.Pan;
+    bool IAutomated.AutoMuted => Channel.Muted;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     internal void Normalize()
@@ -646,7 +651,7 @@ public sealed class Track
 /// track's). Its <see cref="Solo"/> solos its children. A separator carries none of this. Version 2 saved the fader,
 /// mute, solo and slots under the same names, so they come back as they were.
 /// </summary>
-public sealed class Folder : IRouted
+public sealed class Folder : IRouted, IAutomated
 {
     public string Id { get; set; } = Ids.New("fld");
     public string Name { get; set; } = "";
@@ -692,11 +697,26 @@ public sealed class Folder : IRouted
     public bool Solo { get; set; }
     /// <summary>Its effects, run over its children's sum, like a bus's (<see cref="Bus.Inserts"/>).</summary>
     public List<InsertSlot> Inserts { get; set; } = [];
+    /// <summary>Its automated parameters (<see cref="Automations"/>), lanes under its row in the timeline, like a track's; null = none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<AutomationLane>? Automation { get; set; }
+    /// <summary>Its lanes are folded under it (they keep playing), like <see cref="Track.AutomationFolded"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool AutomationFolded { get; set; }
+    IReadOnlyList<InsertSlot> IAutomated.AutoSlots => Inserts;
+    IRouted IAutomated.AutoRouted => this;
+    double IAutomated.AutoVolume => Volume;
+    double IAutomated.AutoPan => Pan;
+    bool IAutomated.AutoMuted => Muted;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     internal void Normalize()
     {
         Sends ??= [];
+        if (Automation != null)
+        {
+            Automation.RemoveAll(l => l == null);
+            foreach (var l in Automation) l.Normalize();
+            if (Automation.Count == 0) Automation = null;
+        }
         MixerSide = MixerSides.Normalize(MixerSide, MixerSides.Left);
         Volume = double.IsFinite(Volume) ? Math.Clamp(Volume, 0, 1.5) : 1;
         Pan = double.IsFinite(Pan) ? Math.Clamp(Pan, -1, 1) : 0;
@@ -712,6 +732,7 @@ public sealed class Folder : IRouted
             Pan = 0;
             Muted = Solo = false;
             Inserts.Clear();
+            Automation = null;
         }
         else HiddenInTimeline = false;
     }
@@ -1007,6 +1028,11 @@ public sealed class InsertSlot
     /// kept with the project, like a folder's fold; it changes nothing in the sound.
     /// </summary>
     public bool Collapsed { get; set; }
+    /// <summary>
+    /// Its window opens in the full view, with every control in inner panels (asked by the user, #140), instead of the
+    /// compact one; only an effect with both (<see cref="FxDefs.Layout"/>). A view choice kept with the project, per slot.
+    /// </summary>
+    public bool Full { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     [JsonIgnore] public bool Known => Dsp.TrackInserts.IsKind(Type) && (Type != VstKind || Vst?.Plugin is { Path.Length: > 0, ClassId.Length: > 0 });
@@ -1153,7 +1179,7 @@ public sealed class CompSettings
 {
     public bool On { get; set; }
     /// <summary>A preset id of the web app (rhythm, lead…) or "custom".</summary>
-    public string Preset { get; set; } = "rhythm";
+    public string Preset { get; set; } = Dsp.CompPresets.DefaultId;
     public double Amount { get; set; } = 0.5;
     /// <summary>The compressor's analyze button was used: the trims hold what it found.</summary>
     public bool Analyzed { get; set; }
@@ -1282,6 +1308,12 @@ public sealed class Clip
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LoopOf { get; set; }
+    /// <summary>
+    /// Native only: a name of its own (asked by the user), drawn on the clip; null = none, and the clip goes by its
+    /// media's name (<see cref="ClipEditing.Rename"/>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; set; }
     /// <summary>How far it sounds moved on <paramref name="track"/>: the track's and its own, up to what the shifter does.</summary>
     public double SemitonesOn(Track track) => Math.Clamp(track.Transpose + Pitch, -Dsp.PitchShifter.MaxSemitones, Dsp.PitchShifter.MaxSemitones);
     /// <summary>What it plays, for the transitions: two pieces of one take only join as one going the same way, at the same stretch and pitch.</summary>
@@ -1307,6 +1339,7 @@ public sealed class Clip
         foreach (var g in GainCurve) g.Db = Math.Clamp(g.Db, Dsp.ClipGainCurve.MinDb, Dsp.ClipGainCurve.MaxDb);
         Transition = ClipTransitions.Id(ClipTransitions.Parse(Transition));
         TransitionSec = ClipTransitions.ClampSec(TransitionSec);
+        Name = ClipEditing.CleanName(Name);
     }
 
     /// <summary>Range of <see cref="GainDb"/> (the inspector's slider).</summary>

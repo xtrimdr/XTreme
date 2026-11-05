@@ -13,7 +13,20 @@
     <!-- Drawn by tools/make-icon.ps1 -->
     <ApplicationIcon>Assets\XTreme.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- The ASIO callback is managed code, so every gen0/gen1 collection stalls it (10-25 ms on the workstation GC:
+         a dropout). The server GC's gen0 budget is far larger (none in 150 MB of small allocations, against 20 on the
+         workstation GC), so collections become rare, and the few left are marked by several threads. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- A few heaps are enough for a desktop app; fixed (no DATAS, which would shrink the budget back) and not pinned
+         to cores, so the GC threads never sit on the core the driver's thread runs on. -->
+    <RuntimeHostConfigurationOption Include="System.GC.HeapCount" Value="4" />
+    <RuntimeHostConfigurationOption Include="System.GC.DynamicAdaptationMode" Value="0" />
+    <RuntimeHostConfigurationOption Include="System.GC.NoAffinitize" Value="true" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.22" />
@@ -26,6 +39,7 @@
     <AvaloniaResource Include="Assets\XTreme-64.png" />
     <AvaloniaResource Include="Assets\XTreme-512.png" />
     <AvaloniaResource Include="Assets\Lang\*.json" />
+    <AvaloniaResource Include="Assets\Lang\Bench\*.json" />
     <AvaloniaResource Include="Assets\Help\*.json" />
     <AvaloniaResource Include="Assets\News\*.json" />
     <!-- the bundled number fonts (DSEG and Orbitron, SIL OFL 1.1: their licenses travel with the exe) -->

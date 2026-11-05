@@ -14,18 +14,40 @@ namespace XtremeDaw.App;
 public partial class MainWindow
 {
     static readonly TimeSpan TestListPoll = TimeSpan.FromSeconds(2);
+    /// <summary><c>XTreme.exe [proyecto] --probar 12</c>: the bench's Probar (asked by the user, #143) opens the copy with that ticket's toast.</summary>
+    const string TryArg = "--probar";
 
     DateTime testListStamp;
     int testListSeen = -1;
+
+    /// <summary>The project on the command line: the first argument that is not an option (nor <see cref="TryArg"/>'s number).</summary>
+    public static string? ProjectArg(string[] args)
+    {
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i] == TryArg) i++;
+            else if (!args[i].StartsWith("--", StringComparison.Ordinal) && args[i].Length > 0) return args[i];
+        }
+        return null;
+    }
+
+    static int TryFrom(string[] args)
+    {
+        int i = Array.IndexOf(args, TryArg);
+        return i >= 0 && i + 1 < args.Length && int.TryParse(args[i + 1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int id) ? id : 0;
+    }
 
     void InitTestList()
     {
         if (TestBuild.ListPath is not { } path) return;
         TestListButton.IsVisible = true;
         TestListButton.Click += (_, _) => OpenBench(path, activate: true);
+        int tryId = TryFrom(Environment.GetCommandLineArgs());
         Opened += (_, _) =>
         {
-            if (ReadTestList(path) is { } d && d.Count(TestItem.Pending) > 0) OpenBench(path, activate: false);
+            var d = ReadTestList(path);
+            if (d != null && d.Count(TestItem.Pending) > 0) OpenBench(path, activate: false);
+            if (tryId > 0 && d?.Items.Find(i => i.Id == tryId) is { } item) ShowTry(item, path);
         };
         var timer = new DispatcherTimer { Interval = TestListPoll };
         timer.Tick += (_, _) =>
@@ -33,6 +55,17 @@ public partial class MainWindow
             if (File.GetLastWriteTimeUtc(path) != testListStamp) ReadTestList(path);
         };
         timer.Start();
+    }
+
+    /// <summary>
+    /// What to try in the ticket the bench opened this copy for: the latest fix's words ("Arreglo: …"), or the ticket's
+    /// own when it has none. It stays until closed, and its button brings the bench forward to give the verdict.
+    /// </summary>
+    void ShowTry(TestItem item, string path)
+    {
+        string text = item.Thread.LastOrDefault(m => m.Kind == TestMessage.Fix && !string.IsNullOrWhiteSpace(m.Text))?.Text ?? item.Text;
+        string title = Loc.T("test.list.try.toast", item.Id, item.Title ?? "");
+        Toast(text, title.TrimEnd(' ', '·'), sticky: true, (Loc.T("test.list.try.verdict"), () => OpenBench(path, activate: true)));
     }
 
     void OpenBench(string path, bool activate)

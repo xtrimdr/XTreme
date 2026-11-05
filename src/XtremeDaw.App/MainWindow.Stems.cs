@@ -11,7 +11,8 @@ namespace XtremeDaw.App;
 /// <see cref="Dialogs.StemsDialog"/>. <see cref="StemSeparator"/> works on a worker thread, one clip at a time, and the
 /// clip shows how far it is. It can take minutes, so a toast stays up with "Cancelar" (the clip menu has it too, in case
 /// that toast was closed), and it waits while a take is being recorded (nothing may get in the way of a take). Each stem is a new WAV in media/ on its own track, inside a new folder under
-/// the clip's track, which gets muted; the original stays as it was. It is one undo step.
+/// the clip's track, which gets muted; the original stays as it was. Avanzado (#146) can instead leave the track
+/// sounding or take the clip out, and separate only the timeline's selection over the clip. It is one undo step.
 /// </summary>
 public partial class MainWindow
 {
@@ -62,12 +63,18 @@ public partial class MainWindow
         if (clip.Sound is { L.Length: 0 }) { Toast(Loc.T("stretch.wait")); return; }
         var w = clip.Window;
         string name = clip.Name, trackId = from.Track.Id, clipId = clip.Clip.Id;
-        var settings = await Stems.Ask(name, w.End - w.Start);
-        if (settings == null || store == null || stemJob != null || clip.Audio == null) return;
+        // the timeline's selection, where it covers this clip on its track (#146: Avanzado can separate just that)
+        (double Start, double End)? range = Timeline.Range is { } sel && sel.TrackIds.Contains(trackId)
+            && Math.Min(sel.End, w.End) - Math.Max(sel.Start, w.Start) > 0.05
+            ? (Math.Max(sel.Start, w.Start), Math.Min(sel.End, w.End)) : null;
+        var choice = await Stems.Ask(name, w.End - w.Start, range is { } over ? over.End - over.Start : null);
+        if (choice == null || store == null || stemJob != null || clip.Audio == null) return;
+        var settings = choice.Settings;
+        var (startSec, endSec) = choice.OnlyRange && range is { } part ? part : (w.Start, w.End);
         var sound = clip.Sound ?? audio.Sound;
         int sr = audio.SampleRate;
-        int start = (int)Math.Max(0, (w.Start - w.Origin) * sr);
-        int count = (int)Math.Max(0, (w.End - w.Start) * sr);
+        int start = (int)Math.Max(0, (startSec - w.Origin) * sr);
+        int count = (int)Math.Max(0, (endSec - startSec) * sr);
         var st = store;
         string dir = st.Dir;
         var job = stemJob = new StemJob(clip);
@@ -127,9 +134,14 @@ public partial class MainWindow
         string folder = Loc.T("stems.folder", name);
         await EditTimeline(p =>
         {
-            AudioImport.AddStems(p, trackId, clipId, w.Start, files, folder);
+            AudioImport.AddStems(p, trackId, clipId, startSec, files, folder, choice.Original);
             return trackId;
         }, "stems-separated");
-        Toast(Loc.T("stems.done", files.Count, name));
+        Toast(Loc.T(choice.Original switch
+        {
+            StemOriginal.Keep => "stems.done.keep",
+            StemOriginal.Remove => "stems.done.remove",
+            _ => "stems.done",
+        }, files.Count, name));
     }
 }

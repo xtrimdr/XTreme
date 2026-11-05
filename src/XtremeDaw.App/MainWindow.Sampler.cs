@@ -335,7 +335,7 @@ public partial class MainWindow
             ClearSample = () => EditSampler(trackId, s => s.MediaId = null, "clear"),
             Shortcut = e => OnKey(this, e),
             Front = on => SamplerInFront(trackId, on),
-            Automate = (control, knob, show) => AutomateOn(control, () => tracks.FirstOrDefault(t => t.Track.Id == trackId), AutoTarget.Sampler(knob), show),
+            Automate = (control, knob, show) => AutomateOn(control, () => tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track, AutoTarget.Sampler(knob), show),
         };
         window.IsEnabledForEdits = store is { ReadOnly: false };
         window.Closed += (_, _) =>

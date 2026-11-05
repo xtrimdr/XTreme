@@ -301,6 +301,7 @@
             "Hover the clip's top right corner: the two-arrow pointer appears.",
             "Drag to the right: the clip repeats up to where you let go, and the last pass is cut there.",
             "Each repeat shows the loop icon.",
+            "To change the original's length, drag the handle at the end of the first pass: every repeat follows.",
             "To remove it, drag the corner back to the end of the first pass."
           ],
           "notes": [
@@ -421,6 +422,24 @@
           "see": ["automation", "move-trim"]
         },
         {
+          "id": "clip-name",
+          "icon": "E8AC",
+          "title": "Name a clip",
+          "keywords": "name rename label title clip region midi pattern",
+          "intro": "An audio or MIDI clip can have a name of its own, shown at the clip's top left.",
+          "steps": [
+            "Right-click the clip → **Rename…**.",
+            "Type the name and press **Enter**. **Esc** cancels.",
+            "To take the name away, leave it blank."
+          ],
+          "notes": [
+            "On a pattern's clip, it renames the pattern in every use.",
+            "On a looped clip, the name is the original's and every repeat carries it.",
+            "A clip without a name of its own shows no text."
+          ],
+          "see": ["move-trim", "loop-clip"]
+        },
+        {
           "id": "reverse",
           "icon": "EF3B",
           "title": "Reverse a clip",
@@ -476,7 +495,7 @@
           "intro": "So a big project stays easy to read.",
           "steps": [
             "Double-click a track's name to rename it.",
-            "Click its badge to choose color and icon.",
+            "Click its badge to choose color and icon. In the inspector, the square next to the name changes the color; on a folder, the button next to it gives that color to its tracks.",
             "Drag a track by its handle to move it.",
             "**New track → Folder** groups tracks: drag them in by their handle.",
             "Right-click the track → **Duplicate track** ({key:duplicateTrack}) copies it below with everything; **Duplicate without content**, only its sound."
@@ -576,7 +595,8 @@
             "The **⋯** or right-click turns it off, duplicates or removes it."
           ],
           "notes": [
-            "Built-in effects are grouped: **Dynamics**, **Classic compressors**, **EQ**, **Saturation**, **Modulation** and **Space and stereo**."
+            "Built-in effects are grouped: **Dynamics**, **Classic compressors**, **EQ**, **Saturation**, **Modulation** and **Space and stereo**.",
+            "Clicking a built-in effect opens its window, under where you clicked. Move it by its bar; it stays open while you work and you can have several. Close it with its X or **Esc**."
           ],
           "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
         },
@@ -667,8 +687,8 @@
           "id": "comp-presets",
           "icon": "E8FD",
           "title": "Choose a compressor preset",
-          "keywords": "compressor preset vocal bass drums kick snare percussion piano synth strings winds bus mix voice-over podcast categories",
-          "intro": "The compressor has presets by instrument and by use. They apply right away.",
+          "keywords": "compressor preset vocal bass drums kick snare percussion piano synth strings winds bus mix voice-over podcast categories expand compact full panels threshold ratio attack release",
+          "intro": "The compressor starts at **Default** and has presets by instrument and by use. They apply right away.",
           "steps": [
             "Add a **Compressor** to the track.",
             "Open the preset list and go through a category: **Vocals**, **Guitars**, **Bass**, **Drums**, **Percussion** and the rest.",
@@ -677,9 +697,29 @@
             "On a bus or the master use **Buses and mix**: they bind the sound without changing the level."
           ],
           "notes": [
-            "**General** works on any sound."
+            "**General** works on any sound.",
+            "The compressor's window shows the main controls: **Amount**, **Gain** and **Wet**. The expand button on its bar opens it with every control in panels: **Dynamics**, **Timing**, **Output**, **Built-in EQ** and **Sidechain**. Each compressor remembers its size."
           ],
-          "see": ["add-fx", "guitar-tone"]
+          "see": ["add-fx", "guitar-tone", "fx-presets"]
+        },
+        {
+          "id": "fx-presets",
+          "icon": "E74E",
+          "title": "Effect presets: Default and your own",
+          "keywords": "preset presets default save my presets effect compressor eq reverb delay saturation gate template settings",
+          "intro": "Every built-in effect starts at **Default**: neutral, for any sound. From the preset list you pick another one or save your own.",
+          "steps": [
+            "Open the effect and set it up.",
+            "Click **Save preset**, next to the list, and give it a name.",
+            "Your presets show in that effect's list, under **My presets**, in all your projects.",
+            "To delete one, pick it and click the trash can."
+          ],
+          "notes": [
+            "With the same name, the preset is replaced.",
+            "Choosing **Default** takes the effect back to how it starts.",
+            "A preset doesn't change the effect's ON or its sidechain."
+          ],
+          "see": ["comp-presets", "add-fx"]
         },
         {
           "id": "guitar-tone",
@@ -723,12 +763,13 @@
           "keywords": "curve shape tension stairs pulse wave hold move by itself fade envelope parameter sampler cutoff resonance",
           "intro": "Makes a control change by itself along the song.",
           "steps": [
-            "Right-click the control → **Automate…**, or the track's menu → **Automation**. In a plugin: click **Automate** in its window's bar and move the parameter.",
-            "A lane appears under the track.",
+            "Right-click the control → **Automate…**, or the track's or folder's menu → **Automation**. In a plugin: click **Automate** in its window's bar and move the parameter.",
+            "A lane appears under the track, or under the folder's row. A folder's lanes hide when it folds; **Show automation**, in its menu, shows or hides them.",
             "Click adds a point, dragging moves it and double-click deletes it. Shift+drag draws.",
             "Drag the circle in the middle of a segment to set its tension: bend it, or change how many stairs, pulses or waves it has. Double-click sets it back to zero.",
             "Right-click a point or a segment → its shape: **Curve**, **Double curve**, **Hold**, **Stairs**, **Smooth stairs**, **Pulse** or **Wave**. A point's is the one of the segment coming into it.",
-            "Drag a block's top right corner to loop it."
+            "Drag a block's top right corner to loop it.",
+            "To delete a lane, click the trash can in its header and confirm."
           ],
           "notes": [
             "With a lane on, moving that control by hand does nothing: the lane rules.",
@@ -1205,12 +1246,13 @@
           "id": "stems",
           "icon": "E81E",
           "title": "Separate vocals, drums and bass",
-          "keywords": "stems demucs remove vocals karaoke isolate instruments backing track",
+          "keywords": "stems demucs remove vocals karaoke isolate instruments backing track advanced model passes selection",
           "intro": "Splits an audio clip into tracks. The original stays muted and untouched.",
           "steps": [
             "Right-click an audio clip → **Split into stems…**.",
             "Choose how many: 2, 4 or 6.",
             "Choose the quality. The estimated time is shown.",
+            "In **Advanced**: the model (General, Per stem or 6 stems), which stems, how many passes, only the timeline selection instead of the whole clip, and whether the original track is muted, keeps playing or loses the clip.",
             "Each stem lands on its own track, in a new folder."
           ],
           "notes": [
@@ -1360,7 +1402,7 @@
             "The layout button {icon:E80A} switches between **Classic** and **Vertical**.",
             "The two panel buttons hide the sides.",
             "{key:fullScreen} goes full screen.",
-            "In **Settings → Appearance** pick the style of knobs, faders, meters and waveforms, the interface's font, the numbers' font (values, times and the clock; also a 14-segment digital one and Orbitron) and the size, in px (also with **Ctrl +** and **Ctrl −**; **Ctrl 0** goes back to 100 %). **Reset**, above each one, takes it back to the factory setting."
+            "In **Settings → Appearance** pick the style of knobs, faders, meters and waveforms, how each track's color shows in the timeline (soft, solid, wave-only or title-bar clips; a stripe or tint on the header, a tinted lane and the selection in its color) and in the inspector (rule and tint, rule only, filled or no color; a stripe along the edge, tinted sections and section icons in its color), the interface's font, the numbers' font (values, times and the clock; also a 14-segment digital one and Orbitron) and the size, in px (also with **Ctrl +** and **Ctrl −**; **Ctrl 0** goes back to 100 %). **Reset**, above each one, takes it back to the factory setting."
           ],
           "settings": "view"
         },
@@ -1373,7 +1415,7 @@
           "steps": [
             "Press {icon:E8A7}, at the top right of each panel. Also from **View → Panels in windows**.",
             "What stays in the main window takes the free room. With the video out, the timeline moves up and the mixer goes under it.",
-            "Mixer, piano roll and mastering each go to a window of their own, so all three can be in sight. With the mixer out, a piano roll or mastering that isn't out on its own shows in its window.",
+            "Mixer, piano roll and mastering each go to a window of their own, so all three can be in sight. Each window shows only its own view: what stays in opens at the bottom of the main window.",
             "{key:maximize} inside one of these windows maximizes it; again, and it goes back to its size.",
             "{icon:E944} or the window's X brings it back to the main window. The window remembers its place and size, and what was out goes out again when XTreme opens."
           ],

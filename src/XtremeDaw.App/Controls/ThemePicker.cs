@@ -23,17 +23,45 @@ public sealed class ThemePicker : Panel
     readonly UniformGrid accents = new() { Columns = 5 };
     readonly UniformGrid surfaces = new() { Columns = 3 };
 
-    public ThemePicker()
+    public ThemePicker() : this(null) { }
+
+    /// <summary>
+    /// With <paramref name="language"/>, the popover also lists the languages above the colors and calls it with the
+    /// code picked (the bench's own, asked by the user, #151; XTreme's language stays in Configuración).
+    /// </summary>
+    public ThemePicker(Action<string>? language)
     {
         button = new Button { Classes = { "ghost" }, Content = new TextBlock { Classes = { "icon" }, Text = "" } };
-        ToolTip.SetTip(button, Loc.T("theme.title"));
-        Avalonia.Automation.AutomationProperties.SetName(button, Loc.T("theme.title"));
+        string tip = Loc.T(language == null ? "theme.title" : "test.list.look");
+        ToolTip.SetTip(button, tip);
+        Avalonia.Automation.AutomationProperties.SetName(button, tip);
         var body = new StackPanel { Spacing = 12 };
+        if (language != null)
+        {
+            var row = new UniformGrid { Rows = 1 };
+            foreach (var (code, name) in Loc.Languages)
+            {
+                var b = new ToggleButton
+                {
+                    Classes = { "seg" }, Content = name, IsChecked = code == Loc.Language,
+                    HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
+                };
+                b.Click += (_, _) =>
+                {
+                    b.IsChecked = true;
+                    if (code == Loc.Language) return;
+                    popup!.IsOpen = false;
+                    language(code);
+                };
+                row.Children.Add(b);
+            }
+            body.Children.Add(Group(Loc.T("test.list.language"), new Border { Classes = { "seg" }, Margin = new Thickness(4), Child = row }));
+        }
         body.Children.Add(Group(Loc.T("theme.accent"), accents));
         body.Children.Add(Group(Loc.T("theme.surface"), surfaces));
         var reset = new Button
         {
-            Classes = { "ghost" }, Content = "Restablecer", FontSize = 11, Height = 28, Padding = new Thickness(0),
+            Classes = { "ghost" }, Content = Loc.T("color.reset"), FontSize = 11, Height = 28, Padding = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
         };
         Avalonia.Automation.AutomationProperties.SetName(reset, Loc.T("color.reset"));

@@ -84,8 +84,10 @@ static class ClipChecks
         ClipEditing.RemoveTrack(p, right.Id);
         string empty = ClipEditing.AddEmpty(p);
         p.Tracks[0].Channel.Volume = 0.4;
+        string emptyName = p.Tracks[0].Name;
         ClipEditing.AddMedia(p, media.Id, empty);
         Check(p.Tracks.Count == 1 && p.Tracks[0].Channel.Volume == 0.4 && p.Tracks[0].Clips.Count == 1, "historial llena la pista seleccionada y hereda su canal");
+        Check(p.Tracks[0].Name == emptyName && emptyName != media.Name, "una pista vacía que recibe un audio conserva su nombre");
         string duplicateName = ClipEditing.AddEmpty(p);
         string third = ClipEditing.AddEmpty(p);
         Check(p.Tracks.Select(t => t.Name).Distinct().Count() == 3, "pistas vacías con nombres únicos");
@@ -103,7 +105,9 @@ static class ClipChecks
         var undo = new UndoManager();
         undo.Checkpoint(p);
         string track = p.Tracks[2].Id;
+        p.Tracks[2].Name = "Voz";
         ClipEditing.RemoveClip(p, clip.Id);
+        Check(p.Tracks[2].Clips.Count > 0 || p.Tracks[2].Name == "Voz", "quitar el último clip deja el nombre de la pista");
         Check(undo.Undo(p) && p.Tracks.Find(t => t.Id == track)!.Clips[0].Id == clip.Id && p.Media[0].Audio == "media/original.wav",
             "deshacer recupera el clip y deja intacta la ruta de grabación");
         var pan = InspectorEditing.Pan(0, 0, 80, 40);
@@ -386,6 +390,43 @@ static class ClipChecks
             "un patrón con el lápiz: cada copia es un uso más del patrón, y no se encima con otro");
         Check(ClipStamp.Midi(drums, patternBrush, Guid.NewGuid().ToString(), [8]).Count == 0 && ClipStamp.Audio(drums, brush, drumTrack.Id, [8]).Count == 0,
             "una toma no va en una pista MIDI ni un clip MIDI fuera de una");
+
+        // names of clips (#137): an own name, blank takes it away, a repeat names its source, a pattern's clip its pattern
+        var named = new Clip { MediaId = media.Id, AtSec = 0 };
+        var namedTrack = new Track { Clips = [named] };
+        var names = new Project { Media = [media], Tracks = [namedTrack] };
+        ClipEditing.Rename(names, named.Id, "  Intro  ");
+        Check(named.Name == "Intro", "un clip toma un nombre propio, sin espacios de más");
+        var json = System.Text.Json.JsonSerializer.Serialize(named, ProjectStore.Json);
+        Check(System.Text.Json.JsonSerializer.Deserialize<Clip>(json, ProjectStore.Json)!.Name == "Intro"
+            && !System.Text.Json.JsonSerializer.Serialize(new Clip(), ProjectStore.Json).Contains("\"name\""), "el nombre se guarda, y un clip sin nombre no escribe nada");
+        Check(ClipEditing.Copy(named).Name == "Intro", "una copia del clip lleva su nombre");
+        ClipEditing.Rename(names, named.Id, "   ");
+        Check(named.Name == null, "un nombre en blanco le saca el suyo");
+        named.Name = "Intro";
+        var repeat = new Clip { MediaId = media.Id, AtSec = 20, LoopOf = named.Id };
+        namedTrack.Clips.Add(repeat);
+        ClipEditing.Rename(names, repeat.Id, "Estribillo");
+        Check(named.Name == "Estribillo" && repeat.Name == null, "renombrar una repetición del bucle renombra el original");
+        var lockedClip = new Clip { MediaId = media.Id, AtSec = 40, Locked = true };
+        namedTrack.Clips.Add(lockedClip);
+        ClipEditing.Rename(names, lockedClip.Id, "Fija");
+        Check(lockedClip.Name == "Fija", "un clip bloqueado se puede renombrar");
+        Check(ClipEditing.CleanName(new string('x', 300))!.Length == ClipEditing.MaxNameLength, "un nombre largo se corta");
+
+        var keys = new Track { Kind = TrackKinds.Midi, MidiClips = [] };
+        var song = new Project { Settings = { Bpm = 120 }, Tracks = [keys] };
+        var riff = MidiEditing.AddClip(song, keys.Id, 0, 4);
+        MidiEditing.Rename(song, riff.Id, "Riff");
+        Check(riff.Name == "Riff" && riff.Copy().Name == "Riff" && MidiEditing.Label(riff) == "Riff", "un clip MIDI toma un nombre propio y su copia lo lleva");
+        var use = MidiEditing.AddClip(song, keys.Id, 8, 4);
+        string pat = MidiPatterns.Create(song, use.Id).PatternId!;
+        var otherUse = ClipStamp.Midi(song, ClipStamp.PatternBrush(song, pat)!, keys.Id, [16])[0];
+        MidiEditing.Rename(song, use.Id, "Groove");
+        Check(MidiPatterns.Clips(song, pat).All(c => c.PatternName == "Groove" && c.Name == null) && MidiEditing.Label(MidiEditing.Find(song, otherUse).Clip) == "Groove",
+            "en un clip de patrón, renombrar renombra el patrón en todos sus usos");
+        MidiEditing.Rename(song, use.Id, "");
+        Check(use.PatternName == "Groove", "un patrón no se queda sin nombre");
         Console.WriteLine($"Edición de clips: {n} comprobaciones correctas (sin modificar archivos).");
         return 0;
     }

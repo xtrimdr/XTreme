@@ -1,0 +1,71 @@
+# Modelo del proyecto (XtremeDaw.Projects) — cómo está hecho
+
+Se suma a la guía de la raíz ([AGENTS.md](../../AGENTS.md)), que tiene las convenciones del JSON y las reglas del
+guardado. Cómo lo lee el motor está en [XtremeDaw.Audio/AGENTS.md](../XtremeDaw.Audio/AGENTS.md).
+
+## Partes
+
+- **Media**: grabaciones e importados. **Nunca se reescriben.** Un importado puede quedar vinculado: fuera de `media/`, con la ruta entera (`Media.Linked`, decisión del usuario; `AudioImport.LinkIn`, `ImportMode`); `LinkedMedia` lo copia adentro o reencuentra un archivo que se movió, sin tocar el de afuera. De una toma, el deshacer solo guarda dónde están sus archivos (`UndoManager.Place`).
+- **Track**: el canal (volumen, paneo, mute/solo, efectos…), si lleva panel de video, `Color` ("#rrggbb") e `Icon`
+  (null = sin color / con su número), `FolderId` = su carpeta.
+- **Folder** (`Project.Folders`): agrupa pistas. Sus hijas van juntas en `Project.Tracks` y la carpeta va justo antes
+  (`Folder.Index`). Toda edición de orden pasa por `TrackFolders` y `TrackFolders.Normalize` repara lo que quede raro.
+  **Es un canal** (decisión del usuario, 2026-11-04, #134; antes solo contenía): sus pistas suman ahí, pasan por sus
+  slots (`Folder.Inserts`), paneo, fader (`Volume`) y mute, y van a su `Output` y sus `Sends` (PRE como los de una
+  pista: después de los slots y el paneo). Su `Solo` vale como el solo de cada una de sus pistas (`ChannelDsp.Soloed`,
+  el mismo cálculo en vivo, en la exportación y en el timeline); su mute calla su nodo. Tiene carriles como una pista (#136): `Track` y `Folder` son
+  `IAutomated`, y `Automations` trabaja sobre cualquiera (el nodo los lee como `TrackDspChain`). Lo que la versión 2 guardaba con esos nombres vuelve como era. Un **separador** es una `Folder` con `Separator`: va en
+  el mismo orden, nunca toma pistas ni rutea ni tiene canal, y se puede ocultar del timeline (`HiddenInTimeline`). Pistas de la raíz,
+  carpetas y buses tienen su lado del mixer (`MixerSide`, `MixerSides`: null = el de siempre).
+- **Buses y ruteo**: un solo concepto para "bus" y "FX" (`ProjectSettings.Buses`, `Bus`: nombre, fader, paneo, mute,
+  slots, salida y envíos; una reverb o un delay son un slot más, `InsertSlot.Reverb` / `Delay`). Un proyecto nuevo vacío
+  arranca sin buses (sin envíos); las plantillas traen los suyos o "Reverb" y "Delay" (`ProjectBuses.Defaults`). Pista (`Channel`), carpeta y bus son `IRouted`: `Output` (null = Master,
+  o un bus; una pista en carpeta sale por la carpeta) y `Sends` (`Send`: bus, nivel 0..1, ON y PRE). Las ediciones
+  pasan por `ProjectBuses`. **Por ahora un bus sale solo al Master** (decisión del usuario, 2026-10-26: las cadenas
+  entre buses no se entendían): `CanFeed` rechaza un bus como origen y `Normalize` le borra salida y envíos, además de
+  sacar lo que apunta a buses que no existen. El motor sigue sabiendo correr buses que alimentan buses (`Order`), por
+  si vuelven. Cada pista (y carpeta) elige a qué buses manda (pedido del usuario): un envío con `Hidden` está sacado
+  de su lista (apagado, con su nivel guardado) y un bus sin envío tampoco está: una pista o un bus nuevos no traen
+  ninguno, el usuario los suma (pedido del usuario, 2026-10-29; `ProjectBuses.Shown`, `ShowSend`); el timeline, el mixer y el inspector muestran solo esos. La versión 3 trajo esto: los campos de la 2
+  (Reverb/Delay fijos, retornos, `reverbSend`…, el fader/M/S/slots de carpeta) se leen como `Old*` y se convierten al
+  normalizar.
+- **Clip**: un pedazo de un media en una pista (`AtSec`, `TrimStartSec`, `TrimEndSec`, `GainDb`, `GainCurve`, encuadre). Al cambiar el tempo la ventana pregunta si se estiran los clips (`TempoDialog`, pedido del usuario); si sí, van todos (decisión del usuario, sin elegir cuáles, video incluido): `TempoFollow` multiplica por viejo/nuevo todos los tiempos del timeline (clips, automatización, marcadores, acordes, loop) y `Stretch` dice cuánto más largo suena su media; sus tiempos ya lo cuentan, lo que lee el media pasa por `MediaSec`. El sonido estirado es un render en `cache/` (`PitchShifter.Render`, `TransposeCache`) y mientras se hace el clip calla (decisión del usuario). "Detectar tempo" no estira: solo mueve la grilla (`SetGrid`). Un clip también se estira a mano (Ctrl+arrastrar un borde, `ClipEditMode.StretchStart/End`): escala sus tiempos con el mismo `Rescale`, así que un cambio de tempo después se multiplica encima. El deshacer guarda `ProjectSettings.TimeScale`, no el tempo. `TimeMap` detecta los ataques y hace que el render vaya a 1:1 alrededor de cada uno, para que no se corran: el estiramiento va entre ataques (pedido del usuario: loops de ritmo). `Pitch` son semitonos propios del clip, sumados al `Transpose` de la pista (`SemitonesOn`, pedido del usuario): van por el mismo render, sin cambiar el largo. Con `Reversed` suena al revés sin tocar el archivo: sus tiempos cuentan en el sentido en que se oye (`ClipEditing.Reverse`). **Bucle** (`ClipLoops`, pedido del usuario, como GarageBand): las vueltas de una toma son clips enteros con `LoopOf` = el original, así el motor no sabe de bucles; nunca se editan sueltas: `ClipLoops.Keep` (en `EditTimeline` y el inspector) las rehace cuando cambia el original. Un clip MIDI (`LoopBeats`) y un bloque de automatización (`LoopSec`) repiten su primera vuelta como un patrón.
+- **ChordMarker** (`Project.ChordMarkers`): un acorde detectado (`Sec`, `EndSec`, `Name`), aparte de `Project.Markers`
+  (decisión del usuario: no se pisan con los marcadores y se borran juntos). Las ediciones pasan por `ProjectMarkers`.
+- **Sampler** (`Track.Sampler`, `SamplerSettings`, decisión del usuario, 2026-11-02: un sample por ahora): el instrumento nativo de una pista MIDI; nunca junto con `Track.Instrument`. Su sample es un `Media` más (`SamplerMedia`, cuenta como usado en `ProjectHistory.UsedMediaIds`) y lo demás son números en el proyecto, con su deshacer. En el motor (`Dsp/Sampler.cs`, `Dsp/SamplerSound.cs`): `SamplerPatch` y `SamplerSound` son inmutables y se reemplazan enteros, `Sampler` lleva las voces (preasignadas) y lo usan igual `LiveTrack` y `MixRenderer`. Cada voz depende solo del tiempo desde su nota y, por los carriles de sus perillas (`SamplerCurves`, `sampler:<perilla>`, `SamplerKnob`: se leen en los pasos de control de la voz, en el cuadro de la canción, no por `InsertAutomator`), del cuadro de la canción: cualquier tamaño de bloque da los mismos floats. El slide y el portamento son de la voz (`NoteEvent.Bend`, `NoteBend`), no el pitch bend del canal, y `NoteEvent.Pan` se suma al paneo del sampler. El sonido guarda niveles limitados en banda (`Levels`) para que subir el tono no genere aliasing. `SamplerRoot` saca la raíz del nombre o del sonido.
+- **Granular** (`Track.Granular`, `GranularSettings`, decisión del usuario, 2026-11-03: un instrumento aparte, no un modo del sampler): otro instrumento nativo de una pista MIDI; nunca junto con `Track.Instrument` ni `Track.Sampler`. Su sample entra por `SamplerMedia.Add` (`GranularMedia`) y se lee con el mismo `SamplerSound` (niveles limitados en banda), sin loop. En el motor (`Dsp/Granular.cs`), cada voz dispara granos (ventana de `Granular.MakeWindow`, lectura Hermite de 4 puntos) alrededor de un cabezal que recorre el sonido (Estirar) o queda en la posición (Recorrer). El azar (Jitter, Spray, Ancho) sale de una semilla por nota (cuadro y tecla en que empezó): en vivo y al exportar, en cualquier bloque, da los mismos floats. Carriles `granular:<perilla>` (`GranularCurves`, `GranularKnob`), leídos en cada grano y paso de control. Lo que el sampler y el granular hacen con las notas (saltos, bucle, teclados, cola) es uno solo: `NoteInstrument` (`Dsp/NoteInstrument.cs`); `LiveTrack.Native` es el que tenga la pista.
+- **Pista MIDI** (`Track.Kind = "midi"`, `TrackKinds`): en vez de clips tiene `MidiClips` (`MidiClip`: `AtSec` en
+  segundos, `LengthBeats` y sus `MidiNote` en tiempos, así siguen al tempo); en una pista de audio `MidiClips` es null.
+  Sin video; las tomas no entran en ella. Toca y graba del teclado MIDI: `MidiInput` (null = todas las entradas) y
+  `MidiChannel` (0 = todos). Las ediciones pasan por `MidiEditing` (`Midi.cs`). `MidiEditing.Split` no cambia lo que suena: la nota que cruza el corte sigue en el pedazo derecho como `MidiNote.Tie`, que `NoteExpression.JoinTies` une a la que termina ahí con el mismo tono; sin esa nota es una nota común. Las herramientas del piano roll son datos de `MidiTools` (id, grupo, ajustes y qué hacen): una herramienta nueva va ahí, y el panel y `xtlab` la toman solos; `.mid` por `MidiFiles` (en tiempos, nunca en segundos), partitura por `ScoreSheet`. **Patrones** (`MidiPatterns`): clips
+  enlazados por `PatternId`, cada uno con su copia de las notas (sin lista propia en el proyecto); una vuelta de
+  `PatternBeats` se repite hasta el final del clip. Un patrón puede tener varios instrumentos (`PatternPart`, una parte con sus notas por pista, sin tocar el motor; nombre y vuelta son del patrón). Quien cambie `MidiClip.Notes` llama a `MidiPatterns.Sync`, y quien
+  lea lo que suena usa `Heard`/`Slice` y `Passes`. La pestaña Patrones (`MainWindow.Patterns.cs`) los lista desde `All`.
+- **Automatización** (`Automation.cs`, `Track.Automation`): cada `AutomationLane` es un parámetro de la pista (`Target`, `AutoTarget`: volumen, paneo, mute, envío, efecto nativo con su ON y las bandas del EQ, VST3 de efecto o de instrumento, perilla del sampler), hija de la pista en el timeline (decisión del usuario). Su curva vive en bloques (`AutomationBlock`, como los clips MIDI, en segundos: se mueven, recortan, copian y repiten; las copias son independientes), que se leen como una sola curva (`AutomationLane.Flat`, el motor no sabe de bloques; hay que llamar `Touch` después de editarlos): entre bloques mantiene el último valor. Los puntos guardan la posición del control (0..1), no el valor, y `Curve` dobla el tramo hasta el siguiente (-1..1, `AutoCurve.Shape`; 0 = recto, opcional por tramo: decisión del usuario). Nunca cambia el `Channel`: sin puntos o apagada, manda el canal. Un destino que ya no existe conserva su carril, en silencio, para que deshacer lo traiga. Las ediciones pasan por `Automations`.
+- **Entradas MIDI** (teclados, controladores): son de la máquina, no del proyecto (`MidiSettings`, `config.json` "midi",
+  por nombre de aparato; `MidiSetup` en la ventana). `MidiInputs` (winmm vía NAudio) filtra canal y velocidad en su
+  hilo y deja las notas en un anillo sin locks; el hilo de audio las reparte al empezar cada bloque
+  (`PlaybackEngine.DispatchMidi`) a las pistas que escuchan (una sola: la MIDI elegida o, sin ninguna, la primera armada; grabando, las armadas), cada una con su
+  `LiveNotes` (pedal de sustain, voces del tono de prueba) que suena por su instrumento y su cadena; grabando, cada
+  nota va a su `MidiTake` con el cuadro que se oía y al parar se arma el clip (`MidiEditing.AddRecorded`).
+
+## Carpeta del proyecto y guardado
+
+```
+Nombre.xtp               el proyecto (sigue al nombre: `ProjectStore.FindFile`, `FilePath`)
+Nombre.xtp.bak           el guardado anterior
+xtreme_project.lock      mientras está abierto (una segunda ventana lo abre en solo lectura)
+historial/               copias para volver atrás
+media/                   grabaciones e importados
+cache/                   lo que se rehace desde media/ (tomas transpuestas y estiradas, TransposeCache): borrarlo solo cuesta tiempo
+exports/
+```
+
+- Un proyecto puede vivir en cualquier carpeta: "Abrir…" toma un `.xtp`, "Guardar en…" ubica uno nuevo, y "Guardar como…" / "Guardar una copia…" (`ProjectLibrary.SaveAs`, decisión del usuario: las dos) lo copian a otra carpeta, armado en `.guardando-*` y publicado al final; una carpeta vacía pasa a ser la del proyecto, en otra se crea una con su nombre.
+- Toda edición pasa por `MarkDirty()` → `SaveSoon()`: cuándo se escribe lo elige el usuario (`SaveMode`, en
+  Configuración → Guardado y exportación): 1,5 s después de cada edición (por defecto), cada X minutos o a mano (serializa en la UI,
+  escribe en segundo plano, en orden). Ctrl+S y el diskette fuerzan; las tomas, las exportaciones y el cambiar de proyecto
+  (`FlushSave()`) guardan siempre, sea cual sea el modo; cerrar la ventana con cambios pendientes pregunta antes
+  (`UnsavedDialog`) y no cierra si no pudo guardar.
+- `RecordingWriter` escribe mientras graba y reescribe el encabezado
+  cada ~2 s. Una toma MIDI va igual: `MidiTakeWriter` copia las notas a `media/<clip>.notas` desde su propio hilo, con su diario (`MidiTakeJournal`), y `RecoverMidiTakes` arma el clip al abrir.

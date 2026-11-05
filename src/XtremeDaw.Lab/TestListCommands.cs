@@ -21,7 +21,7 @@ static class TestListCommands
         switch (action)
         {
             case "ver":
-                Show(TestList.Read(path));
+                Show(TestList.Read(path), AgentSessions.Read(AgentSessions.RootOf(path)));
                 return 0;
             case "agregar":
                 if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("lista agregar \"qué probar\" --copia nombre");
@@ -74,7 +74,7 @@ static class TestListCommands
                         Console.Error.WriteLine($"#{take} ya lo tomó otra sesión ({WhoName(holder)}).");
                         return 2;
                     case TestList.TakeResult.NotOpen:
-                        Console.Error.WriteLine($"#{take} no es un pedido ni está marcado como No anda, Anda mal o A mejorar.");
+                        Console.Error.WriteLine($"#{take} ya está marcado como que anda: no se toma. Si hay otro cambio, anotalo aparte.");
                         return 2;
                     default:
                         Console.Error.WriteLine($"La lista no tiene el #{take}.");
@@ -84,7 +84,7 @@ static class TestListCommands
                 int free = Number(a, "lista soltar número");
                 if (!TestList.Release(path, free))
                 {
-                    Console.Error.WriteLine($"#{free} no es un pedido ni algo marcado de la lista.");
+                    Console.Error.WriteLine($"La lista no tiene el #{free} o ya está marcado como que anda.");
                     return 2;
                 }
                 Console.WriteLine($"#{free} queda libre.");
@@ -120,7 +120,7 @@ static class TestListCommands
                     Console.Error.WriteLine($"La lista no tiene el #{show}.");
                     return 2;
                 }
-                ShowTicket(ticket);
+                ShowTicket(ticket, path);
                 return 0;
             case "comentar":
                 int to = Number(a, "lista comentar número \"qué decir\"");
@@ -146,14 +146,18 @@ static class TestListCommands
         }
     }
 
-    /// <summary>A ticket whole: its subject, state and conversation, as the bench shows it.</summary>
-    static void ShowTicket(TestItem i)
+    /// <summary>A ticket whole: its subject, state and conversation, as the bench shows it; each image by its full path, for the agent to look at.</summary>
+    static void ShowTicket(TestItem i, string path)
     {
         string kind = i.Kind is { } k ? $" [{KindTitle(k)}]" : i.State == TestItem.Request ? " [sin tipo]" : "";
         Console.WriteLine($"#{i.Id}{kind} {{{TopicTitle(i.Topic)}}}  {StateName(i.State)} · intento {i.Tries} · copia {i.Build}{(i.Unseen ? " · nuevo, sin ver" : "")}");
         Console.WriteLine(i.Title is { } title ? $"  {title}" : $"  {i.Text}   (sin título: tools\\probar.ps1 -Titula {i.Id} \"título\")");
         if (i.State == TestItem.Request && i.Kind == null) Console.WriteLine($"  (sin tipo: tools\\probar.ps1 -Clasifica {i.Id} -Tipo error|mejora|funcion|idea)");
-        foreach (var m in i.Thread) Console.WriteLine($"  {m.At:dd/MM HH:mm}  int. {m.Try}  {WhoName(m.Who),-16} {MessageText(m)}");
+        foreach (var m in i.Thread)
+        {
+            Console.WriteLine($"  {m.At:dd/MM HH:mm}  int. {m.Try}  {WhoName(m.Who),-16} {MessageText(m)}");
+            foreach (var img in m.Images ?? []) Console.WriteLine($"                        imagen: {TestList.ImagePath(path, img)}");
+        }
         if (i.Reply != null) Console.WriteLine($"  (el usuario está escribiendo{(i.Draft != null ? $", {StateName(i.Draft)}" : "")}: {i.Reply})");
     }
 
@@ -264,10 +268,10 @@ static class TestListCommands
 
     static string Copy(Args a) => a.Get("copia") ?? throw new ArgumentException("lista: falta --copia nombre");
 
-    static void Show(TestListData d)
+    static void Show(TestListData d, AgentSessions sessions)
     {
-        static string Taken(TestItem i) => i.Taken is { } t && TestList.Open(i)
-            ? $"  (tomado {t:dd/MM HH:mm} por {(i.TakenBy == TestList.Who ? "esta sesión" : WhoName(i.TakenBy))}{(DateTime.Now - t >= TestList.TakeStale ? ", vencido" : "")})" : "";
+        string Taken(TestItem i) => i.Taken is { } t && TestList.Takeable(i)
+            ? $"  (tomado {t:dd/MM HH:mm} por {(i.TakenBy == TestList.Who ? "esta sesión" : WhoName(i.TakenBy))}{(DateTime.Now - t >= TestList.TakeStale ? ", vencido" : sessions.Alive(i.TakenBy) == false ? ", sesión cerrada" : "")})" : "";
         // the user has not seen it yet in the bench
         static string Fresh(TestItem i) => i.Unseen ? "  · nuevo, sin ver" : "";
         var requests = d.Items.Where(i => i.State == TestItem.Request).OrderBy(i => i.Id).ToList();
@@ -308,7 +312,8 @@ static class TestListCommands
     {
         const string first = "20261102-100000-aaaaaaa", second = "20261102-110000-bbbbbbb";
         string dir = Path.Combine(Path.GetTempPath(), "xtlab-lista-" + Guid.NewGuid().ToString("N"));
-        string path = Path.Combine(dir, "lista.json");
+        // in a pruebas folder, as in the repository: the sessions are read from the folder above (#173)
+        string path = Path.Combine(dir, "pruebas", "lista.json");
         int fails = 0;
         void Row(string name, bool ok)
         {
@@ -376,11 +381,31 @@ static class TestListCommands
             Row("tomar un pedido", TestList.Take(path, r) == TestList.TakeResult.Taken && TestList.Read(path).Items[^1].Taken != null);
             Row("la misma sesión lo puede volver a tomar", TestList.Take(path, r) == TestList.TakeResult.Taken);
             Row("otra sesión no lo puede tomar y sabe quién lo tiene", As(Other, () => TestList.Take(path, r, out var by) == TestList.TakeResult.Busy && by == Mine));
-            Row("lo pendiente no se toma", TestList.Take(path, a) == TestList.TakeResult.NotOpen && TestList.Take(path, 99) == TestList.TakeResult.NotFound);
+            // a pending item is taken too (#173): the user asks for more in its thread and the bench shows it in progress
+            Row("lo pendiente también se toma y queda en curso", TestList.Take(path, a) == TestList.TakeResult.Taken
+                && TestList.Held(TestList.Read(path).Items[0], AgentSessions.Read(dir)) && TestList.Release(path, a)
+                && TestList.Read(path).Items[0].Taken == null && TestList.Take(path, 99) == TestList.TakeResult.NotFound);
             Row("soltarlo lo deja libre", TestList.Release(path, r) && TestList.Take(path, r) == TestList.TakeResult.Taken);
             TestList.Mark(path, b, TestItem.Improve, "más grande");
             Row("lo marcado también se toma, una vez", TestList.Take(path, b) == TestList.TakeResult.Taken && As(Other, () => TestList.Take(path, b) == TestList.TakeResult.Busy));
             Row("y se suelta", TestList.Release(path, b) && TestList.Read(path).Items[1].Taken == null);
+            // a closed session holds nothing (#173): the hook's p-*.json says which claude.exe it ran in
+            var locks = Directory.CreateDirectory(Path.Combine(dir, ".claude", "bloqueos")).FullName;
+            using (var me = System.Diagnostics.Process.GetCurrentProcess())
+            {
+                long started = me.StartTime.ToUniversalTime().Ticks;
+                string session = Path.Combine(locks, "p-prueba.json");
+                void Session(bool open) => File.WriteAllText(session,
+                    $"{{\"pid\":{me.Id},\"started\":{started + (open ? 0 : 1)},\"session\":\"{Mine[6..]}-0000\"}}");
+                bool held() => TestList.Held(TestList.Read(path).Items[1], AgentSessions.Read(dir));
+                Session(true);
+                Row("con su sesión abierta, otra no lo toma", TestList.Take(path, b) == TestList.TakeResult.Taken
+                    && held() && As(Other, () => TestList.Take(path, b) == TestList.TakeResult.Busy));
+                Session(false);
+                Row("con su sesión cerrada, queda libre y otra lo toma", !held()
+                    && As(Other, () => TestList.Take(path, b) == TestList.TakeResult.Taken && TestList.Release(path, b)));
+                File.Delete(session);
+            }
             TestList.Fixed(path, r, second, "Probar el pedido");
             d = TestList.Read(path);
             Row("hecho, pasa a pendiente como primer intento", d.Items[^1] is { State: TestItem.Pending, Tries: 1, Taken: null, Text: "Un pedido mejor" }
@@ -396,7 +421,18 @@ static class TestListCommands
                 && TestList.Read(path).Items[^1] is { Title: "Pedido corto", Text: "Un pedido mejor" } t3 && t3.Rev == rev
                 && TestList.History(path, r)[^1] is { What: TestEvent.Titled, Note: "Pedido corto" });
             Row("un título vacío lo saca", TestList.SetTitle(path, r, " ") && TestList.Read(path).Items[^1].Title == null && !TestList.SetTitle(path, 99, "x"));
+            byte[] png = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3];
+            Row("una imagen sola se dice, en la carpeta del ticket", As(TestList.User, () => TestList.Comment(path, r, null, null, [new(png, ".PNG"), new([], ".png")]))
+                && TestList.Read(path).Items[^1].Thread[^1] is { Text: null, Images: [var img] } && img.StartsWith($"{r}/") && img.EndsWith(".png")
+                && File.ReadAllBytes(TestList.ImagePath(path, img)).SequenceEqual(png));
+            int asked = 0;
+            As(TestList.User, () => (asked = TestList.AddRequest(path, "Con captura", null, second, null, [new(png, ".jpg"), new(png, ".exe")])) > 0);
+            Row("un pedido con imágenes: van en su primer mensaje", TestList.Read(path).Items.Find(i => i.Id == asked)?.Thread[0] is { Kind: TestMessage.Open, Images: [var j, var k] }
+                && j.EndsWith(".jpg") && k.EndsWith(".png") && j != k && File.Exists(TestList.ImagePath(path, k)));
+            TestList.Remove(path, asked);
             TestList.Remove(path, r);
+            Row("sacar un ticket se lleva sus imágenes", !Directory.Exists(Path.Combine(TestList.ImageFolder(path), $"{r}"))
+                && !Directory.Exists(Path.Combine(TestList.ImageFolder(path), $"{asked}")));
 
             TestList.Mark(path, b, TestItem.Works, null);
             Row("lo que anda no vuelve con un arreglo tardío",
@@ -406,7 +442,7 @@ static class TestListCommands
             TestList.ClearWorking(path);
             int next = TestList.Add(path, "Otra cosa", second);
             d = TestList.Read(path);
-            Row("limpiar saca lo que anda y no reusa números", d.Items.Count == 2 && next == 4);
+            Row("limpiar saca lo que anda y no reusa números", d.Items.Count == 2 && next == asked + 1);
             TestList.Remove(path, next);
             Row("sacar un ítem", TestList.Read(path).Items.Count == 1);
 

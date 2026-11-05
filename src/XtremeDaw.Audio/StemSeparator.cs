@@ -7,7 +7,8 @@ namespace XtremeDaw.Audio;
 /// Pulls a mix apart into stems ("Separar en stems", asked by the user) with Demucs (Rouard et al., Meta; the graphs come
 /// from <c>tools/get-demucs.ps1</c>): voice, drums, bass and the rest, or those plus guitar and piano. The user picks how
 /// many and how good: more quality means another model (<c>htdemucs_ft</c> has one trained for each stem) or the same one
-/// again a little later in time (Demucs' "shifts"), and each costs a full pass (<see cref="Plan"/>). It runs through ONNX
+/// again a little later in time (Demucs' "shifts"), and each costs a full pass (<see cref="Plan(Layout, Quality)"/>). The advanced mode (#146) picks the model, the stems
+/// and the passes by hand (<see cref="Settings.Model"/>). It runs through ONNX
 /// Runtime on the graphics card, NVIDIA, AMD or Intel, with DirectML, or else on the CPU. A driver can give wrong audio
 /// with no error (DirectML did until the Sigmoids were exposed, see <c>make-demucs-onnx.py</c>), so before a model is
 /// trusted on a card it has to match the CPU on a segment of the audio at hand and beat its time (<see cref="Choose"/>).
@@ -21,13 +22,28 @@ public static class StemSeparator
 {
     public enum Layout { Two, Four, Six }
     public enum Quality { Fast, High, Max }
+    /// <summary>
+    /// The model picked by hand in the advanced mode (#146); <see cref="Auto"/> lets <see cref="Layout"/> and
+    /// <see cref="Quality"/> choose. <see cref="Tuned"/> is <c>htdemucs_ft</c>, one model per stem.
+    /// </summary>
+    public enum Model { Auto, General, Tuned, Six }
 
     /// <param name="Id">vocals, drums, bass, guitar, piano or other.</param>
     public sealed record Stem(string Id, float[] L, float[] R);
 
     /// <param name="Shifts">Overrides how many passes each model does; 0 is one pass with no shift at all.</param>
     /// <param name="CpuOnly">Leaves the graphics card alone.</param>
-    public sealed record Settings(Layout Layout = Layout.Four, Quality Quality = Quality.High, int? Shifts = null, bool CpuOnly = false);
+    /// <param name="Model">A model by hand; then <paramref name="Layout"/> and <paramref name="Quality"/> don't count.</param>
+    /// <param name="Only">The stems wanted (ids of <see cref="StemsOf"/>); the rest go to "other". Null is all of them.</param>
+    public sealed record Settings(Layout Layout = Layout.Four, Quality Quality = Quality.High, int? Shifts = null, bool CpuOnly = false,
+        Model Model = Model.Auto, IReadOnlyList<string>? Only = null);
+
+    /// <summary>The stems a model gives besides "other", in the order they are shown.</summary>
+    public static IReadOnlyList<string> StemsOf(Model model) =>
+        model == Model.Six ? ["vocals", "drums", "bass", "guitar", "piano"] : ["vocals", "drums", "bass"];
+
+    /// <summary>The most passes the advanced mode offers: each one costs a full run of the model.</summary>
+    public const int MaxShifts = 8;
 
     const int ModelRate = 44100;
     /// <summary>The STFT of the models: 4096 points, a frame every 1024 samples, without the top bin.</summary>
@@ -92,6 +108,24 @@ public static class StemSeparator
         };
     }
 
+    /// <summary>
+    /// The passes of <paramref name="s"/>: by layout and quality, or by its model with one pass each (the shifts come
+    /// from <see cref="Settings.Shifts"/>). Stems left out of <see cref="Settings.Only"/> aren't kept, and a pass with
+    /// nothing to keep isn't run.
+    /// </summary>
+    static List<Pass> Plan(Settings s)
+    {
+        var plan = s.Model switch
+        {
+            Model.General => [new("htdemucs.onnx", Four, KeepFour, 1)],
+            Model.Tuned => KeepFour.Select(id => new Pass($"htdemucs_ft_{id}.onnx", Four, [id], 1)).ToList(),
+            Model.Six => [new("htdemucs_6s.onnx", Six, KeepSix, 1)],
+            _ => Plan(s.Layout, s.Quality),
+        };
+        if (s.Only is not { } only) return plan;
+        return plan.Select(p => p with { Keep = p.Keep.Where(only.Contains).ToArray() }).Where(p => p.Keep.Length > 0).ToList();
+    }
+
     /// <summary>Where the app downloads the graphs (<see cref="StemsComponent"/>).</summary>
     public static string DownloadDir => Path.Combine(AppFolder.Dir, "demucs");
 
@@ -103,16 +137,21 @@ public static class StemSeparator
         ModelsDirs.Select(d => Path.Combine(d, file)).FirstOrDefault(File.Exists) ?? Path.Combine(DownloadDir, file);
 
     /// <summary>The graphs an option needs.</summary>
-    public static IEnumerable<string> Files(Layout layout, Quality quality) => Plan(layout, quality).Select(p => p.File).Distinct();
+    public static IEnumerable<string> Files(Layout layout, Quality quality) => Files(new Settings(layout, quality));
 
-    public static bool Available(Layout layout, Quality quality) =>
-        Plan(layout, quality).All(p => File.Exists(ModelPath(p.File)));
+    public static IEnumerable<string> Files(Settings s) => Plan(s).Select(p => p.File).Distinct();
+
+    public static bool Available(Layout layout, Quality quality) => Available(new Settings(layout, quality));
+
+    public static bool Available(Settings s) => Plan(s).All(p => File.Exists(ModelPath(p.File)));
 
     public static bool AnyAvailable => Enum.GetValues<Layout>().Any(l => Enum.GetValues<Quality>().Any(q => Available(l, q)));
 
     /// <summary>A rough idea of how long <paramref name="seconds"/> of audio take on this machine.</summary>
-    public static double EstimateSec(Layout layout, Quality quality, double seconds) =>
-        Plan(layout, quality).Sum(p => p.Shifts) * seconds *
+    public static double EstimateSec(Layout layout, Quality quality, double seconds) => EstimateSec(new Settings(layout, quality), seconds);
+
+    public static double EstimateSec(Settings s, double seconds) =>
+        Plan(s).Sum(p => Math.Max(1, s.Shifts ?? p.Shifts)) * seconds *
         (gpu >= 0 ? GpuPassCost : PassCost * MeasuredThreads / Math.Max(1, Environment.ProcessorCount));
 
     /// <summary>The estimate is the CPU's and a card may do much better: none has been tried yet.</summary>
@@ -133,8 +172,8 @@ public static class StemSeparator
         start = Math.Clamp(start, 0, l.Length);
         count = Math.Clamp(count, 0, l.Length - start);
         if (count <= 0) return [];
-        var plan = Plan(settings.Layout, settings.Quality);
-        if (!Available(settings.Layout, settings.Quality))
+        var plan = Plan(settings);
+        if (!Available(settings))
             throw new InvalidOperationException(Texts.T("err.stems.noModel", "Faltan los modelos de separación: instalalos en Configuración → Componentes."));
 
         var (left, right) = AudioLoader.Resample(l.AsSpan(start, count), r.AsSpan(start, count), sampleRate, ModelRate);

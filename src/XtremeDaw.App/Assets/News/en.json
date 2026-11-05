@@ -1,6 +1,81 @@
 {
   "releases": [
     {
+      "version": "0.9.17",
+      "items": [
+        {
+          "icon": "E713",
+          "title": "Floating Settings",
+          "text": "**Settings** no longer dims the window: it stays open while you use the rest. Drag it by its title and resize it from the bottom-right corner."
+        },
+        {
+          "icon": "E790",
+          "title": "Color several tracks",
+          "text": "With several tracks picked (Ctrl or Shift on their headers), the right-click menu offers **Color as a gradient** and **One color for all**."
+        },
+        {
+          "icon": "E9E9",
+          "title": "Split into stems: Advanced mode",
+          "text": "In **Split into stems**, **Advanced** picks the model, which stems, how many passes, splitting only the timeline selection and what happens with the original: mute the track, leave it playing or remove the clip."
+        },
+        {
+          "icon": "E790",
+          "title": "Track color your way",
+          "text": "In **Settings → Appearance → Track color** you choose how each track's color paints the timeline: soft, solid, wave-only or title-bar clips, plus a stripe or tint on the header, a tinted lane and the selection in the track's color. **Track color in the inspector** does the same for the inspector: rule and tint, rule only, filled header or no color, plus a stripe along the edge, tinted sections and section icons in its color. A line in the track's color runs from its header to the inspector's, so you see at a glance which track it shows; it can be turned off on the same card."
+        },
+        {
+          "icon": "E8FD",
+          "title": "Lower tracks",
+          "text": "Track height now goes down to **24 px**: on a slim track the icon, the name and M, S and ● shrink and stay centered."
+        },
+        {
+          "icon": "E8AB",
+          "title": "Handles on MIDI clips and automation",
+          "text": "MIDI clips and automation blocks show the same handles as audio: one on each edge to trim and the loop at the top right. When looped, the handle at the end of the first pass changes the original's length and every repeat follows."
+        },
+        {
+          "icon": "E8AC",
+          "title": "Tracks keep their name",
+          "text": "Audio dropped on an empty track no longer renames it."
+        },
+        {
+          "icon": "E790",
+          "title": "Color in the inspector",
+          "text": "Next to the name of every channel, track, bus or folder, a **color square** opens the palette, now with **48 colors** in hue order, plus a **custom color**. On a folder, the button next to it gives its color to the tracks."
+        },
+        {
+          "icon": "E74D",
+          "title": "Delete an automation lane",
+          "text": "Each lane has a **trash can** in its header, next to ON. It asks before deleting it."
+        },
+        {
+          "icon": "E9D2",
+          "title": "Folder automation",
+          "text": "A folder has lanes like a track: volume, pan, mute, sends and effects, under its row. Add them from its menu → **Automation** or by right-clicking its control. The arrow with the automation icon, at the foot of a track's or a folder's grip, folds its lanes."
+        },
+        {
+          "icon": "E74E",
+          "title": "Presets: Default and your own",
+          "text": "Every built-in effect starts at **Default**, neutral: no longer set up for guitar. Save your settings with **Save preset**; they stay under **My presets** for all your projects."
+        },
+        {
+          "icon": "E740",
+          "title": "Compact or full compressor",
+          "text": "The **Compressor** window shows the main controls. The expand button on its bar opens it with every control in panels: Dynamics, Timing, Output, Built-in EQ and Sidechain. Every built-in effect opens in its own window, which moves like a VST's and stays open."
+        },
+        {
+          "icon": "E8AC",
+          "title": "Name clips",
+          "text": "Right-click an audio or MIDI clip → **Rename…**. The name shows on the clip; on a pattern's clip, it renames the pattern."
+        },
+        {
+          "icon": "E710",
+          "title": "Adding effects and sends",
+          "text": "The **+** that adds an effect or a send is at the end of its list, in the inspector and the mixer."
+        }
+      ]
+    },
+    {
       "version": "0.9.16",
       "items": [
         {

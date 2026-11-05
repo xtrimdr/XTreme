@@ -70,6 +70,7 @@ public static class EditSteps
             .GroupBy(kv => kv.Key).ToDictionary(g => g.Key, g => Name(g.First().Value));
         Tracks(a, b, changes, mediaName, busNames);
         Automation(a["tracks"] as JsonArray, b["tracks"] as JsonArray, changes);
+        Automation(a["folders"] as JsonArray, b["folders"] as JsonArray, changes);
         Folders(a["folders"] as JsonArray, b["folders"] as JsonArray, changes, busNames);
         Buses(a["buses"] as JsonArray, b["buses"] as JsonArray, changes, busNames);
         Markers(a["markers"] as JsonArray, b["markers"] as JsonArray, changes);
@@ -79,7 +80,7 @@ public static class EditSteps
         return Combine(changes);
     }
 
-    /// <summary>A track whose lanes changed, whichever way (<see cref="Automations"/>).</summary>
+    /// <summary>A track or a folder whose lanes changed, whichever way (<see cref="Automations"/>).</summary>
     static void Automation(JsonArray? before, JsonArray? after, List<Change> changes)
     {
         var old = ById(before);
@@ -202,7 +203,7 @@ public static class EditSteps
         var before = AllClips(beforeTracks, "clips");
         var after = AllClips(afterTracks, "clips");
         string TrackName(string id) => Name(afterTracks.GetValueOrDefault(id) ?? beforeTracks[id]);
-        string ClipName(JsonObject c) => mediaName(Str(c, "mediaId") ?? "") ?? T("act.aChannel", "un canal");
+        string ClipName(JsonObject c) => Str(c, "name") ?? mediaName(Str(c, "mediaId") ?? "") ?? T("act.aChannel", "un canal");
 
         // a split leaves the clip shorter and adds one of the same take right after it on that track
         var split = new HashSet<string>();
@@ -240,6 +241,7 @@ public static class EditSteps
             Change? change =
                 !Same(old, c, "syncMs") || !Same(old, c, "videoOffsetMs") ? new("edit", [P(T("step.sync", "Sincronía de ")), Q(name)], "clip-sync", name)
                 : was.Track != tid ? new("move", [P(T("step.clipToTrack", "Moviste ")), Q(name), P(T("step.to", " a ")), Q(TrackName(tid))], "clip-move", null)
+                : !Same(old, c, "name") ? new("edit", [P(T("step.rename", "Renombraste ")), Q(ClipName(old)), P(" → "), Q(name)], "clip-name", name)
                 : !Same(old, c, "pitch") ? new("edit", [P(T("step.pitch", "Tono de ")), Q(name), P($": {Num(c, "pitch"):+0;-0;0}")], "clip-pitch", null)
                 : !Same(old, c, "stretch") ? new("cut", [P(T("step.stretch", "Estiraste ")), Q(name)], "clip-trim", null)
                 : !Same(old, c, "trimStartSec") || !Same(old, c, "trimEndSec") ? new("cut", [P(T("step.trim", "Recortaste ")), Q(name)], "clip-trim", null)
@@ -268,7 +270,9 @@ public static class EditSteps
         {
             if (!midiBefore.TryGetValue(id, out var was) || JsonNode.DeepEquals(was.Clip, c)) continue;
             string track = TrackName(tid);
-            changes.Add(!Same(was.Clip, c, "loopBeats")
+            changes.Add(!Same(was.Clip, c, "name")
+                ? new("edit", [P(T("step.midiRename", "Renombraste un clip MIDI de ")), Q(track)], "midi-name", track)
+                : !Same(was.Clip, c, "loopBeats")
                 ? new("loop", [P(T("step.midiLoop", "Bucle de un clip MIDI de ")), Q(track)], "midi-length", track)
                 : !Same(was.Clip, c, "notes")
                 ? new("edit", [P(T("step.notes", "Editaste las notas de ")), Q(track)], "midi-notes", track)

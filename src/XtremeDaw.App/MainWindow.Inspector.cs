@@ -26,7 +26,9 @@ public partial class MainWindow
     readonly StackPanel emptySections = new() { Spacing = 8 };
     readonly StackPanel noSelection = new() { Margin = new Thickness(10, 32), Spacing = 4 };
     readonly TextBlock noSelectionHint = new() { FontSize = 12, Foreground = Palette.Faint, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap };
-    readonly Grid takeHeader = new() { ColumnDefinitions = new ColumnDefinitions("24,*,Auto") };
+    readonly Grid takeHeader = new() { ColumnDefinitions = new ColumnDefinitions("24,*,Auto,Auto") };
+    /// <summary>Repaints the color square next to the channel's name (#145).</summary>
+    readonly List<Action> takeColorRefresh = [];
     readonly TrackBadge takeBadge = new() { Width = 28, Height = 28, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBox takeName = new() { Classes = { "title" } };
     readonly TextBlock takeNamePencil = new() { Classes = { "icon" }, Text = "\uE70F", FontSize = 11, Foreground = Palette.Faint, Margin = new Thickness(0, 0, 8, 0),
@@ -46,6 +48,24 @@ public partial class MainWindow
     Task inspectorPrefsSaving = Task.CompletedTask;
     const double InspectorCollapsedWidth = 44;
     readonly DockPanel inspectorExpanded = new();
+    /// <summary>The rule under the inspector's header: in the color of what it shows (#145), so it reads at a glance
+    /// which track, folder or bus of the timeline is selected; the plain line when it has none.</summary>
+    readonly Border inspectorTopRule = new() { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1) };
+    /// <summary>The color of what the inspector shows (a track, the picked tracks if they share one, a folder, a bus),
+    /// null if it has none; how it paints the inspector is chosen in Apariencia (<see cref="TrackColorLooks"/>, #162).
+    /// Set at the start of <see cref="RefreshInspectorText"/>, before the sections' refreshes read it.</summary>
+    Color? inspectorTint;
+    /// <summary><see cref="TrackColorLooks.InspEdge"/>'s stripe along the inspector's left edge: a bar of its own with
+    /// rounded ends, set in from the edge and ending before the card's corners curve, like the Bench's cards (#162: a
+    /// border that followed the curve drew a crescent).</summary>
+    readonly Border inspectorEdge = new()
+    {
+        Width = TrackColorLooks.EdgeW, CornerRadius = new CornerRadius(TrackColorLooks.EdgeW / 2),
+        Margin = new Thickness(InspectorEdgeInsetX, InspectorEdgeInsetY, 0, InspectorEdgeInsetY),
+        HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false, IsHitTestVisible = false,
+    };
+    /// <summary>How far the bar stays from the card's left edge, and from its top and bottom: past the 10 px corners, with a gap.</summary>
+    const double InspectorEdgeInsetX = 5, InspectorEdgeInsetY = 9;
     readonly StackPanel inspectorCollapsed = new() { Spacing = 4, Margin = new Thickness(0, 8), HorizontalAlignment = HorizontalAlignment.Center };
     readonly SpectrumTap spectrumTap = new();
     readonly float[] spectrumBins = new float[SpectrumTap.Bins];
@@ -114,7 +134,8 @@ public partial class MainWindow
         Grid.SetColumn(panes, 2); header.Children.Add(panes);
         Grid.SetColumn(hide, 3); header.Children.Add(hide);
         Grid.SetColumn(floatButton, 4); header.Children.Add(floatButton);
-        var top = new Border { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = header };
+        var top = inspectorTopRule;
+        top.Child = header;
         DockPanel.SetDock(top, Dock.Top);
         inspectorExpanded.Children.Add(top);
         inspectorExpanded.Children.Add(InspectorBody((ScrollViewer)scroll));
@@ -127,7 +148,7 @@ public partial class MainWindow
         InitInspectorRail();
         inspectorWidth = SavedSidebarWidth("sidebarWidth");
         inspectorGrip = SidebarGrip(true, () => inspectorWidth, () => ShownWidth(ProjectBar), SetInspectorWidth, "sidebarWidth");
-        InspectorBar.Child = new Panel { Children = { inspectorExpanded, inspectorCollapsed, inspectorGrip } };
+        InspectorBar.Child = new Panel { Children = { inspectorExpanded, inspectorEdge, inspectorCollapsed, inspectorGrip } };
         SetInspectorCollapsed(AppConfig.Get("sidebarCollapsed") == "1", save: false);
     }
 
@@ -150,7 +171,20 @@ public partial class MainWindow
         if (inspectorHide != null) inspectorHide.IsVisible = !outside;
         inspectorExpanded.IsVisible = !folded;
         inspectorCollapsed.IsVisible = folded;
+        ShowInspectorEdge();
     }
+
+    /// <summary>Shows the stripe and, while it shows, moves the inspector's content right of it, so it has a gutter of its
+    /// own like the Bench's cards (#162: over the content, the sections' lines ran into it).</summary>
+    void ShowInspectorEdge()
+    {
+        bool on = inspectorTint != null && inspectorExpanded.IsVisible && TrackColorLooks.HasInsp(TrackColorLooks.InspEdge);
+        inspectorEdge.IsVisible = on;
+        inspectorExpanded.Margin = new Thickness(on ? InspectorEdgeGutter : 0, 0, 0, 0);
+    }
+
+    /// <summary>The room the stripe takes at the left: its inset, itself and the same gap after it.</summary>
+    const double InspectorEdgeGutter = 2 * InspectorEdgeInsetX + TrackColorLooks.EdgeW;
 
     /// <summary>The big EQ's draw loop fed from the selected track: the tap hangs on that track's chain only while the big
     /// view is open, and the spectrum counts as live (the web's readSpectrum ok) while the transport plays.</summary>
@@ -224,7 +258,15 @@ public partial class MainWindow
         header.SetTrailing(action, powerButton);
         outer.Children.Add(header); outer.Children.Add(content);
         (host ?? takeSections).Children.Add(border);
-        refreshes.Add(() => { bool enabled = on == null || on(); content.Opacity = enabled ? 1 : 0.4; FxIcon.SetColor(sectionIcon, enabled ? Palette.Accent : Palette.Faint); });
+        refreshes.Add(() =>
+        {
+            bool enabled = on == null || on();
+            content.Opacity = enabled ? 1 : 0.4;
+            var tint = inspectorTint;
+            FxIcon.SetColor(sectionIcon, !enabled ? Palette.Faint
+                : tint is { } ic && TrackColorLooks.HasInsp(TrackColorLooks.InspIcons) ? Palette.Alpha(ic, 1) : Palette.Accent);
+            header.SetTint(tint is { } sc && TrackColorLooks.HasInsp(TrackColorLooks.InspSections) ? Palette.Alpha(sc, TrackColorLooks.SectionTintA) : null);
+        });
         SetSectionCollapsed(title, IsCollapsed(title));
         return content;
     }
@@ -271,6 +313,9 @@ public partial class MainWindow
         }
         catch (System.Text.Json.JsonException) { }
         InitInspectorBar();
+        TrackColorLooks.Changed += RefreshInspectorText;
+        TrackColorLooks.Changed += SpaceForPointer;
+        SpaceForPointer();
         var header = takeHeader;
         takeBadge.Clicked += () => { if (sel != null) ShowTrackLook(sel, takeBadge); };
         header.Children.Add(takeBadge);
@@ -291,7 +336,9 @@ public partial class MainWindow
             foreach (string title in FoldableSections.ToList()) SetSectionCollapsed(title, hide);
             SaveCollapsedSections();
         };
-        Grid.SetColumn(collapseAll, 2); header.Children.Add(collapseAll);
+        var pickColor = ColorPickButton(() => sel?.Track.Color, hex => { if (sel != null) EditTrack(sel, x => x.Track.Color = hex, "color"); }, takeColorRefresh);
+        Grid.SetColumn(pickColor, 2); header.Children.Add(pickColor);
+        Grid.SetColumn(collapseAll, 3); header.Children.Add(collapseAll);
         takeFacts.Children.Add(FactBadge("\uE916", takeLength));
         takeFacts.Children.Add(FactBadge("\uE8D6", takeFormat));
         takeFacts.Children.Add(FactBadge("", takeChannels));
@@ -468,6 +515,22 @@ public partial class MainWindow
         inspectorTrack = t?.Track.Id;
         grShown = 0; RefreshInspectorText();
     }
+    /// <summary>The inspector in the color of what it shows, as chosen in Apariencia (<see cref="TrackColorLooks"/>): the
+    /// rule under its header, the name's box and the edge stripe; the sections read <see cref="inspectorTint"/> in their
+    /// refreshes. Without a color, the plain line.</summary>
+    void PaintInspectorColor(Color? color)
+    {
+        inspectorTint = color;
+        string head = TrackColorLooks.Head;
+        bool rule = color != null && head != TrackColorLooks.HeadNone;
+        inspectorTopRule.BorderBrush = rule ? Palette.Alpha(color!.Value, 1) : Palette.Line;
+        inspectorTopRule.BorderThickness = new Thickness(0, 0, 0, rule ? TrackColorLooks.HeadRuleW : 1);
+        inspectorTopBox.Background = color is { } c && head is TrackColorLooks.HeadRule or TrackColorLooks.HeadFill
+            ? Palette.Alpha(c, head == TrackColorLooks.HeadFill ? TrackColorLooks.HeadFillA : TrackColorLooks.HeadTintA) : Brushes.Transparent;
+        if (color is { } e) inspectorEdge.Background = Palette.Alpha(e, 1);
+        ShowInspectorEdge();
+    }
+
     void RefreshInspectorText()
     {
         syncing = true;
@@ -479,13 +542,20 @@ public partial class MainWindow
             RefreshGroupNote(group);
             var folder = sel == null ? SelectedFolder : null;
             var bus = sel == null && folder == null ? SelectedBus : null;
+            string? shownColor = group != null ? (group.Select(t => t.Track.Color).Distinct().Count() == 1 ? group[0].Track.Color : null)
+                : sel?.Track.Color ?? folder?.Color ?? bus?.Color;
+            PaintInspectorColor(TrackIcons.ColorOf(shownColor));
             noSelection.IsVisible = sel == null && folder == null && bus == null;
             folderPanel.IsVisible = folder != null;
             if (folder != null)
             {
                 foreach (var refresh in folderRefresh) refresh();
                 // a folder is a channel (#134): its fader, M S and effects in the strip, like a bus's
-                if (!folder.Separator) RebuildInspectorChain(SlotsOf(folder), folder);
+                if (!folder.Separator)
+                {
+                    RebuildInspectorChain(SlotsOf(folder), folder);
+                    RebuildInspectorSends(folder);
+                }
             }
             if (bus != null)
             {
@@ -495,6 +565,7 @@ public partial class MainWindow
             noSelectionHint.Text = tracks.Any(t => t.Track.HasContent) ? Loc.T("insp.none.hint") : Loc.T("insp.none.empty");
             takeHead.IsVisible = sel != null && group == null;
             takeBadge.Set(sel?.Track, sel == null ? 0 : tracks.IndexOf(sel) + 1, c != null, !AudioOnly);
+            foreach (var refresh in takeColorRefresh) refresh();
             takeInfo.Text = sel == null ? "" : c == null ? Loc.T("insp.trackEmpty") : c.Offline ? Loc.T("clip.offline") : "";
             takeInfo.IsVisible = takeInfo.Text != "";
             takeFacts.IsVisible = c is { Offline: false };
@@ -531,6 +602,7 @@ public partial class MainWindow
                 if (group == null && c != null) foreach (var refresh in clipRefresh) refresh();
                 foreach (var refresh in sendRefresh) refresh();
             }
+            if (stripFolderNow != null) foreach (var refresh in sendRefresh) refresh();
             if (channel && group == null || bus != null || stripFolderNow != null) foreach (var refresh in chainRefresh) refresh();
             if (stripWanted) foreach (var refresh in stripRefresh) refresh();
         }

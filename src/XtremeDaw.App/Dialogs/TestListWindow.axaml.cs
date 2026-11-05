@@ -96,10 +96,24 @@ public sealed partial class TestListWindow : Window
     /// waiting for it to leave showed the ticket as before, the text still in the box (#127).
     /// </summary>
     bool sent;
-    /// <summary>The request being edited in the composer, and the version it had; 0 = writing a new one.</summary>
-    int editing, editingRev;
+    /// <summary>
+    /// A mouse button is down. The press that takes the focus out of the reply box must not redraw the ticket before
+    /// it is released: the button under it would be replaced and the click lost (#147).
+    /// </summary>
+    bool pressing;
+    /// <summary>
+    /// The request whose text is edited in place, in its open ticket (asked by the user, #177: the pencil beside the
+    /// text, not the composer), and the version it had; 0 = none. The text is kept here, so a list that arrives
+    /// meanwhile draws the box again with what was written.
+    /// </summary>
+    int inline, inlineRev;
+    string inlineText = "";
+    TextBox? inlineBox;
+    bool focusInline;
     /// <summary>What the composer writes: a request, or a new skill for Claude.</summary>
     bool skillMode;
+    /// <summary>The composer was opened with Ctrl+Shift+N (asked by the user, #178): once added, the request goes to an agent in a console.</summary>
+    bool agentMode;
     /// <summary>The composer was opened from elsewhere (+ or Ctrl+N): it closes once the request is added.</summary>
     bool composerAsked;
     /// <summary>The open ticket is asking whether to take it off the list.</summary>
@@ -123,6 +137,11 @@ public sealed partial class TestListWindow : Window
 
     /// <summary>The repository the list belongs to, for "Revisar" and the skills (<see cref="AgentLauncher"/>); null hides them.</summary>
     readonly string? root;
+
+    /// <summary>Each session's lock traffic light (#167), read at every fill: what a ticket's "en curso" shows.</summary>
+    Dictionary<string, LockLight> lights = new();
+    /// <summary>Which agents' sessions are running (#173): a ticket whose session ended is not "Tomado". Read once per fill.</summary>
+    AgentSessions sessions = AgentSessions.None;
     string build = TestBuild.CopyName ?? "";
 
     /// <summary>
@@ -152,13 +171,16 @@ public sealed partial class TestListWindow : Window
         this.path = path;
         root = path == "" ? null : AgentLauncher.Root(path);
         InitializeComponent();
+        InitImages();
         if (TestBuild.Label is { } label)
         {
             BuildText.Text = label;
             BuildBadge.IsVisible = true;
         }
 
-        ToolTip.SetTip(NewRequestButton, $"{Loc.T("test.list.request.new")} (Ctrl+N)");
+        ToolTip.SetTip(NewRequestButton, root == null
+            ? $"{Loc.T("test.list.request.new")} (Ctrl+N)"
+            : $"{Loc.T("test.list.request.new")} (Ctrl+N)\n{Loc.T("test.list.request.agent")} (Ctrl+Shift+N)");
         NewRequestButton.Click += (_, _) => OpenComposer(skill: false);
         ToolTip.SetTip(OpenAppButton, Loc.T("test.list.openapp.tip"));
         OpenAppButton.IsVisible = root != null;
@@ -171,21 +193,30 @@ public sealed partial class TestListWindow : Window
         ClaudeButton.Click += (_, _) => ShowClaudeMenu();
 
         AddButton.Click += (_, _) => SubmitComposer();
+        ToolTip.SetTip(AddButton, root == null ? "Ctrl+Enter" : $"Ctrl+Enter\n{Loc.T("test.list.request.agent")} (Ctrl+Shift+Enter)");
         CancelEditButton.Click += (_, _) => CloseComposer();
         // Tunnel: with AcceptsReturn the TextBox takes Enter (Ctrl included) as a new line before a bubbling handler sees it.
         RequestBox.AddHandler(KeyDownEvent, (_, e) =>
         {
             if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
-                SubmitComposer();
+                SubmitComposer(agent: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 e.Handled = true;
             }
-            else if (e.Key == Key.Escape && (editing != 0 || skillMode || composerAsked))
+            else if (e.Key == Key.Escape && (skillMode || composerAsked))
             {
                 CloseComposer();
                 e.Handled = true;
             }
         }, RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent, (_, _) => pressing = true, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, (_, _) =>
+        {
+            pressing = false;
+            // posted: the click runs first (it may draw on its own, which leaves nothing waiting)
+            Dispatcher.UIThread.Post(FillWaiting);
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        PointerCaptureLost += (_, _) => pressing = false;
         // Ctrl+Enter confirms from anywhere in the bench, not only from inside a box: the open ticket's reply, else the composer.
         // Tunnel, so a focused button or chip does not take it as its own Enter; the boxes keep their own handlers.
         AddHandler(KeyDownEvent, (_, e) =>
@@ -193,12 +224,12 @@ public sealed partial class TestListWindow : Window
             if (e.Key != Key.Enter || !e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.Source is TextBox) return;
             if (replyBox is { IsEffectivelyVisible: true } box && replyItem != null)
             {
-                Send(replyItem, box);
+                Send(replyItem, box, agent: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 e.Handled = true;
             }
             else if (Composer.IsEffectivelyVisible)
             {
-                SubmitComposer();
+                SubmitComposer(agent: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 e.Handled = true;
             }
         }, RoutingStrategies.Tunnel);
@@ -207,6 +238,11 @@ public sealed partial class TestListWindow : Window
             if (e.Key == Key.N && e.KeyModifiers == KeyModifiers.Control)
             {
                 OpenComposer(skill: false);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.N && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && root != null)
+            {
+                OpenComposer(skill: false, agent: true);
                 e.Handled = true;
             }
             else if (e.Key == Key.F && e.KeyModifiers == KeyModifiers.Control)
@@ -288,6 +324,51 @@ public sealed partial class TestListWindow : Window
             }
         };
         UpdateComposer();
+        InitZoom();
+    }
+
+    /// <summary>
+    /// The bench's own text size (asked by the user, #143), remembered in <c>config.json</c> apart from XTreme's
+    /// <c>uiScale</c>: a scale over the list, the search and the composer, on top of the app's.
+    /// </summary>
+    const string ZoomKey = "benchZoom";
+    const double ZoomMin = 0.8, ZoomMax = 1.6;
+    /// <summary>The slider writes the setting once it rests, not at every step of a drag.</summary>
+    static readonly TimeSpan ZoomSaveDelay = TimeSpan.FromMilliseconds(400);
+
+    void InitZoom()
+    {
+        double zoom = 1;
+        try
+        {
+            if (double.TryParse(AppConfig.Get(ZoomKey), NumberStyles.Float, CultureInfo.InvariantCulture, out double z) && double.IsFinite(z))
+                zoom = Math.Clamp(z, ZoomMin, ZoomMax);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        var save = new DispatcherTimer { Interval = ZoomSaveDelay };
+        save.Tick += (_, _) =>
+        {
+            save.Stop();
+            try { AppConfig.Set(ZoomKey, ZoomSlider.Value.ToString(CultureInfo.InvariantCulture)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* View preference only. */ }
+        };
+        void Apply(double z)
+        {
+            Zoomed.LayoutTransform = Math.Abs(z - 1) < 0.001 ? null : new ScaleTransform(z, z);
+            ZoomText.Text = $"{Math.Round(z * 100).ToString(CultureInfo.CurrentCulture)}%";
+        }
+        ZoomSlider.Value = zoom;
+        Apply(zoom);
+        ZoomSlider.ValueChanged += (_, e) =>
+        {
+            Apply(e.NewValue);
+            save.Stop();
+            save.Start();
+        };
+        // a double click goes back to 100 %
+        ZoomSlider.DoubleTapped += (_, _) => ZoomSlider.Value = 1;
+        ToolTip.SetTip(ZoomText, Loc.T("test.list.zoom.tip"));
+        ToolTip.SetTip(ZoomPanel.Children[0], Loc.T("test.list.zoom.tip"));
     }
 
     /// <summary>
@@ -339,6 +420,38 @@ public sealed partial class TestListWindow : Window
         return true;
     }
 
+    /// <summary>
+    /// The bench's language and theme button (asked by the user, #151), first in the header. <paramref name="language"/>
+    /// gets the code picked: the bench builds the window again in it (<see cref="TakeOver"/>).
+    /// </summary>
+    public void AddLookPicker(Action<string> language) => HeaderButtons.Children.Insert(0, new Controls.ThemePicker(language));
+
+    /// <summary>
+    /// What <paramref name="old"/> had on the screen that is not on disk yet: the search and an unsent request. Its
+    /// place is saved here so <see cref="RestorePlace"/> reads it; a reply being written is held by its Closing.
+    /// </summary>
+    public void TakeOver(TestListWindow old)
+    {
+        old.SavePlace();
+        if (!RestorePlace())
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Position = old.Position;
+            Width = old.Bounds.Width;
+            Height = old.Bounds.Height;
+        }
+        SearchBox.Text = old.SearchBox.Text;
+        if (old.composerAsked)
+        {
+            // not OpenComposer: this window is not shown yet, nothing to activate
+            skillMode = old.skillMode;
+            composerAsked = true;
+            UpdateComposer();
+            RequestBox.Text = old.RequestBox.Text;
+            RequestBox.CaretIndex = RequestBox.Text?.Length ?? 0;
+        }
+    }
+
     void SavePlace()
     {
         if (!placeKnown) return;
@@ -357,6 +470,7 @@ public sealed partial class TestListWindow : Window
         HoldReply(0);
         tab = Math.Max(0, SectionOf(item));
         open = id;
+        inline = 0;
         confirmRemove = false;
         auditOpen = false;
         HistoryButton.IsChecked = false;
@@ -370,6 +484,7 @@ public sealed partial class TestListWindow : Window
     {
         HoldReply(0);
         open = 0;
+        inline = 0;
         UpdateComposer();
         Refill();
     }
@@ -384,6 +499,12 @@ public sealed partial class TestListWindow : Window
         Save(() => TestList.Hold(path, id, draft, text), delayMs);
     }
 
+    /// <summary>Draws the list that waited for the reply box to lose the focus, once the click that took it is over.</summary>
+    void FillWaiting()
+    {
+        if (waiting is { } d && !pressing && replyBox?.IsFocused != true && inlineBox?.IsFocused != true) Fill(d);
+    }
+
     void Refill()
     {
         if (current != null) Fill(current);
@@ -394,16 +515,23 @@ public sealed partial class TestListWindow : Window
     {
         current = data;
         Announce(data);
-        if (!sent && IsActive && replyBox?.IsFocused == true)
+        if (!sent && IsActive && (replyBox?.IsFocused == true || inlineBox?.IsFocused == true))
         {
             waiting = data;
             return;
         }
+        // the box keeps its focus across the redraw (a list that came while writing)
+        focusInline |= inlineBox?.IsFocused == true;
         sent = false;
         waiting = null;
         replyBox = null;
         replyItem = null;
+        inlineBox = null;
+        lights = LockLight.Read(root, data.Items);
+        sessions = AgentSessions.Read(root);
         Rows.Children.Clear();
+        TicketBar.Child = null;
+        TicketBar.IsVisible = false;
         if (HistoryButton.IsChecked == true) FillHistory();
         else if (open != 0 && data.Items.Find(i => i.Id == open) is { } ticket) FillTicket(ticket);
         else
@@ -421,14 +549,21 @@ public sealed partial class TestListWindow : Window
             replyBox.Focus();
             replyBox.CaretIndex = replyBox.Text?.Length ?? 0;
         }
+        else if (focusInline && inlineBox != null)
+        {
+            Activate();
+            inlineBox.Focus();
+            inlineBox.CaretIndex = inlineBox.Text?.Length ?? 0;
+        }
         focusReply = false;
+        focusInline = false;
     }
 
     void FillTab(TestListData data)
     {
         // everything with work reviews itself whole: the requests and everything to fix (the skill with no arguments)
-        int count = data.Items.Count(i => TabReview(SectionOf(i)) != null);
-        if (count > 0 && root != null) Rows.Children.Add(ReviewAllRow("", count, Palette.AccentColor));
+        var work = data.Items.Where(i => TabReview(SectionOf(i)) != null).ToList();
+        if (work.Count > 0 && root != null && ReviewAllRow(work, Palette.AccentColor) is { } all) Rows.Children.Add(all);
         foreach (var (topic, sections) in Tree(data))
         {
             string node = topic ?? NoTopic;
@@ -572,7 +707,7 @@ public sealed partial class TestListWindow : Window
         if (TabReview(section) == null || root == null) return b;
         var grid = new Grid { ColumnDefinitions = new("*,Auto") };
         grid.Children.Add(b);
-        var review = ReviewLink(string.Join(" ", items.Select(i => i.Id.ToString(CultureInfo.InvariantCulture))), c);
+        var review = ReviewLink(items, c);
         Grid.SetColumn(review, 1);
         grid.Children.Add(review);
         return grid;
@@ -595,8 +730,16 @@ public sealed partial class TestListWindow : Window
         row.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = items.Count.ToString(CultureInfo.CurrentCulture), VerticalAlignment = VerticalAlignment.Center });
         if (items.Any(i => i.Unseen)) row.Children.Add(Badge(Loc.T("test.list.new"), false, Palette.AccentColor, strong: true));
         // how many an agent is working on, with the same spinner as each ticket (asked by the user, #123)
-        int busy = items.Count(i => i.Taken != null && TestList.Open(i));
-        if (busy > 0) row.Children.Add(TakenBadge(busy));
+        int busy = items.Count(i => TestList.Held(i, sessions));
+        if (busy > 0)
+        {
+            var worst = LockLight.Free;
+            foreach (var i in items)
+                if (TestList.Held(i, sessions) && LockLight.For(lights, i.TakenBy) is { } l && l.State > worst.State) worst = l;
+            row.Children.Add(TakenBadge(worst, busy));
+        }
+        // an agent starting on some of them, as each ticket says it (#172)
+        else if (items.Any(Starting)) row.Children.Add(StartingBadge());
         var b = new Button
         {
             Classes = { "rowmain" }, Content = row, HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -621,7 +764,8 @@ public sealed partial class TestListWindow : Window
         top.Children.Add(Badge($"#{item.Id}", true, Palette.AccentColor));
         if (item.Unseen) top.Children.Add(Badge(Loc.T("test.list.new"), false, Palette.AccentColor, strong: true));
         if (item.Kind is { } k) top.Children.Add(Badge(Loc.T("test.list.kind." + k), false, KindColor(k)));
-        if (item.Taken != null && TestList.Open(item)) top.Children.Add(TakenBadge());
+        if (Starting(item)) top.Children.Add(StartingBadge());
+        else if (TestList.Held(item, sessions)) top.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy)));
         left.Children.Add(top);
         left.Children.Add(new TextBlock { Text = item.Title ?? item.Text, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 2, TextWrapping = TextWrapping.Wrap, LineHeight = 18 });
         if (LastSaid(item) is { } m)
@@ -629,6 +773,13 @@ public sealed partial class TestListWindow : Window
             {
                 Classes = { "dim" }, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis,
                 Text = $"{RoleName(m.Who)} · {MessageLabel(m)}{(m.Text is { } t ? ": " + t : "")}",
+            });
+        // nothing said after it opened: who opened it (asked by the user, #157)
+        else if (Creator(item) is { } c)
+            left.Children.Add(new TextBlock
+            {
+                Classes = { "dim" }, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis,
+                Text = Loc.T("test.list.creator", WhoName(c.Who)),
             });
         grid.Children.Add(left);
         var right = new TextBlock
@@ -645,8 +796,21 @@ public sealed partial class TestListWindow : Window
         };
         AutomationProperties.SetName(b, $"#{item.Id} {item.Title ?? item.Text}");
         b.Click += (_, _) => OpenTicket(item.Id);
-        return Card(b, item.State == TestItem.Request ? item.Kind is { } kc ? KindColor(kc) : null : StateColor(item.State),
-            item.Unseen || (item.Taken != null && TestList.Open(item)));
+        Control body = b;
+        // Probar, or Ver consola while an agent is on it (#172), beside the line, not inside it: the line's own click
+        // opens the ticket
+        if ((SessionButton(item) ?? TryButton(item)) is { } side)
+        {
+            var withTry = new Grid { ColumnDefinitions = new("*,Auto") };
+            withTry.Children.Add(b);
+            side.Margin = new(8, 0, 0, 0);
+            side.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(side, 1);
+            withTry.Children.Add(side);
+            body = withTry;
+        }
+        return Card(body, item.State == TestItem.Request ? item.Kind is { } kc ? KindColor(kc) : null : StateColor(item.State),
+            item.Unseen || Busy(item));
     }
 
     /// <summary>
@@ -659,55 +823,87 @@ public sealed partial class TestListWindow : Window
     static TestMessage? LastSaid(TestItem i) => i.Thread.Count > 1 ? i.Thread[^1] : null;
 
     /// <summary>
-    /// The open ticket: its subject and state, the conversation in order, and under it the verdicts and the reply. Revisar
-    /// and "⋯" (edit a request, its history, take it off) on top.
+    /// The entry that opened the ticket, which says who created it (asked by the user, #157): the person or an agent's
+    /// session. Null on tickets from before the thread kept it.
+    /// </summary>
+    static TestMessage? Creator(TestItem i) => i.Thread.Count > 0 && i.Thread[0].Kind == TestMessage.Open ? i.Thread[0] : null;
+
+    /// <summary>
+    /// The open ticket: its subject and state, the conversation in order, and under it the verdicts and the reply, with
+    /// Probar, the agent's console and Revisar beside Comentar (#166). "⋯" (its history, take it off) on top; a request's pencil beside its text (#177).
     /// </summary>
     void FillTicket(TestItem item)
     {
         var body = new StackPanel { Spacing = 10 };
 
         var bar = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
-        var back = new Button { Classes = { "link" }, Padding = new(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        // a lit chip, larger than the rest of the bar (asked by the user, #182): the way out of a ticket is easy to hit
+        var back = new Button
+        {
+            Classes = { "chip", "on" }, Padding = new(14, 7, 16, 7), MinHeight = 34,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         back.Content = new StackPanel
         {
-            Orientation = Orientation.Horizontal, Spacing = 6,
+            Orientation = Orientation.Horizontal, Spacing = 8,
             Children =
             {
-                new TextBlock { Classes = { "icon" }, Text = BackGlyph, FontSize = 11, VerticalAlignment = VerticalAlignment.Center },
-                new TextBlock { Text = Loc.T(TabList[tab].Key), VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock { Classes = { "icon" }, Text = BackGlyph, FontSize = 14, VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock
+                {
+                    Text = Loc.T(TabList[tab].Key), FontSize = 12.5, FontWeight = FontWeight.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
             },
         };
         ToolTip.SetTip(back, Loc.T("test.list.ticket.back") + " (Esc)");
         back.Click += (_, _) => CloseTicket();
         bar.Children.Add(back);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        if (ReviewButton(item) is { } review) actions.Children.Add(review);
-        actions.Children.Add(MoreButton(item));
-        Grid.SetColumn(actions, 2);
-        bar.Children.Add(actions);
-        body.Children.Add(bar);
+        var more = MoreButton(item);
+        Grid.SetColumn(more, 2);
+        bar.Children.Add(more);
+        // fixed over the scroll (asked by the user, #175): back to the list without scrolling up a long ticket
+        TicketBar.Child = bar;
+        TicketBar.IsVisible = true;
 
         var info = new WrapPanel { ItemSpacing = 8, LineSpacing = 4 };
         info.Children.Add(Badge($"#{item.Id}", true, Palette.AccentColor));
         info.Children.Add(Badge(StateName(item.State), false, StateColor(item.State) ?? TabColor(tab)));
         if (item.Kind is { } k) info.Children.Add(Badge(Loc.T("test.list.kind." + k), false, KindColor(k)));
-        if (item.Taken != null && TestList.Open(item)) info.Children.Add(TakenBadge());
+        if (Starting(item)) info.Children.Add(StartingBadge());
+        else if (TestList.Held(item, sessions)) info.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy)));
         info.Children.Add(TopicBadge(item.Topic));
         if (item.Tries > 0) info.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = Loc.T("test.list.try", item.Tries), VerticalAlignment = VerticalAlignment.Center });
+        if (Creator(item) is { } creator)
+            info.Children.Add(new TextBlock
+            {
+                Classes = { "dim" }, FontSize = 11, VerticalAlignment = VerticalAlignment.Center,
+                Text = $"{Loc.T("test.list.creator", WhoName(creator.Who))} · {When(creator.At)}",
+            });
         body.Children.Add(info);
-        body.Children.Add(new TextBlock { Text = item.Title ?? item.Text, TextWrapping = TextWrapping.Wrap, LineHeight = 19, FontWeight = FontWeight.SemiBold });
+        // a request's text is edited where it is read (#177): the subject when it has no title, else its opening message
+        bool editable = item.State == TestItem.Request;
+        if (inline != 0 && (inline != item.Id || !editable)) inline = 0;
+        var subject = new TextBlock { Text = item.Title ?? item.Text, TextWrapping = TextWrapping.Wrap, LineHeight = 19, FontWeight = FontWeight.SemiBold };
+        body.Children.Add(editable && item.Title == null ? EditableText(item, subject) : subject);
 
         // the timeline; without a title the opening message is the subject, already shown
-        var said = item.Thread.Skip(item.Title == null && item.Thread.Count > 0 && item.Thread[0].Kind == TestMessage.Open ? 1 : 0).ToList();
+        bool skipOpen = item.Title == null && item.Thread.Count > 0 && item.Thread[0].Kind == TestMessage.Open;
+        var said = item.Thread.Skip(skipOpen ? 1 : 0).ToList();
         var thread = new StackPanel();
-        for (int n = 0; n < said.Count; n++) thread.Children.Add(Message(said[n], n == said.Count - 1));
+        for (int n = 0; n < said.Count; n++)
+            thread.Children.Add(Message(said[n], n == said.Count - 1, editable && !skipOpen && n == 0 && said[n].Kind == TestMessage.Open ? item : null));
         if (thread.Children.Count > 0) body.Children.Add(thread);
 
         if (confirmRemove) body.Children.Add(RemoveConfirm(item));
         if (auditOpen) body.Children.Add(Audit(item.Id));
 
-        if (TestList.Missing(item, build))
-            body.Children.Add(new TextBlock { Text = Loc.T("test.list.missing"), Foreground = Palette.Mute, FontSize = 11, TextWrapping = TextWrapping.Wrap });
+        if (NotHere(item))
+        {
+            string key = item.Topic == TestItem.TopicBench ? "test.list.missing.bench" : "test.list.missing";
+            body.Children.Add(new TextBlock { Text = Loc.T(key), Foreground = Palette.Mute, FontSize = 11, TextWrapping = TextWrapping.Wrap });
+            if (AgentButtons(item) is { } agent) body.Children.Add(agent);
+        }
         else body.Children.Add(Answer(item));
 
         Rows.Children.Add(Card(body, StateColor(item.Draft ?? item.State), item.Unseen));
@@ -718,7 +914,7 @@ public sealed partial class TestListWindow : Window
     /// who said it (Usuario or Agente, the session in the tooltip), what it is (a fix, a verdict in its color, a comment),
     /// when, and its text. The person's dot in the text color, an agent's in the accent, so the conversation reads at a glance.
     /// </summary>
-    static Control Message(TestMessage m, bool last)
+    Control Message(TestMessage m, bool last, TestItem? editable = null)
     {
         bool mine = m.Who == TestList.User;
         var c = m.Kind == TestMessage.Verdict && m.State is { } s ? StateColor(s) ?? Palette.FgColor : mine ? Palette.FgColor : Palette.AccentColor;
@@ -744,10 +940,104 @@ public sealed partial class TestListWindow : Window
         head.Children.Add(Badge(MessageLabel(m), false, c));
         head.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = $"{When(m.At)} · {Loc.T("test.list.try", Math.Max(1, m.Try))}", VerticalAlignment = VerticalAlignment.Center });
         box.Children.Add(head);
-        if (m.Text is { } t) box.Children.Add(new TextBlock { Text = t, TextWrapping = TextWrapping.Wrap, LineHeight = 18 });
+        if (m.Text is { } t)
+        {
+            var text = new TextBlock { Text = t, TextWrapping = TextWrapping.Wrap, LineHeight = 18 };
+            box.Children.Add(editable != null ? EditableText(editable, text) : text);
+        }
+        if (m.Images is { Count: > 0 } images) box.Children.Add(MessageImages(images));
         Grid.SetColumn(box, 1);
         grid.Children.Add(box);
         return grid;
+    }
+
+    /// <summary>
+    /// A request's text with its pencil beside it, or, while it is edited, the box in its place with Cancelar and
+    /// Guardar (asked by the user, #177: in the ticket itself, not in the composer). Ctrl+Enter saves, Esc cancels.
+    /// </summary>
+    Control EditableText(TestItem item, TextBlock shown)
+    {
+        if (inline != item.Id)
+        {
+            var row = new Grid { ColumnDefinitions = new("*,Auto") };
+            row.Children.Add(shown);
+            var pencil = new Button
+            {
+                Classes = { "act" }, VerticalAlignment = VerticalAlignment.Top, Margin = new(6, -4, 0, 0),
+                Content = new TextBlock { Classes = { "icon" }, Text = EditGlyph, FontSize = 12 },
+            };
+            ToolTip.SetTip(pencil, Loc.T("test.list.request.edit"));
+            AutomationProperties.SetName(pencil, Loc.T("test.list.request.edit"));
+            pencil.Click += (_, _) => BeginInline(item);
+            Grid.SetColumn(pencil, 1);
+            row.Children.Add(pencil);
+            return row;
+        }
+
+        var box = new TextBox
+        {
+            Classes = { "field", "note" }, Text = inlineText, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true,
+            MinHeight = ReplyMinHeight, Watermark = Loc.T("test.list.request.hint"),
+        };
+        box.TextChanged += (_, _) => inlineText = box.Text ?? "";
+        box.LostFocus += (_, _) =>
+        {
+            if (waiting is { } d && !pressing) Dispatcher.UIThread.Post(() => Fill(d));
+        };
+        box.AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                SaveInline();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                EndInline();
+                e.Handled = true;
+            }
+        }, RoutingStrategies.Tunnel);
+        inlineBox = box;
+
+        var cancel = new Button { Classes = { "btn", "sm" }, Content = Loc.T("common.cancel") };
+        cancel.Click += (_, _) => EndInline();
+        var save = new Button { Classes = { "btn", "sm", "primary" }, Content = Loc.T("test.list.save") };
+        ToolTip.SetTip(save, "Ctrl+Enter");
+        save.Click += (_, _) => SaveInline();
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Children = { cancel, save } };
+        return new StackPanel { Spacing = 8, Children = { box, buttons } };
+    }
+
+    void BeginInline(TestItem item)
+    {
+        inline = item.Id;
+        inlineRev = item.Rev;
+        inlineText = item.Text;
+        focusInline = true;
+        sent = true;
+        Refill();
+    }
+
+    void EndInline()
+    {
+        inline = 0;
+        sent = true;
+        Refill();
+    }
+
+    /// <summary>Saves the text written in place; the ticket shows it as text again at once, and the list catches up.</summary>
+    void SaveInline()
+    {
+        string text = inlineText.Trim();
+        int id = inline, rev = inlineRev;
+        if (id == 0) return;
+        if (text != "" && current?.Items.Find(i => i.Id == id) is { } item && text != item.Text)
+        {
+            item.Text = text;
+            if (item.Thread.Count > 0 && item.Thread[0].Kind == TestMessage.Open) item.Thread[0].Text = text;
+            Save(() => TestList.EditRequest(path, id, text, null, rev, null));
+        }
+        EndInline();
     }
 
     /// <summary>Width of the timeline's column and the size of its dots.</summary>
@@ -781,13 +1071,14 @@ public sealed partial class TestListWindow : Window
         reply.LostFocus += (_, _) =>
         {
             if (ReplyChanged(reply, item)) HoldReply(ReplySaveDelayMs);
-            else if (waiting is { } d) Dispatcher.UIThread.Post(() => Fill(d));
+            // a click took the focus: the waiting list is drawn once it is released (FillWaiting)
+            else if (waiting is { } d && !pressing) Dispatcher.UIThread.Post(() => Fill(d));
         };
         reply.AddHandler(KeyDownEvent, (_, e) =>
         {
             if (e.Key == Key.Enter && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
-                Send(item, reply);
+                Send(item, reply, agent: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 e.Handled = true;
             }
         }, RoutingStrategies.Tunnel);
@@ -804,6 +1095,7 @@ public sealed partial class TestListWindow : Window
             box.Children.Add(verdicts);
         }
         box.Children.Add(reply);
+        box.Children.Add(ReplyStrip(item));
 
         var send = new Button { Classes = { "btn", "sm", "primary" }, HorizontalAlignment = HorizontalAlignment.Right };
         send.Content = new StackPanel
@@ -815,32 +1107,64 @@ public sealed partial class TestListWindow : Window
                 new TextBlock { Text = item.Draft is { } d ? Loc.T("test.list.save.as", StateName(d)) : Loc.T("test.list.comment"), VerticalAlignment = VerticalAlignment.Center },
             },
         };
-        ToolTip.SetTip(send, "Ctrl+Enter");
+        ToolTip.SetTip(send, root == null ? "Ctrl+Enter" : $"Ctrl+Enter\n{Loc.T("test.list.reply.agent")} (Ctrl+Shift+Enter)");
         send.Click += (_, _) => Send(item, reply);
-        box.Children.Add(send);
+        // Probar, the agent's console and Revisar beside Comentar (asked by the user, #166), not above the ticket
+        var foot = new Grid { ColumnDefinitions = new("*,Auto") };
+        if (AgentButtons(item) is { } agent) foot.Children.Add(agent);
+        Grid.SetColumn(send, 1);
+        send.VerticalAlignment = VerticalAlignment.Top;
+        foot.Children.Add(send);
+        box.Children.Add(foot);
         return new Border { BorderBrush = Palette.Line, BorderThickness = new(0, 1, 0, 0), Padding = new(0, 10, 0, 0), Child = box };
     }
 
-    /// <summary>Guardar: the verdict picked with the reply as its note (and back to the list), or the reply as a comment.</summary>
-    void Send(TestItem item, TextBox reply)
+    /// <summary>A ticket's Probar, its agent's console and Revisar, in a row that wraps; null when it has none.</summary>
+    Control? AgentButtons(TestItem item)
+    {
+        var row = new WrapPanel { ItemSpacing = 4, LineSpacing = 4, Margin = new(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        if (TryButton(item) is { } tryIt) row.Children.Add(tryIt);
+        // with Ver consola there, "En curso" would say it twice (#172)
+        if (SessionButton(item) is { } session) row.Children.Add(session);
+        else if (ReviewButton(item) is { } review) row.Children.Add(review);
+        return row.Children.Count > 0 ? row : null;
+    }
+
+    /// <summary>
+    /// Guardar: the verdict picked with the reply as its note (and back to the list), or the reply as a comment. With
+    /// <paramref name="agent"/> (Ctrl+Shift+Enter, asked by the user, #178) an agent starts on the ticket in a console once
+    /// it is written, the same as its Consola; not after Anda, which leaves nothing to do.
+    /// </summary>
+    void Send(TestItem item, TextBox reply, bool agent = false)
     {
         string? text = reply.Text;
         int id = item.Id, rev = item.Rev;
+        agent &= root != null;
         if (item.Draft is { } state)
         {
+            var marked = TakeReplyImages(id);
             (Owner as Window)?.Activate();
             open = 0;
             sent = true;
-            Save(() => TestList.Mark(path, id, state, text, rev));
+            Save(() => TestList.Mark(path, id, state, text, rev, marked),
+                after: agent && state != TestItem.Works ? () => RunIn(TicketPrompt(item), desktop: false, [item]) : null);
             return;
         }
-        if (string.IsNullOrWhiteSpace(text)) return;
+        bool empty = string.IsNullOrWhiteSpace(text) && (replyImagesFor != id || replyImages.Count == 0);
+        if (empty)
+        {
+            // nothing to say: Ctrl+Shift+Enter still starts the agent on the ticket as it is
+            if (agent) ReviewAndClose(TicketPrompt(item), desktop: false, item);
+            return;
+        }
+        var images = TakeReplyImages(id);
         item.Reply = null;
         reply.Text = "";
         // the ticket is drawn again with the comment in it, and the keyboard stays in the (empty) box
         sent = true;
         focusReply = true;
-        Save(() => TestList.Comment(path, id, text, rev));
+        Save(() => TestList.Comment(path, id, text, rev, images),
+            after: agent ? () => ReviewAndClose(TicketPrompt(item), desktop: false, item) : null);
     }
 
     /// <summary>The latest changes of the whole list, newest first: also what left it, which has no ticket any more.</summary>
@@ -946,8 +1270,8 @@ public sealed partial class TestListWindow : Window
         bool first = announced == null;
         var arrived = first ? fresh : fresh.Where(i => !announced!.Contains(i.Id)).ToList();
         announced = [.. fresh.Select(i => i.Id)];
-        // the one being read is no news
-        arrived.RemoveAll(i => i.Id == open && IsActive);
+        // the ticket on the screen is no news (asked by the user, #143): it shows there, focused or not
+        arrived.RemoveAll(i => i.Id == open && HistoryButton.IsChecked != true && IsVisible && WindowState != WindowState.Minimized);
         if (arrived.Count == 0)
         {
             // what was seen meanwhile is no news any more
@@ -1020,11 +1344,12 @@ public sealed partial class TestListWindow : Window
     /// <summary>
     /// The composer: always there in the list of Pedidos; from anywhere else, + or Ctrl+N opens it for one request and it
     /// closes once added. Claude's "Nueva skill…" uses it too. No kind (asked by the user, #129): the agent that takes a request gives it one.
+    /// Ctrl+Shift+N opens it for a request that an agent starts in a console as soon as it is added (#178).
     /// </summary>
-    void OpenComposer(bool skill)
+    void OpenComposer(bool skill, bool agent = false)
     {
-        if (editing != 0) EndEdit();
         skillMode = skill;
+        agentMode = agent && !skill;
         composerAsked = true;
         RequestBox.Text = "";
         UpdateComposer();
@@ -1034,25 +1359,29 @@ public sealed partial class TestListWindow : Window
 
     void CloseComposer()
     {
-        EndEdit();
+        DropRequestImages();
+        RequestBox.Text = "";
         skillMode = false;
+        agentMode = false;
         composerAsked = false;
         UpdateComposer();
     }
 
     void UpdateComposer()
     {
-        Composer.IsVisible = composerAsked || editing != 0;
-        CancelEditButton.IsVisible = editing != 0 || composerAsked;
-        if (editing != 0) return;
-        ComposerTitle.Text = Loc.T(skillMode ? "test.list.claude.newskill.title" : "test.list.request.new");
-        ComposerIcon.Text = skillMode ? ReviewGlyph : AddGlyph;
-        RequestBox.Watermark = Loc.T(skillMode ? "test.list.claude.newskill" : "test.list.request.hint");
-        AddButton.Content = Loc.T(skillMode ? "test.list.claude.newskill.create" : "test.list.request.add");
+        Composer.IsVisible = composerAsked;
+        CancelEditButton.IsVisible = composerAsked;
+        ComposerTitle.Text = Loc.T(skillMode ? "test.list.claude.newskill.title" : agentMode ? "test.list.request.agent" : "test.list.request.new");
+        ComposerIcon.Text = skillMode ? ReviewGlyph : agentMode ? ConsoleGlyph : AddGlyph;
+        RequestBox.Watermark = Loc.T(skillMode ? "test.list.claude.newskill" : agentMode ? "test.list.request.agent.hint" : "test.list.request.hint");
+        AddButton.Content = Loc.T(skillMode ? "test.list.claude.newskill.create" : agentMode ? "test.list.request.agent.add" : "test.list.request.add");
     }
 
-    /// <summary>Adds the request in the box, saves the one being edited, or asks Claude for the skill. The box empties at once: the list catches up.</summary>
-    void SubmitComposer()
+    /// <summary>
+    /// Adds the request in the box, or asks Claude for the skill. The box empties at once: the list catches up.
+    /// <paramref name="agent"/> (Ctrl+Shift+Enter, asked by the user, #178) starts an agent on it, as Ctrl+Shift+N does.
+    /// </summary>
+    void SubmitComposer(bool agent = false)
     {
         string text = (RequestBox.Text ?? "").Trim();
         if (text == "") return;
@@ -1064,38 +1393,22 @@ public sealed partial class TestListWindow : Window
         }
         // no kind nor topic from here (asked by the user): the agent that takes the request gives it both
         string copy = build;
-        int id = editing, rev = editingRev;
-        if (id != 0) Save(() => TestList.EditRequest(path, id, text, null, rev, null));
-        else Save(() => TestList.AddRequest(path, text, null, copy, null));
-        if (composerAsked || id != 0) CloseComposer();
+        var images = TakeRequestImages();
+        if ((agentMode || agent) && root != null)
+        {
+            // the agent gets the new number once it is written (#178): the same command as the ticket's Consola
+            int added = 0;
+            Save(() => added = TestList.AddRequest(path, text, null, copy, null, images),
+                after: () => { if (added > 0) RunIn(ReviewPrompt(added.ToString(CultureInfo.InvariantCulture)), desktop: false); });
+        }
+        else Save(() => TestList.AddRequest(path, text, null, copy, null, images));
+        if (composerAsked) CloseComposer();
         else
         {
-            EndEdit();
+            RequestBox.Text = "";
             UpdateComposer();
             RequestBox.Focus();
         }
-    }
-
-    void BeginEdit(TestItem item)
-    {
-        skillMode = false;
-        editing = item.Id;
-        editingRev = item.Rev;
-        RequestBox.Text = item.Text;
-        UpdateComposer();
-        AddButton.Content = Loc.T("test.list.save");
-        ComposerTitle.Text = Loc.T("test.list.request.editing", item.Id);
-        ComposerIcon.Text = EditGlyph;
-        RequestBox.Watermark = Loc.T("test.list.request.hint");
-        Activate();
-        RequestBox.Focus();
-        RequestBox.CaretIndex = item.Text.Length;
-    }
-
-    void EndEdit()
-    {
-        editing = 0;
-        RequestBox.Text = "";
     }
 
     /// <summary>The second click before a ticket leaves the list (asked by the user: a stray click lost items).</summary>
@@ -1117,7 +1430,7 @@ public sealed partial class TestListWindow : Window
         {
             confirmRemove = false;
             open = 0;
-            if (editing == id) CloseComposer();
+            inline = 0;
             Save(() => TestList.Remove(path, id, rev));
         };
         Grid.SetColumn(yes, 2);
@@ -1125,7 +1438,7 @@ public sealed partial class TestListWindow : Window
         return grid;
     }
 
-    /// <summary>"⋯": what is not done every time (edit a request, the history of changes, take it off the list).</summary>
+    /// <summary>"⋯": what is not done every time (the history of changes, take it off the list). A request is edited with its pencil (#177).</summary>
     Button MoreButton(TestItem item)
     {
         var more = new Button { Classes = { "act" }, Content = new TextBlock { Classes = { "icon" }, Text = MoreGlyph, FontSize = 12 } };
@@ -1134,7 +1447,6 @@ public sealed partial class TestListWindow : Window
         more.Click += (_, _) =>
         {
             var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
-            if (item.State == TestItem.Request) menu.Items.Add(Item(Loc.T("test.list.request.edit"), EditGlyph, () => BeginEdit(item)));
             menu.Items.Add(Item(Loc.T("test.list.history"), HistoryGlyph, () =>
             {
                 auditOpen = !auditOpen;
@@ -1173,20 +1485,70 @@ public sealed partial class TestListWindow : Window
 
     /// <summary>
     /// "Tomado", with a turning ring (asked by the user): a session is working on it right now. The ring is the app's
-    /// loader (<c>Arc.spin</c> in <c>App.axaml</c>), so it turns from the style and costs no rebuild.
+    /// loader (<c>Arc.spin</c> in <c>App.axaml</c>), so it turns from the style and costs no rebuild. Beside it, the
+    /// session's lock traffic light (asked by the user, #167): green while nothing stops it, amber while it waits in line
+    /// for a file, red when it had to stop (a line that loops back, a command that changed another session's files);
+    /// the tooltip says which file and who has it.
     /// </summary>
-    static Border TakenBadge(int count = 0)
+    static Border TakenBadge(LockLight light, int count = 0)
     {
         var c = Palette.AccentColor;
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        row.Children.Add(new Avalonia.Controls.Shapes.Ellipse
+        {
+            Width = 7, Height = 7, Fill = Palette.Alpha(LightColor(light.State), 1), VerticalAlignment = VerticalAlignment.Center,
+        });
         row.Children.Add(new Avalonia.Controls.Shapes.Arc
         {
             Classes = { "spin" }, Width = 10, Height = 10, StrokeThickness = 1.5, Stroke = Palette.Alpha(c, 1),
             VerticalAlignment = VerticalAlignment.Center,
         });
-        row.Children.Add(new TextBlock { FontSize = 11, Text = count > 0 ? Loc.T("test.list.topic.taken", count) : Loc.T("test.list.request.taken"), Foreground = Palette.Alpha(c, 1), VerticalAlignment = VerticalAlignment.Center });
-        return new() { Background = Palette.Alpha(c, BadgeTint), CornerRadius = new(5), Padding = new(6, 1), VerticalAlignment = VerticalAlignment.Center, Child = row };
+        string text = count > 0 ? Loc.T("test.list.topic.taken", count) : Loc.T("test.list.request.taken");
+        if (light.State != LockLight.Level.Free) text += " · " + LightName(light);
+        row.Children.Add(new TextBlock { FontSize = 11, Text = text, Foreground = Palette.Alpha(c, 1), VerticalAlignment = VerticalAlignment.Center });
+        var badge = new Border { Background = Palette.Alpha(c, BadgeTint), CornerRadius = new(5), Padding = new(6, 1), VerticalAlignment = VerticalAlignment.Center, Child = row };
+        ToolTip.SetTip(badge, LightTip(light));
+        return badge;
     }
+
+    static Color LightColor(LockLight.Level level) => level switch
+    {
+        LockLight.Level.Free => GreenState,
+        LockLight.Level.Waiting => YellowState,
+        _ => Palette.RecColor,
+    };
+
+    /// <summary>
+    /// What the badge says beside "en curso" when the light is not green: "espera al #177", "espera al #177 · 2° de 3",
+    /// "bloqueado"… The place only when someone else is in the same line.
+    /// </summary>
+    static string LightName(LockLight l) => l.State switch
+    {
+        LockLight.Level.Waiting when l.HolderTicket > 0 && l.Line > 1 => Loc.T("test.list.lock.waiting.for.place", l.HolderTicket, l.Place, l.Line),
+        LockLight.Level.Waiting when l.HolderTicket > 0 => Loc.T("test.list.lock.waiting.for", l.HolderTicket),
+        LockLight.Level.Waiting when l.Line > 1 => Loc.T("test.list.lock.waiting.place", l.Place, l.Line),
+        LockLight.Level.Waiting when l.Holder != "" => Loc.T("test.list.lock.waiting.session", l.Holder),
+        LockLight.Level.Waiting => Loc.T("test.list.lock.waiting"),
+        // who it waits for in the loop (#183): the holder's ticket, or its session's title when it has none; never an id
+        LockLight.Level.Blocked when l.HolderTicket > 0 => Loc.T("test.list.lock.blocked.by", l.HolderTicket),
+        LockLight.Level.Blocked when l.Holder != "" => Loc.T("test.list.lock.blocked.by.session", l.Holder),
+        LockLight.Level.Blocked => Loc.T("test.list.lock.blocked"),
+        _ => Loc.T("test.list.lock.clash"),
+    };
+
+    /// <summary>Whom a wait is for in a tooltip: its ticket, the session's title, or "otra sesión".</summary>
+    static string HolderName(LockLight l) =>
+        l.HolderTicket > 0 ? "#" + l.HolderTicket : l.Holder != "" ? Loc.T("test.list.lock.session", l.Holder) : Loc.T("test.list.lock.other");
+
+    static string LightTip(LockLight l) => l.State switch
+    {
+        LockLight.Level.Free => Loc.T("test.list.lock.free.tip"),
+        LockLight.Level.Waiting when l.HolderTicket > 0 => Loc.T("test.list.lock.waiting.for.tip", l.Path, l.HolderTicket),
+        LockLight.Level.Waiting => Loc.T("test.list.lock.waiting.tip", l.Path, HolderName(l)),
+        LockLight.Level.Blocked when l.HolderTicket > 0 || l.Holder != "" => Loc.T("test.list.lock.blocked.by.tip", l.Path, HolderName(l)),
+        LockLight.Level.Blocked => Loc.T("test.list.lock.blocked.tip", l.Path),
+        _ => Loc.T("test.list.lock.clash.tip", l.Path),
+    };
 
     /// <summary>
     /// A ticket's topic: plain, so the kind and the state keep the color. Only to read: the agent that takes a ticket
@@ -1247,17 +1609,161 @@ public sealed partial class TestListWindow : Window
     Control? ReviewButton(TestItem item)
     {
         if (root == null || item.State == TestItem.Works) return null;
-        string prompt = ReviewPrompt(item.Id.ToString(CultureInfo.InvariantCulture));
+        string prompt = TicketPrompt(item);
+        if (Starting(item)) return StartingChip();
+        // an agent already on it: no second one (asked by the user, #172); Ver consola brings that one forward
+        if (TestList.Held(item, sessions)) return BusyChip();
         var pair = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        pair.Children.Add(ReviewChip(ReviewGlyph, Loc.T("test.list.review.desktop"), Loc.T("test.list.review.desktop.tip", item.Id), () => ReviewAndClose(prompt, desktop: true)));
-        pair.Children.Add(ReviewChip(ConsoleGlyph, Loc.T("test.list.review.console"), Loc.T("test.list.review.console.tip", item.Id), () => ReviewAndClose(prompt, desktop: false)));
+        pair.Children.Add(ReviewChip(ReviewGlyph, Loc.T("test.list.review.desktop"), Loc.T("test.list.review.desktop.tip", item.Id), () => ReviewAndClose(prompt, desktop: true, item)));
+        pair.Children.Add(ReviewChip(ConsoleGlyph, Loc.T("test.list.review.console"), Loc.T("test.list.review.console.tip", item.Id), () => ReviewAndClose(prompt, desktop: false, item)));
         return pair;
     }
 
-    /// <summary>Sends a ticket to review and goes back to the list (pedido del usuario, #119); on a failure it stays, with the error.</summary>
-    void ReviewAndClose(string prompt, bool desktop)
+    static string TicketPrompt(TestItem item) => ReviewPrompt(item.Id.ToString(CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// How long a launched agent counts as starting (asked by the user, #172): the console's Claude takes its ticket in
+    /// under a minute, and in the desktop app the person still has to send the message.
+    /// </summary>
+    static readonly TimeSpan StartingFor = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// The agents launched from here that have not started yet (#172), by prompt: when, and each ticket it covers with
+    /// who had it then (a ticket's own Revisar, a section's, or Revisar todo: every ticket it covers shows "Iniciando…").
+    /// Shared by every list window of the process, so reopening the window does not let a second one through.
+    /// </summary>
+    static readonly Dictionary<string, (DateTime At, Dictionary<int, string?> Ids)> starting = [];
+
+    /// <summary>Drops the launches whose wait is over.</summary>
+    static void ExpireStarting()
     {
-        if (RunIn(prompt, desktop)) CloseTicket();
+        foreach (var key in starting.Where(s => DateTime.UtcNow - s.Value.At >= StartingFor).Select(s => s.Key).ToList())
+            starting.Remove(key);
+    }
+
+    /// <summary>
+    /// A ticket's agent is starting: launched a moment ago, and no session took the ticket since (that ends it: the
+    /// hook takes the numbers named as the message is sent, so from there it shows "en curso").
+    /// </summary>
+    bool Starting(TestItem item)
+    {
+        ExpireStarting();
+        foreach (var (_, s) in starting)
+            if (s.Ids.TryGetValue(item.Id, out var by) && by == item.TakenBy && TestList.Takeable(item)) return true;
+        return false;
+    }
+
+    /// <summary>Whether <paramref name="prompt"/> was launched a moment ago and some ticket it covers is still waiting for it.</summary>
+    bool Starting(string prompt)
+    {
+        ExpireStarting();
+        if (!starting.TryGetValue(prompt, out var s)) return false;
+        if (s.Ids.Count == 0) return true;
+        foreach (var (id, by) in s.Ids)
+            if (current?.Items.Find(i => i.Id == id) is { } i && i.TakenBy == by && TestList.Takeable(i)) return true;
+        return false;
+    }
+
+    /// <summary>An agent is starting on the ticket or working on it (#172): no Probar, no second Revisar.</summary>
+    bool Busy(TestItem item) => Starting(item) || TestList.Held(item, sessions);
+
+    /// <summary>"Iniciando…" in place of Revisar while its agent starts (#172): disabled, so a second one can't be opened.</summary>
+    static Control StartingChip() => Inert(StartingRow(), Loc.T("test.list.starting.tip"));
+
+    /// <summary>"En curso" in place of Revisar while an agent works on the ticket (asked by the user, #172).</summary>
+    static Control BusyChip()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        row.Children.Add(new TextBlock { Classes = { "icon" }, Text = ReviewGlyph, FontSize = 11, Foreground = Palette.Accent, VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Text = Loc.T("test.list.review.busy"), FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
+        return Inert(row, Loc.T("test.list.review.busy.tip"));
+    }
+
+    /// <summary>A chip that only says something: it takes no clicks.</summary>
+    static Button Inert(Control content, string tip)
+    {
+        var b = ReviewChip(ReviewGlyph, "", tip, () => { });
+        b.Content = content;
+        // not IsEnabled = false: at the disabled opacity it could hardly be read; it just takes no clicks
+        b.IsHitTestVisible = false;
+        b.Focusable = false;
+        return b;
+    }
+
+    /// <summary>The loader ring and "Iniciando…": the same ring as "Tomado", in the faint text.</summary>
+    static StackPanel StartingRow()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        row.Children.Add(new Avalonia.Controls.Shapes.Arc
+        {
+            Classes = { "spin" }, Width = 10, Height = 10, StrokeThickness = 1.5, Stroke = Palette.Accent,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        row.Children.Add(new TextBlock { Text = Loc.T("test.list.starting"), FontSize = 11, Foreground = Palette.Accent, VerticalAlignment = VerticalAlignment.Center });
+        return row;
+    }
+
+    /// <summary>The "Iniciando…" badge of a ticket whose agent is starting (#172), where "Tomado" goes once it takes it.</summary>
+    static Border StartingBadge()
+    {
+        var c = Palette.AccentColor;
+        var b = new Border { Background = Palette.Alpha(c, BadgeTint), CornerRadius = new(5), Padding = new(6, 1), VerticalAlignment = VerticalAlignment.Center, Child = StartingRow() };
+        ToolTip.SetTip(b, Loc.T("test.list.starting.tip"));
+        return b;
+    }
+
+    /// <summary>
+    /// Whether what is open here can't have the ticket's change yet. A Banco ticket is built into the Banco, not into an
+    /// XTreme copy (asked by the user, 2026-11-05): it's measured against this bench's build, and inside XTreme it's
+    /// never missing (XTreme doesn't carry it).
+    /// </summary>
+    bool NotHere(TestItem item) => item.Topic == TestItem.TopicBench
+        ? Bench.RunningBuild is { } own && string.CompareOrdinal(item.Build, own) > 0
+        : TestList.Missing(item, build);
+
+    /// <summary>Segoe Fluent Icons "Play": Probar.</summary>
+    const string TryGlyph = "";
+
+    /// <summary>
+    /// Probar (asked by the user, #143): on a ticket to try that the newest copy has, opens that copy with the ticket's
+    /// toast (what to try) through <c>tools\probar.ps1 -Abrir -Probar</c>, as the header's button does with none.
+    /// </summary>
+    Control? TryButton(TestItem item)
+    {
+        if (root == null || item.State != TestItem.Pending) return null;
+        // an agent starting or working on it is changing what there is to try (asked by the user, #172): its row shows
+        // Ver consola instead, and the copy that has the change comes with the agent's fix
+        if (Busy(item)) return null;
+        // a change to the Banco is tried in the Banco (asked by the user, 2026-11-05): its newest build, unless this
+        // bench already is one that has it
+        if (item.Topic == TestItem.TopicBench)
+        {
+            if (Bench.NewestName(path) is not { } newest || string.CompareOrdinal(item.Build, newest) > 0) return null;
+            if (Bench.RunningBuild is { } own && string.CompareOrdinal(own, item.Build) >= 0) return null;
+            return ReviewChip(TryGlyph, Loc.T("test.list.try.button"), Loc.T("test.list.try.bench.tip", item.Id), () =>
+                ErrorText.Text = AgentLauncher.OpenBench(root) is { } why ? Loc.T("test.list.openapp.error", why) : null);
+        }
+        if (TestList.Missing(item, build)) return null;
+        return ReviewChip(TryGlyph, Loc.T("test.list.try.button"), Loc.T("test.list.try.button.tip", item.Id), () =>
+            ErrorText.Text = AgentLauncher.OpenApp(root, item.Id) is { } why ? Loc.T("test.list.openapp.error", why) : null);
+    }
+
+    /// <summary>
+    /// Ver consola (asked by the user, #164): on a ticket an agent is working on, brings that session's window forward
+    /// (its console, or the app it runs in). Only while its Claude is running.
+    /// </summary>
+    Control? SessionButton(TestItem item)
+    {
+        if (root == null || !TestList.Held(item, sessions)) return null;
+        if (AgentLauncher.SessionProcess(root, item.TakenBy) is not { } pid) return null;
+        return ReviewChip(ConsoleGlyph, Loc.T("test.list.session.button"), Loc.T("test.list.session.button.tip", item.Id), () =>
+            ErrorText.Text = AgentLauncher.ShowSession(pid) ? null : Loc.T("test.list.session.error"));
+    }
+
+    /// <summary>Sends a ticket to review and goes back to the list (pedido del usuario, #119); on a failure it stays, with the error.</summary>
+    void ReviewAndClose(string prompt, bool desktop, TestItem item)
+    {
+        if (RunIn(prompt, desktop, [item])) CloseTicket();
     }
 
     /// <summary>The console's glyph (Fluent "CommandPrompt").</summary>
@@ -1332,37 +1838,101 @@ public sealed partial class TestListWindow : Window
 
     void Run(string prompt) => RunIn(prompt, InApp);
 
-    /// <summary>Starts the agent; false (and the reason shown) if it could not.</summary>
-    bool RunIn(string prompt, bool desktop)
+    /// <summary>
+    /// Starts the agent; false (and the reason shown) if it could not. Not on a ticket an agent is starting on or
+    /// working on (asked by the user, #172): every ticket in <paramref name="items"/> shows "Iniciando…" until a
+    /// session takes it, and "en curso" from there.
+    /// </summary>
+    bool RunIn(string prompt, bool desktop, IReadOnlyList<TestItem>? items = null)
     {
         if (root == null) return false;
+        items ??= [];
+        if (Starting(prompt) || items.Any(Starting))
+        {
+            ErrorText.Text = Loc.T("test.list.starting.already");
+            return false;
+        }
+        if (items.Count > 0 && items.All(i => TestList.Held(i, sessions)))
+        {
+            ErrorText.Text = Loc.T("test.list.review.busy.tip");
+            return false;
+        }
         string? why = AgentLauncher.Run(root, prompt, desktop);
         ErrorText.Text = why != null ? Loc.T("test.list.review.error", why) : null;
-        return why == null;
+        if (why != null) return false;
+        starting[prompt] = (DateTime.UtcNow, items.ToDictionary(i => i.Id, i => i.TakenBy));
+        // the list shows it starting now, and drops it once the wait is over if no session took it
+        Refill();
+        DispatcherTimer.RunOnce(Refill, StartingFor + TimeSpan.FromSeconds(1));
+        return true;
     }
 
-    /// <summary>A section's link in the tree, in its color: reviews that topic's tickets of the section together.</summary>
-    Control ReviewLink(string args, Color c)
+    /// <summary>
+    /// What a section's or the whole list's Revisar can still send (#172): its tickets with no agent on them or
+    /// starting; and whether some of the rest is starting.
+    /// </summary>
+    (List<TestItem> Free, bool AnyStarting) FreeOf(IEnumerable<TestItem> items)
+    {
+        var free = new List<TestItem>();
+        bool anyStarting = false;
+        foreach (var i in items)
+        {
+            if (Starting(i)) anyStarting = true;
+            else if (!TestList.Held(i, sessions)) free.Add(i);
+        }
+        return (free, anyStarting);
+    }
+
+    static string IdList(IEnumerable<TestItem> items) => string.Join(" ", items.Select(i => i.Id.ToString(CultureInfo.InvariantCulture)));
+
+    /// <summary>
+    /// A section's link in the tree, in its color: reviews that topic's tickets of the section together, but only the
+    /// ones no agent is on yet; with none left, it says "Iniciando…" or "En curso" (#172).
+    /// </summary>
+    Control ReviewLink(List<TestItem> items, Color c)
     {
         var b = new Button
         {
             Classes = { "link" }, Content = Loc.T("test.list.review"), Foreground = Palette.Alpha(c, 1), Padding = new(6, 0),
             VerticalAlignment = VerticalAlignment.Center,
         };
-        b.Click += (_, _) => Run(ReviewPrompt(args));
+        var (free, anyStarting) = FreeOf(items);
+        if (free.Count == 0)
+        {
+            b.Content = anyStarting ? StartingRow() : new TextBlock { Text = Loc.T("test.list.review.busy"), FontSize = 11 };
+            ToolTip.SetTip(b, Loc.T(anyStarting ? "test.list.starting.tip" : "test.list.review.busy.tip"));
+            b.IsHitTestVisible = false;
+            return b;
+        }
+        string prompt = ReviewPrompt(IdList(free));
+        b.Click += (_, _) => RunIn(prompt, InApp, free);
         return b;
     }
 
-    /// <summary>The row on top of the list: reviews all the work (requests and fixes) in one session.</summary>
-    Control ReviewAllRow(string args, int count, Color c)
+    /// <summary>
+    /// The row on top of the list: reviews all the work (requests and fixes) in one session; the tickets an agent is
+    /// already on are not counted, and with none left it says so (#172). Null when there's nothing to say.
+    /// </summary>
+    Control? ReviewAllRow(List<TestItem> items, Color c)
     {
+        var (free, anyStarting) = FreeOf(items);
+        if (free.Count == 0 && !anyStarting) return null;
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        row.Children.Add(new TextBlock { Classes = { "icon" }, Text = ReviewGlyph, FontSize = 12, Foreground = Palette.Alpha(c, 1), VerticalAlignment = VerticalAlignment.Center });
-        row.Children.Add(new TextBlock { Text = Loc.T("test.list.review.all", count), VerticalAlignment = VerticalAlignment.Center });
         var b = new Button { Classes = { "btn", "sm" }, Content = row, HorizontalAlignment = HorizontalAlignment.Left };
+        if (free.Count == 0)
+        {
+            row.Children.Add(StartingRow());
+            ToolTip.SetTip(b, Loc.T("test.list.starting.tip"));
+            b.IsHitTestVisible = false;
+            return b;
+        }
+        row.Children.Add(new TextBlock { Classes = { "icon" }, Text = ReviewGlyph, FontSize = 12, Foreground = Palette.Alpha(c, 1), VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Text = Loc.T("test.list.review.all", free.Count), VerticalAlignment = VerticalAlignment.Center });
         ToolTip.SetTip(b, Loc.T("test.list.review.all.tip"));
-        AutomationProperties.SetName(b, Loc.T("test.list.review.all", count));
-        b.Click += (_, _) => Run(ReviewPrompt(args));
+        AutomationProperties.SetName(b, Loc.T("test.list.review.all", free.Count));
+        // the skill reads the list itself (and proposes first); the tickets another session has, it can't take
+        string prompt = ReviewPrompt("");
+        b.Click += (_, _) => RunIn(prompt, InApp, free);
         return b;
     }
 
@@ -1442,9 +2012,10 @@ public sealed partial class TestListWindow : Window
                 Save(() => TestList.Hold(path, id, null, text));
                 return;
             }
+            var images = TakeReplyImages(id);
             (Owner as Window)?.Activate();
             open = 0;
-            Save(() => TestList.Mark(path, id, lit ? TestItem.Pending : state, text, rev));
+            Save(() => TestList.Mark(path, id, lit ? TestItem.Pending : state, text, rev, images));
         };
         return b;
     }
@@ -1453,14 +2024,16 @@ public sealed partial class TestListWindow : Window
     /// Writes off the UI thread (other sessions may hold the list a moment), then asks to read it again. <paramref name="write"/>
     /// must not touch a control: it runs on that other thread.
     /// </summary>
-    async void Save(Action write, int delayMs = 0)
+    async void Save(Action write, int delayMs = 0, Action? after = null)
     {
         ErrorText.Text = null;
         var mine = writes.ContinueWith(_ => Try(write), TaskScheduler.Default);
         writes = mine;
         bool ok = await mine;
         if (delayMs > 0) await Task.Delay(delayMs);
-        if (ok) Changed?.Invoke();
+        if (!ok) return;
+        Changed?.Invoke();
+        after?.Invoke();
     }
 
     /// <summary>Runs a write; a stale ticket counts as done, so the list is read again and shows what changed.</summary>

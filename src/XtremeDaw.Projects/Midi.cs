@@ -103,6 +103,11 @@ public sealed class MidiClip
     /// repeats until the clip ends, as a pattern's do. Null = it plays once; always null on a pattern's clip.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? LoopBeats { get; set; }
+    /// <summary>
+    /// A name of its own (asked by the user), drawn on the clip; null = none. A pattern's clip goes by its pattern's
+    /// name instead (<see cref="MidiEditing.Rename"/>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Name { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     /// <summary>Four bars, what a new clip gets.</summary>
@@ -144,7 +149,7 @@ public sealed class MidiClip
         var copy = new MidiClip
         {
             AtSec = AtSec, LengthBeats = LengthBeats, Notes = [.. Notes.Select(n => n.Copy())],
-            PatternId = PatternId, PatternName = PatternName, PatternBeats = PatternBeats, PatternPart = PatternPart, LoopBeats = LoopBeats, Extra = Extra,
+            PatternId = PatternId, PatternName = PatternName, PatternBeats = PatternBeats, PatternPart = PatternPart, LoopBeats = LoopBeats, Name = Name, Extra = Extra,
         };
         if (!ties && PatternId == null)
             foreach (var n in copy.Notes) n.Tie = false;
@@ -160,6 +165,7 @@ public sealed class MidiClip
         Notes.RemoveAll(n => n == null);
         foreach (var n in Notes) n.Normalize();
         Notes.Sort(MidiNote.Order);
+        Name = ClipEditing.CleanName(Name);
         if (string.IsNullOrWhiteSpace(PatternId))
         {
             PatternId = PatternName = PatternPart = null;
@@ -314,6 +320,20 @@ public static class MidiEditing
 
     public static MidiClip? TryFind(Project p, string? clipId) => clipId == null ? null : p.Tracks.SelectMany(t => t.MidiClips ?? []).FirstOrDefault(c => c.Id == clipId);
 
+    /// <summary>
+    /// Names a clip (blank takes its name away). A pattern's clip renames its pattern, in every use (decision of the
+    /// user), and keeps its old name when the new one is blank.
+    /// </summary>
+    public static void Rename(Project p, string clipId, string? name)
+    {
+        var c = Find(p, clipId).Clip;
+        if (c.PatternId != null) MidiPatterns.Rename(p, clipId, name ?? "");
+        else c.Name = ClipEditing.CleanName(name);
+    }
+
+    /// <summary>The name drawn on a clip: its pattern's or its own; null = none.</summary>
+    public static string? Label(MidiClip c) => c.PatternId != null ? c.PatternName : c.Name;
+
     public static MidiClip AddClip(Project p, string trackId, double atSec, double lengthBeats = MidiClip.DefaultBeats)
     {
         var t = p.Tracks.Find(x => x.Id == trackId) ?? throw new ArgumentException(Texts.T("err.midi.trackNotFound", "Pista no encontrada."));
@@ -386,6 +406,21 @@ public static class MidiEditing
         if (track.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
         if (c.PatternId == null) c.LoopBeats ??= c.LengthBeats;
         c.LengthBeats = Math.Clamp(lengthBeats, MidiClip.MinBeats, MidiClip.MaxBeats);
+        c.Normalize();
+    }
+
+    /// <summary>
+    /// A looped clip's pass set to <paramref name="passBeats"/> (the original's edge, asked by the user, #171): every
+    /// repeat follows and the clip keeps how many passes it had. Notes past the new pass are kept, not heard.
+    /// </summary>
+    public static void Pass(Project p, string clipId, double passBeats)
+    {
+        var (track, c) = Find(p, clipId);
+        if (track.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
+        if (c.PatternId != null || c.LoopBeats is not { } pass) return;
+        double cell = Math.Clamp(passBeats, MidiClip.MinBeats, MidiClip.MaxBeats);
+        c.LengthBeats = Math.Min(MidiClip.MaxBeats, c.LengthBeats * cell / pass);
+        c.LoopBeats = cell;
         c.Normalize();
     }
 

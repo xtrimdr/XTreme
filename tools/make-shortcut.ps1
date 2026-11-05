@@ -1,7 +1,7 @@
 ﻿# Creates (or updates) the desktop shortcuts "XTreme Prueba" and "XT-WorkBench". The first opens the newest
 # finished test copy made by tools\probar.ps1 (probar.ps1 -Abrir -Acceso), never the exe in bin\: an app running from
 # bin\ locks the DLLs and the next build fails without anyone noticing. The second opens the Banco de pruebas on its own
-# (probar.ps1 -Banco -Acceso, XTreme.exe --banco). They need nothing else running, and probar.ps1 calls this after every copy.
+# (probar.ps1 -Banco -Acceso, xtbench.exe in pruebas\banco\). They need nothing else running, and probar.ps1 calls this after every copy.
 #   tools\make-shortcut.ps1
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot

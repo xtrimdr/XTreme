@@ -138,7 +138,7 @@ public partial class MainWindow
         armedLive = targets.Select(t => tracks.Find(l => l.Track == t)).ToArray();
         engine.SetInputs(targets.Select(t => InputRoute.Parse(t.Input)).ToList());
         Timeline.ArmedIndices = targets.Concat(midi).Select(t => tracks.FindIndex(l => l.Track == t)).Where(i => i >= 0).ToHashSet();
-        if (mixerView) RefreshMixer();
+        if (mixerView || MixerOut) RefreshMixer();
     }
 
     /// <summary>
@@ -229,7 +229,7 @@ public partial class MainWindow
         UpdateUndoButtons();
         ShowArm();
         Timeline.InvalidateVisual();
-        if (mixerView) RefreshMixer();
+        if (mixerView || MixerOut) RefreshMixer();
         Status(Loc.T("rec.recordsFrom", t.Track.Name, InputLabel(t.Track)));
     }
 

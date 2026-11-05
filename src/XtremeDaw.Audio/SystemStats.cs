@@ -88,52 +88,85 @@ public sealed class SystemStats : IDisposable
             }
             PdhCollectQueryData(query);
             var busy = new Dictionary<string, double>();
+            var byEngine = busy.GetAlternateLookup<ReadOnlySpan<char>>();
             while (!stop.Token.WaitHandle.WaitOne(SampleEvery))
             {
                 if (Stopwatch.GetElapsedTime(Interlocked.Read(ref lastRead)) > IdleStop) break;
                 if (PdhCollectQueryData(query) != 0) continue;
-                busy.Clear();
-                foreach (var (instance, value) in Values(engines))
+                // the engines stay the same between readings: their keys are reused, so a reading allocates nothing
+                foreach (var key in busy.Keys) CollectionsMarshal.GetValueRefOrNullRef(busy, key) = 0;
+                int n = Values(engines, ref buffer, ref bufferSize);
+                for (int i = 0; i < n; i++)
                 {
-                    var m = EngineId.Match(instance);
-                    if (m.Success) busy[m.Groups[1].Value] = busy.GetValueOrDefault(m.Groups[1].Value) + value;
+                    double value = Item(buffer, i, out var instance);
+                    var id = EngineId(instance);
+                    if (!id.IsEmpty)
+                    {
+                        if (byEngine.TryGetValue(id, out double sum)) byEngine[id] = sum + value;
+                        else byEngine[id] = value;
+                    }
                 }
-                double load = busy.Count == 0 ? 0 : busy.Values.Max();
+                double load = 0;
+                foreach (double v in busy.Values) load = Math.Max(load, v);
                 long used = 0;
-                foreach (var (_, value) in Values(memory)) used = Math.Max(used, (long)value);
-                gpu = new GpuStats(Math.Min(100, load), used, vramTotal, name);
+                n = Values(memory, ref buffer, ref bufferSize);
+                for (int i = 0; i < n; i++) used = Math.Max(used, (long)Item(buffer, i, out _));
+                var last = gpu;
+                if (last == null || last.Load != Math.Min(100, load) || last.VramUsed != used) gpu = new GpuStats(Math.Min(100, load), used, vramTotal, name);
             }
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { gpuUnavailable = true; }
         finally
         {
+            if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+            buffer = IntPtr.Zero;
+            bufferSize = 0;
             if (query != IntPtr.Zero) PdhCloseQuery(query);
             gpu = null;
             lock (gate) sampler = null;
         }
     }
 
-    static readonly Regex EngineId = new(@"(luid_\w+?_phys_\d+_eng_\d+)_engtype_", RegexOptions.IgnoreCase);
+    /// <summary>The sampler's PDH buffer, kept between readings (only its own thread uses it).</summary>
+    IntPtr buffer;
+    uint bufferSize;
 
-    static List<(string Instance, double Value)> Values(IntPtr counter)
+    /// <summary>
+    /// "luid_…_phys_0_eng_3" out of "pid_123_luid_…_phys_0_eng_3_engtype_3D": the engine, whichever process uses it.
+    /// Empty if the instance is not an engine's.
+    /// </summary>
+    static ReadOnlySpan<char> EngineId(ReadOnlySpan<char> instance)
     {
-        var list = new List<(string, double)>();
-        uint size = 0, count;
-        if (PdhGetFormattedCounterArray(counter, PdhFmtDouble, ref size, out count, IntPtr.Zero) != PdhMoreData || size == 0) return list;
-        var buf = Marshal.AllocHGlobal((int)size);
-        try
+        int start = instance.IndexOf("luid_", StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return default;
+        var rest = instance[start..];
+        int end = rest.IndexOf("_engtype_", StringComparison.OrdinalIgnoreCase);
+        return end > 0 && rest[..end].Contains("_eng_", StringComparison.OrdinalIgnoreCase) ? rest[..end] : default;
+    }
+
+    /// <summary>Fills the buffer with the counter's current values (growing it if needed) and says how many there are.</summary>
+    static int Values(IntPtr counter, ref IntPtr buf, ref uint bufSize)
+    {
+        uint size = 0;
+        if (PdhGetFormattedCounterArray(counter, PdhFmtDouble, ref size, out uint count, IntPtr.Zero) != PdhMoreData || size == 0) return 0;
+        if (size > bufSize)
         {
-            if (PdhGetFormattedCounterArray(counter, PdhFmtDouble, ref size, out count, buf) != 0) return list;
-            int stride = Marshal.SizeOf<PdhItem>();
-            for (int i = 0; i < count; i++)
-            {
-                var item = Marshal.PtrToStructure<PdhItem>(buf + i * stride);
-                if (item.Status != 0) continue;
-                list.Add((Marshal.PtrToStringUni(item.Name) ?? "", item.Value));
-            }
+            if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf);
+            bufSize = size * 2; // instances come and go with the processes: room to grow without reallocating each time
+            buf = Marshal.AllocHGlobal((int)bufSize);
         }
-        finally { Marshal.FreeHGlobal(buf); }
-        return list;
+        size = bufSize;
+        return PdhGetFormattedCounterArray(counter, PdhFmtDouble, ref size, out count, buf) == 0 ? (int)count : 0;
+    }
+
+    /// <summary>The i-th value in the buffer, its instance name read in place; a failed one reads as an empty name.</summary>
+    static unsafe double Item(IntPtr buf, int i, out ReadOnlySpan<char> instance)
+    {
+        var item = ((PdhItem*)buf)[i];
+        instance = default;
+        if (item.Status != 0 || item.Name == IntPtr.Zero) return 0;
+        instance = MemoryMarshal.CreateReadOnlySpanFromNullTerminated((char*)item.Name);
+        return item.Value;
     }
 
     /// <summary>The biggest adapter in the display class key (Win32_VideoController.AdapterRAM is capped at 4 GB).</summary>

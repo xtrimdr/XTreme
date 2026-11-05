@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -119,12 +120,15 @@ public partial class MainWindow
     /// <summary>
     /// The panel of a native effect, into <paramref name="body"/>: its choices, then its knobs and the ones every effect
     /// has. <paramref name="onEq"/> gets an EQ's editor (the inspector feeds the first one its live spectrum).
+    /// <paramref name="full"/>: for an effect with two sizes (<see cref="FxDefs.Layout"/>), its compact (false) or full
+    /// (true) view; null = the single view every effect had, with its fine controls behind a button.
     /// </summary>
-    void FxBody(StackPanel body, SlotOwner o, InsertSlot slot, List<Action> refresh, Action<EqEditor>? onEq = null, string[]? hide = null)
+    void FxBody(StackPanel body, SlotOwner o, InsertSlot slot, List<Action> refresh, Action<EqEditor>? onEq = null, string[]? hide = null, bool? full = null)
     {
         string id = slot.Id, kind = slot.Type;
         if (kind == TrackInserts.Pump)
         {
+            body.Children.Add(PresetBar(o, id, kind, refresh, []));
             PumpBody(body, o, id, refresh);
             return;
         }
@@ -139,11 +143,13 @@ public partial class MainWindow
         switch (kind)
         {
             case InsertSlot.SatKind:
+                body.Children.Add(PresetBar(o, id, kind, refresh, []));
                 SatSettings S() => o.Slot(id)?.Sat ?? GoneSat;
                 body.Children.Add(FxSegments([("tube", Loc.T("insp.sat.tube"), Loc.T("insp.sat.tube.hint")), ("tape", Loc.T("insp.sat.tape"), Loc.T("insp.sat.tape.hint"))],
                     () => S().Mode, m => SlotEdit(o, id, s => { s.Sat!.Mode = m; s.Sat.On = true; }, "sat.mode"), refresh));
                 break;
             case InsertSlot.GateKind:
+                body.Children.Add(PresetBar(o, id, kind, refresh, []));
                 GateSettings G() => o.Slot(id)?.Gate ?? GoneGate;
                 body.Children.Add(FxSegments(GateModes.Select(m => (m, Loc.T("gate.mode." + m), (string?)Loc.T($"gate.mode.{m}.hint"))).ToArray(),
                     () => G().Mode, m => SlotEdit(o, id, s => { s.Gate!.Mode = m; s.Gate.On = true; }, "gate.mode"), refresh));
@@ -152,19 +158,30 @@ public partial class MainWindow
                 CompChoices(body, o, id, refresh);
                 break;
             case InsertSlot.ReverbKind:
-                body.Children.Add(ReverbPresets(o, id, refresh));
+                body.Children.Add(PresetBar(o, id, kind, refresh, ReverbPresetItems(o, id)));
                 break;
             case InsertSlot.DelayKind:
                 DelayChoices(body, o, id, refresh);
                 break;
             case InsertSlot.EqKind:
-                var eq = new EqEditor { Live = () => LiveEq(o, id) };
+                var bigEq = InspectorIcon("", Loc.T("eq.big.tip"), () => ShowEqBig(o, id, o.OwnerId == sel?.Track.Id));
+                body.Children.Add(PresetBar(o, id, kind, refresh, EqPresetItems(o, id), [bigEq]));
+                var eq = new EqEditor { Live = () => LiveEq(o, id), ShowsPresets = false };
                 onEq?.Invoke(eq);
                 eq.Changed += value => SlotEdit(o, id, s => s.Eq = value, "eq");
                 eq.BigRequested += () => ShowEqBig(o, id, o.OwnerId == sel?.Track.Id);
                 refresh.Add(() => eq.Set(o.Slot(id)?.Eq ?? GoneEq));
                 body.Children.Add(eq);
                 break;
+            default:
+                body.Children.Add(PresetBar(o, id, kind, refresh, []));
+                break;
+        }
+
+        if (full is { } big && FxDefs.Layout(kind) is { } layout)
+        {
+            FxSized(body, o, id, kind, refresh, layout, big);
+            return;
         }
 
         if (TrackInserts.HasCompGraph(kind)) body.Children.Add(CompGraphOf(o, id, refresh));
@@ -195,10 +212,68 @@ public partial class MainWindow
     }
 
     /// <summary>
+    /// The compact or full view of an effect that has both (asked by the user, #140): compact, its main knobs (and a
+    /// compressor's graph); full, every control in inner panels, row by row, each panel as wide as its share. Nothing
+    /// waits behind a "fine controls" button in either: what isn't in the compact view is one click away, in the full one.
+    /// </summary>
+    void FxSized(StackPanel body, SlotOwner o, string id, string kind, List<Action> refresh, FxLayout layout, bool full)
+    {
+        FxParam[] all = [.. FxDefs.Params(kind), .. FxDefs.Common(kind)];
+        bool Manual() => o.Slot(id)?.Comp?.Preset == "custom";
+        KnobGrid Knobs(IEnumerable<string> ids, double top)
+        {
+            var knobs = new List<Knob>();
+            var grid = FxGrid(knobs, top);
+            foreach (string pid in ids)
+            {
+                if (Array.Find(all, p => p.Id == pid) is not { } p) continue;
+                var (cell, knob) = FxKnobCell(o, id, p, refresh, kind == InsertSlot.CompKind && p.Id == "amount" ? () => !Manual() : null);
+                grid.Children.Add(cell);
+                knobs.Add(knob);
+            }
+            return grid;
+        }
+        Control? Part(string part) => part switch
+        {
+            FxDefs.GraphPart when TrackInserts.HasCompGraph(kind) => CompGraphOf(o, id, refresh),
+            FxDefs.KeyPart when TrackInserts.TakesKey(kind) => KeyChoice(o, id, refresh, labeled: false),
+            _ => null,
+        };
+
+        if (!full)
+        {
+            if (Part(FxDefs.GraphPart) is { } graph) body.Children.Add(graph);
+            body.Children.Add(Knobs(layout.Compact, 2));
+            return;
+        }
+        foreach (var row in layout.Rows)
+        {
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(string.Join(",", row.Select(g => g.Weight.ToString(CultureInfo.InvariantCulture) + "*"))) };
+            for (int i = 0; i < row.Length; i++)
+            {
+                var g = row[i];
+                var stack = new StackPanel { Spacing = 6, Children = { new TextBlock { Classes = { "label" }, Text = Loc.T(g.Label) } } };
+                foreach (string part in g.Ids.Where(x => x.StartsWith('@')))
+                    if (Part(part) is { } c) stack.Children.Add(c);
+                string[] knobIds = [.. g.Ids.Where(x => !x.StartsWith('@'))];
+                if (knobIds.Length > 0) stack.Children.Add(Knobs(knobIds, 0));
+                var panel = new Border { Child = stack, Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
+                    BorderBrush = Palette.Line, Background = Palette.Alpha(Palette.AppColor, FxInnerAlpha), Margin = new Thickness(i == 0 ? 0 : FxInnerGap, 0, 0, 0) };
+                Grid.SetColumn(panel, i);
+                grid.Children.Add(panel);
+            }
+            body.Children.Add(grid);
+        }
+    }
+
+    /// <summary>An inner panel of a full view: a step down from the effect's box, and the room between two of them.</summary>
+    const double FxInnerAlpha = 0.35, FxInnerGap = 8;
+
+    /// <summary>
     /// What a compressor, a gate or the pump listens to (its sidechain): its own input or another track, by name. A track that
     /// was removed shows as such and it listens to its own input meanwhile (an undo brings it back).
     /// </summary>
-    Control KeyChoice(SlotOwner o, string id, List<Action> refresh)
+    Control KeyChoice(SlotOwner o, string id, List<Action> refresh, bool labeled = true)
     {
         var pick = StripSelect([]);
         ToolTip.SetTip(pick, Loc.T("fx.key.tip"));
@@ -220,7 +295,8 @@ public partial class MainWindow
             if (key != null && at == 0) pick.ShowNone(Loc.T("fx.key.gone"));
             else pick.SelectedIndex = at;
         });
-        var label = new TextBlock { Text = Loc.T("fx.key"), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        // in a full view's Sidechain panel the panel's title says it already
+        var label = new TextBlock { Text = Loc.T("fx.key"), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0), IsVisible = labeled };
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(0, 2, 0, 2) };
         row.Children.Add(label);
         Grid.SetColumn(pick, 1);
@@ -285,34 +361,178 @@ public partial class MainWindow
         window.Show(this);
     }
 
-    /// <summary>What the compressor's menu lists, by category; "Manual" goes at the end, outside them, only while it is in use.</summary>
-    sealed record CompList(string[] Names, string?[] Hints, string?[] Groups);
+    /// <summary>
+    /// One entry of an effect's preset menu (#141): its name, hint and category, what choosing it does to the slot and
+    /// whether the slot is on it now. <see cref="Mine"/>: a preset the user saved.
+    /// </summary>
+    sealed record FxPresetItem(string Name, string? Hint, string? Group, Action Pick, Func<InsertSlot, bool> Is, FxPreset? Mine = null);
 
-    static CompList MakeCompList(bool custom)
+    /// <summary>The user's saved presets, read once and again after each save or delete (the bar refreshes on every edit).</summary>
+    List<FxPreset>? userFxPresets;
+
+    List<FxPreset> UserFxPresets() => userFxPresets ??= FxPresets.All();
+
+    /// <summary>An effect's Default here: a new slot of its kind, started as one added to this owner (<see cref="StartSlot"/>).</summary>
+    InsertSlot DefaultSlot(SlotOwner o, string kind)
     {
-        var all = CompPresets.All;
-        string Group(CompPresetDef p) => Loc.Or("insp.comp.group." + p.Group, Array.Find(CompPresets.Groups, g => g.Id == p.Group)?.Label ?? p.Group);
-        return new([.. all.Select(CompPresetName), .. custom ? new[] { Loc.T("insp.comp.manual") } : []],
-            [.. all.Select(CompPresetHint), .. custom ? new string?[] { null } : []],
-            [.. all.Select(Group), .. custom ? new string?[] { null } : []]);
+        var fresh = InsertSlot.New(kind);
+        StartSlot(o, fresh);
+        return fresh;
     }
 
-    // made once: every edit refreshes the panels, and the language only changes on restart
-    static readonly Lazy<CompList> compList = new(() => MakeCompList(false)), compListManual = new(() => MakeCompList(true));
+    /// <summary>
+    /// The preset bar every native effect has (asked by the user, #141): Default first, then the effect's own presets by
+    /// category and the user's ("Mis presets"), and "Personalizado" (Manual on a compressor) while it is on none. Next
+    /// to it, the effect's own buttons (<paramref name="extra"/>), then save the settings as a preset and delete the
+    /// saved one it is on. The user's presets live in the machine (<see cref="FxPresets"/>), for every project.
+    /// </summary>
+    Control PresetBar(SlotOwner o, string id, string kind, List<Action> refresh, FxPresetItem[] factory, Control[]? extra = null)
+    {
+        bool comp = kind == InsertSlot.CompKind;
+        var select = StripSelect([]);
+        var items = new List<FxPresetItem>();
+        var defaultItem = new FxPresetItem(Loc.T("fx.preset.default"), Loc.T("fx.preset.default.hint"), null,
+            () => SlotEdit(o, id, s => FxPresets.Apply(s, DefaultSlot(o, kind)), "preset"),
+            s => comp ? s.Comp?.Preset == CompPresets.DefaultId : FxPresets.Same(s, DefaultSlot(o, kind)));
+        select.Selected += i =>
+        {
+            if (i >= 0 && i < items.Count) items[i].Pick();
+        };
+        var save = InspectorIcon("", Loc.T("fx.preset.save.tip"), () => { });
+        save.Click += (_, _) =>
+        {
+            if (o.Slot(id) is null) return;
+            string initial = items.ElementAtOrDefault(select.SelectedIndex)?.Mine?.Name ?? "";
+            AskName(save, null, Loc.T("fx.preset.save"), initial, Loc.T("preset.save.ok"), name =>
+            {
+                if (o.Slot(id) is not { } now) return;
+                try
+                {
+                    bool replaced = FxPresets.Exists(kind, name);
+                    var saved = FxPresets.Save(now, name);
+                    userFxPresets = null;
+                    Toast(Loc.T(replaced ? "fx.preset.replaced" : "fx.preset.saved", saved.Name));
+                    RefreshPresetBars();
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+                {
+                    Toast(Loc.T("fx.preset.saveFail", e.Message));
+                }
+            }, exists: n => FxPresets.Exists(kind, n));
+        };
+        var delete = InspectorIcon("", Loc.T("fx.preset.delete.tip"), () => { });
+        delete.Click += (_, _) =>
+        {
+            if (items.ElementAtOrDefault(select.SelectedIndex)?.Mine is not { } mine) return;
+            try
+            {
+                FxPresets.Delete(mine.Id);
+                userFxPresets = null;
+                Toast(Loc.T("fx.preset.deleted", mine.Name));
+                RefreshPresetBars();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                Toast(Loc.T("fx.preset.saveFail", e.Message));
+            }
+        };
+        refresh.Add(() =>
+        {
+            if (o.Slot(id) is not { } s) return;
+            string mineGroup = Loc.T("fx.preset.mine");
+            var mine = UserFxPresets().Where(p => p.Kind == kind).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(p => new FxPresetItem(p.Name, null, mineGroup, () => SlotEdit(o, id, x => FxPresets.Apply(x, p.Slot), "preset"), x => FxPresets.Same(x, p.Slot), p));
+            items.Clear();
+            items.Add(defaultItem);
+            items.AddRange(factory);
+            items.AddRange(mine);
+            // a saved preset wins over the factory one it was made from; on none, the bar says so
+            int at = items.FindIndex(x => x.Mine != null && x.Is(s));
+            if (at < 0) at = items.FindIndex(x => x.Mine == null && x.Is(s));
+            if (at < 0)
+            {
+                items.Add(new FxPresetItem(Loc.T(comp ? "insp.comp.manual" : "mix.custom.m"), Loc.T(comp ? "mix.comp.custom.tip" : "fx.preset.custom.tip"), null, () => { }, _ => true));
+                at = items.Count - 1;
+            }
+            select.SetItems([.. items.Select(x => x.Name)], [.. items.Select(x => x.Hint)], [.. items.Select(x => x.Group)]);
+            select.SelectedIndex = at;
+            ToolTip.SetTip(select, items[at].Hint);
+            delete.IsVisible = items[at].Mine != null;
+        });
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*" + string.Concat(Enumerable.Repeat(",Auto", (extra?.Length ?? 0) + 2))) };
+        row.Children.Add(select);
+        int col = 1;
+        foreach (var c in (Control[])[.. extra ?? [], save, delete])
+        {
+            c.Margin = new Thickness(4, 0, 0, 0);
+            Grid.SetColumn(c, col++);
+            row.Children.Add(c);
+        }
+        presetBarRefresh.Add(new(refresh));
+        return row;
+    }
 
-    /// <summary>The compressor's choices: its style, measuring the take, peak limiting and going back to the style's defaults.</summary>
+    /// <summary>The open panels with a preset bar: a save or a delete reaches all of them (the list is the machine's).</summary>
+    readonly List<WeakReference<List<Action>>> presetBarRefresh = [];
+
+    void RefreshPresetBars()
+    {
+        bool was = syncing;
+        syncing = true;
+        try
+        {
+            presetBarRefresh.RemoveAll(w => !w.TryGetTarget(out _));
+            foreach (var w in presetBarRefresh.ToArray())
+                if (w.TryGetTarget(out var list)) foreach (var r in list.ToArray()) r();
+        }
+        finally { syncing = was; }
+    }
+
+    /// <summary>The compressor's own presets, by category (its Default goes first, outside them).</summary>
+    FxPresetItem[] CompPresetItems(SlotOwner o, string id)
+    {
+        string Group(CompPresetDef p) => Loc.Or("insp.comp.group." + p.Group, Array.Find(CompPresets.Groups, g => g.Id == p.Group)?.Label ?? p.Group);
+        return [.. CompPresets.All.Where(p => p.Id != CompPresets.DefaultId).Select(p => new FxPresetItem(CompPresetName(p), CompPresetHint(p), Group(p),
+            () => StripComp(o, id, c => { c.Preset = p.Id; c.On = true; }, "preset"), s => s.Comp?.Preset == p.Id))];
+    }
+
+    /// <summary>The EQ's own presets ("Plano" is its Default).</summary>
+    FxPresetItem[] EqPresetItems(SlotOwner o, string id) =>
+    [
+        .. TrackEq.Presets.Select((p, i) => (p, i)).Where(x => x.p.Id != "flat").Select(x => new FxPresetItem(Loc.Or("mix.eq." + x.p.Id, x.p.Label),
+            Loc.Or("mix.eq." + x.p.Id + ".hint", x.p.Hint), null, () => SlotEdit(o, id, s => s.Eq = EqEditor.FromPreset(x.i, s.Eq ?? new()), "eq.preset"),
+            s => s.Eq != null && EqEditor.PresetIndex(s.Eq) == x.i)),
+    ];
+
+    /// <summary>The reverb's own presets.</summary>
+    FxPresetItem[] ReverbPresetItems(SlotOwner o, string id) =>
+    [
+        .. ReverbBus.Presets.Select(x => new FxPresetItem(BusPresetName("reverb", x.Label), BusPresetHint("reverb", x.Label, x.Hint), null, () => SlotEdit(o, id, s =>
+        {
+            var r = s.Reverb!;
+            var p = ReverbBus.ApplyPreset(ToParams(r), x.Label);
+            r.Decay = p.Decay; r.PreDelayMs = p.PreDelayMs; r.Tone = p.Tone; r.LowCut = p.LowCut; r.Width = p.Width;
+        }, "reverb.preset"), s => s.Reverb != null && ReverbBus.PresetOf(ToParams(s.Reverb)) == x.Label)),
+    ];
+
+    /// <summary>The delay's own presets.</summary>
+    FxPresetItem[] DelayPresetItems(SlotOwner o, string id) =>
+    [
+        .. DelayBus.Presets.Select(x => new FxPresetItem(BusPresetName("delay", x.Label), BusPresetHint("delay", x.Label, x.Hint), null, () => SlotEdit(o, id, s =>
+        {
+            var d = s.Delay!;
+            var p = DelayBus.ApplyPreset(ToParams(d), x.Label);
+            d.Mode = DelayParams.ModeToString(p.Mode); d.Sync = p.Sync; d.Division = p.Division; d.TimeMs = p.TimeMs;
+            d.Feedback = p.Feedback; d.Tone = p.Tone; d.LowCut = p.LowCut; d.Width = p.Width; d.Duck = p.Duck;
+        }, "delay.preset"), s => s.Delay != null && DelayBus.PresetOf(ToParams(s.Delay)) == x.Label)),
+    ];
+
+    /// <summary>The compressor's choices: its presets, measuring the take and peak limiting (its Default is the reset).</summary>
     void CompChoices(StackPanel body, SlotOwner o, string id, List<Action> refresh)
     {
         CompSettings C() => o.Slot(id)?.Comp ?? GoneComp;
-        var preset = StripSelect([]);
-        preset.Selected += i =>
-        {
-            if (i >= CompPresets.All.Length) return;
-            string p = CompPresets.All[i].Id;
-            StripComp(o, id, c => { c.Preset = p; c.On = true; }, "preset");
-        };
         // the take goes off the UI thread: a long one takes a moment the first time, and then the result is kept
-        var analyze = new Button { Classes = { "chip" }, Content = new TextBlock { Classes = { "icon" }, Text = "\uE9D9", FontSize = 12 }, Height = 30, MinHeight = 30, Padding = new Thickness(6, 0), Margin = new Thickness(4, 0, 0, 0), Focusable = false };
+        var analyze = new Button { Classes = { "chip" }, Content = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }, Height = 30, MinHeight = 30, Padding = new Thickness(6, 0), Focusable = false };
         ToolTip.SetShowOnDisabled(analyze, true);
         analyze.Click += async (_, _) =>
         {
@@ -327,28 +547,12 @@ public partial class MainWindow
                 ChannelDsp.AnalyzeComp(c, env);
             }, $"comp.analyze.{++slotEdits}");
         };
-        var lim = new Button { Content = "LIM", Classes = { "chip", "mono" }, FontSize = 10, FontWeight = FontWeight.Bold, Height = 30, MinHeight = 30, Padding = new Thickness(6, 0), Margin = new Thickness(4, 0, 0, 0), Focusable = false };
+        var lim = new Button { Content = "LIM", Classes = { "chip", "mono" }, FontSize = 10, FontWeight = FontWeight.Bold, Height = 30, MinHeight = 30, Padding = new Thickness(6, 0), Focusable = false };
         lim.Click += (_, _) => StripComp(o, id, c => c.Limit = !c.Limit, "limit");
-        var reset = InspectorIcon("", Loc.T("insp.comp.reset"), () => SlotEdit(o, id, s =>
-        {
-            bool on = s.Comp!.On;
-            s.Comp = new CompSettings { On = on, Preset = o.DefaultPreset() };
-            o.Recalculate(s.Comp);
-        }, "comp.reset"));
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto") };
-        row.Children.Add(preset);
-        Grid.SetColumn(analyze, 1); row.Children.Add(analyze);
-        Grid.SetColumn(lim, 2); row.Children.Add(lim);
-        Grid.SetColumn(reset, 3); row.Children.Add(reset);
         refresh.Add(() =>
         {
             var c = C();
             bool custom = c.Preset == "custom";
-            var list = (custom ? compListManual : compList).Value;
-            preset.SetItems(list.Names, list.Hints, list.Groups);
-            int i = Array.FindIndex(CompPresets.All, p => p.Id == c.Preset);
-            preset.SelectedIndex = custom ? CompPresets.All.Length : i;
-            ToolTip.SetTip(preset, i >= 0 ? CompPresetHint(CompPresets.All[i]) : Loc.T("mix.comp.custom.tip"));
             bool take = o.Take() != null;
             analyze.IsEnabled = take && !custom;
             analyze.Classes.Set("on", c.Analyzed && !custom);
@@ -356,34 +560,7 @@ public partial class MainWindow
             lim.Classes.Set("on", c.Limit);
             ToolTip.SetTip(lim, Loc.T(c.Limit ? "mix.lim.on" : "mix.lim.off"));
         });
-        body.Children.Add(row);
-    }
-
-    Control ReverbPresets(SlotOwner o, string id, List<Action> refresh)
-    {
-        ReverbSettings V() => o.Slot(id)?.Reverb ?? GoneReverb;
-        var presets = StripSelect([]);
-        ToolTip.SetTip(presets, Loc.T("mix.reverb.presets.tip"));
-        presets.Selected += i =>
-        {
-            int k = i - (ReverbBus.PresetOf(ToParams(V())) == "" ? 1 : 0);
-            if (k < 0) return;
-            string label = ReverbBus.Presets[k].Label;
-            SlotEdit(o, id, s =>
-            {
-                var r = s.Reverb!;
-                var p = ReverbBus.ApplyPreset(ToParams(r), label);
-                r.Decay = p.Decay; r.PreDelayMs = p.PreDelayMs; r.Tone = p.Tone; r.LowCut = p.LowCut; r.Width = p.Width;
-            }, "reverb.preset");
-        };
-        refresh.Add(() =>
-        {
-            string p = ReverbBus.PresetOf(ToParams(V()));
-            presets.SetItems((p == "" ? new[] { Loc.T("mix.custom.f") } : []).Concat(ReverbBus.Presets.Select(x => BusPresetName("reverb", x.Label))).ToArray(),
-                (p == "" ? new string?[] { null } : []).Concat(ReverbBus.Presets.Select(x => (string?)BusPresetHint("reverb", x.Label, x.Hint))).ToArray());
-            presets.SelectedIndex = p == "" ? 0 : Array.FindIndex(ReverbBus.Presets, x => x.Label == p);
-        });
-        return presets;
+        body.Children.Add(PresetBar(o, id, InsertSlot.CompKind, refresh, CompPresetItems(o, id), [analyze, lim]));
     }
 
     /// <summary>The delay's choices: its preset, stereo or ping-pong, and the note value (or "Libre (ms)").</summary>
@@ -391,29 +568,7 @@ public partial class MainWindow
     {
         DelaySettings V() => o.Slot(id)?.Delay ?? GoneDelay;
         double Bpm() => store?.Project.Settings.Bpm ?? 110;
-        var presets = StripSelect([]);
-        ToolTip.SetTip(presets, Loc.T("mix.delay.presets.tip"));
-        presets.Selected += i =>
-        {
-            int k = i - (DelayBus.PresetOf(ToParams(V())) == "" ? 1 : 0);
-            if (k < 0) return;
-            string label = DelayBus.Presets[k].Label;
-            SlotEdit(o, id, s =>
-            {
-                var d = s.Delay!;
-                var p = DelayBus.ApplyPreset(ToParams(d), label);
-                d.Mode = DelayParams.ModeToString(p.Mode); d.Sync = p.Sync; d.Division = p.Division; d.TimeMs = p.TimeMs;
-                d.Feedback = p.Feedback; d.Tone = p.Tone; d.LowCut = p.LowCut; d.Width = p.Width; d.Duck = p.Duck;
-            }, "delay.preset");
-        };
-        refresh.Add(() =>
-        {
-            string p = DelayBus.PresetOf(ToParams(V()));
-            presets.SetItems((p == "" ? new[] { Loc.T("mix.custom.m") } : []).Concat(DelayBus.Presets.Select(x => BusPresetName("delay", x.Label))).ToArray(),
-                (p == "" ? new string?[] { null } : []).Concat(DelayBus.Presets.Select(x => (string?)BusPresetHint("delay", x.Label, x.Hint))).ToArray());
-            presets.SelectedIndex = p == "" ? 0 : Array.FindIndex(DelayBus.Presets, x => x.Label == p);
-        });
-        body.Children.Add(presets);
+        body.Children.Add(PresetBar(o, id, InsertSlot.DelayKind, refresh, DelayPresetItems(o, id)));
         body.Children.Add(FxSegments([("stereo", Loc.T("mix.delay.stereo.short"), Loc.T("mix.delay.stereo.tip")), ("pingpong", Loc.T("mix.delay.pingpong.short"), Loc.T("mix.delay.pingpong.tip"))],
             () => V().Mode, m => SlotEdit(o, id, s => s.Delay!.Mode = m, "delay.mode"), refresh));
         var division = StripSelect(DelayBus.Divisions.Select(d => Loc.Or("mix.div." + d.Id, d.Label)).Append(Loc.T("mix.delay.free")).ToArray());
@@ -453,7 +608,6 @@ public partial class MainWindow
         Recalculate = ChannelDsp.RecalculateComp,
         Take = () => BusTake(MasterOwner),
         Insert = engine.MasterInsert,
-        DefaultPreset = () => "bus-mix",
         AddTip = Loc.T("mix.slot.add.master.tip"),
         Master = true,
     };

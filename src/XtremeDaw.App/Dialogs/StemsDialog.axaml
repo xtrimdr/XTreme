@@ -5,36 +5,94 @@
              AutomationProperties.Name="{loc:T stems.title}"
              Background="{StaticResource Scrim}" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
 
-  <!-- same frame as UnsavedDialog: how many stems and how good, before a job that can take minutes -->
-  <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center"
+  <!-- same frame as UnsavedDialog: how many stems and how good, before a job that can take minutes; Avanzado (#146)
+       swaps count and quality for the model, the stems, the passes, the range and what happens with the original -->
+  <Border x:Name="Card" Width="440" HorizontalAlignment="Center" VerticalAlignment="Center"
           Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
     <StackPanel Margin="24,22,24,20" Spacing="14">
-      <StackPanel Spacing="2">
-        <TextBlock Classes="dialog-title" Text="{loc:T stems.title}" />
-        <TextBlock x:Name="ClipName" Classes="dim" TextTrimming="CharacterEllipsis" />
-      </StackPanel>
-      <StackPanel Spacing="6">
-        <TextBlock Classes="label" Text="{loc:T stems.count}" />
-        <Border Classes="seg" HorizontalAlignment="Left">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="2">
+          <TextBlock Classes="dialog-title" Text="{loc:T stems.title}" />
+          <TextBlock x:Name="ClipName" Classes="dim" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <Border Grid.Column="1" Classes="seg" VerticalAlignment="Top" Margin="12,0,0,0">
           <StackPanel Orientation="Horizontal">
-            <ToggleButton x:Name="Two" Classes="seg" Content="{loc:T stems.two}" ToolTip.Tip="{loc:T stems.two.tip}" />
-            <ToggleButton x:Name="Four" Classes="seg" Content="{loc:T stems.four}" ToolTip.Tip="{loc:T stems.four.tip}" />
-            <ToggleButton x:Name="Six" Classes="seg" Content="{loc:T stems.six}" ToolTip.Tip="{loc:T stems.six.tip}" />
+            <ToggleButton x:Name="SimpleMode" Classes="seg" Content="{loc:T stems.mode.simple}" />
+            <ToggleButton x:Name="AdvancedMode" Classes="seg" Content="{loc:T stems.mode.advanced}" ToolTip.Tip="{loc:T stems.mode.advanced.tip}" />
           </StackPanel>
         </Border>
-        <TextBlock x:Name="CountHelp" Classes="dim" TextWrapping="Wrap" />
+      </Grid>
+
+      <StackPanel x:Name="SimplePanel" Spacing="14">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{loc:T stems.count}" />
+          <Border Classes="seg" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton x:Name="Two" Classes="seg" Content="{loc:T stems.two}" ToolTip.Tip="{loc:T stems.two.tip}" />
+              <ToggleButton x:Name="Four" Classes="seg" Content="{loc:T stems.four}" ToolTip.Tip="{loc:T stems.four.tip}" />
+              <ToggleButton x:Name="Six" Classes="seg" Content="{loc:T stems.six}" ToolTip.Tip="{loc:T stems.six.tip}" />
+            </StackPanel>
+          </Border>
+          <TextBlock x:Name="CountHelp" Classes="dim" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{loc:T stems.quality}" />
+          <Border Classes="seg" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton x:Name="Fast" Classes="seg" Content="{loc:T stems.fast}" />
+              <ToggleButton x:Name="High" Classes="seg" Content="{loc:T stems.high}" />
+              <ToggleButton x:Name="Max" Classes="seg" Content="{loc:T stems.max}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
       </StackPanel>
-      <StackPanel Spacing="6">
-        <TextBlock Classes="label" Text="{loc:T stems.quality}" />
-        <Border Classes="seg" HorizontalAlignment="Left">
-          <StackPanel Orientation="Horizontal">
-            <ToggleButton x:Name="Fast" Classes="seg" Content="{loc:T stems.fast}" />
-            <ToggleButton x:Name="High" Classes="seg" Content="{loc:T stems.high}" />
-            <ToggleButton x:Name="Max" Classes="seg" Content="{loc:T stems.max}" />
-          </StackPanel>
-        </Border>
-        <TextBlock x:Name="Estimate" Classes="dim mono" />
+
+      <StackPanel x:Name="AdvancedPanel" Spacing="14" IsVisible="False">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{loc:T stems.model}" />
+          <Border Classes="seg" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton x:Name="ModelGeneral" Classes="seg" Content="{loc:T stems.model.general}" />
+              <ToggleButton x:Name="ModelTuned" Classes="seg" Content="{loc:T stems.model.tuned}" />
+              <ToggleButton x:Name="ModelSix" Classes="seg" Content="{loc:T stems.model.six}" />
+            </StackPanel>
+          </Border>
+          <TextBlock x:Name="ModelHelp" Classes="dim" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{loc:T stems.which}" />
+          <WrapPanel x:Name="StemChecks" />
+          <TextBlock Classes="dim" TextWrapping="Wrap" Text="{loc:T stems.which.rest}" />
+        </StackPanel>
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{loc:T stems.passes}" ToolTip.Tip="{loc:T stems.passes.tip}" />
+          <Border Classes="seg" HorizontalAlignment="Left">
+            <StackPanel x:Name="Passes" Orientation="Horizontal" />
+          </Border>
+        </StackPanel>
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{loc:T stems.range}" />
+          <Border Classes="seg" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton x:Name="WholeClip" Classes="seg" Content="{loc:T stems.range.clip}" />
+              <ToggleButton x:Name="OnlyRange" Classes="seg" Content="{loc:T stems.range.selection}" />
+            </StackPanel>
+          </Border>
+          <TextBlock x:Name="RangeHelp" Classes="dim" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{loc:T stems.original}" />
+          <Border Classes="seg" HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton x:Name="OriginalMute" Classes="seg" Content="{loc:T stems.original.mute}" />
+              <ToggleButton x:Name="OriginalKeep" Classes="seg" Content="{loc:T stems.original.keep}" />
+              <ToggleButton x:Name="OriginalRemove" Classes="seg" Content="{loc:T stems.original.remove}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
       </StackPanel>
+
+      <TextBlock x:Name="Estimate" Classes="dim mono" TextWrapping="Wrap" />
       <Grid ColumnDefinitions="*,Auto,Auto">
         <Button Grid.Column="1" x:Name="CancelButton" Classes="btn" Margin="8,0,0,0" Content="{loc:T common.cancel}" />
         <Button Grid.Column="2" x:Name="SeparateButton" Classes="btn primary" Margin="8,0,0,0" Padding="16,0" Content="{loc:T stems.go}" />

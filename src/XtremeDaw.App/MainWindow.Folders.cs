@@ -88,7 +88,8 @@ public partial class MainWindow
         if (FolderById(id) is { Collapsed: true } folded) folded.HeightScale = h / Timeline.TrackHeight;
         else if (FolderById(id) is { } f) f.Height = h is { } px ? Timeline.FolderUnzoomed(px) : null;
         else if (tracks.Find(t => t.Track.Id == id) is { } t) t.Track.HeightScale = Scale(h);
-        else if (tracks.Select(x => Automations.ById(x.Track, id)).FirstOrDefault(l => l != null) is { } lane) lane.HeightScale = h / AutomationLane.DefaultHeight;
+        else if (tracks.Select(x => Automations.ById(x.Track, id)).Concat(store.Project.Folders.Select(x => Automations.ById(x, id))).FirstOrDefault(l => l != null) is { } lane)
+            lane.HeightScale = h / Timeline.AutoBaseH;
         else return;
         RowHeightsChanged();
     }
@@ -115,7 +116,12 @@ public partial class MainWindow
             t.HeightScale = null;
             foreach (var l in t.Automation ?? []) l.HeightScale = null;
         }
-        foreach (var f in store.Project.Folders) { f.Height = null; f.HeightScale = null; }
+        foreach (var f in store.Project.Folders)
+        {
+            f.Height = null;
+            f.HeightScale = null;
+            foreach (var l in f.Automation ?? []) l.HeightScale = null;
+        }
         RowHeightsChanged();
     }
 
@@ -128,7 +134,7 @@ public partial class MainWindow
 
     /// <summary>The reset button is on only while some row has a height of its own.</summary>
     void UpdateResetHeights() => ResetHeightsButton.IsEnabled = store is { ReadOnly: false } st
-        && (st.Project.Tracks.Any(t => t.HeightScale != null || t.Automation?.Exists(l => l.HeightScale != null) == true) || st.Project.Folders.Any(f => f.Height != null || f.HeightScale != null));
+        && (st.Project.Tracks.Any(t => t.HeightScale != null || t.Automation?.Exists(l => l.HeightScale != null) == true) || st.Project.Folders.Any(f => f.Height != null || f.HeightScale != null || f.Automation?.Exists(l => l.HeightScale != null) == true));
 
     /// <summary>The folder selected in the timeline (or the mixer), or null; then no track is selected.</summary>
     Folder? SelectedFolder => Timeline.SelectedFolderId is { } id ? FolderById(id) : null;
@@ -167,7 +173,6 @@ public partial class MainWindow
             Take = () => (tracks.FirstOrDefault(t => t.Track.FolderId == id && t.FirstAudio != null) ?? tracks.FirstOrDefault(t => t.FirstAudio != null))?.FirstAudio,
             Insert = slot => engine.Node(id)?.Find(slot),
             AddTip = Loc.T("mix.slot.add.folder.tip"),
-            DefaultPreset = () => "bus-glue",
         };
     }
 
@@ -211,16 +216,31 @@ public partial class MainWindow
     void RenameFolder(Folder f, Control anchor, Point? at) =>
         AskName(anchor, at, Loc.T("folder.rename"), f.Name, Loc.T("common.ok"), name => FolderEdit(f, x => x.Name = name, "name"));
 
-    /// <summary>A small card with a name box: Enter or the button accepts, Esc or a click outside cancels.</summary>
-    void AskName(Control anchor, Point? at, string title, string initial, string action, Action<string> done, string? note = null)
+    /// <summary>
+    /// A small card with a name box: Enter or the button accepts, Esc or a click outside cancels. With
+    /// <paramref name="exists"/>, a name already taken is not replaced at once (asked by the user, #141): the card says so
+    /// and the button turns into Replace, which a second Enter or click confirms; editing the name asks again.
+    /// </summary>
+    void AskName(Control anchor, Point? at, string title, string initial, string action, Action<string> done, string? note = null,
+        Func<string, bool>? exists = null)
     {
         var box = new TextBox { Classes = { "field" }, Text = initial, Width = 240 };
         var ok = new Button { Classes = { "btn", "sm", "primary" }, Content = action, HorizontalAlignment = HorizontalAlignment.Right };
+        var taken = new TextBlock { Classes = { "notice" }, Text = Loc.T("name.exists"), TextWrapping = TextWrapping.Wrap, MaxWidth = 240, IsVisible = false };
         var body = new StackPanel { Spacing = 8 };
         body.Children.Add(new TextBlock { Classes = { "label" }, Text = title.ToUpperInvariant() });
         body.Children.Add(box);
         if (note != null) body.Children.Add(new TextBlock { Text = note, FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap, MaxWidth = 240 });
+        body.Children.Add(taken);
         body.Children.Add(ok);
+        string? confirmed = null;
+        box.TextChanged += (_, _) =>
+        {
+            if (confirmed == null) return;
+            confirmed = null;
+            taken.IsVisible = false;
+            ok.Content = action;
+        };
         var card = new Border
         {
             Padding = new Thickness(12, 10), Background = Palette.Raised, BorderBrush = Palette.Line, BorderThickness = new Thickness(1),
@@ -240,6 +260,13 @@ public partial class MainWindow
         {
             string name = box.Text?.Trim() ?? "";
             if (name.Length == 0) return;
+            if (exists != null && confirmed != name && exists(name))
+            {
+                confirmed = name;
+                taken.IsVisible = true;
+                ok.Content = Loc.T("name.replace");
+                return;
+            }
             flyout.Hide();
             done(name);
         }
@@ -289,6 +316,11 @@ public partial class MainWindow
         var sendsIcon = FxIcon.Create(FxIcon.Bus, 12);
         sendsIcon.VerticalAlignment = VerticalAlignment.Center;
         list.Add(new MenuItem { Header = MenuHeader(Loc.T("send.menu"), sendsIcon), ItemsSource = SendChoices(RouterOf(f)), IsEnabled = enabled });
+        // a folder is a channel: its lanes (#136), like a track's
+        list.Add(new MenuItem { Header = MenuHeader(Loc.T("auto.menu"), new TextBlock { Classes = { "icon" }, Text = "\uE9D2", FontSize = 12 }), ItemsSource = AutomationItems(f), IsEnabled = enabled });
+        if (f.Automation is { Count: > 0 })
+            list.Add(MenuCheck(Loc.T("folder.lanes"), () => FolderById(id) is { AutomationFolded: false }, () => { if (FolderById(id) is { } x) FoldLanes(x); }, refresh,
+                tip: Loc.T("folder.lanes.tip"), enabled: enabled));
         list.Add(new Separator());
         list.Add(MenuAction(Loc.T("folder.newTrack"), () => EditTimeline(p =>
         {
@@ -425,15 +457,25 @@ public partial class MainWindow
         // name and count are one text so they trim together when the band is as narrow as a folded compact strip
         var nameRun = new Run { FontSize = 11, FontWeight = FontWeight.SemiBold, Foreground = Palette.Fg };
         var count = new Run { FontSize = 10.5, Foreground = Palette.Faint };
-        var name = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 260, Margin = new Thickness(6, 0, 0, 0) };
+        // left-aligned so the band past the text stays free for the fold double click (#170)
+        var name = new TextBlock { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 260, Margin = new Thickness(6, 0, 0, 0) };
         name.Inlines!.AddRange([nameRun, new Run("  "), count]);
         RenameOnDoubleClick(name, () => RenameFolder(F(), name, null));
         // the band never widens the group: the strips set the width and the name trims to it
         // the folder strip already shows the folder glyph: the band leaves that room to the name
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(8, 4, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(fold);
         Grid.SetColumn(name, 1); row.Children.Add(name);
-        var band = new NoWidth { Child = row };
+        // a double click on the band where there is no text folds or unfolds it (#170); on the name it renames
+        // (handled on the tunnel) and the arrow handles its own press
+        var hit = new Border { Background = Brushes.Transparent, Padding = new Thickness(8, 4, 8, 0), Child = row };
+        hit.PointerPressed += (_, e) =>
+        {
+            if (e.Handled || e.ClickCount != 2 || !e.GetCurrentPoint(hit).Properties.IsLeftButtonPressed || store == null || restoring) return;
+            e.Handled = true;
+            FolderEdit(F(), x => x.MixerCollapsed = !x.MixerCollapsed, "mixerFold", undoable: false);
+        };
+        var band = new NoWidth { Child = hit };
         var decor = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Margin = new Thickness(1, 2, 1, StripGap / 2), IsHitTestVisible = false };
         mx.Refresh.Add(() =>
         {
@@ -533,7 +575,7 @@ public partial class MainWindow
             {
                 Toast(Loc.T("preset.saveFail", e.Message));
             }
-        }, Loc.T("preset.save.note"));
+        }, exists: n => TrackPresets.All().Any(x => string.Equals(x.Name, n, StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>The "Plantilla" submenu of the new-track menu: one entry per saved preset, each with its trash can to delete it.</summary>
@@ -623,6 +665,8 @@ public partial class MainWindow
     readonly StackPanel folderPanel = new() { Spacing = 12, IsVisible = false };
     readonly List<Action> folderRefresh = [];
     readonly TextBox folderName = new() { Classes = { "title" } };
+    /// <summary>The folder's name row: where the arrow from its header points (#180, MainWindow.InspectorPointer.cs).</summary>
+    readonly Grid folderHead = new() { ColumnDefinitions = new ColumnDefinitions("28,*,Auto,Auto") };
 
     /// <summary>What the inspector shows while a folder is selected: its name, color, output, sends and its actions.</summary>
     void InitFolderInspector()
@@ -640,25 +684,21 @@ public partial class MainWindow
             string name = folderName.Text?.Trim() ?? "";
             if (name.Length > 0 && name != f.Name) FolderEdit(f, x => x.Name = name, "name");
         };
-        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("28,*") };
+        // the color square and, next to it, "give the tracks this color" (#145)
+        var pickColor = ColorPickButton(() => SelectedFolder?.Color, hex => { if (SelectedFolder is { } f) FolderEdit(f, x => x.Color = hex, "color"); }, folderRefresh);
+        var paint = FolderPaintButton(() => SelectedFolder, folderRefresh);
+        var head = folderHead;
         head.Children.Add(badge);
         Grid.SetColumn(folderName, 1); head.Children.Add(folderName);
+        Grid.SetColumn(pickColor, 2); head.Children.Add(pickColor);
+        Grid.SetColumn(paint, 3); head.Children.Add(paint);
+        folderRefresh.Add(() => paint.IsVisible = SelectedFolder is { Separator: false });
         var count = new TextBlock { FontSize = 11, Foreground = Palette.Faint, Margin = new Thickness(36, -6, 0, 0) };
         folderPanel.Children.Add(head);
         folderPanel.Children.Add(count);
 
         var card = new StackPanel { Spacing = 14 };
-        card.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("folder.color").ToUpperInvariant() });
-        var paintAsk = FolderTracksAsk(() => SelectedFolder, folderRefresh);
-        card.Children.Add(ColorChips(() => SelectedFolder?.Color, hex =>
-        {
-            if (SelectedFolder is not { } f) return;
-            FolderEdit(f, x => x.Color = hex, "color");
-            paintAsk.Ask(f);
-        }, folderRefresh, 16));
-        card.Children.Add(paintAsk.View);
-        card.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("folder.route").ToUpperInvariant(), Margin = new Thickness(0, 4, 0, 0) });
-        card.Children.Add(folderRouting);
+        // its output and sends go in the strip, as a track's (#149)
         card.Children.Add(Help(Loc.T("folder.route.hint")));
         folderPanel.Children.Add(new Border { Classes = { "section" }, Background = Palette.Panel, BorderThickness = new Thickness(0, 1), CornerRadius = new CornerRadius(0),
             Margin = new Thickness(-14, 4, -14, 0), Padding = new Thickness(16, 14, 16, 16), Child = card });
@@ -688,42 +728,7 @@ public partial class MainWindow
             if (!folderName.IsFocused || folderName.Text?.Trim() != f.Name) folderName.Text = f.Name;
             int n = tracks.Count(t => t.Track.FolderId == f.Id);
             count.Text = n == 0 ? Loc.T("folder.empty") : n == 1 ? Loc.T("folder.count.one") : Loc.T("folder.count", n);
-            RebuildFolderRouting(f);
-            foreach (var r in folderRouteRefresh) r();
         });
         Inspector.Children.Add(folderPanel);
-    }
-
-    readonly StackPanel folderRouting = new() { Spacing = 10 };
-    readonly List<Action> folderRouteRefresh = [];
-    string folderRoutingKey = "";
-
-    /// <summary>
-    /// The selected folder's output and its sends (a level per bus it can send to; 0 = no send), rebuilt only when the
-    /// folder or the buses change; every other edit just refreshes them.
-    /// </summary>
-    void RebuildFolderRouting(Folder f)
-    {
-        var router = RouterOf(f);
-        var targets = SendTargets(router);
-        string key = f.Id + "|" + string.Join("/", targets.Select(b => b.Id + ":" + b.Name)) + "|" + Targets(router).Count;
-        if (key == folderRoutingKey) return;
-        folderRoutingKey = key;
-        folderRouting.Children.Clear();
-        folderRouteRefresh.Clear();
-        var output = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        output.Children.Add(new TextBlock { Text = Loc.T("route.output"), FontSize = 12, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
-        var select = OutputSelect(router, folderRouteRefresh);
-        Grid.SetColumn(select, 1); output.Children.Add(select);
-        folderRouting.Children.Add(output);
-        foreach (var bus in targets)
-        {
-            string id = bus.Id;
-            var slider = new InspectorSlider(Loc.T("route.sendTo", bus.Name), 0, 1, 0.01, 0, v => $"{v * 100:0}%",
-                v => { if (!syncing) router.Edit((p, x) => ProjectBuses.SetSend(p, x, id, v, v > 0 ? true : null) != null, $"send.{id}.level"); });
-            folderRouteRefresh.Add(() => slider.Set(router.Get() is { } x ? ProjectBuses.SendOf(x, id).Level : 0, null));
-            folderRouting.Children.Add(slider);
-        }
-        if (Targets(router).Count > 0) folderRouting.Children.Add(AddSendButton(router));
     }
 }

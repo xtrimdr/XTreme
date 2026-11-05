@@ -65,6 +65,19 @@ public sealed record FxParam(string Id, string Label, double Min, double Max, do
 }
 
 /// <summary>
+/// One inner panel of an effect's full view: its title (a text key), what goes in it (knob ids of <see cref="FxDefs.Params"/>
+/// and <see cref="FxDefs.Common"/>, or <see cref="FxDefs.GraphPart"/> / <see cref="FxDefs.KeyPart"/> for the window's own
+/// controls) and its share of the row's width.
+/// </summary>
+public sealed record FxGroup(string Label, string[] Ids, double Weight);
+
+/// <summary>
+/// How an effect shows in its two sizes (asked by the user, 2026-11-05, #140): <see cref="Compact"/> lists the main knobs,
+/// <see cref="Rows"/> the inner panels of the full view, row by row. Every knob of the effect is in some panel.
+/// </summary>
+public sealed record FxLayout(string[] Compact, FxGroup[][] Rows);
+
+/// <summary>
 /// The list of every native effect's parameters, one place for the window's panel (the same in the inspector, the
 /// mixer, the timeline and the master), <see cref="ChannelDsp"/> and xtlab. Each kind's <see cref="Common"/> knobs (Mix,
 /// output) come from here too. Also what the perillas configurables, MIDI learn and automation will read.
@@ -329,6 +342,26 @@ public static class FxDefs
         TrackInserts.VariMu => VariMuList,
         TrackInserts.Pump => PumpList,
         _ => [],
+    };
+
+    /// <summary>Parts of a full view that aren't knobs: a compressor's graph and what an effect listens to (its sidechain).</summary>
+    public const string GraphPart = "@graph", KeyPart = "@key";
+
+    static readonly FxLayout CompLayout = new(["amount", "makeup", "wet"],
+    [
+        [new("fx.panel.curve", [GraphPart], 4), new("fx.panel.dynamics", ["amount", "threshold", "ratio", "knee"], 4)],
+        [new("fx.panel.times", ["attack", "release"], 2), new("fx.panel.output", ["makeup", "dry", "wet", "out"], 4)],
+        [new("fx.panel.eq", ["hpf", "mud", "presence", "air"], 4), new("fx.panel.key", [KeyPart], 2)],
+    ]);
+
+    /// <summary>
+    /// The effect's compact and full views, or null for one that has a single view (it shows as it always did). The effects
+    /// get theirs one by one (asked by the user).
+    /// </summary>
+    public static FxLayout? Layout(string kind) => kind switch
+    {
+        InsertSlot.CompKind => CompLayout,
+        _ => null,
     };
 
     /// <summary>The effect's power switch, for a lane: <see cref="InsertSlot.On"/> as a parameter.</summary>

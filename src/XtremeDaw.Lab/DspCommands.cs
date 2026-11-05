@@ -636,6 +636,7 @@ static class DspCommands
         allOk &= GateChecks.Check();
         allOk &= FxChecks.Check();
         allOk &= CompPresetChecks.Check();
+        allOk &= FxPresetChecks.Check();
         allOk &= ModChecks.Check();
         allOk &= PumpChecks.Check();
         allOk &= SidechainChecks.Check();

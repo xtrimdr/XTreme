@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -96,8 +97,16 @@ public sealed class TestMessage
     public string? Text { get; set; }
     /// <summary>The attempt it belongs to.</summary>
     public int Try { get; set; }
+    /// <summary>
+    /// Images that go with it (asked by the user, #176: to show a problem), as paths under <see cref="TestList.ImageFolder"/>
+    /// ("176/20261105-131200-1.png"); null when it has none.
+    /// </summary>
+    public List<string>? Images { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
+
+/// <summary>An image to attach to a message, not written yet: its bytes and its file extension (".png").</summary>
+public sealed record TestImage(byte[] Data, string Extension);
 
 /// <summary>What <c>pruebas\lista.json</c> holds.</summary>
 public sealed class TestListData
@@ -171,6 +180,17 @@ public static class TestList
         : "xtlab";
 
     public static string HistoryPath(string path) => Path.ChangeExtension(path, null) + ".historial.jsonl";
+
+    /// <summary>Where a list keeps its tickets' images, one folder per ticket: <c>pruebas\adjuntos</c>.</summary>
+    public static string ImageFolder(string path) => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, "adjuntos");
+
+    /// <summary>The file of one of a message's <see cref="TestMessage.Images"/>.</summary>
+    public static string ImagePath(string path, string image) => Path.Combine(ImageFolder(path), image.Replace('/', Path.DirectorySeparatorChar));
+
+    /// <summary>The image types the bench takes, by extension.</summary>
+    public static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"];
+    /// <summary>Past this an image is surely not a screenshot: it is refused, so the folder does not fill up.</summary>
+    public const int MaxImageBytes = 25 * 1024 * 1024;
 
     /// <summary>The list, empty if it does not exist yet or cannot be understood.</summary>
     public static TestListData Read(string path) => TryRead(path) ?? new TestListData();
@@ -274,7 +294,7 @@ public static class TestList
     /// A change the user asks for (asked by the user: every request goes here, and the agents take their work from
     /// here). It counts no tries until an agent sends it to be tried. The same request still waiting is not repeated.
     /// </summary>
-    public static int AddRequest(string path, string text, string? kind, string build, string? topic = null)
+    public static int AddRequest(string path, string text, string? kind, string build, string? topic = null, IReadOnlyList<TestImage>? images = null)
     {
         if (kind != null && !TestItem.Kinds.Contains(kind)) throw new ArgumentException($"Categoría desconocida: {kind}");
         topic = CheckTopic(topic);
@@ -286,6 +306,7 @@ public static class TestList
             {
                 if (kind != null) same.Kind = kind;
                 if (topic != null) same.Topic = topic;
+                if (images is { Count: > 0 }) Say(same, TestMessage.Comment, null, null, images, path);
                 Touch(same);
                 id = same.Id;
                 log(same, TestEvent.Edited, null);
@@ -296,7 +317,7 @@ public static class TestList
             {
                 Id = id, Text = text, Kind = kind, Topic = topic, Build = build, At = DateTime.Now, State = TestItem.Request, Tries = 0, Unseen = Who != User,
             };
-            Say(item, TestMessage.Open, null, text);
+            Say(item, TestMessage.Open, null, text, images, path);
             d.Items.Add(item);
             log(item, TestEvent.Asked, null);
         });
@@ -312,7 +333,20 @@ public static class TestList
     public static bool Open(TestItem item) => item.State is TestItem.Request or TestItem.Fails or TestItem.WorksBadly or TestItem.Improve;
 
     /// <summary>
-    /// An agent takes an open item (<see cref="Open"/>), so no other one works on it at the same time (unless the first
+    /// Whether an agent may take the item: anything not marked as working. An item waiting to be tried is taken too when
+    /// the user asks for more in its thread (#173: an agent worked on one and the bench did not show it in progress).
+    /// </summary>
+    public static bool Takeable(TestItem item) => item.State != TestItem.Works;
+
+    /// <summary>
+    /// Whether an agent is still on an item (asked by the user, #173): taken, not stale, and its session not ended.
+    /// A session that was closed leaves it free at once, for the bench and for the next <see cref="Take"/>.
+    /// </summary>
+    public static bool Held(TestItem item, AgentSessions sessions) =>
+        Takeable(item) && item.Taken is { } t && DateTime.Now - t < TakeStale && sessions.Alive(item.TakenBy) != false;
+
+    /// <summary>
+    /// An agent takes an item (<see cref="Takeable"/>), so no other one works on it at the same time (unless the first
     /// one went stale). The session that has it may take it again. <paramref name="holder"/> says who has it when busy.
     /// </summary>
     public static TakeResult Take(string path, int id) => Take(path, id, out _);
@@ -321,11 +355,13 @@ public static class TestList
     {
         var result = TakeResult.NotFound;
         string? by = null;
+        // read before the lock: it asks the processes, and the lock is only for the change
+        var sessions = AgentSessions.Read(AgentSessions.RootOf(path));
         Update(path, (d, log) =>
         {
             if (d.Items.Find(i => i.Id == id) is not { } item) return;
-            if (!Open(item)) result = TakeResult.NotOpen;
-            else if (item.Taken is { } t && DateTime.Now - t < TakeStale && item.TakenBy != Who)
+            if (!Takeable(item)) result = TakeResult.NotOpen;
+            else if (item.TakenBy != Who && Held(item, sessions))
             {
                 result = TakeResult.Busy;
                 by = item.TakenBy;
@@ -436,7 +472,7 @@ public static class TestList
         bool found = false;
         Update(path, (d, log) =>
         {
-            if (d.Items.Find(i => i.Id == id && Open(i)) is not { } item) return;
+            if (d.Items.Find(i => i.Id == id && Takeable(i)) is not { } item) return;
             found = true;
             item.Taken = null;
             item.TakenBy = null;
@@ -482,7 +518,7 @@ public static class TestList
     }
 
     /// <summary>The user's verdict and note on an item; <paramref name="rev"/> is the one the ticket showed.</summary>
-    public static void Mark(string path, int id, string state, string? note, int? rev = null) => Update(path, (d, log) =>
+    public static void Mark(string path, int id, string state, string? note, int? rev = null, IReadOnlyList<TestImage>? images = null) => Update(path, (d, log) =>
     {
         if (d.Items.Find(i => i.Id == id) is not { } item) return;
         Check(item, rev);
@@ -491,30 +527,30 @@ public static class TestList
         item.Reply = null;
         item.Note = Clean(note);
         item.Unseen = false;
-        Say(item, TestMessage.Verdict, state, item.Note);
+        Say(item, TestMessage.Verdict, state, item.Note, images, path);
         Touch(item);
         log(item, TestEvent.Marked, item.Note);
     });
 
     /// <summary>
     /// Something said in a ticket without changing its state: the user adding to it, or an agent asking or telling.
-    /// What an agent says is "Nuevo" to the user. False if the ticket is not there or the text is empty.
+    /// What an agent says is "Nuevo" to the user. False if the ticket is not there, or it has neither text nor images.
     /// </summary>
-    public static bool Comment(string path, int id, string text, int? rev = null)
+    public static bool Comment(string path, int id, string? text, int? rev = null, IReadOnlyList<TestImage>? images = null)
     {
-        text = Clean(text) ?? "";
-        if (text == "") return false;
+        text = Clean(text);
+        if (text == null && images is not { Count: > 0 }) return false;
         bool found = false;
         Update(path, (d, log) =>
         {
             if (d.Items.Find(i => i.Id == id) is not { } item) return;
             Check(item, rev);
             found = true;
-            Say(item, TestMessage.Comment, null, text);
+            Say(item, TestMessage.Comment, null, text, images, path);
             if (Who == User) item.Reply = null;
             else item.Unseen = true;
             Touch(item);
-            log(item, TestEvent.Commented, text);
+            log(item, TestEvent.Commented, text ?? $"({images!.Count} img.)");
         });
         return found;
     }
@@ -549,6 +585,7 @@ public static class TestList
         if (d.Items.Find(i => i.Id == id) is not { } item) return;
         Check(item, rev);
         d.Items.Remove(item);
+        DropImages(path, item.Id);
         log(item, TestEvent.Removed, null);
     });
 
@@ -558,6 +595,7 @@ public static class TestList
         foreach (var item in d.Items.Where(i => i.State == TestItem.Works).ToList())
         {
             d.Items.Remove(item);
+            DropImages(path, item.Id);
             log(item, TestEvent.Cleared, null);
         }
     });
@@ -586,10 +624,54 @@ public static class TestList
         return list;
     }
 
-    static void Say(TestItem item, string kind, string? state, string? text) => item.Thread.Add(new TestMessage
+    static void Say(TestItem item, string kind, string? state, string? text, IReadOnlyList<TestImage>? images = null, string? path = null) =>
+        item.Thread.Add(new TestMessage
+        {
+            At = DateTime.Now, Who = Who, Kind = kind, State = state, Text = text, Try = Math.Max(1, item.Tries),
+            Images = images is { Count: > 0 } && path != null && WriteImages(path, item.Id, images) is { Count: > 0 } names ? names : null,
+        });
+
+    /// <summary>
+    /// Writes a message's images into the ticket's folder, each through a temporary file, while the list's lock is held,
+    /// so two writers never pick the same name. Names start with the time, so they sort in the order they were said.
+    /// </summary>
+    static List<string> WriteImages(string path, int id, IReadOnlyList<TestImage> images)
     {
-        At = DateTime.Now, Who = Who, Kind = kind, State = state, Text = text, Try = Math.Max(1, item.Tries),
-    });
+        var dir = Path.Combine(ImageFolder(path), id.ToString(CultureInfo.InvariantCulture));
+        Directory.CreateDirectory(dir);
+        var names = new List<string>();
+        string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        int n = 1;
+        foreach (var img in images)
+        {
+            if (img.Data.Length == 0 || img.Data.Length > MaxImageBytes) continue;
+            string ext = img.Extension.ToLowerInvariant();
+            if (!ImageExtensions.Contains(ext)) ext = ".png";
+            string name;
+            while (File.Exists(Path.Combine(dir, name = $"{stamp}-{n}{ext}"))) n++;
+            string file = Path.Combine(dir, name), tmp = file + ".tmp";
+            using (var f = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 65536, FileOptions.WriteThrough))
+            {
+                f.Write(img.Data);
+                f.Flush(true);
+            }
+            File.Move(tmp, file);
+            names.Add($"{id}/{name}");
+            n++;
+        }
+        return names;
+    }
+
+    /// <summary>A ticket that leaves the list takes its images with it; a folder that cannot be deleted now stays, harmless.</summary>
+    static void DropImages(string path, int id)
+    {
+        try
+        {
+            var dir = Path.Combine(ImageFolder(path), id.ToString(CultureInfo.InvariantCulture));
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
 
     static void Touch(TestItem item) => item.Rev++;
 

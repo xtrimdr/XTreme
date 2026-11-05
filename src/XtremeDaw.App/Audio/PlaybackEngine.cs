@@ -37,6 +37,10 @@ public sealed class PlaybackEngine : IDisposable
     /// <summary>The buses and folders the nodes were last built from, so a tempo change can update their delays.</summary>
     IReadOnlyList<Bus>? busList;
     IReadOnlyList<Folder>? folderList;
+    /// <summary>UI side: the folders whose native effects follow lanes, with their node (<see cref="TickNodeAutomation"/>).</summary>
+    (BusDspChain Node, InsertAutomator Lanes)[] nodeAutomators = [];
+    /// <summary>UI side: where <see cref="TickNodeAutomation"/> last read the lanes, so a rebuilt automator starts there.</summary>
+    double nodeAutoSec;
     readonly float[] rampGain = new float[TrackDspChain.MaxBlockSize];
     readonly MixGraphBus buses = new(SampleRate) { Slots = { Keys = LiveKeys.For } };
     /// <summary>The order the tracks run in each block: a sidechain's source before the tracks that listen to it (empty = the list's).</summary>
@@ -432,6 +436,7 @@ public sealed class PlaybackEngine : IDisposable
         var known = new bool[ids.Count];
         bool same = next.Length == nodes.Length;
         var map = new Dictionary<string, BusDspChain>(ids.Count);
+        var automated = new List<(BusDspChain, InsertAutomator)>();
         for (int i = 0; i < next.Length; i++)
         {
             known[i] = nodeById.TryGetValue(ids[i], out var node);
@@ -450,7 +455,10 @@ public sealed class PlaybackEngine : IDisposable
                 node.Volume = folder.Volume;
                 node.Pan = folder.Pan;
                 node.Muted = folder.Muted;
-                node.SetInserts(ChannelDsp.FolderSpecs(folder, bpm, LiveVst.Of(folder.Id), FxBypass), fade: known[i]);
+                node.Automation = Automations.Compile(folder);
+                var lanes = InsertAutomator.Create(folder, ChannelDsp.BusRmsDb, bpm, LiveVst.Of(folder.Id), FxBypass);
+                if (lanes != null) automated.Add((node, lanes));
+                node.SetInserts(lanes?.At(nodeAutoSec, force: true) ?? ChannelDsp.FolderSpecs(folder, bpm, LiveVst.Of(folder.Id), FxBypass), fade: known[i]);
             }
             next[i] = node;
             map[ids[i]] = node;
@@ -462,13 +470,14 @@ public sealed class PlaybackEngine : IDisposable
         {
             var r = Routed(ids[i]);
             next[i].Out = r.Output != null ? map.GetValueOrDefault(r.Output) : null;
-            next[i].Sends = SendsTo(map, r, next[i].Sends);
+            next[i].Sends = SendsTo(map, r, next[i].Sends, r as IAutomated);
         }
         for (int i = 0; i < next.Length; i++) if (!known[i]) Route(i);
         if (!same) nodes = next;
         for (int i = 0; i < next.Length; i++) if (known[i]) Route(i);
         nodeById.Clear();
         foreach (var (id, node) in map) nodeById[id] = node;
+        nodeAutomators = [.. automated];
         foreach (var t in list)
         {
             t.Out = ChannelDsp.TrackOutput(t.Track) is { } to ? map.GetValueOrDefault(to) : null;
@@ -483,7 +492,7 @@ public sealed class PlaybackEngine : IDisposable
     /// What <paramref name="r"/> sends, as the audio thread reads it: the sends that are on, above 0 and whose bus the
     /// engine has. Each takes the PDC delay of the send to the same bus in <paramref name="old"/>, so it keeps what it holds.
     /// </summary>
-    public static TrackSend[] SendsTo(IReadOnlyDictionary<string, BusDspChain>? map, IRouted r, TrackSend[]? old = null, Track? track = null)
+    public static TrackSend[] SendsTo(IReadOnlyDictionary<string, BusDspChain>? map, IRouted r, TrackSend[]? old = null, IAutomated? track = null)
     {
         bool Sounds(Send s) => s.On && (s.Level > 0 || track != null && Automations.SendCurve(track, s.BusId) != null);
         int n = 0;
@@ -498,13 +507,31 @@ public sealed class PlaybackEngine : IDisposable
         return next;
     }
 
+    /// <summary>
+    /// UI thread, every tick: the folders' lanes on their native effects at the playhead (their fader's, pan's, mute's
+    /// and sends' are read on the audio thread), like <c>LiveTrack.TickAutomation</c>. Allocates only when a lane moved.
+    /// </summary>
+    public void TickNodeAutomation(double sec)
+    {
+        nodeAutoSec = sec;
+        var list = nodeAutomators;
+        for (int i = 0; i < list.Length; i++)
+            if (list[i].Lanes.At(sec) is { } specs) list[i].Node.SetInserts(specs);
+    }
+
     /// <summary>The slots of every bus and folder again (the tempo changed: their delays follow it; a VST3 effect came up or went away; the FX switch).</summary>
     public void ApplyBusSlots()
     {
         foreach (var b in busList ?? [])
             if (nodeById.TryGetValue(b.Id, out var node)) node.SetInserts(ChannelDsp.BusSpecs(b, bpm, LiveVst.Of(b.Id), FxBypass));
         foreach (var f in folderList ?? [])
-            if (!f.Separator && nodeById.TryGetValue(f.Id, out var node)) node.SetInserts(ChannelDsp.FolderSpecs(f, bpm, LiveVst.Of(f.Id), FxBypass));
+            if (!f.Separator && nodeById.TryGetValue(f.Id, out var node))
+            {
+                var lanes = InsertAutomator.Create(f, ChannelDsp.BusRmsDb, bpm, LiveVst.Of(f.Id), FxBypass);
+                node.SetInserts(lanes?.At(nodeAutoSec, force: true) ?? ChannelDsp.FolderSpecs(f, bpm, LiveVst.Of(f.Id), FxBypass));
+                for (int i = 0; i < nodeAutomators.Length; i++)
+                    if (nodeAutomators[i].Node == node) nodeAutomators[i] = (node, lanes ?? nodeAutomators[i].Lanes);
+            }
     }
 
     /// <summary>

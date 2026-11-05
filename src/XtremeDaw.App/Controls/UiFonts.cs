@@ -48,7 +48,7 @@ public static class UiFonts
     public const string MonoFamily = "Cascadia Mono, Consolas";
     public const string DefaultNumbers = "mono";
     /// <summary>Where the bundled fonts live (DSEG's Mini cut, to fit the rows' height, and Orbitron; both SIL OFL 1.1).</summary>
-    const string FontsUri = "avares://XTreme/Assets/Fonts#";
+    static readonly string FontsUri = Loc.Assets + "Fonts#";
 
     /// <summary>The numbers' fonts, in the picker's order: id → family. The digital ones are bundled (Windows has none);
     /// a glyph they lack (letters, ∞) falls back to the system's. Only the 14-segment DSEG stays: the 7-segment cuts

@@ -35,8 +35,6 @@ public partial class MainWindow
     readonly Border inspectorStrip = new() { Background = Palette.App, IsVisible = false };
     readonly StackPanel stripFx = new() { Spacing = StripRowGap }, stripSends = new() { Spacing = StripRowGap };
     readonly Dictionary<string, Border> stripRows = [];
-    readonly TextBlock stripFxEmpty = new() { FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 0) };
-    readonly TextBlock stripSendsEmpty = new() { FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 0) };
     readonly TextBlock stripFxCount = new(), stripSendsCount = new();
     readonly Decorator stripOutput = new();
     readonly Fader stripFader = new();
@@ -67,13 +65,9 @@ public partial class MainWindow
     const double StripRowH = 24;
     const double StripRowGap = 2;
 
-    /// <summary>The band over the channel's name, in its color (the accent without one), so the channel shown is plain to see.</summary>
-    readonly Border inspectorTopBand = new() { Height = 3, Margin = new Thickness(-14, -12, -14, 9) };
-
     void InitInspectorStrip()
     {
-        DockPanel.SetDock(inspectorTopBand, Dock.Top);
-        inspectorTopBox.Child = new DockPanel { Children = { inspectorTopBand, inspectorTop } };
+        inspectorTopBox.Child = inspectorTop;
 
         // the clip's section: its name with the clip icon, then its facts and settings (InitClipInspector)
         noClip.Text = Loc.T("insp.clip.none");
@@ -89,9 +83,9 @@ public partial class MainWindow
         // left: pan, M S, the fader and its meter, the level
         static double Snap(double x) => Math.Abs(x) < 0.04 ? 0 : x;
         stripPan.Changed += v => StripEdit(v, (b, x) => b.Pan = Snap(x), (f, x) => f.Pan = Snap(x), (t, x) => t.Channel.Pan = Snap(x), "pan");
-        AutomateOn(stripPan, () => SingleTrack, AutoTarget.Pan, k => { stripPan.Value = k * 2 - 1; stripPan.Readout = ValueFormat.PanShort(k * 2 - 1); });
+        AutomateOn(stripPan, StripLanes, AutoTarget.Pan, k => { stripPan.Value = k * 2 - 1; stripPan.Readout = ValueFormat.PanShort(k * 2 - 1); });
         stripFader.Changed += v => StripEdit(v, (b, x) => b.Volume = x, (f, x) => f.Volume = x, (t, x) => t.Channel.Volume = x, "volume");
-        AutomateOn(stripFader, () => SingleTrack, AutoTarget.Volume, k => { stripFader.Value = Fader.ToVol(k); ShowStripDb(Fader.ToVol(k)); });
+        AutomateOn(stripFader, StripLanes, AutoTarget.Volume, k => { stripFader.Value = Fader.ToVol(k); ShowStripDb(Fader.ToVol(k)); });
         var mute = StripToggle("M", Shortcuts.Tip(Loc.T("track.mute"), "mute"), 26,
             () => stripBus?.Muted ?? stripFolder?.Muted ?? (PickTargets() is { Count: > 0 } p && p.All(t => t.Channel.Muted)), true,
             () =>
@@ -120,20 +114,21 @@ public partial class MainWindow
         Grid.SetRow(stripDb, 3); left.Children.Add(stripDb);
 
         // right: the effects in the order they sound, the sends, the output
-        stripFxEmpty.Text = Loc.T("insp.tray.fx.empty");
-        stripSendsEmpty.Text = Loc.T("insp.tray.sends.empty");
+        // each list ends in its "+" (#150), not on its title
+        var stripFxAdd = ListAddRow(Loc.T("mix.slot.add.tip"), StripRowH, b => { if (stripOwner != null) ShowAddSlotMenu(stripOwner, b); });
+        var stripSendsAdd = ListAddRow(Loc.T("send.add.tip"), StripRowH, b => { if (stripRouter != null) OpenAnchoredMenu(Popup(SendChoices(stripRouter), 220), b); });
+        stripFxAdd.Margin = stripSendsAdd.Margin = new Thickness(0, StripRowGap - 4, 0, 0);
         stripFxPart = new StackPanel
         {
             Spacing = 4,
-            Children = { StripListHead(StripGlyph(""), Loc.T("mix.list.fx"), stripFxCount, Loc.T("mix.slot.add.tip"), b => { if (stripOwner != null) ShowAddSlotMenu(stripOwner, b); }), stripFx, stripFxEmpty },
+            Children = { StripListHead(StripGlyph(""), Loc.T("mix.list.fx"), stripFxCount), stripFx, stripFxAdd },
         };
         stripSendsPart = new StackPanel
         {
             Spacing = 4, Margin = new Thickness(0, 12, 0, 0),
-            Children = { StripListHead(FxIcon.Create(FxIcon.Bus, 12), Loc.T("mix.list.sends"), stripSendsCount, Loc.T("send.add.tip"), b => { if (stripRouter != null) OpenAnchoredMenu(Popup(SendChoices(stripRouter), 220), b); }),
-                stripSends, stripSendsEmpty },
+            Children = { StripListHead(FxIcon.Create(FxIcon.Bus, 12), Loc.T("mix.list.sends"), stripSendsCount), stripSends, stripSendsAdd },
         };
-        var outputPart = new StackPanel { Spacing = 4, Margin = new Thickness(0, 12, 0, 0), Children = { StripListHead(StripGlyph(""), Loc.T("route.output"), null, null, null), stripOutput } };
+        var outputPart = new StackPanel { Spacing = 4, Margin = new Thickness(0, 12, 0, 0), Children = { StripListHead(StripGlyph(""), Loc.T("route.output"), null), stripOutput } };
         var lists = new StackPanel { Margin = new Thickness(8, 10, 10, 10), Children = { stripFxPart, stripSendsPart, outputPart } };
         var right = new ScrollViewer { Content = lists, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
@@ -144,6 +139,9 @@ public partial class MainWindow
         // the rail still lists the mix first, and a click on it opens the inspector: the strip is always in sight
         sectionLooks["Mezcla"] = ("", null);
     }
+
+    /// <summary>Whose lanes the strip's fader and pan offer and follow: the folder it shows or the single track; none for a bus.</summary>
+    IAutomated? StripLanes() => stripBus != null ? null : stripFolder ?? (IAutomated?)SingleTrack?.Track;
 
     /// <summary>An edit of the strip's fader or pan: the bus or folder it shows, or the selected (or picked) tracks.</summary>
     void StripEdit(double v, Action<Bus, double> bus, Action<Folder, double> folder, Action<LiveTrack, double> track, string key)
@@ -168,11 +166,11 @@ public partial class MainWindow
 
     /// <summary>
     /// A part's title in the strip (asked by the user: what each one is, at a glance): its icon and name in the accent
-    /// over a thin rule, how many it holds and its "+" (the output has neither).
+    /// over a thin rule, and how many it holds; its "+" is the list's last row (#150, <see cref="ListAddRow"/>).
     /// </summary>
-    Border StripListHead(Control icon, string title, TextBlock? count, string? addTip, Action<Button>? add)
+    static Border StripListHead(Control icon, string title, TextBlock? count)
     {
-        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), Height = 24 };
+        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"), Height = 24 };
         icon.VerticalAlignment = VerticalAlignment.Center;
         icon.Margin = new Thickness(2, 0, 7, 0);
         FxIcon.SetColor(icon, Palette.Accent);
@@ -186,13 +184,6 @@ public partial class MainWindow
             count.Foreground = Palette.Faint;
             count.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(count, 2); g.Children.Add(count);
-        }
-        if (add != null)
-        {
-            var plus = SlotHeadButton("", addTip ?? "");
-            plus.Width = plus.Height = plus.MinHeight = 22;
-            plus.Click += (_, _) => { if (!PressClosedMenuOf(plus)) add(plus); };
-            Grid.SetColumn(plus, 3); g.Children.Add(plus);
         }
         return new Border { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(0, 0, 0, 3), Margin = new Thickness(0, 0, 0, 2), Child = g };
     }
@@ -301,7 +292,6 @@ public partial class MainWindow
 
         inspectorTopBox.IsVisible = channel || bus != null;
         inspectorTopBox.IsEnabled = Inspector.IsEnabled;
-        PaintInspectorBand(bus, group != null);
         busHead.IsVisible = bus != null;
         takeSections.IsVisible = channel;
         takeSections.IsEnabled = group == null || group.Any(t => !t.Track.Locked);
@@ -327,23 +317,16 @@ public partial class MainWindow
         // a folder's strip goes with its own panel (takeSections is a track's)
         inspectorStrip.IsEnabled = Inspector.IsEnabled && (folder != null || takeSections.IsEnabled);
         stripFxPart.IsVisible = group == null;
-        // a folder's sends and output stay in its panel over the strip (RebuildFolderRouting)
-        stripSendsPart.IsVisible = bus == null && folder == null && channel;
+        // a folder's sends and output are a track's (#149), made by RebuildInspectorSends
+        stripSendsPart.IsVisible = bus == null && (folder != null || channel);
         stripSolo.IsVisible = bus == null;
         if (bus != null)
         {
             // a bus only goes to the Master for now (ProjectBuses.CanFeed)
             stripOutput.Child = StripOutputRow(new TextBlock { Text = Loc.T("route.master"), Classes = { "dim" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
         }
-        else if (folder != null)
-        {
-            string to = folder.Output is { } o ? BusById(o)?.Name ?? Loc.T("route.master") : Loc.T("route.master");
-            stripOutput.Child = StripOutputRow(new TextBlock { Text = to, Classes = { "dim" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
-        }
         stripFxCount.Text = stripRows.Count > 0 ? stripRows.Count.ToString() : "";
-        stripFxEmpty.IsVisible = stripRows.Count == 0;
         stripSendsCount.Text = stripSends.Children.Count > 0 ? stripSends.Children.Count.ToString() : "";
-        stripSendsEmpty.IsVisible = stripSends.Children.Count == 0;
 
         if (!stripWanted) return;
         bool single = bus != null || folder != null;
@@ -363,13 +346,6 @@ public partial class MainWindow
     {
         what.Margin = new Thickness(2, 0, 0, 0);
         return what;
-    }
-
-    /// <summary>The band over the channel's name: the track's or the bus's color, the accent without one (or for picked tracks).</summary>
-    void PaintInspectorBand(Bus? bus, bool group)
-    {
-        string? color = bus != null ? bus.Color : group ? null : sel?.Track.Color;
-        inspectorTopBand.Background = color != null && Color.TryParse(color, out var c) ? new ImmutableSolidColorBrush(c) : Palette.Accent;
     }
 
     /// <summary>The strip's meter, from the tick: the selected track's (or the first picked one's) or the bus's. Allocates nothing.</summary>

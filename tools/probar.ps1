@@ -5,7 +5,11 @@
 #   tools\probar.ps1 "qué probar" -Proyecto D:\...\MiTema   -> same, opening that project directly
 #   tools\probar.ps1 -Abrir                  -> open the newest finished copy without building
 #   tools\probar.ps1 -Abrir -Acceso          -> same, from the desktop shortcut: it has no console, so a failure shows a window
-#   tools\probar.ps1 -Banco                  -> the Banco de pruebas alone (XTreme.exe --banco) from the newest copy; an open one comes forward
+#   tools\probar.ps1 -Abrir -Probar 12       -> same, showing ticket 12's toast (what to try): the bench's Probar
+#   tools\probar.ps1 -Banco                  -> XT-WorkBench, the Banco de pruebas (xtbench.exe, from pruebas\banco\); an open one comes
+#                                               forward, or, if it's older than the newest build, closes and the newest opens
+#   -Tema banco (or -Arregla on Banco tickets) -> a change to the Banco alone (asked by the user, 2026-11-05): builds only
+#                                               xtbench, puts it in pruebas\banco\ and ties the ticket to it; no XTreme copy
 #   tools\probar.ps1 -SinComprobar           -> skip xtlab comprobar-dsp (UI-only changes in a hurry)
 #   tools\probar.ps1 -NoAbrir "qué probar"   -> build, check, copy and add to the list (what the agent runs after each change)
 #   tools\probar.ps1 -NoAbrir -Arregla 12    -> same, for a fix: item 12 goes back to be tried on this copy
@@ -36,6 +40,7 @@ param(
     [switch]$Abrir,
     [switch]$Banco,
     [switch]$Acceso,
+    [int]$Probar = 0,
     [switch]$SinComprobar,
     [switch]$NoAbrir,
     [switch]$SoloCompilar,
@@ -63,6 +68,11 @@ $copies = Join-Path $root 'pruebas'
 # The list of changes to try: it stays here so it outlives the copies (TestList.cs)
 $listFile = Join-Path $copies 'lista.json'
 $xtlab = Join-Path $root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows\xtlab.exe'
+# XT-WorkBench is a program of its own (#142): its builds live apart from the copies, one folder per build that changed,
+# so neither a build nor the copies' clean-up ever closes an open one
+$benchBin = Join-Path $root 'src\XtremeDaw.Bench\bin\Debug\net10.0-windows'
+$benches = Join-Path $copies 'banco'
+$BenchKeep = 3
 # How many copies stay around; older ones are deleted (unless one is still open)
 $Keep = 5
 
@@ -105,8 +115,8 @@ $TurnWaitSec = 540
 # The app's process, and its name before the rename (a test copy from then may still be open)
 $AppProcesses = 'XTreme'
 
-# The open XTremes, leaving out the Banco de pruebas: it is the same exe (XTreme.exe --banco), saves nothing, holds no
-# audio interface and lives on its own, so opening a copy never asks to close it
+# The open XTremes, leaving out a Banco de pruebas from before #142 (XTreme.exe --banco; now it is xtbench.exe): it
+# saves nothing, holds no audio interface and lives on its own, so opening a copy never asks to close it
 function AppRunning {
     $bench = @(Get-CimInstance Win32_Process -Filter "Name = 'XTreme.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -match '(^|\s)--banco(\s|$)' } | ForEach-Object { $_.ProcessId })
@@ -254,6 +264,7 @@ function Launch([string]$dir) {
     }
     $a = @()
     if ($Proyecto) { $a += $Proyecto }
+    if ($Probar -gt 0) { $a += '--probar'; $a += [string]$Probar }
     $exe = Join-Path $dir 'XTreme.exe'
     SessionLog "probar.ps1 abre $exe"
     # Opened through Explorer, so it runs as the user's own app even when this script runs inside a packaged tool
@@ -365,19 +376,103 @@ function NewestCopy {
         Sort-Object Name -Descending | Select-Object -First 1
 }
 
-if ($Banco) {
-    $last = NewestCopy
-    if (-not $last) { Fail 'todavía no hay ninguna copia de prueba. Corré tools\probar.ps1 una vez.' }
-    # through Explorer, like Launch: run from a packaged tool it would read a redirected %APPDATA%. One already open
-    # comes forward by itself (Bench.cs).
+# firma.txt is written last: a folder without it is a bench still being copied
+function NewestBench {
+    Get-ChildItem $benches -Directory -ErrorAction SilentlyContinue |
+        Where-Object { (Test-Path (Join-Path $_.FullName 'firma.txt')) -and (Test-Path (Join-Path $_.FullName 'xtbench.exe')) } |
+        Sort-Object Name -Descending | Select-Object -First 1
+}
+
+# What the bench's build is: every file's hash. The build is deterministic, so it only changes with its code (the
+# window, its styles and texts, Projects).
+function BenchSignature([string]$dir) {
+    $lines = Get-ChildItem $dir -Recurse -File | Sort-Object FullName | ForEach-Object {
+        "$($_.FullName.Substring($dir.Length)) $((Get-FileHash $_.FullName -Algorithm SHA256).Hash)"
+    }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '') } finally { $sha.Dispose() }
+}
+
+# Puts the bench's build in a folder of its own, only if it changed. The open bench is never touched: it keeps its
+# folder until it closes, and the next start takes the newest.
+function DeployBench([string]$stamp) {
+    if (-not (Test-Path (Join-Path $benchBin 'xtbench.exe'))) {
+        Write-Host 'Falta xtbench.exe: XT-WorkBench no se actualizó.' -ForegroundColor Yellow
+        return
+    }
+    $sign = BenchSignature $benchBin
+    $last = NewestBench
+    if ($last -and ((Get-Content (Join-Path $last.FullName 'firma.txt') -Raw).Trim() -eq $sign)) { return }
+    $dest = Join-Path $benches $stamp
+    New-Item -ItemType Directory -Force $dest | Out-Null
+    Get-ChildItem $benchBin | Copy-Item -Destination $dest -Recurse -Force
+    Set-Content -Path (Join-Path $dest 'firma.txt') -Value $sign -Encoding ascii
+    Write-Host "XT-WorkBench nuevo: $dest (Probar en un ticket del Banco lo abre)" -ForegroundColor DarkGray
+    Get-ChildItem $benches -Directory | Sort-Object Name -Descending | Select-Object -Skip $BenchKeep | ForEach-Object {
+        try { Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop } catch { } # still open: next time
+    }
+}
+
+# The open xtbench processes, with the folder (build) each runs from
+function BenchesRunning {
+    @(Get-Process xtbench -ErrorAction SilentlyContinue | Where-Object { $_.Path })
+}
+
+# Opens the newest bench. One already open from an older build closes first (it keeps nothing: the list is on disk), so a
+# change to the bench is tried in the bench, not after the next start; one open from the newest comes forward (Bench.cs).
+function LaunchBench {
+    $last = NewestBench
+    if (-not $last) { Fail 'XT-WorkBench todavía no está armado. Corré tools\probar.ps1 una vez.' }
+    foreach ($p in BenchesRunning) {
+        if ((Split-Path -Leaf (Split-Path -Parent $p.Path)) -ge $last.Name) { continue }
+        SessionLog "probar.ps1 cierra el Banco viejo (pid $($p.Id)) para abrir $($last.Name)"
+        $p.Refresh()
+        if ($p.MainWindowHandle -ne 0) { [void]$p.CloseMainWindow() }
+        if (-not $p.WaitForExit(10000)) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; [void]$p.WaitForExit(5000) }
+    }
+    # through Explorer, like Launch: run from a packaged tool it would read a redirected %APPDATA%
     $lnk = Join-Path $last.FullName 'banco.lnk'
     $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-    $s.TargetPath = Join-Path $last.FullName 'XTreme.exe'
+    $s.TargetPath = Join-Path $last.FullName 'xtbench.exe'
     $s.WorkingDirectory = $last.FullName
-    $s.Arguments = "--banco --lista `"$listFile`""
+    $s.Arguments = "--lista `"$listFile`""
     $s.Save()
     explorer.exe $lnk
     Write-Host "XT-WorkBench: $($last.Name)" -ForegroundColor Green
+}
+
+if ($Banco) {
+    LaunchBench
+    exit 0
+}
+
+# A change to the Banco alone: said with -Tema banco, or every ticket in -Arregla is a Banco one (read only: the list
+# is written by TestList alone)
+$benchOnly = $Tema -eq 'banco'
+if (-not $benchOnly -and $Arregla.Count -and (Test-Path $listFile)) {
+    try {
+        $items = @((Get-Content $listFile -Raw -Encoding UTF8 | ConvertFrom-Json).items)
+        $benchOnly = @($Arregla | Where-Object { $n = $_; -not ($items | Where-Object { $_.id -eq $n -and $_.topic -eq 'bench' }) }).Count -eq 0
+    } catch { $benchOnly = $false }
+}
+if ($benchOnly -and -not $Abrir -and -not $SoloCompilar) {
+    $turn = TakeTurn
+    $env:XTREME_TURNO = '1'
+    (Get-Process -Id $PID).PriorityClass = 'BelowNormal'
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    # xtlab too: the Banco's topic also covers it (and the tickets go through it)
+    Write-Host 'Compilando el Banco y xtlab (sin XTreme: el cambio es del Banco)...' -ForegroundColor Cyan
+    foreach ($proj in 'src\XtremeDaw.Bench\XtremeDaw.Bench.csproj', 'src\XtremeDaw.Lab\XtremeDaw.Lab.csproj') {
+        dotnet build (Join-Path $root $proj) -c Debug -nologo -v:minimal -clp:ErrorsOnly
+        if ($LASTEXITCODE -ne 0) { Fail 'la compilación falló (arriba están los errores).' }
+    }
+    DeployBench $stamp
+    $last = NewestBench
+    if (-not $last) { Fail 'no quedó ningún XT-WorkBench armado.' }
+    AddToList $last.Name
+    $turn.Dispose()
+    if (-not $NoAbrir) { LaunchBench }
     exit 0
 }
 
@@ -431,11 +526,13 @@ if (Test-Path $native) {
 }
 Set-Content -Path (Join-Path $dest 'prueba.txt') -Value @($commit, $(if ($dirty) { 'dirty' } else { 'clean' }), (Get-Date -Format 's')) -Encoding utf8
 
-Get-ChildItem $copies -Directory | Sort-Object Name -Descending | Select-Object -Skip $Keep | ForEach-Object {
+Get-ChildItem $copies -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'prueba.txt') } |
+    Sort-Object Name -Descending | Select-Object -Skip $Keep | ForEach-Object {
     try { Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop } catch { } # still open: next time
 }
 
 Write-Host "Copia: $dest" -ForegroundColor DarkGray
+DeployBench $stamp
 # Every copy leaves the desktop shortcut right, even if this folder moved: that is how the old one ended up pointing nowhere
 try { [void](& (Join-Path $PSScriptRoot 'make-shortcut.ps1')) } catch { Write-Host "No se pudo actualizar el acceso directo: $_" -ForegroundColor Yellow }
 AddToList (Split-Path -Leaf $dest)

@@ -20,8 +20,12 @@ public static class Loc
     /// <summary>Language codes with their own name, in the order Configuración lists them.</summary>
     public static readonly (string Code, string Name)[] Languages = [("es", "Español"), ("en", "English")];
 
+    /// <summary>This assembly's <c>Assets/</c>: XTreme's, or xtbench's when the bench links this file (Bench).</summary>
+    public static readonly string Assets = $"avares://{typeof(Loc).Assembly.GetName().Name}/Assets/";
+
     const string DefaultLanguage = "es";
-    const string ConfigKey = "language";
+    /// <summary>Where the choice is kept in config.json: the bench keeps its own (asked by the user, #151).</summary>
+    public static string ConfigKey { get; set; } = "language";
 
     static Dictionary<string, string> current = [];
     static Dictionary<string, string> fallback = [];
@@ -63,11 +67,20 @@ public static class Loc
 
     public static string T(string key, params object?[] args) => string.Format(CultureInfo.CurrentCulture, T(key), args);
 
+    /// <summary>The app's texts plus the Banco de pruebas' (Lang/Bench), kept apart so work on one never waits for
+    /// the other's file (asked by the user, 2026-11-05).</summary>
     static Dictionary<string, string> Read(string code)
+    {
+        var all = ReadFile($"Lang/{code}.json");
+        foreach (var (k, v) in ReadFile($"Lang/Bench/{code}.json")) all[k] = v;
+        return all;
+    }
+
+    static Dictionary<string, string> ReadFile(string path)
     {
         try
         {
-            using var s = AssetLoader.Open(new Uri($"avares://XTreme/Assets/Lang/{code}.json"));
+            using var s = AssetLoader.Open(new Uri($"{Assets}{path}"));
             return JsonSerializer.Deserialize<Dictionary<string, string>>(s) ?? [];
         }
         catch (Exception e) when (e is IOException or JsonException or FileNotFoundException)

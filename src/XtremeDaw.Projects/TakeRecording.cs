@@ -95,7 +95,7 @@ public static class TakeRecording
             track = new Track { Video = j.Video != null };
             p.Tracks.Add(track);
         }
-        // A lane whose strip was never touched gets the take defaults: compressor on, lead on the second lane.
+        // A lane whose strip was never touched gets the take defaults: compressor on, at its Default.
         if (IsDefaultChannel(track.Channel))
         {
             track.Channel.Comp.On = true;

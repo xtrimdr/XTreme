@@ -336,6 +336,55 @@ _Ideas que surgieron charlando. Todas apuntan al video._
 - [ ] **Visualizadores de audio** como capa del video (onda o espectro animado)
 - [ ] **Acordes / tablatura / letra en pantalla** mientras grabás (tipo teleprompter) y opcionalmente en el video
 
+### Funciones grandes de Fender Studio Pro que faltan (relevado 2026-11-05)
+
+Cruce del manual (`referencia/fender-studio-pro/manual-completo.md`) con el código, la ayuda y HECHO. Solo lo que no
+estaba anotado en otra sección (comping, afinación tipo Melodyne, congelar, MIDI learn, MIDI clock, Touch/Latch, amp
+sim, vocoder y partitura completa ya están arriba). Nada decidido: cada una se charla con el usuario antes de hacerla.
+Orden sugerido por impacto: pista de tempo y compás, pista de arreglo, bounce.
+
+Línea de tiempo y arreglo:
+- [ ] **Pista de tempo y de compás**: cambios de tempo (escalón o rampa) y de compás a lo largo del tema. Hoy hay un
+  solo `ProjectSettings.Bpm` y un compás; toca `TempoFollow`, la grilla, los clips MIDI, el estiramiento y el click.
+- [ ] **Pista de arreglo**: secciones con nombre (Intro, Estribillo…) que se mueven, duplican o borran con todo lo que
+  tienen en todas las pistas. Los marcadores hoy solo marcan.
+- [ ] **Versiones del arreglo** (Scratch Pad): arreglos alternativos dentro del mismo proyecto.
+- [ ] **Pista de letra**: letra sincronizada y una vista para leerla al grabar (se junta con la sugerencia del
+  teleprompter).
+- [ ] **Pista de acordes que edita**: que el audio y el MIDI sigan los acordes escritos (hoy `ChordMarker` solo detecta).
+
+Grabación:
+- [ ] **Grabación retrospectiva MIDI**: recuperar lo tocado en el teclado sin haber apretado Grabar.
+- [ ] **Step record y Note Repeat** para MIDI.
+- [ ] **Mezclas de auriculares** (cue mixes): una mezcla de monitoreo por músico, a salidas de la interfaz.
+
+Edición de audio:
+- [ ] **Cuantizar audio** por sus ataques (`TimeMap` ya los detecta): llevarlos a la grilla.
+- [ ] **Bounce / render en el lugar**: un clip o una pista con sus efectos pasa a ser audio nuevo.
+
+Mixer:
+- [ ] **Canales VCA y grupos de mezcla**, aparte de las carpetas.
+- [ ] **Bus de escucha** (Listen Bus): salida de monitoreo aparte del master (auriculares, corrección de sala).
+
+MIDI e instrumentos:
+- [ ] **Efectos de nota en vivo**: arpegiador, acordes y repetidor sobre lo que se toca (hoy el arpegio es una
+  herramienta del piano roll).
+- [ ] **Instrumentos nativos**: batería por pads, sintetizador, multi-instrumento (varios en una pista).
+- [ ] **Articulaciones** (Sound Variations): cambiar la articulación de un instrumento desde las notas.
+- [ ] **Instrumentos y efectos de hardware** por envío y retorno de la interfaz, con su latencia compensada.
+
+Páginas enteras:
+- [ ] **Mastering de un álbum**: varios temas en orden con sus pausas, y DDP/CD (hoy se masteriza un tema).
+- [ ] **Modo en vivo** (Show): setlist con reproductores y patches por tema.
+- [ ] **Lanzador de clips** (Launcher): clips en una grilla, lanzados a tempo.
+- [ ] **Audio espacial / Dolby Atmos**.
+
+Archivos y sincronía:
+- [ ] **AAF**: importar y exportar proyectos entre DAWs.
+- [ ] **Importar pistas de otro proyecto .xtp** (con sus clips, efectos y ruteo).
+- [ ] **Conversor de audio por lotes**.
+- [ ] **Ableton Link**.
+
 ### Opcional — ideas de Fender Studio Pro (2026-10-24)
 
 Se relevaron los 224 temas del manual y se cruzaron con la nativa. El detalle, las fuentes y el orden

@@ -135,6 +135,17 @@ public partial class MainWindow
             }, "midi-clip-looped");
             Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
         };
+        Timeline.MidiClipPassChanged += async (clipId, beats) =>
+        {
+            if (store == null) return;
+            string? trackId = null;
+            await EditTimeline(p =>
+            {
+                MidiEditing.Pass(p, clipId, beats);
+                return trackId = MidiEditing.Find(p, clipId).Track.Id;
+            }, "midi-clip-looped");
+            Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
+        };
         Timeline.MidiClipOpenRequested += (_, clipId) => OpenInPiano(clipId);
         Timeline.MidiClipCreateRequested += async (track, sec) =>
         {
@@ -706,12 +717,7 @@ public partial class MainWindow
         var lengths = PatternLengthItems(clipId, withOther: false);
         return
         [
-            MenuAction(Loc.T("midi.pattern.rename.more"), () =>
-            {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => AskName(Timeline, point, Loc.T("midi.pattern.rename"), clip.PatternName!, Loc.T("common.ok"),
-                    name => _ = EditPattern(clipId, p => MidiPatterns.Rename(p, clipId, name), "midi-pattern-renamed")));
-                return Task.CompletedTask;
-            }, enabled: enabled),
+            // its name is the clip's "Renombrar…" (MidiEditing.Rename)
             new MenuItem { Header = new TextBlock { Text = Loc.T("midi.pattern.length", BarsLabel(clip.CellBeats / 4)), FontSize = 12 }, ItemsSource = lengths, IsEnabled = enabled },
             new MenuItem { Header = new TextBlock { Text = Loc.T("piano.parts.add"), FontSize = 12 }, ItemsSource = AddPartItems(clipId), IsEnabled = enabled },
             MenuAction(Loc.T("midi.pattern.unique"), () => EditPattern(clipId, p => MidiPatterns.MakeUnique(p, clipId), "midi-pattern-left"), enabled: enabled, tip: Loc.T("midi.pattern.unique.tip")),
@@ -748,6 +754,8 @@ public partial class MainWindow
             MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")),
             MenuAction(Loc.T("menu.duplicate"), () => boxed.Count > 1 ? DuplicateClips(boxed) : DuplicateMidiClip(clipId), Shortcuts.Label("duplicate"), enabled),
             MenuAction(Loc.T("menu.split"), () => SplitMidi(track, clipId, at), Shortcuts.First("split"), enabled && under && !track.Track.Locked),
+            MenuAction(Loc.T("menu.renameClip.more"), () => { BeginClipRename(clipId, point); return Task.CompletedTask; }, enabled: enabled, icon: "\uE8AC",
+                tip: MidiEditing.TryFind(store.Project, clipId)?.PatternId != null ? Loc.T("menu.renameClip.pattern") : null),
             new Separator(),
             MenuAction(Loc.T("midi.quantize.menu", PianoSnapLabel()), () => Quantize(boxed.Count > 1 ? boxed : [clipId]), Shortcuts.Label("quantize"),
                 enabled && pianoRoll.QuantizeBeats > 0, tip: pianoRoll.QuantizeBeats > 0 ? null : Loc.T("midi.quantize.free")),

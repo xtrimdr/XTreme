@@ -229,7 +229,8 @@ public sealed class LiveClip
         SoundReversed = clip.Reversed;
     }
 
-    public string Name => Media?.Name ?? Loc.T("track.noMedia");
+    /// <summary>Its own name, or its media's.</summary>
+    public string Name => Clip.Name ?? Media?.Name ?? Loc.T("track.noMedia");
     /// <summary>Its media's own length; <see cref="LengthSec"/> is what it takes on the timeline.</summary>
     public double MediaLengthSec => Audio?.LengthSec ?? Media?.DurationSec ?? 0;
     public double LengthSec => MediaLengthSec * Clip.Stretch;

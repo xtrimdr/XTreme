@@ -12,7 +12,13 @@ static class StemChecks
 {
     const int Sr = 48000;
 
-    /// <summary>xtlab separar --comprobar (only its rows of comprobar-dsp), or separar archivo [--stems 2|4|6] [--calidad rapida|alta|maxima] [--sin-desplazar] [--desde s] [--hasta s] [--salida carpeta] [--cancelar s] [--cpu].</summary>
+    /// <summary>The stems by the names of <c>--solo</c>.</summary>
+    static readonly Dictionary<string, string> Names = new()
+    {
+        ["voz"] = "vocals", ["bateria"] = "drums", ["bajo"] = "bass", ["guitarra"] = "guitar", ["piano"] = "piano",
+    };
+
+    /// <summary>xtlab separar --comprobar (only its rows of comprobar-dsp), or separar archivo [--stems 2|4|6] [--calidad rapida|alta|maxima] [--modelo general|porstem|6] [--solo voz,bateria,bajo,guitarra,piano] [--pasadas n] [--sin-desplazar] [--desde s] [--hasta s] [--salida carpeta] [--cancelar s] [--cpu].</summary>
     public static int Run(Args a)
     {
         if (a.Flag("comprobar")) return Check() ? 0 : 3;
@@ -31,6 +37,17 @@ static class StemChecks
             null or "alta" => StemSeparator.Quality.High,
             var x => throw new ArgumentException($"separar: --calidad {x} no existe (rapida, alta o maxima)."),
         };
+        var model = a.Get("modelo") switch
+        {
+            null => StemSeparator.Model.Auto,
+            "general" => StemSeparator.Model.General,
+            "porstem" => StemSeparator.Model.Tuned,
+            "6" => StemSeparator.Model.Six,
+            var x => throw new ArgumentException($"separar: --modelo {x} no existe (general, porstem o 6)."),
+        };
+        var only = a.Get("solo")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => Names.TryGetValue(s, out var id) ? id : throw new ArgumentException($"separar: --solo {s} no existe ({string.Join(", ", Names.Keys)}).")).ToList();
+        int? shifts = a.Flag("sin-desplazar") ? 0 : a.Get("pasadas") != null ? Math.Clamp((int)a.Double("pasadas", 1), 1, StemSeparator.MaxShifts) : null;
         var audio = AudioLoader.Load(file, 0);
         int from = (int)(a.Double("desde", 0) * audio.SampleRate);
         int to = a.Get("hasta") != null ? (int)(a.Double("hasta", 0) * audio.SampleRate) : audio.Left.Length;
@@ -44,7 +61,7 @@ static class StemChecks
         try
         {
             stems = StemSeparator.Separate(audio.Left, audio.Right, audio.SampleRate, from, to - from,
-                new(layout, quality, a.Flag("sin-desplazar") ? 0 : null, a.Flag("cpu")), ct: cancel.Token);
+                new(layout, quality, shifts, a.Flag("cpu"), model, only), ct: cancel.Token);
         }
         catch (OperationCanceledException)
         {
@@ -84,6 +101,36 @@ static class StemChecks
         Row("Stems: la original queda en silencio", $"{source.Channel.Muted}", "True", source.Channel.Muted);
         Row("Stems: mismo lugar y ganancia", $"{p.Tracks[1].Clips[0].AtSec} s, {p.Tracks[1].Clips[0].GainDb} dB", "2 s, -3 dB",
             p.Tracks[1].Clips[0].AtSec == 2 && p.Tracks[1].Clips[0].GainDb == -3);
+
+        // #146: what happens with the original, and what the advanced mode runs
+        Project Fresh(out Track t)
+        {
+            var q = new Project();
+            t = new Track { Name = "Mezcla", Video = false };
+            t.Clips.Add(new Clip { MediaId = "m" });
+            q.Tracks.Add(t);
+            return q;
+        }
+        var keep = Fresh(out var kept);
+        AudioImport.AddStems(keep, kept.Id, kept.Clips[0].Id, 0, made, "x", StemOriginal.Keep);
+        Row("Stems: Dejar la original", $"mute {kept.Channel.Muted}, {kept.Clips.Count} clip", "mute False, 1 clip", !kept.Channel.Muted && kept.Clips.Count == 1);
+        var remove = Fresh(out var removed);
+        AudioImport.AddStems(remove, removed.Id, removed.Clips[0].Id, 0, made, "x", StemOriginal.Remove);
+        Row("Stems: Quitar el clip", $"mute {removed.Channel.Muted}, {removed.Clips.Count} clips", "mute False, 0 clips", !removed.Channel.Muted && removed.Clips.Count == 0);
+        var locked = Fresh(out var lockedTrack);
+        lockedTrack.Clips[0].Locked = true;
+        AudioImport.AddStems(locked, lockedTrack.Id, lockedTrack.Clips[0].Id, 0, made, "x", StemOriginal.Remove);
+        Row("Stems: un clip bloqueado no se quita", $"mute {lockedTrack.Channel.Muted}, {lockedTrack.Clips.Count} clip", "mute True, 1 clip", lockedTrack.Channel.Muted && lockedTrack.Clips.Count == 1);
+        string Files(StemSeparator.Settings s) => string.Join(",", StemSeparator.Files(s));
+        var voice = Files(new(Model: StemSeparator.Model.Tuned, Only: ["vocals"]));
+        Row("Stems: por stem, solo voz", voice, "htdemucs_ft_vocals.onnx", voice == "htdemucs_ft_vocals.onnx");
+        var drumsBass = Files(new(Model: StemSeparator.Model.Tuned, Only: ["drums", "bass"]));
+        Row("Stems: por stem, batería y bajo", drumsBass, "htdemucs_ft_drums.onnx,htdemucs_ft_bass.onnx", drumsBass == "htdemucs_ft_drums.onnx,htdemucs_ft_bass.onnx");
+        var six = Files(new(Layout: StemSeparator.Layout.Two, Model: StemSeparator.Model.Six, Only: ["guitar"]));
+        Row("Stems: el modelo manda sobre la cantidad", six, "htdemucs_6s.onnx", six == "htdemucs_6s.onnx");
+        double one = StemSeparator.EstimateSec(new(Model: StemSeparator.Model.General, Shifts: 1), 60);
+        double four = StemSeparator.EstimateSec(new(Model: StemSeparator.Model.General, Shifts: 4), 60);
+        Row("Stems: el tiempo sigue a las pasadas", $"x{four / one:0.0}", "x4.0", Math.Abs(four / one - 4) < 1e-9);
         if (!StemSeparator.Available(StemSeparator.Layout.Four, StemSeparator.Quality.Fast))
         {
             Console.WriteLine("  Falta lib\\demucs: corré tools\\get-demucs.ps1 y compilá de nuevo (no se comprueba la separación).");

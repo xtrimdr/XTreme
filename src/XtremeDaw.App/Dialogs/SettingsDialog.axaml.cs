@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using XtremeDaw.App.Audio;
 using XtremeDaw.App.Controls;
 using XtremeDaw.App.Video;
@@ -107,8 +108,7 @@ public sealed partial class SettingsDialog : UserControl
         saveMinutes = BuildSave();
         Shortcuts.Changed += BuildShortcuts;
         AddHandler(PointerWheelChangedEvent, OnCaptureWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        PointerPressed += (_, e) => { if (e.Source == this) HideDialog(); };
-        SizeChanged += (_, _) => Panel.Height = Math.Min(640, Bounds.Height * 0.88);
+        InitFloating();
 
         // --- Entradas y salidas
         var refresh = Act("", Loc.T("set.refresh"), () => Refresh());
@@ -292,6 +292,7 @@ public sealed partial class SettingsDialog : UserControl
     public void Show(string startTab = "audio")
     {
         IsVisible = true;
+        if (!placed) Center();
         ShowTab(startTab);
         Focus();
     }
@@ -305,11 +306,91 @@ public sealed partial class SettingsDialog : UserControl
         Dismissed?.Invoke();
     }
 
+    /// <summary>The panel's place and size over the window; kept while the app runs.</summary>
+    double panelX, panelY, panelW = DefaultW, panelH = DefaultH;
+    bool placed;
+    /// <summary>What a drag on the header (move) or the grip (resize) started from.</summary>
+    Point dragFrom;
+    double fromX, fromY, fromW, fromH;
+    bool moving, resizing;
+    const double DefaultW = 768, DefaultH = 640, MinW = 560, MinH = 360;
+    /// <summary>How much of the panel stays inside the window when dragged or when the window shrinks.</summary>
+    const double KeepVisible = 48;
+
+    /// <summary>No scrim and no click-outside close (#184): the window behind takes clicks and keys, so a setting of
+    /// the interface can be tried while the panel stays open. The header moves it, the corner grip resizes it.</summary>
+    void InitFloating()
+    {
+        Header.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(Header).Properties.IsLeftButtonPressed || e.Source is Visual v && v.FindAncestorOfType<Button>(true) != null) return;
+            StartDrag(e, move: true);
+        };
+        Grip.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(Grip).Properties.IsLeftButtonPressed) return;
+            StartDrag(e, move: false);
+        };
+        foreach (var c in new Control[] { Header, Grip })
+        {
+            c.PointerMoved += (_, e) => Drag(e);
+            c.PointerReleased += (_, _) => moving = resizing = false;
+            c.PointerCaptureLost += (_, _) => moving = resizing = false;
+        }
+        SizeChanged += (_, _) => { if (placed) Place(); };
+    }
+
+    void StartDrag(PointerPressedEventArgs e, bool move)
+    {
+        dragFrom = e.GetPosition(this);
+        (fromX, fromY, fromW, fromH) = (panelX, panelY, panelW, panelH);
+        moving = move;
+        resizing = !move;
+        e.Pointer.Capture((IInputElement?)e.Source);
+        e.Handled = true;
+    }
+
+    void Drag(PointerEventArgs e)
+    {
+        if (!moving && !resizing) return;
+        var d = e.GetPosition(this) - dragFrom;
+        if (moving) (panelX, panelY) = (fromX + d.X, fromY + d.Y);
+        else (panelW, panelH) = (fromW + d.X, fromH + d.Y);
+        Place();
+    }
+
+    void Center()
+    {
+        if (Bounds.Width <= 0) { Dispatcher.UIThread.Post(() => { if (!placed && IsVisible) Center(); }, DispatcherPriority.Loaded); return; }
+        panelW = Math.Min(DefaultW, Bounds.Width - 32);
+        panelH = Math.Min(DefaultH, Bounds.Height * 0.88);
+        panelX = (Bounds.Width - panelW) / 2;
+        panelY = (Bounds.Height - panelH) / 2;
+        placed = true;
+        Place();
+    }
+
+    /// <summary>Clamps the size to the window and keeps the header reachable, then lays the panel out.</summary>
+    void Place()
+    {
+        double w = Bounds.Width, h = Bounds.Height;
+        if (w <= 0 || h <= 0) return;
+        panelW = Math.Clamp(panelW, Math.Min(MinW, w), w);
+        panelH = Math.Clamp(panelH, Math.Min(MinH, h), h);
+        panelX = Math.Clamp(panelX, KeepVisible - panelW, w - KeepVisible);
+        panelY = Math.Clamp(panelY, 0, Math.Max(0, h - KeepVisible));
+        Panel.Width = panelW;
+        Panel.Height = panelH;
+        Panel.Margin = new Thickness(panelX, panelY, 0, 0);
+    }
+
     /// <summary>Escape closes (cancelling a running calibration first, like the web's close()); while a shortcut
     /// waits for its key, the press is the new key and Esc cancels.</summary>
     public bool HandleKey(KeyEventArgs e)
     {
         if (!IsVisible) return false;
+        // the panel floats over a usable window (#184): with the focus outside it, the keys are the window's
+        if (capturing == null && capturingWheel == null && !IsKeyboardFocusWithin) return false;
         if (capturingWheel != null)
         {
             if (e.Key == Key.Escape) StopCapture();
@@ -801,6 +882,10 @@ public sealed partial class SettingsDialog : UserControl
             () => MeterLooks.Set(MeterLooks.Default), h => MeterLooks.Changed += h, h => MeterLooks.Changed -= h));
         viewPage.Children.Add(LookCard("waves", WaveLooks.Picker(), () => WaveLooks.Current == WaveLooks.Default,
             () => WaveLooks.Set(WaveLooks.Default), h => WaveLooks.Changed += h, h => WaveLooks.Changed -= h));
+        viewPage.Children.Add(LookCard("trackColor", TrackColorLooks.Picker(), () => TrackColorLooks.IsDefault,
+            TrackColorLooks.Reset, h => TrackColorLooks.Changed += h, h => TrackColorLooks.Changed -= h));
+        viewPage.Children.Add(LookCard("trackColorInspector", TrackColorLooks.InspectorPicker(), () => TrackColorLooks.InspectorIsDefault,
+            TrackColorLooks.ResetInspector, h => TrackColorLooks.Changed += h, h => TrackColorLooks.Changed -= h));
         viewPage.Children.Add(LookCard("font", UiFonts.FontPicker(), () => UiFonts.FontIsDefault,
             () => UiFonts.SetFont(UiFonts.Default), h => UiFonts.Changed += h, h => UiFonts.Changed -= h));
         viewPage.Children.Add(LookCard("numbers", UiFonts.NumberPicker(), () => UiFonts.NumbersAreDefault,

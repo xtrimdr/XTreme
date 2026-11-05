@@ -123,6 +123,47 @@ static class AutomationChecks
         off.Channel.Inserts = [ProjectLibrary.Clone(slot)];
         Say("el encendido de un efecto es un interruptor", Automations.Stepped(off, off.Automation![0].Target));
 
+        // a folder's lanes (#136): its fader, mute, send and slots follow them like a track's, over its tracks' sum
+        static (Project P, Folder F) InFolder(params AutomationLane[] lanes)
+        {
+            var t = new Track();
+            var f = new Folder { Name = "F", Automation = [.. lanes] };
+            t.FolderId = f.Id;
+            var p = new Project { Tracks = [t], Folders = [f] };
+            return (p, f);
+        }
+        var folderFader = Mix(InFolder(Lane(AutoTarget.Volume, (0, 1), (2, 0))).P);
+        Say("carpeta: el volumen sigue su carril", Near(folderFader.L[At(1)], 0.5 * 0.375), $"{folderFader.L[At(1)]:0.0000}");
+        double folderJump = 0;
+        for (int i = 1; i < folderFader.L.Length; i++) folderJump = Math.Max(folderJump, Math.Abs(folderFader.L[i] - folderFader.L[i - 1]));
+        Say("carpeta: el volumen no da saltos", folderJump < 1e-3, $"{folderJump:0.00000}");
+        var folderMute = Mix(InFolder(Lane(AutoTarget.Mute, (0, 0), (1, 1))).P);
+        Say("carpeta: el mute es un escalón", Near(folderMute.L[At(0.9)], 0.5) && Near(folderMute.L[At(1.1)], 0), $"{folderMute.L[At(0.9)]:0.000} -> {folderMute.L[At(1.1)]:0.000}");
+        var folderPan = Mix(InFolder(Lane(AutoTarget.Pan, (0, 0.5), (1, 0))).P);
+        Say("carpeta: el paneo sigue su carril", Near(folderPan.R[At(1.5)], 0) && Near(folderPan.L[At(1.5)], 1), $"L {folderPan.L[At(1.5)]:0.000} R {folderPan.R[At(1.5)]:0.000}");
+        var folderBus = new Bus { Name = "B" };
+        var (sendP, sendF) = InFolder(Lane(AutoTarget.Send(folderBus.Id), (0, 0), (2, 1)));
+        sendF.Sends.Add(new Send { BusId = folderBus.Id, Level = 0, On = true });
+        sendP.Settings.Buses = [folderBus];
+        var folderSend = Mix(sendP);
+        Say("carpeta: un envío en cero sigue su carril", Near(folderSend.L[At(1)], 0.75), $"{folderSend.L[At(1)]:0.000}");
+        var folderSlot = InsertSlot.New(InsertSlot.EqKind);
+        folderSlot.On = true;
+        var (fxP, fxF) = InFolder(Lane(AutoTarget.Fx(folderSlot.Id, "out"), (0, 2.0 / 3), (0.5, 0.5), (2, 0.5)));
+        fxF.Inserts = [folderSlot];
+        var folderFx = Mix(fxP);
+        Say("carpeta: la perilla de un efecto sigue su carril", Near(folderFx.L[At(1)], 0.5 * Math.Pow(10, -6.0 / 20)), $"{folderFx.L[At(1)]:0.0000}");
+        var savedFolder = ProjectLibrary.Clone(fxP);
+        savedFolder.Normalize();
+        Say("carpeta: sus carriles se guardan", savedFolder.Folders[0].Automation is [{ Blocks.Count: 1 } lane0] && lane0.Target == AutoTarget.Fx(folderSlot.Id, "out"));
+        var (tempoP, tempoF) = InFolder(Lane(AutoTarget.Pan, (0, 0), (1, 1)));
+        TempoFollow.Rescale(tempoP, 2);
+        Say("carpeta: sus carriles siguen al tempo", Near(Automations.PositionAt(tempoF.Automation![0], false, 1), 0.5), $"{Automations.PositionAt(tempoF.Automation![0], false, 1):0.000}");
+        var sep = new Folder { Separator = true, Automation = [Lane(AutoTarget.Volume, (0, 1))] };
+        var sepP = new Project { Folders = [sep] };
+        sepP.Normalize();
+        Say("carpeta: un separador no tiene carriles", sepP.Folders.All(x => x.Automation == null));
+
         var cut = new Track { Automation = [Lane(AutoTarget.Volume, (0, 0), (1, 1), (3, 0), (4, 1))] };
         Automations.CloseGap(cut, 1, 3);
         var left = cut.Automation![0];

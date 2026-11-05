@@ -164,6 +164,27 @@ public static class ClipEditing
         c.AtSec = ToSample(at);
     }
 
+    /// <summary>Longest name a clip keeps.</summary>
+    public const int MaxNameLength = 120;
+
+    /// <summary>A clip's name as it is kept: trimmed and not too long; blank = none.</summary>
+    public static string? CleanName(string? name)
+    {
+        name = name?.Trim();
+        return string.IsNullOrEmpty(name) ? null : name.Length > MaxNameLength ? name[..MaxNameLength].TrimEnd() : name;
+    }
+
+    /// <summary>
+    /// Gives a clip a name of its own (blank takes it away). A loop's repeat names its source, which names the repeats
+    /// in turn (<see cref="ClipLoops.Keep"/>). A locked clip can be renamed: its place doesn't change.
+    /// </summary>
+    public static void Rename(Project p, string id, string? name)
+    {
+        var (track, c) = Find(p, id);
+        if (c.LoopOf != null && track.Clips.Find(o => o.Id == c.LoopOf) is { } source) c = source;
+        c.Name = CleanName(name);
+    }
+
     public static (Track Track, Clip Clip) Find(Project p, string clipId)
     {
         foreach (var t in p.Tracks)
@@ -239,8 +260,7 @@ public static class ClipEditing
         Remember(p, track, clip);
         track.Clips.Remove(clip);
         // a loop goes with its source
-        if (clip.LoopOf == null) track.Clips.RemoveAll(c => c.LoopOf == clip.Id);
-        if (track.Clips.Count == 0) track.Name = FreeTrackName(p, p.Tracks.IndexOf(track) + 1);
+        if (clip.LoopOf == null) track.Clips.RemoveAll(c => c.LoopOf == clip.Id); // the track keeps its name (asked by the user, #163)
     }
 
     public static string AddEmpty(Project p, bool video = true)
@@ -273,7 +293,6 @@ public static class ClipEditing
             target = NewTrackFor(p, media, previousChannel);
             p.Tracks.Add(target);
         }
-        else target.Name = media.Name;
         var clip = previousClip ?? new Clip { MediaId = media.Id, AtSec = media.SyncMs / 1000 };
         clip.Id = Ids.New("clp");
         target.Clips.Add(clip);
@@ -285,7 +304,7 @@ public static class ClipEditing
     {
         bool imported = media.Kind == "import";
         return new Track { Name = media.Name, Video = !imported || media.Video != null, Channel = previous ?? (imported ? new Channel()
-            : new Channel { Comp = new CompSettings { On = true, Preset = p.Tracks.Count == 1 ? "lead" : "rhythm" } }) };
+            : new Channel { Comp = new CompSettings { On = true } }) };
     }
 
     /// <summary>
@@ -306,7 +325,6 @@ public static class ClipEditing
             track = NewTrackFor(p, media, previousChannel);
             p.Tracks.Add(track);
         }
-        else if (track.Clips.Count == 0) track.Name = media.Name;
         track.Clips.Add(clip);
         return track.Id;
     }
@@ -513,7 +531,12 @@ public static class ClipEditing
         bool Holds(Track t) => t.Clips.Any(c => IsLocked(t, c) && Window(c, p.FindMedia(c.MediaId), lengthOf?.Invoke(c)).End > startSec)
             || t.Locked && t.MidiClips?.Any(c => c.EndSec(p.Settings.Bpm) > startSec) == true;
         var ids = trackIds.Distinct().Where(id => p.Tracks.Find(t => t.Id == id) is { } t && !Holds(t)).ToList();
-        if (p.Tracks.All(t => ids.Contains(t.Id))) ProjectMarkers.CloseGap(p, startSec, endSec);
+        if (p.Tracks.All(t => ids.Contains(t.Id)))
+        {
+            ProjectMarkers.CloseGap(p, startSec, endSec);
+            // the whole song moved: the folders' lanes go with it
+            foreach (var f in p.Folders) Automations.CloseGap(f, startSec, endSec);
+        }
         foreach (string id in ids)
         {
             changed += DeleteRange(p, id, startSec, endSec, lengthOf);

@@ -363,9 +363,10 @@ public sealed class TakeRecorder : IDisposable
     }
 
     /// <summary>
-    /// Port of <c>App.tsx:1027</c>: the second lane defaults to <c>"lead"</c> (Punteo), all other lanes to <c>"rhythm"</c> (Rasgueo).
+    /// The compressor a new lane starts with: the neutral Default on every lane (asked by the user, #141: it used to be a
+    /// guitar's, Punteo on the second lane and Rasgueo on the rest).
     /// </summary>
-    public static string DefaultCompPreset(int slot) => slot == 1 ? "lead" : "rhythm";
+    public static string DefaultCompPreset(int slot) => Dsp.CompPresets.DefaultId;
 
     /// <summary>Sends a file to the Windows Recycle Bin; if that fails the file stays where it is.</summary>
     public static void TryRecycleFile(string path)

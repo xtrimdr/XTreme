@@ -30,6 +30,10 @@ el lado más fuerte. La ventana le pasa `Set(picoL, picoR, rmsL, rmsR)` (picos c
 máximo y las luces; RMS como amplitud ya integrada); cualquier tira puede alimentarlo así. El RMS lo suma el hilo de audio en un `RmsTap`
 (`XtremeDaw.Audio.Dsp`: suma de cuadrados por bloque en totales que solo crecen, sin reset desde la UI) y la UI lo
 toma una vez por tick (`TakeMixerRms`) y suaviza cada lado ~300 ms (`MeanSqL` / `MeanSqR`). El texto del máximo se rearma solo cuando cambia su décima.
+Va en tres capas (#138): el control dibuja lo que cambia poco (lectura, luces, fondo de las barras, escala), una capa
+hija los niveles y otra las marcas de dB encima; mientras suena se redibuja solo la de los niveles. Cada llamada de
+dibujo es un objeto que Avalonia guarda hasta el cuadro siguiente: un medidor entero por tira y por cuadro era la
+mayor parte de la basura que frenaba el audio.
 La escala va en `Dim` (el 0 en `Fg`) y el fondo de las barras en `Hover`: se leen con cualquier tema y también sobre una
 tira seleccionada (`Raised`).
 
@@ -42,3 +46,13 @@ y escala son los mismos. La geometría de los LED se arma una vez por tamaño (`
 El look de la onda de los clips (`WaveLooks`: Rellena por defecto, Contorno, Rectificada, Barras; "waveLook") decide
 cómo las columnas del caché de ondas se hacen geometría (`Emit`) y cómo se pinta (`Paint`); cambiarlo vacía el caché
 una vez. Respeta L/R (`SplitWave`), la ganancia y la curva del clip y el clip offline.
+
+## Color de pista
+
+Cómo pinta el color de una pista en el timeline lo elige el usuario en Configuración → Apariencia (`TrackColorLooks`,
+#162): los clips de audio y MIDI (Tenue por defecto, Lleno, Solo onda, Barra de título; "trackColor.clips") y marcas
+que se prenden aparte (franja o tinte en el encabezado, carril teñido, selección en el color de la pista;
+"trackColor.marks"). Solo cambian las pistas con color; los clips offline y los que muestran fotogramas quedan como siempre. En el inspector, aparte (otra tarjeta): el encabezado (Línea y tinte por defecto, Solo línea, Lleno, Sin color;
+"trackColor.inspector") y marcas (franja al costado, secciones teñidas, íconos de sección en su color;
+"trackColor.inspectorMarks") y la flecha de la pista elegida al inspector (`InspectorPointer`, "trackColor.pointer",
+prendida por defecto, #180); el color sale de lo que muestra el inspector (`MainWindow.PaintInspectorColor`).

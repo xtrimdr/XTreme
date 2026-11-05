@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Win32;
 
 namespace XtremeDaw.App;
@@ -83,9 +85,18 @@ static class AgentLauncher
     /// <summary>
     /// The newest test copy of XTreme, with no Claude in between (asked by the user): <c>tools\probar.ps1 -Abrir -Acceso</c>,
     /// as the desktop shortcut does, so an open XTreme is offered to close (it saves first) and a failure shows a window.
+    /// With <paramref name="ticket"/>, the copy opens showing that ticket's toast (<c>-Probar</c>, asked by the user, #143).
     /// Returns why it could not start, or null.
     /// </summary>
-    public static string? OpenApp(string root)
+    public static string? OpenApp(string root, int ticket = 0) => RunProbar(root, ticket, "-Abrir");
+
+    /// <summary>
+    /// The newest XT-WorkBench (<c>tools\probar.ps1 -Banco</c>): a change to the Banco is tried in the Banco, not in
+    /// XTreme (asked by the user, 2026-11-05). An open bench from an older build closes and the newest opens.
+    /// </summary>
+    public static string? OpenBench(string root) => RunProbar(root, 0, "-Banco");
+
+    static string? RunProbar(string root, int ticket, string what)
     {
         var script = Path.Combine(root, "tools", "probar.ps1");
         if (!File.Exists(script)) return script;
@@ -93,8 +104,13 @@ static class AgentLauncher
         {
             UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = root,
         };
-        foreach (var a in (string[])["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script, "-Abrir", "-Acceso"])
+        foreach (var a in (string[])["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script, what, "-Acceso"])
             start.ArgumentList.Add(a);
+        if (ticket > 0)
+        {
+            start.ArgumentList.Add("-Probar");
+            start.ArgumentList.Add(ticket.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
         try
         {
             Process.Start(start)?.Dispose();
@@ -102,6 +118,13 @@ static class AgentLauncher
         }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException) { return e.Message; }
     }
+
+    /// <summary>
+    /// Set in the console's environment (asked by the user, #143): the file <c>tools\cerrar-sesion.ps1</c> leaves when the
+    /// agent finished its work well, and the console, seeing it once Claude ends, closes. Not a <c>CLAUDE</c> prefix, which
+    /// <see cref="DropHostSession"/> takes out.
+    /// </summary>
+    const string CloseVar = "XT_BENCH_CLOSE";
 
     /// <summary>
     /// Opens Claude at <paramref name="root"/> on <paramref name="prompt"/>: in the desktop app, or in a console (also
@@ -132,7 +155,7 @@ static class AgentLauncher
 
     /// <summary>
     /// Claude Code in a terminal at <paramref name="root"/> with <paramref name="prompt"/> as its first message, sent at
-    /// once. The prompt goes through cmd's command line: quotes, percent signs and newlines (and Windows Terminal's
+    /// once. It closes by itself when the agent says it finished well (<see cref="CloseVar"/>). The prompt goes through cmd's command line: quotes, percent signs and newlines (and Windows Terminal's
     /// <c>;</c>, which splits its commands) would break it, so they are left out.
     /// </summary>
     static string? InTerminal(string root, string prompt)
@@ -148,10 +171,15 @@ static class AgentLauncher
         }
         else start.ArgumentList.Add("/k");
         start.ArgumentList.Add(ClaudeExe());
+        // default (least verbose) view on purpose (#148: --verbose was too much; Ctrl+O's screen cannot be the startup view)
         start.ArgumentList.Add(prompt);
+        // once Claude ends: if the agent left the file (it finished well), the console goes; otherwise it stays to read
+        string flag = Path.Combine(Path.GetTempPath(), $"xt-cerrar-{Guid.NewGuid():N}");
+        foreach (var a in (string[])["&", "if", "exist", flag, "(del", flag, "&", "exit", "0)"]) start.ArgumentList.Add(a);
         start.UseShellExecute = false;
         start.WorkingDirectory = root;
         DropHostSession(start);
+        start.Environment[CloseVar] = flag;
         try
         {
             Process.Start(start)?.Dispose();
@@ -188,4 +216,130 @@ static class AgentLauncher
             start.Environment.Remove(name);
         }
     }
+
+    /// <summary>
+    /// The Claude process of the session that took a ticket (asked by the user, #164), or null when it ended. The lock
+    /// hook writes down each session's claude.exe (<c>.claude\bloqueos\p-*.json</c>: pid, start and session); a ticket
+    /// keeps only the session's first characters (<c>agent:1a2b3c4d</c>), so it is found by that prefix. The start time
+    /// tells a reused pid from the session's.
+    /// </summary>
+    public static int? SessionProcess(string root, string? takenBy)
+    {
+        const string Agent = "agent:";
+        if (takenBy is not { Length: > 6 } || !takenBy.StartsWith(Agent, StringComparison.Ordinal)) return null;
+        string prefix = takenBy[Agent.Length..];
+        try
+        {
+            var dir = Path.Combine(root, ".claude", "bloqueos");
+            if (!Directory.Exists(dir)) return null;
+            foreach (var f in Directory.EnumerateFiles(dir, "p-*.json"))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(f));
+                var e = doc.RootElement;
+                if (!e.TryGetProperty("session", out var s) || s.GetString() is not { } session
+                    || !session.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!e.TryGetProperty("pid", out var pid) || !e.TryGetProperty("started", out var started)) continue;
+                try
+                {
+                    using var p = Process.GetProcessById(pid.GetInt32());
+                    if (p.StartTime.ToUniversalTime().Ticks == started.GetInt64()) return p.Id;
+                }
+                catch (Exception x) when (x is ArgumentException or InvalidOperationException or Win32Exception) { }
+            }
+        }
+        catch (Exception x) when (x is IOException or UnauthorizedAccessException or JsonException or FormatException) { }
+        return null;
+    }
+
+    /// <summary>
+    /// Brings forward the window of the Claude process <paramref name="pid"/> (#164): its console (in Windows Terminal,
+    /// the window that hosts its tab, the root owner of the pseudo console's window), or else the nearest ancestor with
+    /// a window (the desktop app, an editor). False when it has none.
+    /// </summary>
+    public static bool ShowSession(int pid)
+    {
+        var hwnd = ConsoleWindow(pid);
+        if (hwnd == 0) hwnd = AncestorWindow(pid);
+        if (hwnd == 0) return false;
+        if (IsIconic(hwnd)) ShowWindow(hwnd, SwRestore);
+        return SetForegroundWindow(hwnd);
+    }
+
+    /// <summary>
+    /// The visible window of <paramref name="pid"/>'s console: the bench has no console of its own, so it attaches to
+    /// that one for a moment to ask, and lets go.
+    /// </summary>
+    static nint ConsoleWindow(int pid)
+    {
+        if (GetConsoleWindow() != 0 || !AttachConsole((uint)pid)) return 0;
+        try
+        {
+            var w = GetConsoleWindow();
+            if (w == 0) return 0;
+            var top = GetAncestor(w, GaRootOwner);
+            if (top != 0) w = top;
+            return IsWindowVisible(w) ? w : 0;
+        }
+        finally { FreeConsole(); }
+    }
+
+    /// <summary>The main window of the nearest process above <paramref name="pid"/> (and itself) that has one.</summary>
+    static nint AncestorWindow(int pid)
+    {
+        var parents = ParentIds();
+        for (int n = 0, id = pid; n < 10 && id > 0; n++)
+        {
+            try
+            {
+                using var p = Process.GetProcessById(id);
+                if (p.MainWindowHandle != 0) return p.MainWindowHandle;
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return 0; }
+            if (!parents.TryGetValue(id, out id)) return 0;
+        }
+        return 0;
+    }
+
+    /// <summary>Each running process's parent, from a Toolhelp snapshot (.NET does not give it).</summary>
+    static Dictionary<int, int> ParentIds()
+    {
+        var map = new Dictionary<int, int>();
+        var snap = CreateToolhelp32Snapshot(SnapProcess, 0);
+        if (snap == -1) return map;
+        try
+        {
+            var e = new ProcessEntry { Size = (uint)Marshal.SizeOf<ProcessEntry>() };
+            for (bool ok = Process32FirstW(snap, ref e); ok; ok = Process32NextW(snap, ref e))
+                map[(int)e.ProcessId] = (int)e.ParentProcessId;
+        }
+        finally { CloseHandle(snap); }
+        return map;
+    }
+
+    const int SwRestore = 9;
+    const uint GaRootOwner = 3, SnapProcess = 2;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct ProcessEntry
+    {
+        public uint Size, Usage, ProcessId;
+        public nint DefaultHeapId;
+        public uint ModuleId, Threads, ParentProcessId;
+        public int PriClassBase;
+        public uint Flags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string ExeFile;
+    }
+
+    [DllImport("kernel32.dll")] static extern nint GetConsoleWindow();
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool AttachConsole(uint processId);
+    [DllImport("kernel32.dll")] static extern bool FreeConsole();
+    [DllImport("kernel32.dll", SetLastError = true)] static extern nint CreateToolhelp32Snapshot(uint flags, uint processId);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool Process32FirstW(nint snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool Process32NextW(nint snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(nint handle);
+    [DllImport("user32.dll")] static extern nint GetAncestor(nint hwnd, uint flags);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(nint hwnd);
+    [DllImport("user32.dll")] static extern bool IsIconic(nint hwnd);
+    [DllImport("user32.dll")] static extern bool ShowWindow(nint hwnd, int cmd);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(nint hwnd);
 }

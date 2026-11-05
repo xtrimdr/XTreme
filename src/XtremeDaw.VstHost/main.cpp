@@ -1042,7 +1042,8 @@ struct Host : Vst2Listener
     void OpenEditorVst2(HWND owner)
     {
         if (!vst2->HasEditor()) { Say("error el plugin no tiene ventana propia"); return; }
-        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN;
+        // only the close button (asked by the user): a plugin's window moves and closes, never minimizes nor maximizes
+        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN;
         std::wstring title = !editor.title.empty() ? editor.title : Wide(name);
         editor.hwnd = CreateWindowExW(0, L"XtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
             640, 480, owner, nullptr, GetModuleHandleW(nullptr), this);
@@ -1080,7 +1081,8 @@ struct Host : Vst2Listener
             return;
         }
         bool resizable = editor.view->canResize() == kResultTrue;
-        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN | (resizable ? WS_THICKFRAME | WS_MAXIMIZEBOX : 0);
+        // only the close button (asked by the user); one that can be resized keeps its edges, still without maximize
+        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN | (resizable ? WS_THICKFRAME : 0);
         std::wstring title = !editor.title.empty() ? editor.title : Wide(name);
         // the size comes after the window: what the plugin measures depends on the scale of the screen it landed on
         editor.hwnd = CreateWindowExW(0, L"XtVstEditor", title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,

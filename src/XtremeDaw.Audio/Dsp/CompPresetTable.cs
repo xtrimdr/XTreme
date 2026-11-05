@@ -250,6 +250,9 @@ static class CompPresetTable
             (8, 18), (6, 12), (5, 1), (100, 60), (4, 2), CompPresets.SameLevel, (10, 10), (0, 0), (0, 0), 3000, (0, 0)),
         new("bus", "bus-mix", "Mezcla completa", "Para el master: une la mezcla sin cambiar el volumen",
             (0.5, 3), (1.5, 2.5), (30, 15), (200, 120), (10, 8), CompPresets.SameLevel, (10, 10), (0, 0), (0, 0), 3000, (0, 0)),
+        // what every compressor starts at (asked by the user, #141): moderate and neutral, for any sound, the level kept
+        new("general", CompPresets.DefaultId, "Default", "Neutro: un punto de partida para cualquier sonido",
+            (1, 8), (2, 4), (20, 8), (180, 120), (8, 6), CompPresets.SameLevel, (10, 10), (0, 0), (0, 0), 3000, (0, 0)),
         new("general", "gen-peaks", "Control de picos", "Solo actúa en los picos más altos",
             (0.5, 4), (6, 12), (2, 0.5), (80, 50), (4, 2), CompPresets.SameLevel, (10, 10), (0, 0), (0, 0), 3000, (0, 0)),
         new("general", "gen-level", "Nivelador", "Lento: empareja partes fuertes y suaves",
