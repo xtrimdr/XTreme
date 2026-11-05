@@ -1399,7 +1399,16 @@ public sealed partial class TestListWindow : Window
             // the agent gets the new number once it is written (#178): the same command as the ticket's Consola
             int added = 0;
             Save(() => added = TestList.AddRequest(path, text, null, copy, null, images),
-                after: () => { if (added > 0) RunIn(ReviewPrompt(added.ToString(CultureInfo.InvariantCulture)), desktop: false); });
+                after: () =>
+                {
+                    if (added <= 0) return;
+                    string prompt = ReviewPrompt(added.ToString(CultureInfo.InvariantCulture));
+                    if (!RunIn(prompt, desktop: false)) return;
+                    // the new ticket shows "Iniciando…" like one launched from its own Consola (#188); the list may not
+                    // have read it back yet, so it goes in by number, with no one holding it
+                    starting[prompt].Ids[added] = null;
+                    Refill();
+                });
         }
         else Save(() => TestList.AddRequest(path, text, null, copy, null, images));
         if (composerAsked) CloseComposer();

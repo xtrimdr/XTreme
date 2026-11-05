@@ -26,7 +26,15 @@ public sealed class Knob : Control
 
     public double Min { get; init; } = -1;
     public double Max { get; init; } = 1;
-    public double ResetTo { get; init; }
+    /// <summary>Where a double-click takes it and its lit arc starts; settable for a knob that serves several things (an EQ's selected band).</summary>
+    public double ResetTo
+    {
+        get => resetTo;
+        set { if (resetTo == value) return; resetTo = value; InvalidateVisual(); }
+    }
+    double resetTo;
+    /// <summary>Where its lit arc starts if not at <see cref="ResetTo"/>: a threshold lights from the top down, the more it acts (#187).</summary>
+    public double? ArcFrom { get; init; }
     public double Size { get; private set; }
     public event Action<double>? Changed;
 
@@ -69,10 +77,15 @@ public sealed class Knob : Control
     public override void Render(DrawingContext ctx)
     {
         double angle = -135 + (value - Min) / (Max - Min) * 270;
-        double origin = -135 + (ResetTo - Min) / (Max - Min) * 270;
+        double origin = -135 + ((ArcFrom ?? ResetTo) - Min) / (Max - Min) * 270;
         ctx.DrawRectangle(Brushes.Transparent, null, new Rect(Bounds.Size).Inflate(HitPad));
-        KnobLooks.Draw(Look ?? KnobLooks.Current, ctx, new Point(Size / 2, Size / 2), Size, angle, origin, true, IsPointerOver || pointer != null, false);
+        KnobLooks.Tint = Tint;
+        try { KnobLooks.Draw(Look ?? KnobLooks.Current, ctx, new Point(Size / 2, Size / 2), Size, angle, origin, true, IsPointerOver || pointer != null, false); }
+        finally { KnobLooks.Tint = null; }
     }
+
+    /// <summary>Its lit arc in this color instead of the accent (an effect's family, #187); the look stays the chosen one.</summary>
+    public Color? Tint { get; set; }
 
     /// <summary>
     /// Draws a knob of diameter <paramref name="d"/> in the chosen look (every knob in the window, this control's and

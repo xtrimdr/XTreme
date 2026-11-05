@@ -999,22 +999,48 @@ public sealed partial class SettingsDialog : UserControl
         shortcutsPage.Children.Add(Card(intro));
         foreach (var group in Shortcuts.All.GroupBy(a => a.Group))
         {
-            var s = Section(group.Key);
-            s.Spacing = 6;
-            foreach (var a in group)
-                s.Children.Add(ShortcutRow(a.Id, a.Name, Shortcuts.Label(a.Id), capturing == a.Id, "set.sc.press",
-                    () => { capturing = capturing == a.Id ? null : a.Id; capturingWheel = null; }, () => Shortcuts.Reset(a.Id)));
+            var s = FoldSection(group.Key, group.Key, group.Count());
+            if (openGroups.Contains(group.Key))
+                foreach (var a in group)
+                    s.Children.Add(ShortcutRow(a.Id, a.Name, Shortcuts.Label(a.Id), capturing == a.Id, "set.sc.press",
+                        () => { capturing = capturing == a.Id ? null : a.Id; capturingWheel = null; }, () => Shortcuts.Reset(a.Id)));
             shortcutsPage.Children.Add(Card(s));
         }
-        var wheel = Section(Loc.T("sc.group.wheel"));
-        wheel.Spacing = 6;
+        var wheel = FoldSection(WheelGroup, Loc.T("sc.group.wheel"), Shortcuts.Wheel.Count() + 1);
+        shortcutsPage.Children.Add(Card(wheel));
+        if (!openGroups.Contains(WheelGroup)) return;
         wheel.Children.Add(Help(Loc.T("set.sc.wheel.help")));
         var scrollName = new TextBlock { Text = Loc.T("sc.wheelScroll"), FontSize = 12, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
         wheel.Children.Add(Row(scrollName, ReverseToggle(Shortcuts.WheelScroll)));
         foreach (var a in Shortcuts.Wheel)
             wheel.Children.Add(ShortcutRow(a.Id, a.Name, Shortcuts.WheelLabel(a.Id), capturingWheel == a.Id, "set.sc.wheel.press",
                 () => { capturingWheel = capturingWheel == a.Id ? null : a.Id; capturing = null; }, () => Shortcuts.ResetWheel(a.Id), ReverseToggle(a.Id)));
-        shortcutsPage.Children.Add(Card(wheel));
+    }
+
+    /// <summary>Id of the wheel card in <see cref="openGroups"/> (the key groups use their own name).</summary>
+    const string WheelGroup = "\0wheel";
+
+    /// <summary>Shortcut groups unfolded in this dialog: all start folded (pedido del usuario, #190), so the page
+    /// reads as a list of categories, each with how many actions it holds.</summary>
+    readonly HashSet<string> openGroups = [];
+
+    /// <summary>A shortcut card whose title folds it: chevron, title and count; a click flips it and rebuilds.</summary>
+    StackPanel FoldSection(string id, string title, int count)
+    {
+        var open = openGroups.Contains(id);
+        var s = new StackPanel { Spacing = 6 };
+        var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        head.Children.Add(new TextBlock { Classes = { "icon" }, Text = open ? "" : "", FontSize = 10, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
+        head.Children.Add(new TextBlock { Text = title.ToUpperInvariant(), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center });
+        head.Children.Add(new TextBlock { Text = count.ToString(), Classes = { "dim", "mono" }, FontSize = 11, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
+        var b = new Button { Classes = { "link" }, Content = head, MinHeight = 20, Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
+        b.Click += (_, _) =>
+        {
+            if (!openGroups.Remove(id)) openGroups.Add(id);
+            BuildShortcuts();
+        };
+        s.Children.Add(b);
+        return s;
     }
 
     /// <summary>"Invertir": turns one wheel gesture around, apart from the others.</summary>

@@ -31,6 +31,15 @@ public static class KnobLooks
     public static bool LightCap => IsLight(Current);
     public static bool IsLight(string look) => look is Metal or Ceramic;
 
+    /// <summary>
+    /// The color the next draw lights its arc, dots and pointer with instead of the accent (an effect's family color,
+    /// #187); <see cref="Knob"/> sets it around its own draw. UI thread only, like every draw.
+    /// </summary>
+    public static Color? Tint { get; set; }
+
+    static Color LitColor => Tint ?? Palette.AccentColor;
+    static IBrush Lit => Tint is { } t ? Palette.Alpha(t, 1) : Palette.Accent;
+
     /// <summary>The look changed: whoever paints knobs redraws.</summary>
     public static event Action? Changed;
 
@@ -244,8 +253,8 @@ public static class KnobLooks
         double w = Math.Max(1.25, d / 26);
         var a0 = Polar(c, angle, label ? r * 0.66 : r * 0.3);
         var a1 = Polar(c, angle, r * 0.84);
-        if (on) ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.3), w * 3, PenLineCap.Round), a0, a1);
-        ctx.DrawLine(Palette.Pen(on ? Palette.Accent : Palette.Dim, w, PenLineCap.Round), a0, a1);
+        if (on) ctx.DrawLine(Palette.Pen(Palette.Alpha(LitColor, 0.3), w * 3, PenLineCap.Round), a0, a1);
+        ctx.DrawLine(Palette.Pen(on ? Lit : Palette.Dim, w, PenLineCap.Round), a0, a1);
     }
 
     /// <summary>A wide ring that fills with the value around a small flat cap, like a synth's.</summary>
@@ -270,12 +279,12 @@ public static class KnobLooks
         {
             double a = -135 + k * 270.0 / (n - 1);
             bool lit = any && a >= lo && a <= hi;
-            ctx.DrawEllipse(lit ? (on ? Palette.Accent : Palette.Dim) : hot ? DotOffHot : DotOff, null, Polar(c, a, rim), dot, dot);
+            ctx.DrawEllipse(lit ? (on ? Lit : Palette.Dim) : hot ? DotOffHot : DotOff, null, Polar(c, a, rim), dot, dot);
         }
         double drop = r * HaloReach;
         ctx.DrawEllipse(DropHalo, null, new Point(c.X, c.Y + Math.Max(1, d / 26)), drop, drop);
         ctx.DrawEllipse(MatteCap, MatteEdge, c, r, r);
-        ctx.DrawLine(Palette.Pen(on ? Palette.Accent : Palette.Dim, Math.Max(1.25, d / 24), PenLineCap.Round), Polar(c, angle, label ? r * 0.7 : r * 0.45), Polar(c, angle, r - 1.5));
+        ctx.DrawLine(Palette.Pen(on ? Lit : Palette.Dim, Math.Max(1.25, d / 24), PenLineCap.Round), Polar(c, angle, label ? r * 0.7 : r * 0.45), Polar(c, angle, r - 1.5));
     }
 
     /// <summary>Vintage hi-fi: glossy black bakelite with a gold rim and a gold line.</summary>
@@ -319,8 +328,8 @@ public static class KnobLooks
         Arc(ctx, c, rim, -135, 135, Palette.Pen(hot ? GrooveHot : Groove, sw + 1, PenLineCap.Round));
         if (Math.Abs(angle - origin) <= 0.5) return;
         double a = Math.Min(origin, angle), b = Math.Max(origin, angle);
-        if (on) Arc(ctx, c, rim, a, b, Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.18), sw * 2.6, PenLineCap.Round));
-        Arc(ctx, c, rim, a, b, Palette.Pen(on ? Palette.Accent : Palette.Dim, sw, PenLineCap.Round));
+        if (on) Arc(ctx, c, rim, a, b, Palette.Pen(Palette.Alpha(LitColor, 0.18), sw * 2.6, PenLineCap.Round));
+        Arc(ctx, c, rim, a, b, Palette.Pen(on ? Lit : Palette.Dim, sw, PenLineCap.Round));
     }
 
     /// <summary>The arc from the origin to the value, in the accent (grey when off); <paramref name="glow"/> lays two
@@ -331,16 +340,16 @@ public static class KnobLooks
         double a = Math.Min(origin, angle), b = Math.Max(origin, angle);
         if (glow && on)
         {
-            Arc(ctx, c, rim, a, b, Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.1), w * 3.6, PenLineCap.Round));
-            Arc(ctx, c, rim, a, b, Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.22), w * 2.2, PenLineCap.Round));
+            Arc(ctx, c, rim, a, b, Palette.Pen(Palette.Alpha(LitColor, 0.1), w * 3.6, PenLineCap.Round));
+            Arc(ctx, c, rim, a, b, Palette.Pen(Palette.Alpha(LitColor, 0.22), w * 2.2, PenLineCap.Round));
         }
-        Arc(ctx, c, rim, a, b, Palette.Pen(on ? Palette.Accent : Palette.Dim, w, PenLineCap.Round));
+        Arc(ctx, c, rim, a, b, Palette.Pen(on ? Lit : Palette.Dim, w, PenLineCap.Round));
     }
 
     static void GlowDot(DrawingContext ctx, Point p, double r, bool on)
     {
-        if (on) ctx.DrawEllipse(Palette.Alpha(Palette.AccentColor, 0.3), null, p, r * 2, r * 2);
-        ctx.DrawEllipse(on ? Palette.Accent : Palette.Dim, null, p, r, r);
+        if (on) ctx.DrawEllipse(Palette.Alpha(LitColor, 0.3), null, p, r * 2, r * 2);
+        ctx.DrawEllipse(on ? Lit : Palette.Dim, null, p, r, r);
     }
 
     /// <summary>An arc of short round-capped lines: a geometry would be garbage on every redraw.</summary>

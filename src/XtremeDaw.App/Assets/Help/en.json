@@ -596,7 +596,8 @@
           ],
           "notes": [
             "Built-in effects are grouped: **Dynamics**, **Classic compressors**, **EQ**, **Saturation**, **Modulation** and **Space and stereo**.",
-            "Clicking a built-in effect opens its window, under where you clicked. Move it by its bar; it stays open while you work and you can have several. Close it with its X or **Esc**."
+            "Clicking a built-in effect opens its window, under where you clicked. Move it by its bar; it stays open while you work and you can have several. Close it with its X or **Esc**. The expand button on its bar shows every control in panels; shrunk, only the main ones. Each effect remembers its size.",
+            "Each effect has its own identity: what matters goes on big knobs, its graph sits on top (the reverb's tail, the delay's echoes, the modulation's wave, the saturation's curve, the stereo field, the tone effects' response) and it takes its family's color: violet for dynamics, green for tone, orange for drive, blue for space and pink for modulation."
           ],
           "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
         },

@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.9.18",
+      "items": [
+        {
+          "icon": "E790",
+          "title": "Each effect with its own identity",
+          "text": "Built-in effects get a face of their own: **big knobs** for what matters (Decay on the Reverb, Time and Repeats on the Delay, Drive on Saturation), a **live graph** that follows the knobs (the reverb's tail, the delay's echoes, the modulation's wave, the saturation's curve, the stereo field) and their **family color**: dynamics, tone, drive, space and modulation. The knob style is still the one in Appearance."
+        }
+      ]
+    },
+    {
       "version": "0.9.17",
       "items": [
         {
@@ -60,8 +70,8 @@
         },
         {
           "icon": "E740",
-          "title": "Compact or full compressor",
-          "text": "The **Compressor** window shows the main controls. The expand button on its bar opens it with every control in panels: Dynamics, Timing, Output, Built-in EQ and Sidechain. Every built-in effect opens in its own window, which moves like a VST's and stays open."
+          "title": "Compact or full effects",
+          "text": "Every built-in effect's window shows its main controls. The expand button on its bar opens it with every control in panels (on the **Compressor**: Dynamics, Timing, Output, Built-in EQ and Sidechain; on the **EQ**, a larger graph with the band and its dynamics on knobs). The Pump keeps its own panel. Every built-in effect opens in its own window, which moves like a VST's and stays open."
         },
         {
           "icon": "E8AC",

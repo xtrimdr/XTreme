@@ -15,6 +15,10 @@ también corta el audio (ver "Audio en tiempo real" en la guía de la raíz).
 - El control expone eventos (`SeekRequested`, `SelectionChanged`, `TrackToggled`…) y la ventana decide qué hacer. El
   control no toca el motor ni el guardado.
 
+Una perilla puede llevar su color (`Knob.Tint`, el de la familia de su efecto): `KnobLooks` pinta el arco, los puntos y la
+marca con `KnobLooks.Tint` en vez del acento mientras dura su dibujo. El gráfico de cada efecto (`FxScope`) dibuja con
+líneas cortas y columnas de 1 px, sin geometrías; solo el de la modulación se redibuja solo, y solo mientras suena.
+
 ## Medidores
 
 `StereoMeter`: ataque instantáneo, caída de 24 dB/s, pico retenido 1,5 s, rango −60 dB (−48 en los de pista). Acento

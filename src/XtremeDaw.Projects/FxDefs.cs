@@ -74,8 +74,19 @@ public sealed record FxGroup(string Label, string[] Ids, double Weight);
 /// <summary>
 /// How an effect shows in its two sizes (asked by the user, 2026-11-05, #140): <see cref="Compact"/> lists the main knobs,
 /// <see cref="Rows"/> the inner panels of the full view, row by row. Every knob of the effect is in some panel.
+/// <see cref="Hero"/>: the knobs that carry the effect (asked by the user, #187), drawn big in both views; the rest
+/// stay small beside them.
 /// </summary>
-public sealed record FxLayout(string[] Compact, FxGroup[][] Rows);
+public sealed record FxLayout(string[] Compact, FxGroup[][] Rows)
+{
+    public string[] Hero { get; init; } = [];
+}
+
+/// <summary>
+/// The family an effect belongs to (asked by the user, #187: each effect with an identity of its own): its panel takes
+/// the family's color in its title, its lit knobs and its graph.
+/// </summary>
+public enum FxFamily { None, Dynamics, Tone, Drive, Space, Mod }
 
 /// <summary>
 /// The list of every native effect's parameters, one place for the window's panel (the same in the inspector, the
@@ -344,23 +355,114 @@ public static class FxDefs
         _ => [],
     };
 
-    /// <summary>Parts of a full view that aren't knobs: a compressor's graph and what an effect listens to (its sidechain).</summary>
-    public const string GraphPart = "@graph", KeyPart = "@key";
+    /// <summary>
+    /// Parts of a full view that aren't knobs: a compressor's graph, what an effect listens to (its sidechain) and the
+    /// effect's own live picture (<see cref="ScopePart"/>: the reverb's tail, the delay's echoes, a modulation's wave…).
+    /// </summary>
+    public const string GraphPart = "@graph", KeyPart = "@key", ScopePart = "@scope";
+
+    /// <summary>The family of an effect kind (<see cref="FxFamily"/>); a VST3 and an unknown kind have none.</summary>
+    public static FxFamily Family(string kind) => kind switch
+    {
+        InsertSlot.CompKind or InsertSlot.GateKind or TrackInserts.Fet or TrackInserts.Opto or TrackInserts.BusComp or TrackInserts.Vca
+            or TrackInserts.VariMu or TrackInserts.Limit or TrackInserts.Pump => FxFamily.Dynamics,
+        InsertSlot.EqKind or TrackInserts.Clean or TrackInserts.Bands or TrackInserts.Color => FxFamily.Tone,
+        InsertSlot.SatKind or TrackInserts.Tape or TrackInserts.Clip => FxFamily.Drive,
+        InsertSlot.ReverbKind or InsertSlot.DelayKind or TrackInserts.Width => FxFamily.Space,
+        TrackInserts.Chorus or TrackInserts.Flanger or TrackInserts.Phaser or TrackInserts.Tremolo => FxFamily.Mod,
+        _ => FxFamily.None,
+    };
 
     static readonly FxLayout CompLayout = new(["amount", "makeup", "wet"],
     [
         [new("fx.panel.curve", [GraphPart], 4), new("fx.panel.dynamics", ["amount", "threshold", "ratio", "knee"], 4)],
         [new("fx.panel.times", ["attack", "release"], 2), new("fx.panel.output", ["makeup", "dry", "wet", "out"], 4)],
         [new("fx.panel.eq", ["hpf", "mud", "presence", "air"], 4), new("fx.panel.key", [KeyPart], 2)],
-    ]);
+    ]) { Hero = ["amount"] };
+
+    /// <summary>The output panel every full view ends with: Dry, Wet and output.</summary>
+    static FxGroup OutGroup(double weight = 3) => new("fx.panel.output", ["dry", "wet", "out"], weight);
 
     /// <summary>
-    /// The effect's compact and full views, or null for one that has a single view (it shows as it always did). The effects
-    /// get theirs one by one (asked by the user).
+    /// A compressor model's views, like the compressor's: its graph and dynamics on top, output and what it listens to
+    /// under them; <paramref name="key"/> adds the model's own sidechain knobs (a bus compressor's filter).
+    /// </summary>
+    static FxLayout ModelLayout(string[] compact, string[] dynamics, string[]? key = null) => new(compact,
+    [
+        [new("fx.panel.curve", [GraphPart], 4), new("fx.panel.dynamics", dynamics, Math.Max(dynamics.Length, 3))],
+        [new("fx.panel.output", ["makeup", "dry", "wet", "out"], 4), new("fx.panel.key", [KeyPart, .. key ?? []], 2)],
+    ]) { Hero = [compact[0]] };
+
+    // Each effect laid out by what it is (asked by the user, #187): its picture on top of the panel it belongs to and
+    // its hero knob big inside it, the rest small beside.
+    static readonly FxLayout SatLayout = new(["amount", "wet", "out"],
+        [[new("fx.panel.drive", [ScopePart, "amount"], 3), OutGroup(2)]]) { Hero = ["amount"] };
+
+    static readonly FxLayout GateLayout = new(["threshold", "out"],
+        [[new("fx.panel.gate", [ScopePart, "threshold"], 3), new("fx.panel.key", [KeyPart], 2)], [OutGroup()]]) { Hero = ["threshold"] };
+
+    static readonly FxLayout ReverbLayout = new(["decay", "pre", "wet"],
+        [[new("fx.panel.space", [ScopePart, "decay", "pre", "width"], 3), new("fx.panel.tone", ["tone", "lowCut"], 2)], [OutGroup()]]) { Hero = ["decay"] };
+
+    static readonly FxLayout DelayLayout = new(["time", "repeats", "wet"],
+    [
+        [new("fx.panel.echo", [ScopePart, "time", "repeats", "duck"], 3), new("fx.panel.tone", ["tone", "lowCut"], 2)],
+        [new("fx.panel.stereo", ["width"], 2), OutGroup()],
+    ]) { Hero = ["time", "repeats"] };
+
+    static readonly FxLayout EqLayout = new(["out"], [[OutGroup()]]);
+
+    static readonly FxLayout CleanLayout = new(["lowCut", "mud", "out"], [[new("fx.panel.clean", [ScopePart, "lowCut", "mud"], 3), OutGroup(2)]]) { Hero = ["lowCut"] };
+    static readonly FxLayout BandsLayout = new(["low", "mid", "high"],
+        [[new("fx.panel.bands", [ScopePart, "low", "mid", "high", "pick"], 4)], [new("fx.panel.cross", ["lowX", "highX"], 2), OutGroup()]]);
+    static readonly FxLayout ColorLayout = new(["lows", "presence", "air"], [[new("fx.panel.color", [ScopePart, "lows", "presence", "air", "tilt"], 4)], [OutGroup()]]);
+    static readonly FxLayout TapeLayout = new(["amount", "wet", "out"], [[new("fx.panel.tape", [ScopePart, "amount"], 3), OutGroup(2)]]) { Hero = ["amount"] };
+    static readonly FxLayout WidthLayout = new(["width", "monoBass", "out"], [[new("fx.panel.stereo", [ScopePart, "width", "monoBass"], 3), OutGroup(2)]]) { Hero = ["width"] };
+    static readonly FxLayout ClipLayout = new(["recorte", "ceiling", "out"], [[new("fx.panel.clip", [ScopePart, "recorte", "ceiling"], 3), OutGroup(2)]]) { Hero = ["recorte"] };
+    static readonly FxLayout LimitLayout = new(["drive", "ceiling", "release"],
+        [[new("fx.panel.limit", [ScopePart, "drive", "ceiling", "release"], 3)], [OutGroup()]]) { Hero = ["drive", "ceiling"] };
+
+    static readonly FxLayout ChorusLayout = new(["rate", "depth", "wet"], [[new("fx.panel.mod", [ScopePart, "rate", "depth", "delay", "spread"], 4)], [OutGroup()]]) { Hero = ["rate", "depth"] };
+    static readonly FxLayout FlangerLayout = new(["rate", "depth", "feedback"],
+        [[new("fx.panel.mod", [ScopePart, "rate", "depth", "spread"], 3), new("fx.panel.feedback", ["delay", "feedback"], 2)], [OutGroup()]]) { Hero = ["rate", "depth"] };
+    static readonly FxLayout PhaserLayout = new(["rate", "depth", "feedback"],
+        [[new("fx.panel.mod", [ScopePart, "rate", "depth", "spread"], 3), new("fx.panel.feedback", ["stages", "feedback"], 2)], [OutGroup()]]) { Hero = ["rate", "depth"] };
+    static readonly FxLayout TremoloLayout = new(["rate", "depth", "shape"], [[new("fx.panel.mod", [ScopePart, "rate", "depth", "shape", "spread"], 4)], [OutGroup()]]) { Hero = ["rate", "depth"] };
+
+    static readonly FxLayout FetLayout = ModelLayout(["input", "makeup", "wet"], ["input", "ratio", "attack", "release"]);
+    static readonly FxLayout OptoLayout = ModelLayout(["reduction", "makeup", "wet"], ["reduction", "mode"]);
+    static readonly FxLayout BusCompLayout = ModelLayout(["threshold", "makeup", "wet"], ["threshold", "ratio", "attack", "release"], ["scHpf"]);
+    static readonly FxLayout VcaLayout = ModelLayout(["threshold", "makeup", "wet"], ["threshold", "ratio", "knee"]);
+    static readonly FxLayout VariMuLayout = ModelLayout(["input", "makeup", "wet"], ["input", "threshold", "time"]);
+
+    /// <summary>
+    /// The effect's compact and full views, or null for one that has a single view (it shows as it always did): every
+    /// native effect has both (asked by the user, #186) but the pump, which has its own panel.
     /// </summary>
     public static FxLayout? Layout(string kind) => kind switch
     {
         InsertSlot.CompKind => CompLayout,
+        InsertSlot.SatKind => SatLayout,
+        InsertSlot.GateKind => GateLayout,
+        InsertSlot.ReverbKind => ReverbLayout,
+        InsertSlot.DelayKind => DelayLayout,
+        InsertSlot.EqKind => EqLayout,
+        TrackInserts.Clean => CleanLayout,
+        TrackInserts.Bands => BandsLayout,
+        TrackInserts.Color => ColorLayout,
+        TrackInserts.Tape => TapeLayout,
+        TrackInserts.Width => WidthLayout,
+        TrackInserts.Clip => ClipLayout,
+        TrackInserts.Limit => LimitLayout,
+        TrackInserts.Chorus => ChorusLayout,
+        TrackInserts.Flanger => FlangerLayout,
+        TrackInserts.Phaser => PhaserLayout,
+        TrackInserts.Tremolo => TremoloLayout,
+        TrackInserts.Fet => FetLayout,
+        TrackInserts.Opto => OptoLayout,
+        TrackInserts.BusComp => BusCompLayout,
+        TrackInserts.Vca => VcaLayout,
+        TrackInserts.VariMu => VariMuLayout,
         _ => null,
     };
 

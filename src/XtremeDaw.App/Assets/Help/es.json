@@ -596,7 +596,8 @@
           ],
           "notes": [
             "Los efectos propios van por grupos: **Dinámica**, **Compresores clásicos**, **EQ**, **Saturación**, **Modulación** y **Espacio y estéreo**.",
-            "Un clic en un efecto propio abre su ventana, abajo de donde hiciste clic. Se mueve desde su barra, queda abierta mientras trabajás y podés tener varias. Se cierra con su X o con **Esc**."
+            "Un clic en un efecto propio abre su ventana, abajo de donde hiciste clic. Se mueve desde su barra, queda abierta mientras trabajás y podés tener varias. Se cierra con su X o con **Esc**. El botón de agrandar, en su barra, muestra todos los controles en paneles; achicada, solo lo principal. Cada efecto recuerda su tamaño.",
+            "Cada efecto tiene su identidad: lo principal va en perillas grandes, arriba va su gráfico (la cola de la reverb, los ecos del delay, la onda de la modulación, la curva de la saturación, el campo estéreo, la respuesta de los de tono) y lleva el color de su familia: violeta la dinámica, verde el tono, naranja la saturación, azul el espacio y rosa la modulación."
           ],
           "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
         },

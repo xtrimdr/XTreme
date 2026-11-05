@@ -408,12 +408,20 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   efecto nativo desde su lista (`FxDefs`) más sus opciones (presets, modos), igual en el inspector, la ventanita del
   mixer y la del timeline; la celda de cada perilla (`FxCell`) es la misma que en Mastering. Las perillas se reparten el
   ancho y crecen con él (`FxGrid`). Lo fino del compresor va detrás de "Ajuste fino" y se abre solo en modo manual.
-  **Compacto y full** (pedido del usuario, #140; los efectos se suman de a uno, hoy solo el Compresor): un efecto con
+  **Compacto y full** (pedido del usuario, #140; todos los nativos desde #186, menos el Bombeo, que tiene su panel; el EQ en full lleva el gráfico grande, `EqEditor(big)`): un efecto con
   `FxDefs.Layout` abre su ventanita compacta (sus perillas principales, `FxLayout.Compact`, sin "Ajuste fino") o full
   (`SlotFullW`, todo en paneles internos, `FxLayout.Rows`, cada uno tan ancho como su `Weight`; `@graph` y `@key` son el
   gráfico y el sidechain). El botón de agrandar de su barra lo cambia (`ToggleFull`) y la ventana se rearma a su
   tamaño, quieta donde está; cada slot recuerda el suyo (`InsertSlot.Full`, en el proyecto, sin deshacer). Mastering lo sigue mostrando
   como antes (`full: null`).
+  **Identidad de cada efecto** (pedido del usuario, #187): cada nativo lleva el color de su familia (`FxDefs.Family`,
+  `Palette.FamilyColor`: violeta dinámica, verde tono, naranja saturación, azul espacio, rosa modulación) en el ícono, la barra
+  del título (`FxPanel`), el arco de sus perillas (`Knob.Tint`; el estilo de perilla sigue siendo el de Apariencia) y los
+  paneles internos; sus perillas protagonistas (`FxLayout.Hero`) van grandes (`FxHeroW`) en las dos vistas, el resto chicas al
+  lado; y su gráfico (`FxScope`, `@scope` en `FxLayout`: la cola de la reverb, los ecos del delay, la onda de la modulación
+  que corre mientras suena, la curva de la saturación, cinta, clipper y limitador con una senoidal, la puerta, el campo
+  estéreo y la respuesta de Limpieza, Color y Bandas) arriba en la compacta y en su panel en la full. Dibuja lo que dicen las
+  perillas, no la señal. Los compresores siguen con su `CompGraph`, el EQ con su editor (en la ventana del efecto, la banda elegida y su dinámica van en perillas, en dos paneles; en la vista completa, lado a lado bajo un gráfico de 220 px: `EqEditor` con `knobs`/`wide`) y el Bombeo con su panel.
   **Presets** (pedido del usuario, #141): todo efecto nativo lleva arriba su barra de presets (`PresetBar`): **Default**
   primero (cómo arranca: `InsertSlot.New` más `StartSlot`, lo mismo que "+ Efecto"; en el compresor, el preset
   `CompPresets.DefaultId`), los propios del efecto (compresor por categoría, EQ, reverb, delay) y los del usuario en
@@ -423,7 +431,7 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   Nada arranca para guitarra: compresor nuevo, pista nueva y grabación van en Default. Todo compresor (`TrackInserts.HasCompGraph`)
   lleva su gráfico (`CompGraph`): la curva con un punto donde está la señal, y a la derecha unos 4 s de entrada y salida
   (barras desde abajo) y reducción (desde arriba, en el acento), leídos del `CompScope` del efecto que suena. Todo
-  efecto nuevo agrega su lista en `FxDefs`, no una interfaz propia. Dry, Wet y Salida son comunes y separados (`FxDefs.Common`, pedido del usuario; Reverb y Delay nuevos en una pista arrancan con Wet 25 % y Dry 100 %), y prender y apagar se funde (`FxShell`).
+  efecto nuevo agrega su lista en `FxDefs`, no una interfaz propia. Dry, Wet y Salida son comunes y separados (`FxDefs.Common`, pedido del usuario; Reverb y Delay nuevos en una pista, una carpeta o el Master arrancan con Wet 25 % y Dry 100 %, en un bus con Wet 100 % y Dry 0 %; el doble clic en Dry y Wet vuelve a esos valores, #187), y prender y apagar se funde (`FxShell`).
 - **EQ** (`Controls/EqEditor.cs`): 7 bandas. Un chip por banda, y en una campana o estante, **Dinámico** (`EqDynamics`): la
   banda se mueve sola cuando esa zona pasa del Umbral, hasta su Rango (negativo corta, positivo realza), con su Ataque y
   Release; en el gráfico, una barra muestra el recorrido y un punto dónde está ahora (`EqEditor.Live`, 30 veces por

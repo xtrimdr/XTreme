@@ -23,6 +23,8 @@ public partial class MainWindow
     const double FxCellW = 92, FxCellMinW = 66;
     /// <summary>A knob's size in a panel, from its smallest to what a cell from <see cref="FxBigCellW"/> gets.</summary>
     const double FxKnobW = 36, FxKnobBigW = 44, FxBigCellW = 76;
+    /// <summary>A hero knob (#187: what carries the effect, as on a hardware unit), and its picture's height in each view.</summary>
+    const double FxHeroW = 68, FxScopeCompactH = 64, FxScopeFullH = 96;
 
     /// <summary>A knob with its label on top and its value under it, in the effect panels and the Mastering view.
     /// What it does (<paramref name="tip"/>) shows over the label, never over the knob: there it would cover the drag.</summary>
@@ -68,19 +70,52 @@ public partial class MainWindow
         if (p.TurnsOn) s.On = true;
         if (s.Comp is { } c)
         {
-            if (p.Manual) c.Preset = "custom";
-            else if (p.Id == "amount" && c.Preset != "custom") o.Recalculate(c);
+            if (p.Manual)
+            {
+                if (c.Preset != "custom") c.ManualFrom = c.Preset;
+                c.Preset = "custom";
+            }
+            else if (p.Id == "amount")
+            {
+                // Amount only drives a preset: in Manual it drops the hand-set values and goes back to the last one
+                if (c.Preset == "custom")
+                    c.Preset = CompPresets.All.Any(x => x.Id == c.ManualFrom) ? c.ManualFrom! : CompPresets.DefaultId;
+                o.Recalculate(c);
+            }
         }
     }, $"{id}.{p.Id}");
 
-    /// <summary>One knob of the list; hidden and disabled as <paramref name="shown"/> and <paramref name="enabled"/> say.</summary>
-    (Control Cell, Knob Knob) FxKnobCell(SlotOwner o, string id, FxParam p, List<Action> refresh, Func<bool>? enabled = null, Func<bool>? shown = null)
+    /// <summary>
+    /// One knob of the list; hidden and disabled as <paramref name="shown"/> and <paramref name="enabled"/> say.
+    /// <paramref name="tint"/>: its lit arc in the effect family's color; <paramref name="hero"/>: one of the knobs that
+    /// carry the effect (#187), big and with its value larger, out of any grid.
+    /// </summary>
+    (Control Cell, Knob Knob) FxKnobCell(SlotOwner o, string id, FxParam p, List<Action> refresh, Func<bool>? enabled = null, Func<bool>? shown = null,
+        Color? tint = null, bool hero = false)
     {
         string label = Loc.T(p.Label);
-        var knob = new Knob(FxKnobBigW, label) { Min = 0, Max = 1, ResetTo = p.ToKnob(p.Default), HorizontalAlignment = HorizontalAlignment.Center };
+        // Dry and Wet go back to where the effect starts here (#187): a reverb on a channel at 25 %, on a bus at 100 %
+        double reset = p.Default;
+        if ((p == FxDefs.Dry || p == FxDefs.Wet) && o.Slot(id)?.Type is { } kind) reset = p.Get(DefaultSlot(o, kind));
+        // a compressor's threshold lights from 0 dB down: the more arc, the more it compresses (#187)
+        double? arcFrom = p.Label == "insp.comp.threshold" && double.IsNegativeInfinity(p.OffBelow) ? 1 : null;
+        var knob = new Knob(hero ? FxHeroW : FxKnobBigW, label) { Min = 0, Max = 1, ResetTo = p.ToKnob(reset), ArcFrom = arcFrom, HorizontalAlignment = HorizontalAlignment.Center, Tint = tint };
         knob.Changed += k => { if (!syncing) FxEdit(o, id, p, p.FromKnob(k)); };
         var value = FxValue();
         var cell = FxCell(label, knob, value, p.Tip != null ? Loc.T(p.Tip) : null);
+        if (hero)
+        {
+            value.FontSize = 13;
+            value.Foreground = Palette.Fg;
+            cell.Spacing = 6;
+            cell.Margin = new Thickness(4, 0, 10, 0);
+            if (cell.Children[0] is TextBlock name)
+            {
+                name.FontSize = 10.5;
+                name.FontWeight = FontWeight.SemiBold;
+                if (tint is { } t) name.Foreground = Palette.Alpha(t, 0.9);
+            }
+        }
         refresh.Add(() =>
         {
             if (o.Slot(id) is not { } s) return;
@@ -166,7 +201,8 @@ public partial class MainWindow
             case InsertSlot.EqKind:
                 var bigEq = InspectorIcon("", Loc.T("eq.big.tip"), () => ShowEqBig(o, id, o.OwnerId == sel?.Track.Id));
                 body.Children.Add(PresetBar(o, id, kind, refresh, EqPresetItems(o, id), [bigEq]));
-                var eq = new EqEditor { Live = () => LiveEq(o, id), ShowsPresets = false };
+                // in an effect window the band's controls are knobs in the family's color, side by side in the full view (#187)
+                var eq = new EqEditor(knobs: full != null, wide: full == true, tint: Palette.FamilyColor(FxDefs.Family(kind))) { Live = () => LiveEq(o, id), ShowsPresets = false };
                 onEq?.Invoke(eq);
                 eq.Changed += value => SlotEdit(o, id, s => s.Eq = value, "eq");
                 eq.BigRequested += () => ShowEqBig(o, id, o.OwnerId == sel?.Track.Id);
@@ -192,7 +228,7 @@ public partial class MainWindow
         var all = FxDefs.Params(kind);
         Func<bool>? Shown(FxParam p) => kind == InsertSlot.DelayKind && p.Id == "time" ? Free : null;
         foreach (var p in all.Where(p => !p.Fine && hide?.Contains(p.Id) != true))
-            Add(p, grid, knobs, kind == InsertSlot.CompKind && p.Id == "amount" ? () => !Manual() : null, Shown(p));
+            Add(p, grid, knobs, null, Shown(p));
         foreach (var p in FxDefs.Common(kind)) Add(p, grid, knobs);
         body.Children.Add(grid);
 
@@ -219,30 +255,53 @@ public partial class MainWindow
     void FxSized(StackPanel body, SlotOwner o, string id, string kind, List<Action> refresh, FxLayout layout, bool full)
     {
         FxParam[] all = [.. FxDefs.Params(kind), .. FxDefs.Common(kind)];
-        bool Manual() => o.Slot(id)?.Comp?.Preset == "custom";
-        KnobGrid Knobs(IEnumerable<string> ids, double top)
+        var family = FxDefs.Family(kind);
+        Color? tint = family == FxFamily.None ? null : Palette.FamilyColor(family);
+        bool Free() => o.Slot(id)?.Delay?.Sync != true;
+        (Control Cell, Knob Knob) Cell(FxParam p, bool hero) =>
+            FxKnobCell(o, id, p, refresh, null, kind == InsertSlot.DelayKind && p.Id == "time" ? Free : null, tint, hero);
+        // the hero knobs first and big (#187), the rest in a grid that takes what is left of the width
+        Control Knobs(IEnumerable<string> ids, double top)
         {
             var knobs = new List<Knob>();
-            var grid = FxGrid(knobs, top);
+            var grid = FxGrid(knobs, 0);
+            var heroes = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             foreach (string pid in ids)
             {
                 if (Array.Find(all, p => p.Id == pid) is not { } p) continue;
-                var (cell, knob) = FxKnobCell(o, id, p, refresh, kind == InsertSlot.CompKind && p.Id == "amount" ? () => !Manual() : null);
-                grid.Children.Add(cell);
-                knobs.Add(knob);
+                bool hero = layout.Hero.Contains(pid);
+                var (cell, knob) = Cell(p, hero);
+                if (hero) heroes.Children.Add(cell);
+                else
+                {
+                    grid.Children.Add(cell);
+                    knobs.Add(knob);
+                }
             }
-            return grid;
+            if (heroes.Children.Count == 0) { grid.Margin = new Thickness(0, top, 0, 0); return grid; }
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(0, top, 0, 0) };
+            row.Children.Add(heroes);
+            if (grid.Children.Count == 0) heroes.HorizontalAlignment = HorizontalAlignment.Center;
+            else
+            {
+                grid.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(grid, 1);
+                row.Children.Add(grid);
+            }
+            if (grid.Children.Count == 0) Grid.SetColumnSpan(heroes, 2);
+            return row;
         }
-        Control? Part(string part) => part switch
+        Control? Part(string part, double scopeH) => part switch
         {
             FxDefs.GraphPart when TrackInserts.HasCompGraph(kind) => CompGraphOf(o, id, refresh),
             FxDefs.KeyPart when TrackInserts.TakesKey(kind) => KeyChoice(o, id, refresh, labeled: false),
+            FxDefs.ScopePart when FxScope.Has(kind) => ScopeOf(o, id, kind, scopeH, tint ?? Palette.AccentColor, refresh),
             _ => null,
         };
 
         if (!full)
         {
-            if (Part(FxDefs.GraphPart) is { } graph) body.Children.Add(graph);
+            if ((Part(FxDefs.GraphPart, 0) ?? Part(FxDefs.ScopePart, FxScopeCompactH)) is { } graph) body.Children.Add(graph);
             body.Children.Add(Knobs(layout.Compact, 2));
             return;
         }
@@ -252,13 +311,16 @@ public partial class MainWindow
             for (int i = 0; i < row.Length; i++)
             {
                 var g = row[i];
-                var stack = new StackPanel { Spacing = 6, Children = { new TextBlock { Classes = { "label" }, Text = Loc.T(g.Label) } } };
+                var title = new TextBlock { Classes = { "label" }, Text = Loc.T(g.Label) };
+                if (tint is { } t) title.Foreground = Palette.Alpha(t, 0.85);
+                var stack = new StackPanel { Spacing = 6, Children = { title } };
                 foreach (string part in g.Ids.Where(x => x.StartsWith('@')))
-                    if (Part(part) is { } c) stack.Children.Add(c);
+                    if (Part(part, FxScopeFullH) is { } c) stack.Children.Add(c);
                 string[] knobIds = [.. g.Ids.Where(x => !x.StartsWith('@'))];
                 if (knobIds.Length > 0) stack.Children.Add(Knobs(knobIds, 0));
                 var panel = new Border { Child = stack, Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
-                    BorderBrush = Palette.Line, Background = Palette.Alpha(Palette.AppColor, FxInnerAlpha), Margin = new Thickness(i == 0 ? 0 : FxInnerGap, 0, 0, 0) };
+                    BorderBrush = tint is { } b ? Palette.Alpha(b, FxInnerTintLine) : Palette.Line, Background = Palette.Alpha(Palette.AppColor, FxInnerAlpha),
+                    Margin = new Thickness(i == 0 ? 0 : FxInnerGap, 0, 0, 0) };
                 Grid.SetColumn(panel, i);
                 grid.Children.Add(panel);
             }
@@ -266,8 +328,32 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>An inner panel of a full view: a step down from the effect's box, and the room between two of them.</summary>
-    const double FxInnerAlpha = 0.35, FxInnerGap = 8;
+    /// <summary>An inner panel of a full view: a step down from the effect's box, the room between two of them and how
+    /// much of the family's color its border takes.</summary>
+    const double FxInnerAlpha = 0.35, FxInnerGap = 8, FxInnerTintLine = 0.3;
+
+    /// <summary>
+    /// An effect's picture (<see cref="FxScope"/>, #187): it reads the slot's values on every edit; a synced delay's time
+    /// comes from the tempo, and a modulation moves while the song plays.
+    /// </summary>
+    FxScope ScopeOf(SlotOwner o, string id, string kind, double height, Color tint, List<Action> refresh)
+    {
+        var scope = new FxScope(kind, height) { Tint = tint, Running = () => engine.Playing, Margin = new Thickness(0, 2, 0, 2) };
+        FxParam?[] inputs = [.. FxScope.Inputs(kind).Select(pid => Array.Find(FxDefs.Params(kind), p => p.Id == pid))];
+        refresh.Add(() =>
+        {
+            if (o.Slot(id) is not { } s) return;
+            for (int i = 0; i < inputs.Length; i++) scope.Values[i] = inputs[i]?.Get(s) ?? 0;
+            if (s.Delay is { } d)
+            {
+                scope.Values[0] = DelayBus.DelayTimeSec(ToParams(d), store?.Project.Settings.Bpm ?? 110) * 1000;
+                scope.PingPong = d.Mode == "pingpong";
+            }
+            if (s.Sat is { } sat) scope.TapeMode = sat.Mode == "tape";
+            scope.InvalidateVisual();
+        });
+        return scope;
+    }
 
     /// <summary>
     /// What a compressor, a gate or the pump listens to (its sidechain): its own input or another track, by name. A track that

@@ -53,11 +53,29 @@ public sealed class EqEditor : StackPanel
     /// <summary>Its own preset row (the big window's); an effect panel has the preset bar every effect has instead (#141).</summary>
     public bool ShowsPresets { init => presetRow.IsVisible = value; }
     readonly Grid presetRow = new() { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+    /// <summary>The effect windows' band controls (#187): knobs in an inner panel for the band and one for its dynamics,
+    /// side by side in the full view (<c>wide</c>), instead of a column of sliders. Null in the inspector and the big window.</summary>
+    readonly EqKnob? kFreq, kGain, kQ, kThreshold, kRange, kAttack, kRelease;
+    readonly TextBlock? bandTitle;
+    readonly Control? dynPanel;
+    readonly StackPanel? dynKnobs;
+    readonly bool wide;
+    /// <summary>The graph's height in an effect window's full view: low enough that the band's knobs fit under it.</summary>
+    const double WideGraphH = 220;
+    /// <summary>The size of the band's knobs and of its dynamics'.</summary>
+    const double BandKnobW = 48, DynKnobW = 40;
+    /// <summary>An inner panel, as in the full view of every effect: a step down from the effect's box, the room between
+    /// two and how much of the family's color its border takes.</summary>
+    const double InnerAlpha = 0.35, InnerGap = 8, InnerTintLine = 0.3;
 
-    public EqEditor(bool big = false)
+    /// <param name="big">The big window's editor: a graph that takes the window's height.</param>
+    /// <param name="knobs">An effect window's editor: the band's controls as knobs, in the family's <paramref name="tint"/>.</param>
+    /// <param name="wide">With <paramref name="knobs"/>, the full view: a lower graph and the two panels side by side.</param>
+    public EqEditor(bool big = false, bool knobs = false, bool wide = false, Color? tint = null)
     {
         Spacing = 10;
-        graph = new EqGraph(height: big ? BigGraphH : 150);
+        this.wide = wide = knobs && wide;
+        graph = new EqGraph(height: big ? BigGraphH : wide ? WideGraphH : 150);
         liveTimer.Tick += (_, _) => TickLive();
         var row = presetRow;
         row.Children.Add(new TextBlock { Text = Loc.T("eq.preset"), Classes = { "dim" }, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
@@ -111,8 +129,14 @@ public sealed class EqEditor : StackPanel
         gain = new InspectorSlider(Loc.T("eq.gain"), -18, 18, 0.1, 0, v => $"{v:+0.0;-0.0;0.0} dB", v => Patch(selected, b => { b.Gain = v; b.On = true; }));
         q = new InspectorSlider(Loc.T("eq.q"), 0.3, 12, 0.05, 1, v => $"{v:0.00}", v => Patch(selected, b => { b.Q = v; b.On = true; }),
             Loc.T("eq.q.tip"));
-        Children.Add(freq); Children.Add(gain); Children.Add(q);
-        slope.Children.Add(new TextBlock { Text = Loc.T("eq.slope"), Classes = { "dim" }, VerticalAlignment = VerticalAlignment.Center });
+        if (knobs)
+        {
+            slope.Orientation = Orientation.Vertical;
+            slope.VerticalAlignment = VerticalAlignment.Center;
+            slope.Margin = new Thickness(6, 0);
+            slope.Children.Add(EqKnob.Label(Loc.T("eq.slope"), null, tint));
+        }
+        else slope.Children.Add(new TextBlock { Text = Loc.T("eq.slope"), Classes = { "dim" }, VerticalAlignment = VerticalAlignment.Center });
         for (int k = 0; k < Slopes.Length; k++)
         {
             int s = Slopes[k];
@@ -121,21 +145,80 @@ public sealed class EqEditor : StackPanel
             b.Click += (_, _) => Patch(selected, x => { x.Slope = s; x.On = true; });
             slopeButtons[k] = b; slope.Children.Add(b);
         }
-        Children.Add(slope);
         ToolTip.SetTip(dynButton, Loc.T("eq.dyn.tip"));
         dynButton.Content = Loc.T("eq.dyn");
         dynButton.Click += (_, _) => Patch(selected, b => { b.Dyn = !b.Dyn; b.On = true; });
-        Children.Add(dynButton);
         dynThreshold = new InspectorSlider(Loc.T("eq.dyn.threshold"), EqDynamics.ThresholdMinDb, 0, 0.5, EqDynamics.DefaultThresholdDb, v => $"{v:0.0} dB", v => Patch(selected, b => b.DynThreshold = v));
         dynRange = new InspectorSlider(Loc.T("eq.dyn.range"), -EqDynamics.RangeMaxDb, EqDynamics.RangeMaxDb, 0.5, EqDynamics.DefaultRangeDb, v => $"{v:+0.0;-0.0;0.0} dB", v => Patch(selected, b => b.DynRange = v),
             Loc.T("eq.dyn.range.tip"));
         dynAttack = new InspectorSlider(Loc.T("eq.dyn.attack"), EqDynamics.AttackMinMs, EqDynamics.AttackMaxMs, 0.5, EqDynamics.DefaultAttackMs, v => $"{v:0.0} ms", v => Patch(selected, b => b.DynAttackMs = v));
         dynRelease = new InspectorSlider(Loc.T("eq.dyn.release"), EqDynamics.ReleaseMinMs, EqDynamics.ReleaseMaxMs, 5, EqDynamics.DefaultReleaseMs, v => $"{v:0} ms", v => Patch(selected, b => b.DynReleaseMs = v));
-        dynBox.Children.Add(dynThreshold); dynBox.Children.Add(dynRange); dynBox.Children.Add(dynAttack); dynBox.Children.Add(dynRelease);
-        Children.Add(dynBox);
-        if (!big) Children.Add(new TextBlock { Text = Loc.T("eq.help"),
-            FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap });
+        if (!knobs)
+        {
+            Children.Add(freq); Children.Add(gain); Children.Add(q);
+            Children.Add(slope);
+            Children.Add(dynButton);
+            dynBox.Children.Add(dynThreshold); dynBox.Children.Add(dynRange); dynBox.Children.Add(dynAttack); dynBox.Children.Add(dynRelease);
+            Children.Add(dynBox);
+            if (!big) Children.Add(new TextBlock { Text = Loc.T("eq.help"),
+                FontSize = 11, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap });
+            return;
+        }
+
+        // the band: frequency, gain and Q (a cut's slope instead of the last two)
+        static double Lin(double v, double min, double max) => (v - min) / (max - min);
+        static double FromLin(double k, double min, double max) => min + Math.Clamp(k, 0, 1) * (max - min);
+        static double Log(double v, double min, double max) => Math.Log(Math.Clamp(v, min, max) / min) / Math.Log(max / min);
+        static double FromLog(double k, double min, double max) => min * Math.Exp(Math.Clamp(k, 0, 1) * Math.Log(max / min));
+        static double Snap(double v, double step) => Math.Round(v / step) * step;
+        const double qMin = 0.3, qMax = 12;
+        kFreq = new EqKnob(Loc.T("eq.freq"), BandKnobW, tint, hz => ToPos(hz) / 1000, k => FromPos(Math.Round(k * 1000)), hz => $"{TrackEq.FmtHz(hz)} Hz",
+            EqSettings.Defaults()[0].Freq, hz => Patch(selected, b => { b.Freq = hz; b.On = true; }));
+        kGain = new EqKnob(Loc.T("eq.gain"), BandKnobW, tint, v => Lin(v, -18, 18), k => Snap(FromLin(k, -18, 18), 0.1), v => $"{v:+0.0;-0.0;0.0} dB",
+            0, v => Patch(selected, b => { b.Gain = v; b.On = true; }));
+        kQ = new EqKnob(Loc.T("eq.q.short"), BandKnobW, tint, v => Log(v, qMin, qMax), k => Snap(FromLog(k, qMin, qMax), 0.01), v => $"{v:0.00}",
+            1, v => Patch(selected, b => { b.Q = v; b.On = true; }), Loc.T("eq.q.tip"));
+        var bandRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Children = { kFreq.Cell, kGain.Cell, kQ.Cell, slope } };
+        bandTitle = EqKnob.Label("", null, tint);
+        bandTitle.HorizontalAlignment = HorizontalAlignment.Left;
+        var bandPanel = Inner(new StackPanel { Spacing = 6, Children = { bandTitle, bandRow } }, tint);
+
+        // its dynamics: the switch on the panel's title, the knobs dimmed while it is off (they keep their place)
+        kThreshold = new EqKnob(Loc.T("eq.dyn.threshold"), DynKnobW, tint, v => Lin(v, EqDynamics.ThresholdMinDb, 0), k => Snap(FromLin(k, EqDynamics.ThresholdMinDb, 0), 0.5),
+            v => $"{v:0.0} dB", EqDynamics.DefaultThresholdDb, v => Patch(selected, b => b.DynThreshold = v), arcFrom: 0);
+        kRange = new EqKnob(Loc.T("eq.dyn.range"), DynKnobW, tint, v => Lin(v, -EqDynamics.RangeMaxDb, EqDynamics.RangeMaxDb), k => Snap(FromLin(k, -EqDynamics.RangeMaxDb, EqDynamics.RangeMaxDb), 0.5),
+            v => $"{v:+0.0;-0.0;0.0} dB", EqDynamics.DefaultRangeDb, v => Patch(selected, b => b.DynRange = v), Loc.T("eq.dyn.range.tip"));
+        kAttack = new EqKnob(Loc.T("eq.dyn.attack"), DynKnobW, tint, v => Log(v, EqDynamics.AttackMinMs, EqDynamics.AttackMaxMs), k => Snap(FromLog(k, EqDynamics.AttackMinMs, EqDynamics.AttackMaxMs), 0.5),
+            v => $"{v:0.0} ms", EqDynamics.DefaultAttackMs, v => Patch(selected, b => b.DynAttackMs = v));
+        kRelease = new EqKnob(Loc.T("eq.dyn.release"), DynKnobW, tint, v => Log(v, EqDynamics.ReleaseMinMs, EqDynamics.ReleaseMaxMs), k => Snap(FromLog(k, EqDynamics.ReleaseMinMs, EqDynamics.ReleaseMaxMs), 5),
+            v => $"{v:0} ms", EqDynamics.DefaultReleaseMs, v => Patch(selected, b => b.DynReleaseMs = v));
+        dynKnobs = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Children = { kThreshold.Cell, kRange.Cell, kAttack.Cell, kRelease.Cell } };
+        var dynTitle = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        var dynLabel = EqKnob.Label(Loc.T("fx.panel.dynamics"), null, tint);
+        dynLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        dynLabel.VerticalAlignment = VerticalAlignment.Center;
+        dynTitle.Children.Add(dynLabel);
+        Grid.SetColumn(dynButton, 1);
+        dynTitle.Children.Add(dynButton);
+        dynPanel = Inner(new StackPanel { Spacing = 6, Children = { dynTitle, dynKnobs } }, tint);
+
+        if (wide)
+        {
+            var panels = new Grid { ColumnDefinitions = new ColumnDefinitions("3*,4*") };
+            dynPanel.Margin = new Thickness(InnerGap, 0, 0, 0);
+            Grid.SetColumn(dynPanel, 1);
+            panels.Children.Add(bandPanel); panels.Children.Add(dynPanel);
+            Children.Add(panels);
+        }
+        else { Children.Add(bandPanel); Children.Add(dynPanel); }
     }
+
+    /// <summary>An inner panel of an effect window, as the full view of every effect draws them.</summary>
+    static Border Inner(Control child, Color? tint) => new()
+    {
+        Child = child, Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
+        BorderBrush = tint is { } t ? Palette.Alpha(t, InnerTintLine) : Palette.Line, Background = Palette.Alpha(Palette.AppColor, InnerAlpha),
+    };
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
@@ -222,8 +305,71 @@ public sealed class EqEditor : StackPanel
         dynBox.IsVisible = b.Dyn && !cut;
         dynThreshold.Set(b.DynThreshold); dynRange.Set(b.DynRange); dynAttack.Set(b.DynAttackMs); dynRelease.Set(b.DynReleaseMs);
         for (int k = 0; k < Slopes.Length; k++) slopeButtons[k].Classes.Set("on", Slopes[k] == b.Slope);
+        if (kFreq != null)
+        {
+            bandTitle!.Text = Loc.T("eq.panel.band", selected + 1, TypeName(BiquadSpec.ParseType(b.Type))).ToUpperInvariant();
+            kFreq.Reset = EqSettings.Defaults()[selected].Freq;
+            kFreq.Set(b.Freq); kGain!.Set(b.Gain); kQ!.Set(b.Q);
+            kGain.Cell.IsVisible = !cut; kQ.Cell.IsVisible = b.Type == "peaking";
+            kThreshold!.Set(b.DynThreshold); kRange!.Set(b.DynRange); kAttack!.Set(b.DynAttackMs); kRelease!.Set(b.DynReleaseMs);
+            // a cut has no dynamics: the panel stays (the layout doesn't jump) but off
+            dynButton.IsVisible = true;
+            dynPanel!.IsEnabled = !cut;
+            dynPanel.Opacity = cut ? 0.4 : 1;
+            dynKnobs!.IsEnabled = b.Dyn && !cut;
+            dynKnobs.Opacity = b.Dyn || cut ? 1 : 0.4;
+            // compact: the knobs only while it is on, to stay short
+            if (!wide) dynKnobs.IsVisible = b.Dyn && !cut;
+        }
         graph.Set(eq, selected);
         filling = false;
+    }
+}
+
+/// <summary>
+/// One knob of the EQ's band in an effect window (#187): its label on top, the knob and its value under it, the cell every
+/// effect panel uses. It works in the value's units; <c>toKnob</c> and <c>fromKnob</c> map them to the knob's 0–1 (a
+/// frequency, a Q or a time on a log scale) and <c>fromKnob</c> rounds to the value's step.
+/// </summary>
+sealed class EqKnob
+{
+    public readonly StackPanel Cell;
+    readonly Knob knob;
+    readonly TextBlock value;
+    readonly Func<double, double> toKnob;
+    readonly Func<double, string> format;
+    /// <summary>A cell's width (label, knob and value): the same for every knob, so the rows line up.</summary>
+    const double CellW = 70;
+
+    public EqKnob(string label, double size, Color? tint, Func<double, double> toKnob, Func<double, double> fromKnob, Func<double, string> format,
+        double reset, Action<double> changed, string? tip = null, double? arcFrom = null)
+    {
+        this.toKnob = toKnob;
+        this.format = format;
+        knob = new Knob(size, label) { Min = 0, Max = 1, ResetTo = toKnob(reset), ArcFrom = arcFrom is { } a ? toKnob(a) : null, Tint = tint, HorizontalAlignment = HorizontalAlignment.Center };
+        knob.Changed += k => changed(fromKnob(k));
+        value = new TextBlock { Classes = { "mono" }, FontSize = 11, Foreground = Palette.Dim, HorizontalAlignment = HorizontalAlignment.Center };
+        Cell = new StackPanel { Spacing = 5, Width = CellW, VerticalAlignment = VerticalAlignment.Bottom, Children = { Label(label, tip, null), knob, value } };
+    }
+
+    /// <summary>Where a double-click takes it (a frequency knob's depends on the band).</summary>
+    public double Reset { set => knob.ResetTo = toKnob(value); }
+
+    public void Set(double v)
+    {
+        knob.Value = toKnob(v);
+        value.Text = format(v);
+    }
+
+    /// <summary>A cell's or a panel's label: small capitals; what it does on its tooltip, never on the knob (it would cover the drag).</summary>
+    public static TextBlock Label(string text, string? tip, Color? tint)
+    {
+        var name = new TextBlock { Text = text.ToUpperInvariant(), FontSize = 10, LetterSpacing = 0.8, HorizontalAlignment = HorizontalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis, Background = Brushes.Transparent,
+            Foreground = tint is { } t ? Palette.Alpha(t, 0.85) : Palette.Faint };
+        if (tint != null) name.FontWeight = FontWeight.SemiBold;
+        ToolTip.SetTip(name, tip);
+        return name;
     }
 }
 

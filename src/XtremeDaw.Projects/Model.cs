@@ -1181,6 +1181,8 @@ public sealed class CompSettings
     /// <summary>A preset id of the web app (rhythm, lead…) or "custom".</summary>
     public string Preset { get; set; } = Dsp.CompPresets.DefaultId;
     public double Amount { get; set; } = 0.5;
+    /// <summary>The preset it was on before a knob turned it "custom": moving Amount goes back to it.</summary>
+    public string? ManualFrom { get; set; }
     /// <summary>The compressor's analyze button was used: the trims hold what it found.</summary>
     public bool Analyzed { get; set; }
     /// <summary>How far the take's measured threshold and make-up are from the preset's fixed ones (dB).</summary>

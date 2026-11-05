@@ -68,6 +68,24 @@ static class Palette
         accentFg.Color = onAccent;
     }
 
+    /// <summary>
+    /// Each effect family's color (asked by the user, #187: every native effect with an identity of its own, decided over
+    /// "one accent"): its panel's title, its lit knobs and its graph. Fixed hues, like the meters', none of them the
+    /// recording red; an effect without a family takes the accent.
+    /// </summary>
+    public static readonly Color FxDynamics = Color.Parse("#a78bfa"), FxTone = Color.Parse("#4ade80"), FxDrive = Color.Parse("#fb923c"),
+        FxSpace = Color.Parse("#60a5fa"), FxMod = Color.Parse("#f472b6");
+
+    public static Color FamilyColor(XtremeDaw.Projects.FxFamily f) => f switch
+    {
+        XtremeDaw.Projects.FxFamily.Dynamics => FxDynamics,
+        XtremeDaw.Projects.FxFamily.Tone => FxTone,
+        XtremeDaw.Projects.FxFamily.Drive => FxDrive,
+        XtremeDaw.Projects.FxFamily.Space => FxSpace,
+        XtremeDaw.Projects.FxFamily.Mod => FxMod,
+        _ => AccentColor,
+    };
+
     /// <summary>The mixer meters' gradient (Mixer.tsx METER_BG): green, yellow near 0 dB, red at the top.</summary>
     public static readonly Color MeterGreen = Color.Parse("#22c55e");
     public static readonly Color MeterYellow = Color.Parse("#eab308");

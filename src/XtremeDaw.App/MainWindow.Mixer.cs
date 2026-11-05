@@ -1793,7 +1793,8 @@ public partial class MainWindow
     void StartSlot(SlotOwner o, InsertSlot slot)
     {
         if (slot.Comp is { } c) o.Recalculate(c);
-        if (!o.ReturnKinds && !o.Master && slot.Type is InsertSlot.ReverbKind or InsertSlot.DelayKind)
+        // only a bus takes all of a reverb or a delay: on a channel, a folder or the master it goes on top of the dry (#187)
+        if (!o.ReturnKinds && slot.Type is InsertSlot.ReverbKind or InsertSlot.DelayKind)
         {
             slot.Wet = TrackFxWet;
             slot.Dry = 1;
@@ -1999,23 +2000,30 @@ public partial class MainWindow
             head.Margin = new Thickness(narrow ? 4 : 6, 0);
             name.Margin = new Thickness(narrow ? 4 : 6, 0, narrow ? 2 : 4, 0);
         };
+        // a native effect's family color (#187): its icon, a tint on its title bar and the line under it
+        var family = FxDefs.Family(icon);
         mx.Refresh.Add(() =>
         {
             bool lit = on();
             power.Refresh();
-            FxIcon.SetColor(iconText, lit ? Palette.Accent : Palette.Faint);
+            bool tinted = family != FxFamily.None;
+            var color = tinted ? Palette.FamilyColor(family) : Palette.AccentColor;
+            FxIcon.SetColor(iconText, lit ? (tinted ? Palette.Alpha(color, 1) : Palette.Accent) : Palette.Faint);
             name.Foreground = lit ? Palette.Fg : Palette.Faint;
             body.Opacity = lit ? 1 : 0.4;
             // a panel a step above the card (asked by the user: each effect reads as its own block), its title bar one
             // more step up; off, both sink back toward the card
             box.Background = Palette.Alpha(Palette.HoverColor, lit ? 0.45 : 0.18);
             box.BorderBrush = lit ? Palette.Line : Palette.Alpha(Palette.LineColor, 0.6);
-            bar.Background = Palette.Alpha(Palette.HoverColor, lit ? 0.6 : 0.2);
-            bar.BorderBrush = box.BorderBrush;
+            bar.Background = lit && tinted ? Palette.Alpha(color, FxBarTint) : Palette.Alpha(Palette.HoverColor, lit ? 0.6 : 0.2);
+            bar.BorderBrush = lit && tinted ? Palette.Alpha(color, FxBarLine) : box.BorderBrush;
         });
         host.Children.Add(box);
         return (box, body);
     }
+
+    /// <summary>How much of its family's color an effect's title bar and the line under it take while it is on (#187).</summary>
+    const double FxBarTint = 0.14, FxBarLine = 0.45;
 
     /// <summary>A small icon button of a slot's title row (open in a window, fold): a hand over it, not the bar's drag
     /// cursor, and it lights up in the accent (asked by the user; class <c>slothead</c> in App.axaml).</summary>

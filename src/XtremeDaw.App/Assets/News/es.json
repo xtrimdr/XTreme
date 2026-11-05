@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.9.18",
+      "items": [
+        {
+          "icon": "E790",
+          "title": "Cada efecto con su identidad",
+          "text": "Los efectos propios tienen su cara: **perillas grandes** para lo principal (Decay en la Reverb, Time y Repeats en el Delay, Drive en la Saturación), un **gráfico vivo** que sigue a las perillas (la cola de la reverb, los ecos del delay, la onda de la modulación, la curva de la saturación, el campo estéreo) y el **color de su familia**: dinámica, tono, saturación, espacio y modulación. El estilo de perilla sigue siendo el de Apariencia."
+        }
+      ]
+    },
+    {
       "version": "0.9.17",
       "items": [
         {
@@ -60,8 +70,8 @@
         },
         {
           "icon": "E740",
-          "title": "Compresor compacto o completo",
-          "text": "La ventana del **Compresor** muestra lo principal. El botón de agrandar, en su barra, la abre con todos los controles en paneles: Dinámica, Tiempos, Salida, EQ interno y Sidechain. Cada efecto propio se abre en su ventana, que se mueve como la de un VST y queda abierta."
+          "title": "Efectos compactos o completos",
+          "text": "La ventana de cada efecto propio muestra lo principal. El botón de agrandar, en su barra, la abre con todos los controles en paneles (en el **Compresor**: Dinámica, Tiempos, Salida, EQ interno y Sidechain; en el **EQ**, el gráfico más grande y la banda y su dinámica en perillas). El Bombeo sigue con su panel. Cada efecto propio se abre en su ventana, que se mueve como la de un VST y queda abierta."
         },
         {
           "icon": "E8AC",

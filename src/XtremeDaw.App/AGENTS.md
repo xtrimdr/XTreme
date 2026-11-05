@@ -10,7 +10,8 @@ sigue la [guía del motor](../XtremeDaw.Audio/AGENTS.md); el modelo que edita la
 ## Principios
 
 - **Oscura, sobria, de estudio.** Fondo casi negro, superficies apenas más claras, un solo color de acento. Lo que
-  resalta es el contenido (el video y las ondas), no los controles. El tema es siempre oscuro (`RequestedThemeVariant="Dark"`).
+  resalta es el contenido (el video y las ondas), no los controles. Excepción (decisión del usuario, #187): cada efecto
+  nativo lleva el color de su familia (`Palette.FamilyColor`) en su panel, sus perillas y su gráfico. El tema es siempre oscuro (`RequestedThemeVariant="Dark"`).
 - **Coherente consigo misma.** Ante la duda, mirá cómo lo hace el resto de la ventana.
 - **Un DAW de trabajo** (decisión del usuario, 2026-11-03: ya no se piensa para usarse con la guitarra colgada):
   atajos para todo, edición precisa con el mouse; grabar y reproducir, a una tecla.
