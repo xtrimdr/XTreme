@@ -784,20 +784,34 @@ public sealed partial class SettingsDialog : UserControl
                 Content = new StackPanel { Spacing = 8, Children = { sample, new TextBlock { Text = Loc.T("set.look.knob." + id), FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center } } },
             };
             AutomationProperties.SetName(b, Loc.T("set.look.knob." + id));
-            b.Click += (_, _) =>
-            {
-                KnobLooks.Set(id);
-                foreach (var o in lookButtons) o.IsChecked = (string)o.Tag! == KnobLooks.Current;
-            };
+            b.Click += (_, _) => KnobLooks.Set(id);
             lookButtons.Add(b);
             grid.Children.Add(b);
         }
+        void SyncKnobs() { foreach (var o in lookButtons) o.IsChecked = (string)o.Tag! == KnobLooks.Current; }
         looks.Children.Add(grid);
         viewPage.Children.Add(Card(looks));
+        Resettable(looks, () => KnobLooks.Current == KnobLooks.Default, () => KnobLooks.Set(KnobLooks.Default),
+            h => KnobLooks.Changed += h, h => KnobLooks.Changed -= h, SyncKnobs);
+
+        // the rest of the looks build their own pickers (samples drawn by the same code, applied live)
+        viewPage.Children.Add(LookCard("faders", FaderLooks.Picker(), () => FaderLooks.Current == FaderLooks.Default,
+            () => FaderLooks.Set(FaderLooks.Default), h => FaderLooks.Changed += h, h => FaderLooks.Changed -= h));
+        viewPage.Children.Add(LookCard("meters", MeterLooks.Picker(), () => MeterLooks.Current == MeterLooks.Default,
+            () => MeterLooks.Set(MeterLooks.Default), h => MeterLooks.Changed += h, h => MeterLooks.Changed -= h));
+        viewPage.Children.Add(LookCard("waves", WaveLooks.Picker(), () => WaveLooks.Current == WaveLooks.Default,
+            () => WaveLooks.Set(WaveLooks.Default), h => WaveLooks.Changed += h, h => WaveLooks.Changed -= h));
+        viewPage.Children.Add(LookCard("font", UiFonts.FontPicker(), () => UiFonts.FontIsDefault,
+            () => UiFonts.SetFont(UiFonts.Default), h => UiFonts.Changed += h, h => UiFonts.Changed -= h));
+        viewPage.Children.Add(LookCard("numbers", UiFonts.NumberPicker(), () => UiFonts.NumbersAreDefault,
+            () => UiFonts.SetNumberFont(UiFonts.DefaultNumbers), h => UiFonts.Changed += h, h => UiFonts.Changed -= h));
+        viewPage.Children.Add(LookCard("scale", UiFonts.ScalePicker(), () => UiFonts.ScaleIsDefault,
+            () => UiFonts.SetScale(1), h => UiFonts.Changed += h, h => UiFonts.Changed -= h));
 
         var s = Section(Loc.T("set.view.knobs"));
         s.Children.Add(Help(Loc.T("set.view.knobs.help")));
         var list = new StackPanel { Spacing = 6 };
+        var boxes = new List<(string Key, CheckBox Box)>();
         foreach (string key in TrackKnobs.All)
         {
             var icon = FxIcon.Create(key == TimelineView.SendsKey ? FxIcon.Reverb : key, 13);
@@ -807,10 +821,48 @@ public sealed partial class SettingsDialog : UserControl
             var box = new CheckBox { IsChecked = TrackKnobs.Shows(key), FontSize = 12,
                 Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { icon, name } } };
             box.IsCheckedChanged += (_, _) => TrackKnobs.Set(key, box.IsChecked == true);
+            boxes.Add((key, box));
             list.Children.Add(box);
         }
         s.Children.Add(list);
         viewPage.Children.Add(Card(s));
+        Resettable(s, () => TrackKnobs.All.All(TrackKnobs.Shows), () => { foreach (string k in TrackKnobs.All) TrackKnobs.Set(k, true); },
+            h => TrackKnobs.Changed += h, h => TrackKnobs.Changed -= h, () => { foreach (var (k, b) in boxes) b.IsChecked = TrackKnobs.Shows(k); });
+    }
+
+    /// <summary>A card of Apariencia: its title and help ("set.look.&lt;key&gt;", ".help") over the picker, with its
+    /// "Restablecer".</summary>
+    Control LookCard(string key, Control picker, Func<bool> isDefault, Action reset, Action<Action> hook, Action<Action> unhook)
+    {
+        var s = Section(Loc.T("set.look." + key));
+        s.Children.Add(Help(Loc.T("set.look." + key + ".help")));
+        s.Children.Add(picker);
+        var card = Card(s);
+        Resettable(s, isDefault, reset, hook, unhook);
+        return card;
+    }
+
+    /// <summary>Puts "Restablecer" (back to how the app came, asked by the user) in a section's head: enabled only while
+    /// the setting is not the factory one, kept up to date while the section is shown; <paramref name="sync"/> also runs
+    /// on every change, for a picker that doesn't follow the setting by itself.</summary>
+    static void Resettable(StackPanel section, Func<bool> isDefault, Action reset, Action<Action> hook, Action<Action> unhook, Action? sync = null)
+    {
+        var b = new Button { Content = Loc.T("set.look.reset"), Classes = { "link" } };
+        ToolTip.SetTip(b, Loc.T("set.look.reset.tip"));
+        b.Click += (_, _) => reset();
+        void Refresh()
+        {
+            b.IsEnabled = !isDefault();
+            sync?.Invoke();
+        }
+        Refresh();
+        b.AttachedToVisualTree += (_, _) => { hook(Refresh); Refresh(); };
+        b.DetachedFromVisualTree += (_, _) => unhook(Refresh);
+        if (section.Children[0] is Grid head)
+        {
+            Grid.SetColumn(b, 1);
+            head.Children.Add(b);
+        }
     }
 
     static string KnobName(string key) => key switch
@@ -893,7 +945,7 @@ public sealed partial class SettingsDialog : UserControl
     {
         var key = new Button
         {
-            Classes = { "chip" }, FontFamily = Palette.Mono.FontFamily, MinWidth = 120, Height = 30, Padding = new Thickness(10, 0), HorizontalContentAlignment = HorizontalAlignment.Center,
+            Classes = { "chip" }, FontFamily = Palette.Code, MinWidth = 120, Height = 30, Padding = new Thickness(10, 0), HorizontalContentAlignment = HorizontalAlignment.Center,
             Content = waiting ? Loc.T(pressKey) : label.Length > 0 ? label : Loc.T("set.sc.none"),
         };
         key.Classes.Set("on", waiting);

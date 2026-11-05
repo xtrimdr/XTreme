@@ -310,7 +310,7 @@ public partial class MainWindow
         InitInspectorStrip();
         var recordHint = new TextBlock { FontSize = 12, Foreground = Palette.Dim, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
         recordHint.Inlines!.Add(new Avalonia.Controls.Documents.Run(Loc.T("insp.empty.a")));
-        recordHint.Inlines.Add(new Avalonia.Controls.Documents.Run(Shortcuts.First("record")) { FontFamily = Palette.Mono.FontFamily, Foreground = Palette.Fg });
+        recordHint.Inlines.Add(new Avalonia.Controls.Documents.Run(Shortcuts.First("record")) { FontFamily = Palette.Code, Foreground = Palette.Fg });
         recordHint.Inlines.Add(new Avalonia.Controls.Documents.Run(Loc.T("insp.empty.b")));
         emptySections.Children.Add(recordHint);
         emptySections.Children.Add(new TextBlock { Text = Loc.T("insp.empty.c"), FontSize = 12, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap });
@@ -345,6 +345,25 @@ public partial class MainWindow
         });
         takeSections.Children.Add(inVideoRow);
         videoOnly.Add(inVideo);
+        // what its clips are (mono, stereo or both) and, with stereo ones, whether they show left and right apart
+        var layoutValue = new TextBlock { Classes = { "dim" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        var layoutLabel = new TextBlock { Text = Loc.T("insp.layout"), FontSize = 12, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(layoutValue, 1);
+        var layoutRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 4, 0, 4), Children = { layoutLabel, layoutValue } };
+        var splitWave = new CheckBox { Content = Loc.T("menu.splitWave"), FontSize = 12 };
+        ToolTip.SetTip(splitWave, Loc.T("menu.splitWave.tip"));
+        splitWave.IsCheckedChanged += (_, _) => { if (!syncing && sel != null) SetSplitWave(sel, splitWave.IsChecked == true); };
+        var splitRow = new Panel { Children = { splitWave }, Margin = new Thickness(0, 0, 0, 4) };
+        inspectorRefresh.Add(() =>
+        {
+            var layout = PickedGroup() == null && sel is { Track.IsMidi: false } ? sel.Layout : ChannelLayout.None;
+            layoutRow.IsVisible = layout != ChannelLayout.None;
+            layoutValue.Text = layout == ChannelLayout.None ? "" : Loc.T(TimelineView.LayoutKeys[(int)layout]);
+            splitRow.IsVisible = layout is ChannelLayout.Stereo or ChannelLayout.Mixed;
+            splitWave.IsChecked = sel?.Track.SplitWave == true;
+        });
+        takeSections.Children.Add(layoutRow);
+        takeSections.Children.Add(splitRow);
         // native only: the track's pitch, same length (MainWindow.Transpose.cs). It comes first in the strip's chain and
         // reads as off (dimmed) while the track plays at its original pitch.
         // the track's Transponer: with an audio track's clip (like Studio Pro's Transpose per event), else in the track's section
@@ -462,7 +481,12 @@ public partial class MainWindow
             var bus = sel == null && folder == null ? SelectedBus : null;
             noSelection.IsVisible = sel == null && folder == null && bus == null;
             folderPanel.IsVisible = folder != null;
-            if (folder != null) foreach (var refresh in folderRefresh) refresh();
+            if (folder != null)
+            {
+                foreach (var refresh in folderRefresh) refresh();
+                // a folder is a channel (#134): its fader, M S and effects in the strip, like a bus's
+                if (!folder.Separator) RebuildInspectorChain(SlotsOf(folder), folder);
+            }
             if (bus != null)
             {
                 foreach (var refresh in busRefresh) refresh();
@@ -499,14 +523,15 @@ public partial class MainWindow
                 if (group == null) RebuildInspectorChain(SlotsOf(sel!), sel!);
                 RebuildInspectorSends(sel!, group == null ? null : GroupRouter(group));
             }
-            LayoutInspector(c, group, bus);
+            var stripFolderNow = folder is { Separator: false } ? folder : null;
+            LayoutInspector(c, group, bus, stripFolderNow);
             if (channel)
             {
                 foreach (var refresh in inspectorRefresh) refresh();
                 if (group == null && c != null) foreach (var refresh in clipRefresh) refresh();
                 foreach (var refresh in sendRefresh) refresh();
             }
-            if (channel && group == null || bus != null) foreach (var refresh in chainRefresh) refresh();
+            if (channel && group == null || bus != null || stripFolderNow != null) foreach (var refresh in chainRefresh) refresh();
             if (stripWanted) foreach (var refresh in stripRefresh) refresh();
         }
         finally { syncing = false; }

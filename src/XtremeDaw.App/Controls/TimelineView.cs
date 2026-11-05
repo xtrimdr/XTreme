@@ -286,7 +286,30 @@ public sealed partial class TimelineView : Control
     /// <summary>The other picked tracks carried with it: drawn over the others too.</summary>
     readonly HashSet<string> liftedAlso = [];
     bool fitMode = true;
-    readonly Dictionary<LiveClip, (StreamGeometry Geo, WaveKey Key, ClipGainCurve.Point[] Curve, double GainDb)> waveCache = [];
+    /// <summary>Keyed by clip and side: <see cref="MixSide"/> for one wave of both, 0 and 1 for a split track's left and right.
+    /// Line = it is the line through the samples (the deepest zoom), which <see cref="WaveLooks.Paint"/> strokes in every look.</summary>
+    readonly Dictionary<(LiveClip Clip, int Side), (StreamGeometry Geo, WaveKey Key, ClipGainCurve.Point[] Curve, double GainDb, bool Line)> waveCache = [];
+    /// <summary>A wave's columns while its geometry is built (see <see cref="WaveLooks.Emit"/>), reused: they only grow.</summary>
+    double[] waveHi = [], waveLo = [];
+
+    /// <summary>A new wave look: every cached wave is built again once, on the next frame.</summary>
+    void OnWaveLook()
+    {
+        waveCache.Clear();
+        InvalidateVisual();
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        WaveLooks.Changed += OnWaveLook;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        WaveLooks.Changed -= OnWaveLook;
+    }
     /// <summary>
     /// What a cached wave was drawn for, each value on its own. It was one sum (pps × 1e6 + … + AtSec × 1.7e-3): at the
     /// deepest zoom the first term is ~1e11, where a double cannot see a small move, so a nudged clip kept its old wave.
@@ -359,6 +382,8 @@ public sealed partial class TimelineView : Control
     public event Action<Folder>? FolderFoldRequested;
     /// <summary>The folder's × was clicked: the window asks there whether its tracks go too.</summary>
     public event Action<Folder, Point>? FolderRemoveRequested;
+    /// <summary>A folder's M (false) or S (true) was clicked.</summary>
+    public event Action<Folder, bool>? FolderToggled;
     public event Action<Folder, Point>? FolderContextRequested;
     /// <summary>The folder's icon was clicked: the window opens its color picker below that point.</summary>
     public event Action<Folder, Point>? FolderLookRequested;
@@ -493,7 +518,7 @@ public sealed partial class TimelineView : Control
         Relayout();
         if (shownTop.Count > 0) slide.Start();
         var live = list.SelectMany(t => t.Clips).ToHashSet();
-        foreach (var gone in waveCache.Keys.Where(c => !live.Contains(c)).ToList()) waveCache.Remove(gone);
+        foreach (var gone in waveCache.Keys.Where(k => !live.Contains(k.Clip)).ToList()) waveCache.Remove(gone);
         foreach (var gone in curveCache.Keys.Where(c => !live.Contains(c)).ToList()) curveCache.Remove(gone);
         ClampScroll();
         InvalidateVisual();
@@ -1661,9 +1686,9 @@ public sealed partial class TimelineView : Control
                 ctx.DrawRectangle(Palette.Alpha(color, silent ? 0.08 : 0.2), strip >= MiniWaveAt ? Palette.Pen(Palette.Alpha(color, silent ? 0.2 : 0.45)) : null,
                     bar, Math.Min(3, bar.Height / 2), Math.Min(3, bar.Height / 2));
                 if (strip < MiniWaveAt || clip.Offline || clip.Audio == null) continue;
-                var geo = Waveform(clip, clip.Clip, w, bar.Top + 1, bar.Bottom - 1, W);
+                var (geo, line) = Waveform(clip, clip.Clip, w, bar.Top + 1, bar.Bottom - 1, W);
                 using (ctx.PushClip(bar))
-                    ctx.DrawGeometry(null, Palette.Pen(silent ? Palette.Faint : Palette.Alpha(color, 0.8), 1), geo);
+                    WaveLooks.Paint(WaveLooks.Current, ctx, geo, silent ? Palette.Faint : Palette.Alpha(color, 0.8), line);
             }
             if (t.Track.MidiClips is not { } midi) continue;
             foreach (var m in midi)
@@ -1708,9 +1733,12 @@ public sealed partial class TimelineView : Control
     Rect FoldRect(Folder f) => new(20, FolderY(f) + 5, 17, 24);
     Rect FolderIconRect(Folder f) => new(37, FolderY(f) + 5, 22, 24);
     /// <summary>Where a folder's name sits (and its in-place editor goes).</summary>
-    public Rect FolderNameRect(Folder f) => new(60, FolderY(f) + 5, Math.Max(Compact ? CompactEditorW : 40, FolderRemoveRect(f).X - 66), 24);
-    /// <summary>The room for a folder's drawn name: a compact one has no track count or remove button beside it.</summary>
-    double FolderNameW(Folder f) => Compact ? HeaderRight - 68 : Math.Max(20, FolderRemoveRect(f).X - 62 - 64);
+    public Rect FolderNameRect(Folder f) => new(60, FolderY(f) + 5, Math.Max(Compact ? CompactEditorW : 40, FolderMuteRect(f).X - 66), 24);
+    /// <summary>The room for a folder's drawn name: a compact one has no track count, M S or remove button beside it.</summary>
+    double FolderNameW(Folder f) => Compact ? HeaderRight - 68 : Math.Max(20, FolderMuteRect(f).X - 8 - 62 - 64);
+    /// <summary>A folder's M and S, where a track's sit (#134: a folder is a channel).</summary>
+    Rect FolderMuteRect(Folder f) => Compact ? NoRect : new(HeaderRight - 94, FolderY(f) + 5, 24, 24);
+    Rect FolderSoloRect(Folder f) => Compact ? NoRect : new(HeaderRight - 66, FolderY(f) + 5, 24, 24);
     /// <summary>Just the drawn name of a folder (a double click there renames it; elsewhere on the row it folds).</summary>
     Rect FolderTitleRect(Folder f)
     {
@@ -1723,7 +1751,7 @@ public sealed partial class TimelineView : Control
     const double ControlsAt = 62;
     bool ShowsControls(int i) => !Compact && LaneH(i) >= ControlsAt;
 
-    /// <summary>A folder's header: its tint, handle, fold arrow and icon, name and track count, and × (a folder only holds tracks: no M, S or fader).</summary>
+    /// <summary>A folder's header: its tint, handle, fold arrow and icon, name and track count, M S (its fader is in the mixer and the inspector) and ×.</summary>
     void DrawFolderHeader(DrawingContext ctx, Folder f)
     {
         double y = FolderY(f), fh = FolderRowH(f);
@@ -1758,6 +1786,11 @@ public sealed partial class TimelineView : Control
         }
         if (!Compact && lastPointer.Y >= y && lastPointer.Y < y + fh && lastPointer.X < HeaderW)
             DrawTrash(ctx, FolderRemoveRect(f), Hot(FolderRemoveRect(f)));
+        if (!Compact)
+        {
+            DrawToggle(ctx, FolderMuteRect(f), "M", f.Muted, Palette.Mute, Hot(FolderMuteRect(f)));
+            DrawToggle(ctx, FolderSoloRect(f), "S", f.Solo, Palette.Accent, Hot(FolderSoloRect(f)));
+        }
         DrawFolderKnobs(ctx, f);
         if (!OverSeparator(f.Id)) ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, y + fh - 0.5), new Point(HeaderW, y + fh - 0.5));
     }
@@ -2192,11 +2225,25 @@ public sealed partial class TimelineView : Control
                     ctx.DrawRectangle(ClipShade, null, shade);
                     ctx.DrawRectangle(null, border, clip.Deflate(0.5), 4.5, 4.5); // over the frames, inside the clip
                 }
-                var geo = Waveform(c, model, w, thumbs ? clip.Bottom - clip.Height * 0.55 : y + 6, y + lh - 6, W);
+                double waveTop = thumbs ? clip.Bottom - clip.Height * 0.55 : y + 6, waveBottom = y + lh - 6;
                 // the wave is the track's color or the accent, at full strength over the frames (the shade dims it); untinted goes white there
                 var wave = silent ? Palette.Faint : thumbs && tint == null && !sel ? Palette.Alpha(Colors.White, 0.85)
                     : Palette.Alpha(color, sel || thumbs ? 1 : 0.8);
-                ctx.DrawGeometry(null, Palette.Pen(wave, 1), geo);
+                // a split track shows a stereo clip's left over its right (asked by the user), each in its half
+                if (t.Track.SplitWave && c.Audio is { Mono: false } && (waveBottom - waveTop) / 2 >= SplitWaveMinH)
+                {
+                    double split = Math.Round((waveTop + waveBottom) / 2) + 0.5;
+                    var (left, leftLine) = Waveform(c, model, w, waveTop, split - 1.5, W, 0);
+                    WaveLooks.Paint(WaveLooks.Current, ctx, left, wave, leftLine);
+                    var (right, rightLine) = Waveform(c, model, w, split + 1.5, waveBottom, W, 1);
+                    WaveLooks.Paint(WaveLooks.Current, ctx, right, wave, rightLine);
+                    ctx.DrawLine(Palette.Pen(Palette.Alpha(color, 0.25)), new Point(Math.Max(x0, HeaderW), split), new Point(Math.Min(x1, W), split));
+                }
+                else
+                {
+                    var (geo, line) = Waveform(c, model, w, waveTop, waveBottom, W);
+                    WaveLooks.Paint(WaveLooks.Current, ctx, geo, wave, line);
+                }
                 if (ClipRenderProgress?.Invoke(t, c) is { } progress) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), progress, model.Stretch != 1 ? FittingTexts : TransposingTexts, null);
                 else if (TempoProgress?.Invoke(c) is { } listened) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), listened, TempoTexts, TempoGlyph);
                 else if (ScaleProgress?.Invoke(c) is { } scaled) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), scaled, ScaleTexts, ToMidiGlyph);
@@ -2534,18 +2581,22 @@ public sealed partial class TimelineView : Control
     /// Min/max per pixel column with the clip gain and its curve applied, so the wave shows what is heard; cached
     /// until the zoom, scroll, size or gain changes (every curve edit assigns a new array, see <see cref="LiveClip.Curve"/>).
     /// </summary>
-    StreamGeometry Waveform(LiveClip c, Clip model, ClipEnvelope.ClipWindow w, double top, double bottom, double W)
+    (StreamGeometry Geo, bool Line) Waveform(LiveClip c, Clip model, ClipEnvelope.ClipWindow w, double top, double bottom, double W, int side = MixSide)
     {
         var a = c.Audio!;
         var pts = CurveOf(c, model);
         var key = new WaveKey(pps, scrollX, W, top, bottom, model.AtSec, model.TrimStartSec, model.TrimEndSec, model.Stretch, model.Reversed);
-        if (waveCache.TryGetValue(c, out var hit) && hit.Key == key && hit.Curve == pts && hit.GainDb == model.GainDb) return hit.Geo;
+        if (waveCache.TryGetValue((c, side), out var hit) && hit.Key == key && hit.Curve == pts && hit.GainDb == model.GainDb) return (hit.Geo, hit.Line);
+        // a mono clip has no sides of its own: both halves of a split track would be the same wave
+        var (peakMin, peakMax) = side == 0 && a.PeakMinL != null ? (a.PeakMinL, a.PeakMaxL!) : side == 1 && a.PeakMinR != null ? (a.PeakMinR, a.PeakMaxR!) : (a.PeakMin, a.PeakMax);
         double clipGain = Math.Pow(10, model.GainDb / 20);
         var geo = new StreamGeometry();
-        double mid = (top + bottom) / 2, half = (bottom - top) / 2;
+        string look = WaveLooks.Current;
         double binsPerSec = a.SampleRate / (double)MediaAudio.PeakBin;
         int xa = (int)Math.Max(HeaderW, X(w.Start));
         int xb = (int)Math.Min(W, X(w.End));
+        int n = Math.Max(0, xb - xa + 1);
+        if (waveHi.Length < n) { waveHi = new double[n + 256]; waveLo = new double[n + 256]; }
         double lo = model.MediaSec(model.TrimStartSec) * binsPerSec, hi = (a.LengthSec - model.MediaSec(model.TrimEndSec)) * binsPerSec;
         double perPx = model.MediaSec(a.SampleRate / pps);
         using (var g = geo.Open())
@@ -2554,9 +2605,10 @@ public sealed partial class TimelineView : Control
             // than a sample per pixel, a line through them
             if (perPx < MediaAudio.PeakBin)
             {
-                SampleWave(g, a, model, w, pts, clipGain, xa, xb, mid, half, perPx < 1.5);
-                waveCache[c] = (geo, key, pts, model.GainDb);
-                return geo;
+                bool line = perPx < 1.5;
+                SampleWave(g, look, a, model, w, pts, clipGain, xa, xb, top, bottom, line, a.Mono ? MixSide : side);
+                waveCache[(c, side)] = (geo, key, pts, model.GainDb, line);
+                return (geo, line);
             }
             for (int px = xa; px < xb; px++)
             {
@@ -2564,32 +2616,36 @@ public sealed partial class TimelineView : Control
                 double s1 = model.MediaSec(Sec(px + 1) - model.AtSec) * binsPerSec;
                 int b0 = (int)Math.Max(lo, s0), b1 = (int)Math.Min(hi, Math.Max(s0 + 1, s1));
                 // the peaks are the recording's: a reversed clip reads them from the other end
-                if (model.Reversed) (b0, b1) = (a.PeakMax.Length - b1, a.PeakMax.Length - b0);
+                if (model.Reversed) (b0, b1) = (peakMax.Length - b1, peakMax.Length - b0);
                 float mn = 0, mx = 0;
-                for (int b = Math.Max(0, b0); b < b1 && b < a.PeakMax.Length; b++)
+                for (int b = Math.Max(0, b0); b < b1 && b < peakMax.Length; b++)
                 {
-                    if (a.PeakMin[b] < mn) mn = a.PeakMin[b];
-                    if (a.PeakMax[b] > mx) mx = a.PeakMax[b];
+                    if (peakMin[b] < mn) mn = peakMin[b];
+                    if (peakMax[b] > mx) mx = peakMax[b];
                 }
                 double gain = clipGain * ClipGainCurve.GainAt(pts, Sec(px + 0.5) - w.Origin);
-                double ya = mid - Math.Min(1, mx * gain) * half, yb = mid - Math.Max(-1, mn * gain) * half;
-                if (yb - ya < 1) yb = ya + 1;
-                g.BeginFigure(new Point(px + 0.5, ya), false);
-                g.LineTo(new Point(px + 0.5, yb));
-                g.EndFigure(false);
+                waveHi[px - xa] = Math.Min(1, mx * gain);
+                waveLo[px - xa] = Math.Max(-1, mn * gain);
             }
+            WaveLooks.Emit(look, g, xa, Math.Max(0, xb - xa), waveHi, waveLo, top, bottom, X(w.Start));
         }
-        waveCache[c] = (geo, key, pts, model.GainDb);
-        return geo;
+        waveCache[(c, side)] = (geo, key, pts, model.GainDb, false);
+        return (geo, false);
     }
 
-    /// <summary>The wave from the samples (both channels mixed, like the peaks) for the deepest zoom levels.</summary>
-    void SampleWave(StreamGeometryContext g, MediaAudio a, Clip model, ClipEnvelope.ClipWindow w, ClipGainCurve.Point[] pts,
-        double clipGain, int xa, int xb, double mid, double half, bool line)
+    /// <summary>The side <see cref="Waveform"/> draws when it shows both channels in one wave.</summary>
+    const int MixSide = -1;
+    /// <summary>A split track's clip draws two waves only if each gets at least this many px; shorter, one wave of both.</summary>
+    const double SplitWaveMinH = 14;
+
+    /// <summary>The wave from the samples (both channels mixed, like the peaks, or one side of a split track) for the deepest zoom levels.</summary>
+    void SampleWave(StreamGeometryContext g, string look, MediaAudio a, Clip model, ClipEnvelope.ClipWindow w, ClipGainCurve.Point[] pts,
+        double clipGain, int xa, int xb, double top, double bottom, bool line, int side)
     {
+        float At(long i) => side == 0 ? a.L[i] : side == 1 ? a.R[i] : 0.5f * (a.L[i] + a.R[i]);
         double sr = a.SampleRate;
         long lo = (long)(model.MediaSec(model.TrimStartSec) * sr), hi = Math.Min(a.L.Length, (long)((a.LengthSec - model.MediaSec(model.TrimEndSec)) * sr));
-        double Y(double v, double gain) => mid - Math.Clamp(v * gain, -1, 1) * half;
+        double Y(double v, double gain) => WaveLooks.LineY(look, Math.Clamp(v * gain, -1, 1), top, bottom);
         // what the clip plays at a sample of its own: a reversed one reads the recording from the other end
         long Src(long i) => model.Reversed ? a.L.Length - 1 - i : i;
         if (line)
@@ -2602,7 +2658,7 @@ public sealed partial class TimelineView : Control
                 if (i0 < lo || i0 + 1 >= hi) continue;
                 double f = s - i0;
                 long at = Src(i0), next = Src(i0 + 1);
-                double v = 0.5 * ((a.L[at] + a.R[at]) * (1 - f) + (a.L[next] + a.R[next]) * f);
+                double v = At(at) * (1 - f) + At(next) * f;
                 var pt = new Point(px + 0.5, Y(v, clipGain * ClipGainCurve.GainAt(pts, Sec(px + 0.5) - w.Origin)));
                 if (!open) { g.BeginFigure(pt, false); open = true; }
                 else g.LineTo(pt);
@@ -2614,22 +2670,20 @@ public sealed partial class TimelineView : Control
         {
             long s0 = Math.Max(lo, (long)(model.MediaSec(Sec(px) - model.AtSec) * sr));
             long s1 = Math.Min(hi, Math.Max(s0 + 1, (long)Math.Ceiling(model.MediaSec(Sec(px + 1) - model.AtSec) * sr)));
-            if (s0 >= s1) continue;
+            if (s0 >= s1) { waveHi[px - xa] = waveLo[px - xa] = double.NaN; continue; }
             float mn = float.MaxValue, mx = float.MinValue;
             for (long i = s0; i < s1; i++)
             {
                 long at = Src(i);
-                float v = 0.5f * (a.L[at] + a.R[at]);
+                float v = At(at);
                 if (v < mn) mn = v;
                 if (v > mx) mx = v;
             }
             double gain = clipGain * ClipGainCurve.GainAt(pts, Sec(px + 0.5) - w.Origin);
-            double ya = Y(mx, gain), yb = Y(mn, gain);
-            if (yb - ya < 1) yb = ya + 1;
-            g.BeginFigure(new Point(px + 0.5, ya), false);
-            g.LineTo(new Point(px + 0.5, yb));
-            g.EndFigure(false);
+            waveHi[px - xa] = Math.Clamp(mx * gain, -1, 1);
+            waveLo[px - xa] = Math.Clamp(mn * gain, -1, 1);
         }
+        WaveLooks.Emit(look, g, xa, Math.Max(0, xb - xa), waveHi, waveLo, top, bottom, X(w.Start));
     }
 
     /// <summary>How far a track in a folder moves its handle, badge, name and sliders right, so what is inside shows at a glance.</summary>
@@ -2776,13 +2830,9 @@ public sealed partial class TimelineView : Control
         double nameX = 58 + ind + NameShift(i);
         bool chip = isArmed && !Recording && InputLabel != null;
         double nameW = NameW(i);
-        // a locked track says so with a padlock after its name, which gives it the room
-        if (t.Track.Locked && editingNameId != t.Track.Id && !RecordingInto(i))
-        {
-            nameW = Math.Max(0, nameW - 16);
-            double shownW = Math.Min(Palette.Text(t.Track.Name, 12.5, Palette.Fg, Palette.UiBold).Width, nameW);
-            ctx.DrawText("\uE72E", 11, Palette.Faint, new Point(nameX + shownW + 5, y + 13), Icons);
-        }
+        // a locked track says so with a padlock after its name and its tags, which gives it the room
+        bool padlock = t.Track.Locked && editingNameId != t.Track.Id && !RecordingInto(i);
+        if (padlock) nameW = Math.Max(0, nameW - LockW);
         if (RecordingInto(i))
         {
             ctx.DrawText(Loc.T("timeline.recording"), 13, Palette.Rec, new Point(nameX, y + 11), Palette.Ui, nameW);
@@ -2790,20 +2840,25 @@ public sealed partial class TimelineView : Control
         }
         else if (editingNameId != t.Track.Id)
         {
-            // a transposed track says so after its name ("+2", asked by the user), dim while the transpose is made
-            if (t.Track.Transpose != 0)
+            // after its name: mono / stereo / mixed (asked by the user), then "+2" if transposed, dim while the transpose is made
+            var tags = HeaderTags(i, nameX, nameW);
+            ctx.DrawText(t.Track.Name, 12.5, Palette.Fg, new Point(nameX, y + 11), Palette.UiBold, tags.NameRoom);
+            if (tags.Layout.Width > 0) DrawLayoutTag(ctx, tags.Layout, t.Layout, t.Track.SplitWave);
+            if (tags.Transpose.Width > 0)
             {
                 var progress = TransposeProgress?.Invoke(t);
-                var tag = Palette.Text(TransposeTags[Math.Clamp((int)Math.Round(t.Track.Transpose), -12, 12) + 12], 10.5, progress == null ? Palette.Accent : Palette.Faint, Palette.Mono);
-                double tw = tag.Width + 22;
-                double shown = Math.Min(Palette.Text(t.Track.Name, 12.5, Palette.Fg, Palette.UiBold).Width, Math.Max(0, nameW - tw - 6));
-                ctx.DrawText(t.Track.Name, 12.5, Palette.Fg, new Point(nameX, y + 11), Palette.UiBold, Math.Max(0, nameW - tw - 6));
-                var r = new Rect(nameX + shown + 6, y + 10, tw, 18);
+                var r = tags.Transpose;
                 ctx.DrawRectangle(progress == null ? Palette.AccentSoft : Palette.Hover, Palette.Pen(progress == null ? Palette.Alpha(Palette.AccentColor, 0.4) : Palette.Line), r, 4, 4);
                 FxIcon.Draw(ctx, FxIcon.Transpose, new Rect(r.X + 5, r.Center.Y - 5, 10, 10), progress == null ? Palette.Accent : Palette.Faint);
+                var tag = TransposeTag(t, progress == null ? Palette.Accent : Palette.Faint);
                 ctx.DrawText(tag, new Point(r.X + 18, r.Center.Y - tag.Height / 2));
             }
-            else ctx.DrawText(t.Track.Name, 12.5, Palette.Fg, new Point(nameX, y + 11), Palette.UiBold, nameW);
+            if (padlock)
+            {
+                double after = tags.Transpose.Width > 0 ? tags.Transpose.Right : tags.Layout.Width > 0 ? tags.Layout.Right
+                    : nameX + Math.Min(Palette.Text(t.Track.Name, 12.5, Palette.Fg, Palette.UiBold).Width, nameW);
+                ctx.DrawText("", 11, Palette.Faint, new Point(after + 5, y + 13), Icons);
+            }
         }
         if (chip) DrawInputChip(ctx, InputRect(i), InputLabel!(t), Hot(InputRect(i)));
 
@@ -2844,6 +2899,64 @@ public sealed partial class TimelineView : Control
         DrawToggle(ctx, SoloRect(i), "S", ch.Solo, Palette.Accent, Hot(SoloRect(i)));
 
         if (!MetersOnLayer) DrawMeters(ctx, i);
+    }
+
+    static Avalonia.Media.TextFormatting.TextLayout TransposeTag(LiveTrack t, IBrush brush) => Palette.Text(TransposeTags[Math.Clamp((int)Math.Round(t.Track.Transpose), -12, 12) + 12], 10.5, brush, Palette.Mono);
+
+    public static readonly string[] LayoutKeys = ["", "layout.mono", "layout.stereo", "layout.mixed"];
+    /// <summary>The name keeps at least this much before the channel badge gives up its place.</summary>
+    const double NameMinW = 40;
+    const double TagGap = 6, TagH = 18;
+    /// <summary>What a locked track's padlock takes from its name.</summary>
+    const double LockW = 16;
+    static Avalonia.Media.TextFormatting.TextLayout LayoutText(ChannelLayout l, IBrush brush) => Palette.Text(Loc.T(LayoutKeys[(int)l]), 10, brush, Palette.UiBold);
+
+    /// <summary>
+    /// Where the tags after a track's name go: its channel badge (<see cref="LiveTrack.Layout"/>, none on a MIDI or
+    /// empty track) and its Transponer, right after the shown name; the name gets what is left. The badge gives up its
+    /// place first when the name would get less than <see cref="NameMinW"/>.
+    /// </summary>
+    (Rect Layout, Rect Transpose, double NameRoom) HeaderTags(int i, double nameX, double nameW)
+    {
+        var t = tracks[i];
+        double y = LaneY(i);
+        var layout = t.Track.IsMidi ? ChannelLayout.None : t.Layout;
+        double lw = layout == ChannelLayout.None ? 0 : LayoutText(layout, Palette.Dim).Width + 24;
+        double tw = t.Track.Transpose != 0 ? TransposeTag(t, Palette.Accent).Width + 22 : 0;
+        double Room(double l) => Math.Max(0, nameW - (l > 0 ? l + TagGap : 0) - (tw > 0 ? tw + TagGap : 0));
+        if (lw > 0 && Room(lw) < NameMinW) lw = 0;
+        double room = Room(lw);
+        if (lw == 0 && tw == 0) return (NoRect, NoRect, nameW);
+        double x = nameX + Math.Min(Palette.Text(t.Track.Name, 12.5, Palette.Fg, Palette.UiBold).Width, room) + TagGap;
+        var lr = lw > 0 ? new Rect(x, y + 10, lw, TagH) : NoRect;
+        if (lw > 0) x += lw + TagGap;
+        return (lr, tw > 0 ? new Rect(x, y + 10, tw, TagH) : NoRect, room);
+    }
+
+    /// <summary>The channel badge: one ring for mono, two for stereo, a ring and two small ones for mixed. Lit while the
+    /// track shows its stereo clips split. Only informative (asked by the user): it takes no click; the split is set for
+    /// all at once from the L R button under the tracks.</summary>
+    static void DrawLayoutTag(DrawingContext ctx, Rect r, ChannelLayout layout, bool split)
+    {
+        bool on = split && layout is ChannelLayout.Stereo or ChannelLayout.Mixed;
+        var fg = on ? Palette.Accent : Palette.Dim;
+        ctx.DrawRectangle(on ? Palette.AccentSoft : Palette.Hover, Palette.Pen(on ? Palette.Alpha(Palette.AccentColor, 0.4) : Palette.Line), r, 5, 5);
+        var pen = Palette.Pen(fg, 1.2);
+        double cy = r.Center.Y;
+        if (layout == ChannelLayout.Mono) ctx.DrawEllipse(null, pen, new Point(r.X + 10, cy), 3.5, 3.5);
+        else if (layout == ChannelLayout.Stereo)
+        {
+            ctx.DrawEllipse(null, pen, new Point(r.X + 8, cy), 3.5, 3.5);
+            ctx.DrawEllipse(null, pen, new Point(r.X + 12.5, cy), 3.5, 3.5);
+        }
+        else
+        {
+            ctx.DrawEllipse(null, pen, new Point(r.X + 7, cy), 2.5, 2.5);
+            ctx.DrawEllipse(null, pen, new Point(r.X + 12, cy - 2.5), 2.2, 2.2);
+            ctx.DrawEllipse(null, pen, new Point(r.X + 12, cy + 2.5), 2.2, 2.2);
+        }
+        var text = LayoutText(layout, fg);
+        text.Draw(ctx, new Point(r.X + 19, cy - text.Height / 2));
     }
 
     /// <summary>A header in the compact column (asked by the user): handle, icon, the name if it fits, M, S, ● and the
@@ -3309,6 +3422,8 @@ public sealed partial class TimelineView : Control
         if (FoldRect(f).Contains(p)) FolderFoldRequested?.Invoke(f);
         else if (FolderIconRect(f).Contains(p)) FolderLookRequested?.Invoke(f, FolderIconRect(f).BottomLeft + new Point(0, 4));
         else if (FolderRemoveRect(f).Contains(p)) FolderRemoveRequested?.Invoke(f, FolderRemoveRect(f).BottomLeft + new Point(0, 4));
+        else if (FolderMuteRect(f).Contains(p)) FolderToggled?.Invoke(f, false);
+        else if (FolderSoloRect(f).Contains(p)) FolderToggled?.Invoke(f, true);
         else if (e.ClickCount == 2 && FolderTitleRect(f).Contains(p)) NameEditRequested?.Invoke(f.Id, FolderNameRect(f));
         else if (e.ClickCount == 2) FolderFoldRequested?.Invoke(f);
     }

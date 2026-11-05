@@ -22,7 +22,10 @@ public static class KnobLooks
 
     const string ConfigKey = "knobLook";
 
-    public static string Current { get; private set; } = Soft;
+    /// <summary>The look the app comes with (Apariencia's "Restablecer").</summary>
+    public const string Default = Soft;
+
+    public static string Current { get; private set; } = Default;
 
     /// <summary>The cap is light (Aluminio, Cerámica): a value written over it goes dark.</summary>
     public static bool LightCap => IsLight(Current);

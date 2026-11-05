@@ -13,7 +13,7 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App;
 
 /// <summary>
-/// VST3 effects in the slots of tracks and buses (<see cref="InsertSlot.VstKind"/>), one more kind of slot mixed with the
+/// VST3 effects in the slots of tracks, folders and buses (<see cref="InsertSlot.VstKind"/>), one more kind of slot mixed with the
 /// built-in ones. Each slot's plugin runs in its own xtvsthost.exe (<see cref="VstBridge"/>), loaded in the background
 /// after every edit that may add or take one away (<see cref="SyncEffects"/>), and the live engine finds it by owner and
 /// slot (<see cref="LiveVst"/>); until it is up, or if it can't be opened, the slot lets the sound through and a toast says
@@ -48,12 +48,15 @@ public partial class MainWindow
 
     void InitEffects() => LiveVst.Find = (owner, slot) => effects.TryGetValue(EffectKey(owner, slot), out var e) ? e.Bridge : null;
 
-    /// <summary>Every VST3 slot of the project with its owner (a track or a bus).</summary>
+    /// <summary>Every VST3 slot of the project with its owner (a track, a folder or a bus).</summary>
     static IEnumerable<(string Owner, InsertSlot Slot)> VstSlots(Project p)
     {
         foreach (var t in p.Tracks)
             foreach (var s in t.Channel.Slots)
                 if (s.Type == InsertSlot.VstKind && s.Known) yield return (t.Id, s);
+        foreach (var f in p.Folders)
+            foreach (var s in f.Inserts)
+                if (s.Type == InsertSlot.VstKind && s.Known) yield return (f.Id, s);
         foreach (var b in p.Settings.Buses)
             foreach (var s in b.Inserts)
                 if (s.Type == InsertSlot.VstKind && s.Known) yield return (b.Id, s);
@@ -64,7 +67,7 @@ public partial class MainWindow
     {
         if (store == null) return null;
         var p = store.Project;
-        var list = p.Tracks.Find(t => t.Id == owner)?.Channel.Slots ?? p.Settings.Buses.Find(b => b.Id == owner)?.Inserts;
+        var list = p.Tracks.Find(t => t.Id == owner)?.Channel.Slots ?? p.Folders.Find(f => f.Id == owner)?.Inserts ?? p.Settings.Buses.Find(b => b.Id == owner)?.Inserts;
         return list?.Find(s => s.Id == slot);
     }
 
@@ -149,7 +152,7 @@ public partial class MainWindow
     void ReapplyOwner(string owner)
     {
         if (tracks.FirstOrDefault(t => t.Track.Id == owner) is { } live) live.ApplyInserts();
-        else if (store != null) engine.ApplyBusSlots(store.Project.Settings.Buses);
+        else engine.ApplyBusSlots();
     }
 
     /// <summary>Takes a plugin off its slot and closes its process a moment later (the audio thread may hold it one more block).</summary>
@@ -157,6 +160,7 @@ public partial class MainWindow
     {
         if (!effects.Remove(key, out var loaded)) return;
         StopLaneListen(loaded.Bridge);
+        ForgetEffectWindow(key);
         ReapplyOwner(loaded.Owner);
         _ = Task.Run(async () => { await Task.Delay(EffectCloseDelay); loaded.Bridge.Dispose(); });
         EffectsChanged();
@@ -180,6 +184,7 @@ public partial class MainWindow
     void EffectSaid(string key, LoadedEffect loaded, string line)
     {
         if (!effects.TryGetValue(key, out var current) || current != loaded || PluginKeySaid(line) || PluginThumbSaid(loaded.Bridge, loaded.Plugin, line)) return;
+        EffectWindowSaid(key, loaded.Bridge.ProcessId, line);
         if (line == "toolbar listen")
         {
             if (tracks.FirstOrDefault(t => t.Track.Id == loaded.Owner) is { } track) ToggleLaneListen(loaded.Bridge, track, id => AutoTarget.Vst(loaded.Slot, id));
@@ -270,7 +275,7 @@ public partial class MainWindow
         if (effects.TryGetValue(EffectKey(owner, slotId), out var loaded))
         {
             DressPluginWindow(loaded.Bridge, loaded.Bridge.Name);
-            // a bus's effect can't have lanes: its bar only has the picture
+            // a bus's or a folder's effect can't have lanes (yet): its bar only has the picture
             if (tracks.FirstOrDefault(t => t.Track.Id == owner) is { } track)
             {
                 string listen = ListenBarButton;

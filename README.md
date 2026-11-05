@@ -28,6 +28,9 @@ y MIDI, piano roll, instrumentos y efectos VST3, buses y una cadena de master co
 Además hace **videos**: si grabás con cámara, cada toma guarda su imagen y XTreme arma un video con un panel por
 toma, con color y formatos para redes. Es un extra para cuando lo necesitás; sin cámara, funciona como cualquier DAW.
 
+XTreme está **programado desde cero**: el motor de audio, los efectos, los instrumentos y la interfaz son propios.
+Toma ideas de los mejores DAWs del mercado, pero no se basa en el código de ninguno.
+
 <details>
 <summary><b>Antes de instalar</b></summary>
 
@@ -98,7 +101,7 @@ Más detalles en [Requisitos](DETALLES.md#requisitos).
   3 min) con un vocoder de fase de alta calidad, se ve el progreso sobre los clips y queda guardada en `cache/`.
 - **Mixer** completo con **buses**: cada pista o carpeta elige su salida (el master o un bus) y manda a los buses
   con sus envíos (antes o después del fader); los buses salen al master. Un bus tiene volumen, paneo y efectos: sirve
-  para una reverb, un delay o para procesar un grupo. Las carpetas solo agrupan. Las tiras se ordenan arrastrándolas
+  para una reverb, un delay o para procesar un grupo. Una carpeta también es un canal: efectos, paneo, fader, M y S (su solo deja sonar sus pistas). Las tiras se ordenan arrastrándolas
   (el timeline las sigue), van a la izquierda o a la derecha, y hay separadores con nombre para proyectos grandes.
 - **A | B** en la barra del mixer: dos mezclas de las mismas tomas (canales, envíos y buses) para comparar mientras
   suena; la B arranca como copia de la A y el clic derecho copia una sobre la otra u olvida la otra.

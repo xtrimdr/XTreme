@@ -71,6 +71,8 @@ public sealed partial class PianoRollView : Control
     public enum Frame { Keep, Clip, Reveal, Track }
 
     const double KeyW = 56, RulerH = 24, VelGap = 8;
+    /// <summary>How far a black key reaches into the keyboard, like a real one.</summary>
+    const double BlackKeyW = KeyW * 0.62;
     /// <summary>Marks of the velocity lane's scale (the default, 100, among them); a label is skipped when it would touch the last.</summary>
     static readonly int[] VelMarks = [127, 100, 64, 32];
     /// <summary>Px between the scale's labels.</summary>
@@ -327,6 +329,61 @@ public sealed partial class PianoRollView : Control
         if (sec == playheadSec || !was && !now) { playheadSec = sec; return; }
         playheadSec = sec;
         layer.InvalidateVisual();
+    }
+
+    /// <summary>How much of the way to lit a key goes in a tick (a quick swell), and what is left of its light after
+    /// each tick once let go (a short fade, ~150 ms).</summary>
+    const float LiveRise = 0.6f, LiveFall = 0.78f;
+    /// <summary>Under this a key's light is gone.</summary>
+    const float LiveGone = 0.03f;
+    /// <summary>The light of each key played live, 0..1.</summary>
+    readonly float[] liveGlow = new float[Pitches];
+    bool liveAny;
+
+    /// <summary>
+    /// The keys sounding live on the clip's track (a MIDI keyboard or the virtual one; null = none): each one lights on
+    /// the keyboard, and its row, and fades out when let go. Called every tick; repaints only the <see cref="Layer"/>,
+    /// and only while something is lit. Allocates nothing.
+    /// </summary>
+    public void ShowLive(LiveNotes? keys)
+    {
+        if (keys == null && !liveAny) return;
+        bool any = false, moved = false;
+        for (int p = 0; p < Pitches; p++)
+        {
+            float g = liveGlow[p], to = keys != null && keys.IsSounding(p) ? 1 : 0;
+            float next = to > g ? g + (1 - g) * LiveRise : g * LiveFall;
+            if (next < LiveGone) next = 0;
+            if (to == 1 && next > 0.99f) next = 1;
+            if (next != g) { liveGlow[p] = next; moved = true; }
+            any |= next > 0;
+        }
+        liveAny = any;
+        if (moved && clipId != null && IsVisible) layer.InvalidateVisual();
+    }
+
+    /// <summary>The lit keys, over the keyboard (filled in the accent as much as their light) and faint along their rows.</summary>
+    void DrawLive(DrawingContext ctx, double W, double gb)
+    {
+        if (!liveAny) return;
+        using (ctx.PushClip(new Rect(KeyW, RulerH, Math.Max(0, W - KeyW), Math.Max(0, gb - RulerH))))
+            for (int r = 0; r < rowCount; r++)
+            {
+                float g = liveGlow[rowPitch[r]];
+                double y = Y(rowPitch[r]);
+                if (g > 0 && y + rowH >= RulerH && y <= gb) ctx.FillRectangle(Palette.Alpha(Palette.AccentColor, 0.12 * g), new Rect(KeyW, y, W - KeyW, rowH));
+            }
+        using (ctx.PushClip(new Rect(0, RulerH, KeyW, Math.Max(0, gb - RulerH))))
+            for (int r = 0; r < rowCount; r++)
+            {
+                int p = rowPitch[r];
+                float g = liveGlow[p];
+                double y = Y(p);
+                if (g <= 0 || y + rowH < RulerH || y > gb) continue;
+                // the key sinks a little while it sounds: its light leaves a sliver of the key at the left
+                double inset = 3 * g;
+                ctx.FillRectangle(Palette.Alpha(Palette.AccentColor, 0.9 * g), new Rect(inset, y + 0.5, (MidiNote.IsBlack(p) ? BlackKeyW : KeyW) - inset, rowH - 1), 2);
+            }
     }
 
     /// <summary>
@@ -865,10 +922,12 @@ public sealed partial class PianoRollView : Control
     /// </summary>
     void RenderLayer(DrawingContext ctx)
     {
-        if (clipId == null || playheadSec < 0) return;
+        if (clipId == null) return;
         // the roll may not have framed yet in this pass; both do it once, whichever draws first
         Fit();
         double W = Bounds.Width, gb = GridBottom;
+        DrawLive(ctx, W, gb);
+        if (playheadSec < 0) return;
         double xa = XA(PlayBeat(playheadSec));
         if (xa >= KeyW && xa <= W)
             using (ctx.PushClip(new Rect(KeyW, 0, Math.Max(0, W - KeyW), RulerH)))
@@ -894,7 +953,7 @@ public sealed partial class PianoRollView : Control
             double y = Y(p);
             if (y + rowH < RulerH || y > gb) continue;
             bool lit = p == heardPitch;
-            if (MidiNote.IsBlack(p)) ctx.FillRectangle(lit ? Palette.Accent : Palette.App, new Rect(0, y, KeyW * 0.62, rowH));
+            if (MidiNote.IsBlack(p)) ctx.FillRectangle(lit ? Palette.Accent : Palette.App, new Rect(0, y, BlackKeyW, rowH));
             else
             {
                 if (lit) ctx.FillRectangle(Palette.Accent, new Rect(0, y, KeyW, rowH));
@@ -914,9 +973,11 @@ public sealed partial class PianoRollView : Control
             }
             if (rowH >= 9 && (scale == null ? p % 12 == 0 : inScale && rowH >= 11 || scale.IsRoot(p)))
             {
-                // right-aligned like the user's key names, so a longer name ("Sol#3") grows to the left
-                var name = Palette.Text(NoteNames.Of(p), 9.5, MidiNote.IsBlack(p) && scale != null ? Palette.Fg : Palette.App, Palette.Ui);
-                ctx.DrawText(name, new Point(Math.Max(2, KeyW - 6 - name.Width), y + (rowH - 12) / 2));
+                // right-aligned like the user's key names, so a longer name ("Sol#3") grows to the left; a black
+                // key's name goes inside the black key, light on dark (beside it, it fell on the white part)
+                bool black = MidiNote.IsBlack(p);
+                var name = Palette.Text(NoteNames.Of(p), 9.5, black ? Palette.Fg : Palette.App, Palette.Ui);
+                ctx.DrawText(name, new Point(Math.Max(2, (black ? BlackKeyW - 3 : KeyW - 6) - name.Width), y + (rowH - 12) / 2));
             }
         }
     }

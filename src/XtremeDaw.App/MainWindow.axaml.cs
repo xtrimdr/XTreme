@@ -623,7 +623,11 @@ public partial class MainWindow : Window
             return;
         }
         if (engine.Playing && !engine.Stopping) engine.FadeOutAndPause();
-        else engine.Play();
+        else
+        {
+            StopSample(); // the library's listen gives way to the song
+            engine.Play();
+        }
     }
 
     /// <summary>Controls whose tooltip names a shortcut: text and action, refreshed when the user changes a key.</summary>
@@ -636,11 +640,10 @@ public partial class MainWindow : Window
         [
             (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"), (NewTrackButton, Loc.T("timeline.newTrack"), "newTrack"), (VirtualKeysButton, Loc.T("sc.virtualKeys"), "virtualKeys"),
             (ToStartButton, Loc.T("transport.start.tip"), "toStart"), (LoopToggle, Loc.T("transport.loop.tip"), "loop"),(CountInToggle, Loc.T("transport.countin.tip"), "countIn"),
-            (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (ViewSwitch, Loc.T("transport.view.tip"), "mixer"), (MaxPanelButton, Loc.T("sc.maximize"), "maximize"), (FitButton, Loc.T("transport.fit.tip"), "fit"),
+            (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (MaxPanelButton, Loc.T("sc.maximize"), "maximize"), (FitButton, Loc.T("transport.fit.tip"), "fit"),
         ]);
         ApplyShortcutTips();
         Shortcuts.Changed += ApplyShortcutTips;
-        Shortcuts.Changed += PluginKeysChanged;
     }
 
     void ApplyShortcutTips()
@@ -752,6 +755,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 await NewTrackShortcut();
                 return;
+            case "duplicateTrack":
+                e.Handled = true;
+                await DuplicateTracksShortcut();
+                return;
             case "split":
                 e.Handled = true;
                 await SplitAtPlayhead();
@@ -765,6 +772,9 @@ public partial class MainWindow : Window
                 break;
             case "play":
                 TogglePlay();
+                break;
+            case "cutAudio":
+                CutAudio();
                 break;
             case "record":
                 StartRecording();
@@ -857,6 +867,15 @@ public partial class MainWindow : Window
             case "help":
                 OpenHelp();
                 break;
+            case "uiLarger":
+                Controls.UiFonts.Step(1);
+                break;
+            case "uiSmaller":
+                Controls.UiFonts.Step(-1);
+                break;
+            case "uiReset":
+                Controls.UiFonts.Step(0);
+                break;
             default:
                 return;
         }
@@ -931,6 +950,7 @@ public partial class MainWindow : Window
         Preview.Timed = timed;
         TakeArmedPeaks();
         RefreshClearButtons();
+        RefreshSplitAllButton();
         foreach (var t in tracks)
         {
             t.ShowL = Math.Max(Math.Max(t.MeterL, t.InputL), t.ShowL * 0.82f);
@@ -945,6 +965,7 @@ public partial class MainWindow : Window
         TickListen();
         Timeline.SetPlayhead(pos, engine.Playing);
         pianoRoll.SetPlayhead(pos);
+        pianoRoll.ShowLive(PianoKeys());
         bool newFrame = false;
         var look = store?.Project.Settings;
         foreach (var t in tracks)
@@ -1054,19 +1075,24 @@ public partial class MainWindow : Window
     {
         if (syncing || restoring || store == null || store.ReadOnly) return;
         var lit = tracks.Where(t => solo ? t.Channel.Solo : t.Channel.Muted).ToList();
-        if (lit.Count == 0) return;
+        // the folders are channels too (#134): their M and S go with the tracks'
+        var litFolders = store.Project.Folders.Where(f => !f.Separator && (solo ? f.Solo : f.Muted)).ToList();
+        if (lit.Count == 0 && litFolders.Count == 0) return;
         undo.Checkpoint(store.Project);
         foreach (var t in lit)
         {
             if (solo) t.Channel.Solo = false; else t.Channel.Muted = false;
             t.ApplyChannel();
         }
+        foreach (var f in litFolders)
+            if (solo) f.Solo = false; else f.Muted = false;
+        if (litFolders.Count > 0) ApplyRouting(store.Project, tracks);
         RefreshMixer();
         MarkDirty();
         UpdateUndoButtons();
         RefreshInspectorText();
         Timeline.InvalidateVisual();
-        int count = lit.Count;
+        int count = lit.Count + litFolders.Count;
         string what = count == 1 ? Loc.T("tracks.one") : Loc.T("tracks.many", count);
         Status(Loc.T(solo ? "mute.clearedSolo" : "mute.clearedMute", what));
     }
@@ -1081,6 +1107,12 @@ public partial class MainWindow : Window
         {
             anyMute |= tracks[i].Channel.Muted;
             anySolo |= tracks[i].Channel.Solo;
+        }
+        var folders = store?.Project.Folders;
+        for (int i = 0; folders != null && i < folders.Count; i++)
+        {
+            anyMute |= folders[i].Muted;
+            anySolo |= folders[i].Solo;
         }
         ShowClearButton(ClearMutesButton, false, anyMute, editable);
         ShowClearButton(ClearSolosButton, true, anySolo, editable);

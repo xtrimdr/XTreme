@@ -1,25 +1,20 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
-using XtremeDaw.App.Dialogs;
 using XtremeDaw.Projects;
 
 namespace XtremeDaw.App;
 
 /// <summary>
 /// The "Banco de pruebas" list in a test copy (<see cref="TestList"/>): the button in the title bar with what is left to
-/// try, and <see cref="TestListWindow"/>, which opens by itself when something is waiting. Agents add to the list from
-/// other processes, so the file is watched for as long as the window is open. The list is a window of its own, with its
-/// button in the taskbar (asked by the user), like the panels' windows. Outside a test copy none of this runs.
+/// try, and the bench itself, a program of its own (<see cref="Bench"/>, asked by the user: it also opens from outside
+/// and outlives XTreme), which the button brings forward and which opens by itself when something is waiting. Agents
+/// add to the list from other processes, so the file is watched for the counter and the toasts. The user's own
+/// requests do not come back as a toast. Outside a test copy none of this runs.
 /// </summary>
 public partial class MainWindow
 {
     static readonly TimeSpan TestListPoll = TimeSpan.FromSeconds(2);
-    /// <summary>Space between the panel and the corner of the window, in logical pixels.</summary>
-    const int TestPanelGapX = 16, TestPanelGapY = 96;
 
-    TestListWindow? testPanel;
-    PixelPoint? testPanelPlace;
     DateTime testListStamp;
     int testListSeen = -1;
 
@@ -27,10 +22,10 @@ public partial class MainWindow
     {
         if (TestBuild.ListPath is not { } path) return;
         TestListButton.IsVisible = true;
-        TestListButton.Click += (_, _) => ToggleTestPanel(path, activate: true);
+        TestListButton.Click += (_, _) => OpenBench(path, activate: true);
         Opened += (_, _) =>
         {
-            if (ReadTestList(path) is { } d && d.Count(TestItem.Pending) > 0) ToggleTestPanel(path, activate: false);
+            if (ReadTestList(path) is { } d && d.Count(TestItem.Pending) > 0) OpenBench(path, activate: false);
         };
         var timer = new DispatcherTimer { Interval = TestListPoll };
         timer.Tick += (_, _) =>
@@ -38,11 +33,14 @@ public partial class MainWindow
             if (File.GetLastWriteTimeUtc(path) != testListStamp) ReadTestList(path);
         };
         timer.Start();
-        // its own window (with its taskbar button, asked by the user): it closes with the main one
-        Closed += (_, _) => testPanel?.Close();
     }
 
-    /// <summary>Reads the file and updates the button and the panel; null if it is being swapped (the next tick reads it).</summary>
+    void OpenBench(string path, bool activate)
+    {
+        if (Bench.Open(path, activate) is { } why) Toast(Loc.T("test.list.open.error", why), Loc.T("test.list.title"));
+    }
+
+    /// <summary>Reads the file and updates the button; null if it is being swapped (the next tick reads it).</summary>
     TestListData? ReadTestList(string path)
     {
         TestListData d;
@@ -60,29 +58,8 @@ public partial class MainWindow
         ToolTip.SetTip(TestListButton, Loc.T("test.list.tip", pending, fails));
         if (testListSeen >= 0)
             foreach (var i in d.Items)
-                if (i.Id > testListSeen) Toast(i.Text, Loc.T("test.list.title"));
+                if (i.Id > testListSeen && i.State != TestItem.Request) Toast(i.Text, Loc.T("test.list.title"));
         testListSeen = Math.Max(testListSeen, d.Next - 1);
-        testPanel?.Fill(d);
         return d;
-    }
-
-    void ToggleTestPanel(string path, bool activate)
-    {
-        if (testPanel != null)
-        {
-            testPanel.Close();
-            return;
-        }
-        var panel = new TestListWindow(path) { ShowActivated = activate };
-        double scale = RenderScaling;
-        panel.Position = testPanelPlace ?? new PixelPoint(
-            Position.X + (int)((Bounds.Width - panel.Width - TestPanelGapX) * scale),
-            Position.Y + (int)(TestPanelGapY * scale));
-        panel.Changed += () => ReadTestList(path);
-        panel.Closing += (_, _) => testPanelPlace = panel.Position;
-        panel.Closed += (_, _) => testPanel = null;
-        testPanel = panel;
-        ReadTestList(path);
-        panel.Show();
     }
 }

@@ -305,7 +305,7 @@ public partial class MainWindow
             mixerDragged.Opacity = 1;
         }
         if (mixerDragCard is Border { Background: not null } sb && what is Folder { Separator: true }) sb.Background = Brushes.Transparent;
-        ToolTip.SetServiceEnabled(mixerStrips, true);
+        mixerStrips.ClearValue(ToolTip.ServiceEnabledProperty);
         mixerLeaves.Clear();
         mixerRaised.Clear();
         mixerDragged = null;

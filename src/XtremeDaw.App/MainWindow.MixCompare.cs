@@ -90,6 +90,8 @@ public partial class MainWindow
         if (store == null) return;
         foreach (var t in tracks) t.ApplyChannel();
         ApplyRouting(store.Project, tracks);
+        // a folder's or bus's VST3 slots come and go with the mix
+        SyncEffects();
         RefreshMixer();
         if (sel != null)
         {

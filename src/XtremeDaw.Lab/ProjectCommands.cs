@@ -426,6 +426,29 @@ static class ProjectCommands
         TrackFolders.Remove(p, p.Folders.Find(f => f.Name == "G")!.Id, withTracks: true);
         Check("quitar G con sus pistas: " + Order(p), Order(p) == "[H] [F]" && p.Tracks.Count == 0);
 
+        // duplicating tracks: each copy under its original, in its folder, with new ids and its lanes on its own slots
+        var d = new Project();
+        foreach (var n in new[] { "Bajo", "Pista 1", "Voz" }) d.Tracks.Add(new Track { Name = n });
+        TrackFolders.Add(d, "F", [d.Tracks[1].Id, d.Tracks[2].Id]);
+        var bajo = d.Tracks[0];
+        var eq = new InsertSlot { Type = InsertSlot.EqKind };
+        bajo.Channel.Inserts = [eq];
+        bajo.Channel.Volume = 0.5;
+        var take = new Clip { AtSec = 2 };
+        bajo.Clips = [take, new Clip { AtSec = 6, LoopOf = take.Id }];
+        Automations.Show(bajo, AutoTarget.Fx(eq.Id, "gain"), 0.5);
+        var copies = TrackCopies.Duplicate(d, [d.Tracks[2].Id, bajo.Id], content: true);
+        Check("cada copia va debajo de su original, en su carpeta: " + Order(d), Order(d) == "Bajo Bajo 2 [F] ·Pista 1 ·Voz ·Voz 2");
+        var copy = d.Tracks.Find(t => t.Id == copies[0])!;
+        Check("la copia lleva el canal y los clips, con ids nuevos", copy.Name == "Bajo 2" && copy.Channel.Volume == 0.5 && copy.Clips.Count == 2
+            && copy.Channel.Inserts![0].Id != eq.Id && copy.Clips[0].Id != take.Id && copy.Clips[1].LoopOf == copy.Clips[0].Id);
+        Check("su automatización mueve su propio efecto", copy.Automation is [{ } lane] && copy.Channel.Inserts is [{ } slot] && lane.Target == AutoTarget.Fx(slot.Id, "gain")
+            && bajo.Automation is [{ } own] && own.Target == AutoTarget.Fx(eq.Id, "gain") && lane.Id != own.Id);
+        string emptyId = TrackCopies.Duplicate(d, [d.Tracks.Find(t => t.Name == "Pista 1")!.Id], content: false)[0];
+        var empty = d.Tracks.Find(t => t.Id == emptyId)!;
+        Check("sin contenido: los ajustes, sin clips ni automatización: " + Order(d), empty.Name == "Pista 2" && empty.Clips.Count == 0
+            && empty.Automation == null && Order(d) == "Bajo Bajo 2 [F] ·Pista 1 ·Pista 2 ·Voz ·Voz 2");
+
         // separators: an empty folder that never takes tracks, never lands inside a folder, and makes no sound
         var s = new Project();
         foreach (var n in new[] { "A", "B", "C" }) s.Tracks.Add(new Track { Name = n });

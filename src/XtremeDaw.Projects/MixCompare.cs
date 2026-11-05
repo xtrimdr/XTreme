@@ -4,7 +4,8 @@ using System.Text.Json.Serialization;
 namespace XtremeDaw.Projects;
 
 /// <summary>
-/// A mix kept aside for A/B (<see cref="MixCompare"/>): every track's channel, every folder's routing and sends and the
+/// A mix kept aside for A/B (<see cref="MixCompare"/>): every track's channel, every folder's channel (fader, pan,
+/// slots, routing and sends) and the
 /// buses' settings, matched by id. Only settings: no media, no clips, so it costs a few kilobytes. The master is not
 /// part of it: mastering is its own stage, with its own view.
 /// </summary>
@@ -24,12 +25,18 @@ public sealed class TrackMix
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-/// <summary>A folder's output and sends in a <see cref="MixSnapshot"/> (a folder has nothing else that sounds).</summary>
+/// <summary>
+/// A folder's channel in a <see cref="MixSnapshot"/>: its output and sends, and its fader, pan and slots (#134). Those
+/// three are null in a mix kept before folders had them: applying it leaves the folder's own as they are.
+/// </summary>
 public sealed class FolderMix
 {
     public string FolderId { get; set; } = "";
     public string? Output { get; set; }
     public List<Send> Sends { get; set; } = [];
+    public double? Volume { get; set; }
+    public double? Pan { get; set; }
+    public List<InsertSlot>? Inserts { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
@@ -70,7 +77,10 @@ public static class MixCompare
     public static MixSnapshot Capture(Project p) => new()
     {
         Tracks = [.. p.Tracks.Select(t => new TrackMix { TrackId = t.Id, Channel = ProjectLibrary.Clone(t.Channel) })],
-        Folders = [.. p.Folders.Where(f => !f.Separator).Select(f => new FolderMix { FolderId = f.Id, Output = f.Output, Sends = ProjectLibrary.Clone(f.Sends) })],
+        Folders = [.. p.Folders.Where(f => !f.Separator).Select(f => new FolderMix
+        {
+            FolderId = f.Id, Output = f.Output, Sends = ProjectLibrary.Clone(f.Sends), Volume = f.Volume, Pan = f.Pan, Inserts = ProjectLibrary.Clone(f.Inserts),
+        })],
         Buses = ProjectLibrary.Clone(p.Settings.Buses),
     };
 
@@ -90,6 +100,10 @@ public static class MixCompare
             if (p.Folders.Find(f => f.Id == fm.FolderId && !f.Separator) is not { } f) continue;
             f.Output = fm.Output;
             f.Sends = ProjectLibrary.Clone(fm.Sends);
+            // mute and solo stay, like a track's
+            if (fm.Volume is { } v) f.Volume = v;
+            if (fm.Pan is { } pan) f.Pan = pan;
+            if (fm.Inserts != null) f.Inserts = ProjectLibrary.Clone(fm.Inserts);
         }
         foreach (var sb in s.Buses)
         {

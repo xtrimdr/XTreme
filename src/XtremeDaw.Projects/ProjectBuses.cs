@@ -148,7 +148,7 @@ public static class ProjectBuses
 
     /// <summary>
     /// Changes <paramref name="r"/>'s send to <paramref name="busId"/>, creating it if it isn't there (level 0, on,
-    /// post-fader): only what is given changes. A folder's never goes pre-fader. Returns the send, or null when the bus
+    /// post-fader): only what is given changes. Returns the send, or null when the bus
     /// doesn't exist or the send would close a loop.
     /// </summary>
     public static Send? SetSend(Project p, IRouted r, string busId, double? level = null, bool? on = null, bool? pre = null)
@@ -162,7 +162,7 @@ public static class ProjectBuses
         }
         if (level is { } v) s.Level = double.IsFinite(v) ? Math.Clamp(v, 0, 1) : 0;
         if (on is { } o) s.On = o;
-        if (pre is { } x) s.Pre = x && r is not Folder;
+        if (pre is { } x) s.Pre = x;
         return s;
     }
 
@@ -232,8 +232,7 @@ public static class ProjectBuses
 
     /// <summary>
     /// Repairs what a hand-edited file or a removed bus leaves: repeated bus ids, outputs and sends to buses that no
-    /// longer exist (output → the master), repeated sends (the first wins), levels out of range, a folder's pre-fader
-    /// sends, and any loop between buses (the edge that closes it is dropped).
+    /// longer exist (output → the master), repeated sends (the first wins), levels out of range and any loop between buses (the edge that closes it is dropped).
     /// </summary>
     internal static void Normalize(Project p)
     {
@@ -246,11 +245,7 @@ public static class ProjectBuses
             if (r.Output != null && !ids.Contains(r.Output)) r.Output = null;
             var seen = new HashSet<string>();
             r.Sends.RemoveAll(s => s == null || !ids.Contains(s.BusId) || !seen.Add(s.BusId));
-            foreach (var s in r.Sends)
-            {
-                s.Level = double.IsFinite(s.Level) ? Math.Clamp(s.Level, 0, 1) : 0;
-                if (r is Folder) s.Pre = false;
-            }
+            foreach (var s in r.Sends) s.Level = double.IsFinite(s.Level) ? Math.Clamp(s.Level, 0, 1) : 0;
         }
         // a bus goes to the master only (see the summary): what a file brings from before goes
         foreach (var b in p.Settings.Buses)

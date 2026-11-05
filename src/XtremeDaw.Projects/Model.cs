@@ -535,6 +535,10 @@ public sealed class Track
     /// <summary>Its own lane height as a multiple of the height every track shares (the timeline's slider), so the slider
     /// still scales a track made taller or shorter; null = 1. The lane stays within <see cref="MinHeight"/>..<see cref="MaxHeight"/> px. Native only.</summary>
     public double? HeightScale { get; set; }
+    /// <summary>Its stereo clips draw each side's wave, left over right, instead of one wave of both (asked by the user).
+    /// A view setting like its height: saved, without undo. Native only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SplitWave { get; set; }
     public const double MinHeight = 40, MaxHeight = 320;
     /// <summary>The shared height a new timeline starts at; a folder's heights are its px at this zoom.</summary>
     public const double DefaultHeight = 64;
@@ -636,9 +640,11 @@ public sealed class Track
 /// <summary>
 /// A folder of tracks (native only, asked by the user): its children are the tracks with its <see cref="Track.FolderId"/>,
 /// always together in <see cref="Project.Tracks"/>, and the folder sits right before them. It folds in the timeline and
-/// in the mixer. It only holds them (the user's call): no fader, pan, mute, solo or effects. Its children's outputs add
-/// up there and go to its <see cref="Output"/> (the master or a bus), and from that sum it sends to buses
-/// (<see cref="Sends"/>, never pre-fader: there is no fader). Version 2's fader, mute, solo and slots are dropped.
+/// in the mixer. It is a channel of its own (the user's call, 2026-11-04): its children's outputs add up there, go
+/// through its insert slots (<see cref="Inserts"/>), pan, fader and mute, and on to its <see cref="Output"/> (the master
+/// or a bus) and its sends to buses (<see cref="Sends"/>, pre-fader ones taken after the slots and the pan, like a
+/// track's). Its <see cref="Solo"/> solos its children. A separator carries none of this. Version 2 saved the fader,
+/// mute, solo and slots under the same names, so they come back as they were.
 /// </summary>
 public sealed class Folder : IRouted
 {
@@ -676,19 +682,37 @@ public sealed class Folder : IRouted
     public bool HiddenInTimeline { get; set; }
     /// <summary>The mixer side its strip (with its tracks) sits on (<see cref="MixerSides"/>); null = the left.</summary>
     public string? MixerSide { get; set; }
+    /// <summary>Its fader, 0..1.5 like a track's.</summary>
+    public double Volume { get; set; } = 1;
+    /// <summary>-1 (left) .. 1 (right), like a track's.</summary>
+    public double Pan { get; set; }
+    /// <summary>Silences its node (its children's sum), not its children's own sends.</summary>
+    public bool Muted { get; set; }
+    /// <summary>Solos every child track (the user's call): the folder's node is heard with them.</summary>
+    public bool Solo { get; set; }
+    /// <summary>Its effects, run over its children's sum, like a bus's (<see cref="Bus.Inserts"/>).</summary>
+    public List<InsertSlot> Inserts { get; set; } = [];
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
-
-    /// <summary>What version 2 saved on a folder and version 3 dropped.</summary>
-    static readonly string[] OldFields = ["volume", "muted", "solo", "inserts"];
 
     internal void Normalize()
     {
         Sends ??= [];
-        foreach (var s in Sends) if (s != null) s.Pre = false;
-        if (Extra != null) foreach (var k in OldFields) Extra.Remove(k);
         MixerSide = MixerSides.Normalize(MixerSide, MixerSides.Left);
-        // a separator routes nothing; HiddenInTimeline is a separator's alone
-        if (Separator) { Output = null; Sends.Clear(); Collapsed = false; }
+        Volume = double.IsFinite(Volume) ? Math.Clamp(Volume, 0, 1.5) : 1;
+        Pan = double.IsFinite(Pan) ? Math.Clamp(Pan, -1, 1) : 0;
+        Inserts ??= [];
+        InsertSlot.NormalizeList(Inserts);
+        // a separator routes nothing and carries no channel; HiddenInTimeline is a separator's alone
+        if (Separator)
+        {
+            Output = null;
+            Sends.Clear();
+            Collapsed = false;
+            Volume = 1;
+            Pan = 0;
+            Muted = Solo = false;
+            Inserts.Clear();
+        }
         else HiddenInTimeline = false;
     }
 }
@@ -876,7 +900,7 @@ public sealed class Channel : IRouted
 
 /// <summary>
 /// A send to a bus (native only), from a track, a folder or another bus: how much of it goes there (0..1), its ON, and
-/// whether it is taken before the fader (<see cref="Pre"/>; a folder has no fader, so never). A send to a bus that no
+/// whether it is taken before the fader (<see cref="Pre"/>). A send to a bus that no
 /// longer exists is dropped when the project is normalized (<see cref="ProjectBuses.Normalize"/>).
 /// </summary>
 public sealed class Send

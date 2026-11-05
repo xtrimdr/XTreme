@@ -64,6 +64,14 @@ seleccionado, borde 0,45 / 0,9). Los colores de pista son datos del usuario, no 
 ## Tipografía e íconos
 
 - UI: **Segoe UI Variable Text** (fallback Segoe UI). Números y tiempos: **Cascadia Mono** (fallback Consolas).
+- La fuente de la UI y el tamaño general se eligen en Configuración → Apariencia (`UiFonts`, "uiFont" y "uiScale";
+  pedido del usuario, 2026-11-04). Por eso `Ui` se lee como `DynamicResource` y en el código por `Palette.Ui`/`UiBold`,
+  sin guardarlo. El tamaño se elige en px del texto común (12 px = 100 %, de 9 a 18 de a 0,5; Ctrl + / Ctrl − de a 1 px, Ctrl 0 al 100 %; pedido del usuario, #133) y es una escala de toda la interfaz (un `LayoutTransformControl` que `UiFonts` pone en la
+  plantilla de cada ventana y popup), no un cambio de `FontSize`: la escala de abajo sigue en valores a 100 %. La fuente
+  de los números también se elige ("uiNumberFont", pedido del usuario, 2026-11-04: Cascadia Mono por defecto, o una
+  de las de `Assets/Fonts`, OFL: DSEG14 u Orbitron; las de 7 segmentos se sacaron, #132): `Mono` se lee como `DynamicResource` y en el código `Palette.Mono`, sin
+  guardarlo; nombres de teclas y texto tipo código van en `Palette.Code` (siempre Cascadia Mono). Los íconos no cambian.
+  Cada tarjeta de Apariencia tiene su **Restablecer** (al valor de fábrica, `Default` de cada `*Looks`).
   **Todo valor numérico va en mono** (`Classes="dim mono"`), alineado a la derecha de su etiqueta.
 - Íconos: **Segoe Fluent Icons** (fallback Segoe MDL2 Assets), `TextBlock` con clase `icon` y el glifo en `Text`. Sin
   paquetes de íconos ni imágenes (las miniaturas de plugins son contenido, como las de video). Excepciones: los efectos (saturación, compresor, EQ, reverb, delay, transponer) siempre con `FxIcon`
@@ -97,6 +105,8 @@ Respetan la cultura del sistema (en es-AR, con coma). Volumen, ganancia, paneo y
 - Paneo: `Centro`, `30 L`, `30 R` en el inspector; `C`, `L30`, `R30` compacto en el encabezado de pista y el mixer.
 - Envíos: `35%`, con los dB en el tooltip; la tira del mixer marca PRE.
 - Notas en el sistema del idioma (decisión del usuario, 2026-11-03): `Sol3`, `Do#4` en español; `G3`, `C#4` en inglés.
+  El usuario puede elegir el otro con clic derecho en las teclas del piano roll (`NoteNames.Set`, "noteNames"; pedido
+  del usuario, 2026-11-04): vale para toda la app.
   Los acordes guardados en letras ("Bbm7") se muestran traducidos solo si son un acorde (`NoteNames.Chord`).
 - Tiempo: `mm:ss.fff` en el reloj; compás.tiempo (`2.2`) al lado.
 - Porcentajes con palabra: `50% · Media`. Separador de datos en una línea: ` · `.
@@ -114,7 +124,7 @@ Respetan la cultura del sistema (en es-AR, con coma). Volumen, ganancia, paneo y
   `failed` en rojo si no se pudo guardar). En las filas el hover lo marca la fila
   (fondo `Raised` y borde `Line`); en el `CheckBox` brilla solo la cajita. Va como `Effect`
   del botón: un `BoxShadow` en el presentador queda cortado. Otra excepción pedida por el usuario: la tapa del fader
-  (`Fader`) imita la de una consola, con sombreado, ranuras y una sombra abajo, para que se vea y se agarre fácil; las perillas (`Knob.Draw`) tienen diez estilos a elegir en Configuración → Apariencia (`KnobLooks`, pedido del usuario, 2026-11-03; Neumórfico por defecto): uno nuevo es un método más ahí, con su nombre `set.look.knob.<id>`. Los de tapa clara (`KnobLooks.LightCap`) llevan oscuro el valor escrito encima. Y la
+  (`Fader`) imita la de una consola, con sombreado, ranuras y una sombra abajo, para que se vea y se agarre fácil (es el look por defecto: tapa y riel tienen ocho a elegir en Configuración → Apariencia, `FaderLooks`, "faderLook"; pedido del usuario, 2026-11-04); las perillas (`Knob.Draw`) tienen diez estilos a elegir en Configuración → Apariencia (`KnobLooks`, pedido del usuario, 2026-11-03; Neumórfico por defecto): uno nuevo es un método más ahí, con su nombre `set.look.knob.<id>`. Los de tapa clara (`KnobLooks.LightCap`) llevan oscuro el valor escrito encima. Y la
   línea de los separadores (timeline y mixer) lleva un brillo suave de su color (el acento si no tiene uno). Los botones de color (acento, primario, peligro, grabar,
   `lit`) no cambian de color en hover: el glow es la respuesta. Su fondo y su texto van en el presentador
   (`/template/ ContentPresenter#PART_ContentPresenter`, sin estado en el selector), como los chips ON: puesto solo en
@@ -145,11 +155,11 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
 | `Button.link` (`.accent`) | enlace de texto: tenue (migas, "Restablecer") o en acento (el que se sigue: "Ver en la ayuda") |
 | `Border.dialog`, `TextBlock.dialog-title`, `Scrim` | la tarjeta de un diálogo, su título (16 SemiBold) y el fondo que oscurece la ventana. Anchos: 440 una pregunta, 512 un formulario, 640 una lista o lectura (Configuración, Proyectos y Ayuda, los suyos) |
 | `Border.notice` + `TextBlock.notice` / `TextBlock.icon.notice` | **el** aviso dentro de un diálogo (un error, un archivo que ya existe, un permiso): caja `Raised` con el signo de advertencia en acento y el texto en `Fg`. Nunca en rojo. Un error de una línea bajo un campo, solo `TextBlock.notice` |
-| `Button.chip.purge` | "Borrar no usadas": contorno tenue que se pone rojo con el hover |
-| `PowerButton` (`Button.chip.power`) | **el** ON/OFF de un efecto, en todo lugar (inspector, Color, mixer, Mastering, banda del EQ): acento lleno y con el glow prendido (pedido del usuario, 2026-11-03, con o sin el mouse encima), contorno tenue apagado; el tooltip sigue al estado |
+| `Button.chip.purge` | "Borrar no usados": un chip común (mismo texto que "Desvincular no usados" al lado) que se pone rojo con el hover. Los dos van en un `EvenRow`: lado a lado si entran, si no uno abajo del otro |
+| `PowerButton` (`Button.chip.power`) | **el** ON/OFF de un efecto, en todo lugar (inspector, Color, mixer, Mastering, banda del EQ): acento lleno y con el glow prendido (pedido del usuario, 2026-11-03, con o sin el mouse encima), contorno tenue apagado; el tooltip sigue al estado. Hereda de `Button` con `StyleKeyOverride` = `Button`: sin eso los selectores `Button.…` no lo alcanzan (vale para todo control nuevo que herede de un control con estilo). El ⏻ de las filas de efectos y envíos del mixer (`ListPower`) prendido lleva un bloque `Accent25` y el glifo en acento, sin glow (la fila lo cortaría); apagado, transparente con el glifo `Faint` |
 | `SelectButton` | **el** desplegable (presets, tipos, modos); nunca un `ComboBox` |
 | `TextBlock.label` / `.dim` / `.mono` / `.icon` | etiqueta / secundario / números / ícono |
-| `ToolbarPanel` (código) | barra de herramientas que **nunca se superpone** (pedido del usuario): el primer grupo a la izquierda, los demás a la derecha, y los que no entran bajan a otra fila. Toda barra nueva con varios grupos va así, nunca un `DockPanel` que los pise |
+| `ToolbarPanel` (código) | barra de herramientas que **nunca se superpone** (pedido del usuario): el primer grupo a la izquierda, los demás a la derecha, y los que no entran bajan a otra fila; con más de una fila, todas arrancan a la izquierda (pedido del usuario, 2026-11-04: pegadas a la derecha quedaban escalonadas). `AlignBottom` alinea los botones de grupos con etiqueta. Toda barra nueva con varios grupos va así, nunca un `DockPanel` que los pise |
 
 ## Diálogos
 
@@ -171,7 +181,7 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
   `Shortcuts.FindWheel` (guardados aparte, "wheel"); no compares `KeyModifiers` a mano para eso.
 - El atajo se muestra **solo en el tooltip**, entre paréntesis y leído de `Shortcuts` (`Shortcuts.Tip(texto, id)`;
   los fijos, registrados en `shortcutTips`). Nunca en el texto visible del control.
-- Todo botón de ícono tiene `ToolTip.Tip`, salvo en el mixer, el piano roll y Mastering: ahí los botones no muestran tooltip
+- Todo botón de ícono tiene `ToolTip.Tip`, salvo en el mixer, el piano roll y Mastering: ahí nada muestra tooltip (botones, etiquetas, medidores, ni los menús que se abren desde ahí)
   (pedido del usuario, 2026-11-03: abajo de la ventana el tooltip se abría donde ibas a hacer clic y el botón no respondía;
   la clase `notips` en la raíz de cada vista, estilo en `App.axaml`). **Sin tooltip en lo que se arrastra o se edita con el mouse** (pedido del
   usuario, 2026-11-03: tapaban lo que ibas a agarrar): perillas, faders, paneos, barras de los medidores, gráficos (EQ, compresor,
@@ -188,7 +198,7 @@ Para un control nuevo, primero reutilizá estas. Los controles Fluent (sliders, 
   aplicar se busca de nuevo (por id), porque el menú sigue abierto mientras cambia. Las acciones comunes, con `MenuAction`.
 - El menú de un clip y el de una pista van por grupos separados (pedido del usuario): en el clip, edición (cortar, copiar,
   duplicar, dividir); lugar (inicio, frente, grilla, bloquear); recorte y transiciones; análisis (tempo, escala, MIDI,
-  stems); quitar. En la pista: pegar; la pista (nombre, look, video, bloquear); sonido (instrumento, entrada, envíos);
+  stems); quitar. En la pista: pegar; la pista (nombre, look, video, bloquear, duplicar); sonido (instrumento, entrada, envíos);
   orden (carpeta, separador); plantillas; quitar. Una entrada nueva va en su grupo, no al final.
 
 ## Mensajes al usuario

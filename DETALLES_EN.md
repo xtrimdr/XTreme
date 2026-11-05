@@ -23,7 +23,11 @@ app does not block the next build. `-Abrir` opens the newest copy without buildi
 `-SinComprobar` skips `xtlab`, `-Proyecto folder` opens that project. If a XTreme is already open, a dialog asks first whether to close it
 (it saves the project before closing), so the new copy does not open the same project read-only. From the desktop shortcut, which has no console, a failure shows in a dialog. `-SoloCompilar` only builds, and `dotnet build` works too.
 
-The text goes on the **Test bench** (`pruebas\lista.json`, it outlives the copies). A test copy shows it in a separate panel, which opens by itself when something is pending and from the button next to "TEST": each item is marked Works or Fails, with a note on what went wrong. An item from a copy newer than the open one says it is missing here. `-Lista` shows what is pending and what fails; `-Arregla 12` (with `-NoAbrir` or not) sends that item back to be tried on the new copy and counts one more attempt.
+The text goes on the **Test bench** (`pruebas\lista.json`, it outlives the copies). The bench shows it: a program of its own (`XTreme.exe --banco [--lista file]`, one at a time), which a test copy opens by itself when something is pending and from the button next to "TEST", and which `-Banco` or the "XT-WorkBench" shortcut also opens: each item is marked Works or Fails, with a note on what went wrong. An item from a copy newer than the open one says it is missing here. Its **Review** buttons open Claude on `/xt_revisar-workbench` (an item, a verdict or the tab), and the **Claude** menu in its title bar the project's other skills; that menu also picks, once, whether they open in the desktop app (the message is prefilled and the folder confirmed) or in a console (Windows Terminal, where it starts by itself; without the app, always the console). `-Lista` shows it by the bench's tabs (Requests, To fix, To try and Resolved); `-Arregla 12` (with `-NoAbrir` or not) sends that item back to be tried on the new copy and counts one more attempt, unless the user already marked it Works (exit code 2: it is not reopened). Each item is a **ticket** with its conversation (the request or what to try, each fix, each verdict with its note, and comments): `-Ticket 12` shows it whole and `-Comenta 12 "text"` says something in it without changing its state; `-Titula 12 "title"` gives it the short title the agent sets when taking it (the bench shows it on top, and the ticket as a timeline, each entry by User or Agent); the `"what to try"` of `-Arregla` becomes the fix's message. Every change also goes to `pruebas\lista.historial.jsonl`, with who made it (the user or the Claude session): `-Historial 12` shows an item's and `-Historial 0` the latest of all. What an agent adds or sends back reaches the bench as **New** until the user sees it.
+
+In the panel's **Requests** tab the user enters what they want done, numbered like the rest and with its kind (**Bug**, **Improvement**, **New feature** or **Idea**); that is where agents take their work from. `-Toma 12` reserves a request, or something marked Fails, Works badly or To improve, for one session (exit code 2 if another one has it, saying which; the same session may take it again; it expires after 6 hours), `-Suelta 12` gives it back and `-Arregla 12` sends it to be tried once it is done. All three take several numbers (`-Arregla 12,14`: one build and one copy). `-Pide "what" -Tipo error|mejora|funcion|idea` adds one from the console (`xtlab lista pedir | tomar | soltar`; `xtlab lista historial [number]` prints the history, `xtlab lista ticket | comentar | titulo` a ticket, a comment and its title).
+
+Each ticket has a **topic**, from a fixed list (the part of the app: Timeline, Mixer, Inspector, Piano roll & MIDI, Instruments, Effects, Mastering, Automation, Plugins, Audio & transport, Video, Export, Analysis, Project & files, Interface, Bench & tools; `xtlab lista temas` says what goes in each). The bench shows it as a badge, filters by topic over the list and lets it be picked when entering a request or from the ticket. `-Tema mixer` gives a topic to what is added (`-Pide`, `"what to try"`, `-Arregla`) and `-Clasifica 12,14 -Tema mixer` to tickets already there (`-Tema ninguno` takes it off; `xtlab lista tema number topic`).
 
 When several sessions work in this folder, building, checking and copying go one at a time: Debug `dotnet build` (`tools\turno.targets`), `probar.ps1` and the heavy `xtlab` commands (`comprobar-dsp`, `exportar`, `separar`…) wait for their turn (`turno.lock`, next to `xtlab.exe`). `probar.ps1` and `xtlab` run below normal priority so the machine stays responsive. If the turn doesn't come within 9 minutes they fail and say who holds it (`probar.ps1` and `xtlab`, code 4). `XtremeDaw.Audio` is built optimized in Debug too, so the test copy and `xtlab` measure the DSP as the installer runs it.
 
@@ -37,8 +41,8 @@ Settings are stored in `%APPDATA%\XTreme`.
 
 All of them can be changed in ⚙ Settings → Keyboard shortcuts (except Esc). There, **Key layout** switches them all at
 once to those of Cubase, Logic Pro, FL Studio, Reaper or Studio Pro (`KeyLayouts`); your own changes are kept in each
-layout. This table is XTreme's. With a plugin's window in front, the
-Transport group keeps working, except while typing in one of the plugin's text fields. The interface itself is in
+layout. This table is XTreme's. With a plugin's window in front, every
+key goes to XTreme, unless **Keys to plugin** is on in its bar. The interface itself is in
 Spanish by default; the language is chosen in Settings.
 
 | Key | Action |
@@ -47,6 +51,7 @@ Spanish by default; the language is chosen in Settings.
 | Shift+R or Num * | record (while recording: stop and save) |
 | R | arm / disarm the selected track |
 | Home | back to the start |
+| Ctrl+. | cut audio: stops and silences effect tails and notes still sounding |
 | L | loop (the A–B range, or the whole song) |
 | I / O | range start (A) / end (B) at the playhead |
 | K / , / . | marker at the playhead / go to the previous / the next one |
@@ -63,15 +68,17 @@ Spanish by default; the language is chosen in Settings.
 | Ctrl+A / Ctrl+D | select all clips / clear the selection |
 | Del | remove the clip (or the empty track); with a range, delete it |
 | Shift+Del | delete the range and close the gap (what follows slides left) |
-| 1 to 9 | tools: Select / Range / Split / Erase / Listen / Zoom / Hand / Pencil / Brush |
+| 1 to 9 | tools: Select / Pencil / Brush / Range / Split / Erase / Listen / Zoom / Hand |
 | Ctrl+Z / Ctrl+Y | undo / redo |
 | Ctrl+Shift+N | new track |
+| Ctrl+Shift+D | duplicate the track (or the picked ones), with its content |
 | Ctrl+click / Shift+click on a header | pick several tracks (one by one / a range) to move them together |
 | Ctrl+S | save now |
 | Ctrl+Shift+S | save as… |
 | B / P | fold or open the channel panel / the project panel (hidden with its title bar button, it shows it again) |
 | Enter | maximize the panel you touched last: video, timeline, piano roll, mixer or mastering (Enter again goes back to how it was) |
 | F11 | full screen (F11 again goes back to how it was) |
+| Ctrl + / Ctrl − / Ctrl 0 | make the interface 1 px larger or smaller, or back to 100 % |
 | F1 | help (F1 again closes it) |
 | Wheel, Shift+wheel, Ctrl+wheel, Alt+wheel | scroll up and down, zoom, scroll sideways, track height (the modifiers can be changed in Settings → Keyboard shortcuts). In the mixer, the plain wheel and Ctrl+wheel scroll sideways and Shift+wheel (or the bar in its header) widens or narrows the channels |
 

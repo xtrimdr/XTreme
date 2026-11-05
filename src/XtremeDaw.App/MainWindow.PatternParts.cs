@@ -17,9 +17,9 @@ namespace XtremeDaw.App;
 /// </summary>
 public partial class MainWindow
 {
+    /// <summary>"Patrón ▾": its length, its instruments and adding one, on one card (asked by the user, 2026-11-04: fewer chips on the bar).</summary>
     readonly Button pianoPartsButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
-    /// <summary>Adding an instrument and making a pattern are in sight, on the header (asked by the user: they were hard to find).</summary>
-    readonly Button pianoAddPartButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
+    /// <summary>Making a pattern is in sight on the header, on a clip that isn't one (asked by the user: it was hard to find).</summary>
     readonly Button pianoMakePatternButton = new() { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
     /// <summary>The parts whose ghost notes are hidden (<see cref="GhostKey"/>).</summary>
     readonly HashSet<string> ghostsHidden = [];
@@ -39,13 +39,13 @@ public partial class MainWindow
     /// <summary>The chip: the instrument being edited and how many the pattern holds.</summary>
     void RefreshPianoParts(Project? p, MidiClip? clip, XtremeDaw.Projects.Track? track)
     {
-        pianoPartsButton.IsVisible = pianoAddPartButton.IsVisible = clip?.PatternId != null;
+        pianoPartsButton.IsVisible = clip?.PatternId != null;
         pianoMakePatternButton.IsVisible = clip != null && clip.PatternId == null;
-        pianoAddPartButton.IsEnabled = pianoMakePatternButton.IsEnabled = store?.ReadOnly == false;
-        if (clip?.PatternId is { } id) pianoPartsButton.Content = $"{track?.Name} · {PartsLabel(MidiPatterns.Parts(p!, id).Count)}  ▾";
+        pianoMakePatternButton.IsEnabled = store?.ReadOnly == false;
+        if (clip?.PatternId is { } id) pianoPartsButton.Content = IconText("", $"{Loc.T("piano.pattern.menu")} · {PartsLabel(MidiPatterns.Parts(p!, id).Count)}  ▾");
     }
 
-    /// <summary>The two buttons of the header, wired once.</summary>
+    /// <summary>The header's button for a clip that isn't a pattern yet, wired once.</summary>
     void BuildPianoPatternButtons()
     {
         pianoMakePatternButton.Content = IconText("", Loc.T("midi.pattern.create"));
@@ -55,15 +55,6 @@ public partial class MainWindow
             if (pianoClipId is not { } clipId) return;
             await EditPattern(clipId, p => MidiPatterns.Create(p, clipId), "midi-pattern-created");
             RefreshPiano(PianoRollView.Frame.Clip);
-        };
-        pianoAddPartButton.Content = IconText("", Loc.T("piano.parts.add"));
-        ToolTip.SetTip(pianoAddPartButton, Loc.T("piano.parts.add.tip"));
-        pianoAddPartButton.Click += (_, _) =>
-        {
-            if (pianoClipId is not { } clipId) return;
-            var menu = Popup(AddPartItems(clipId), 240);
-            menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
-            OpenAnchoredMenu(menu, pianoAddPartButton);
         };
     }
 
@@ -97,6 +88,17 @@ public partial class MainWindow
             var p = store.Project;
             bool editable = !store.ReadOnly && !restoring;
             var parts = MidiPatterns.Parts(p, id);
+            // its pass: how long before it repeats
+            var length = new Button { Classes = { "chip" }, Content = Loc.T("midi.pattern.length", BarsLabel(clip.CellBeats / 4)) + "  ▾", Height = 28, MinHeight = 28,
+                Padding = new Thickness(10, 0), FontSize = 12, Margin = new Thickness(0, 0, 0, 10), IsEnabled = editable };
+            length.Click += (_, _) =>
+            {
+                flyout.Hide();
+                var menu = Popup(PatternLengthItems(clip.Id, withOther: true), 200);
+                menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
+                OpenAnchoredMenu(menu, pianoPartsButton);
+            };
+            list.Children.Add(length);
             list.Children.Add(new TextBlock { Classes = { "label" }, Text = Loc.T("piano.parts.title").ToUpperInvariant(), Margin = new Thickness(0, 0, 0, 6) });
             foreach (var part in parts) list.Children.Add(PartRow(p, id, clip, part, parts.Count > 1 && editable, Fill));
             var add = new Button { Classes = { "chip" }, Content = Loc.T("piano.parts.add") + "  ▾", Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, Margin = new Thickness(0, 8, 0, 0), IsEnabled = editable };

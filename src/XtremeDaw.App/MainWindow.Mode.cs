@@ -157,7 +157,20 @@ public partial class MainWindow
         AudioArea.RowDefinitions[0].MinHeight = open ? TimelineMinH : 0;
         AudioArea.RowDefinitions[0].Height = timeline ? GridLength.Star : new GridLength(0);
         AudioArea.RowDefinitions[2].MinHeight = open ? MixerMinH : 0;
-        AudioArea.RowDefinitions[2].Height = !MixerHere ? new GridLength(0) : timeline ? new GridLength(Math.Max(MixerMinH, mixerH)) : GridLength.Star;
+        AudioArea.RowDefinitions[2].Height = !MixerHere ? new GridLength(0) : timeline ? new GridLength(StackedMixerH) : GridLength.Star;
+    }
+
+    /// <summary>
+    /// The mixer's row under the timeline: its remembered height, never past what leaves the timeline its minimum (a
+    /// height kept from a taller window pushed the timeline out and left the splitter with nowhere to go).
+    /// </summary>
+    double StackedMixerH
+    {
+        get
+        {
+            double h = Math.Max(MixerMinH, mixerH), area = AudioArea.Bounds.Height;
+            return area > 0 ? Math.Max(MixerMinH, Math.Min(h, area - TimelineMinH)) : h;
+        }
     }
 
     /// <summary>Opens the decoders of the clips shown in the video that don't have one yet (after an edit, or back from solo audio).</summary>

@@ -76,10 +76,15 @@ static class Palette
     /// green accent (<see cref="UiTheme.StateColors"/>).</summary>
     public static IBrush InTune => inTune;
 
-    public static readonly Typeface Ui = new("Segoe UI Variable Text, Segoe UI");
-    public static readonly Typeface UiBold = new("Segoe UI Variable Text, Segoe UI", FontStyle.Normal, FontWeight.SemiBold);
-    public static readonly Typeface Mono = new("Cascadia Mono, Consolas");
-    public static readonly Typeface MonoBold = new("Cascadia Mono, Consolas", FontStyle.Normal, FontWeight.Bold);
+    /// <summary>The interface's font (<see cref="UiFonts"/>, picked in Configuración → Apariencia): read it again on
+    /// every draw, it changes live.</summary>
+    public static Typeface Ui { get; private set; } = new(UiFonts.DefaultFamily);
+    public static Typeface UiBold { get; private set; } = new(UiFonts.DefaultFamily, FontStyle.Normal, FontWeight.SemiBold);
+    /// <summary>The numbers' font (<see cref="UiFonts.NumberFont"/>, also picked in Apariencia): read it on every draw too.</summary>
+    public static Typeface Mono { get; private set; } = new(UiFonts.MonoFamily);
+    public static Typeface MonoBold { get; private set; } = new(UiFonts.MonoFamily, FontStyle.Normal, FontWeight.Bold);
+    /// <summary>Key names and code-like text: always Cascadia Mono, a digital number font can't write them.</summary>
+    public static readonly FontFamily Code = new(UiFonts.MonoFamily);
 
     /// <summary>Stores a new entry, starting the cache over when it is full. The lookups stay inline: a lambda that
     /// captures would be garbage of its own on every call.</summary>
@@ -139,6 +144,21 @@ static class Palette
             ? new TextLayout(s, face, size, brush, textTrimming: TextTrimming.CharacterEllipsis, maxWidth: maxWidth, maxLines: 1)
             : new TextLayout(s, face, size, brush);
         return textCache[key] = t;
+    }
+
+    /// <summary>Called by <see cref="UiFonts"/> only: the texts laid out in the old font are dropped with it.</summary>
+    internal static void SetUiFont(FontFamily family)
+    {
+        Ui = new Typeface(family);
+        UiBold = new Typeface(family, FontStyle.Normal, FontWeight.SemiBold);
+        textCache.Clear();
+    }
+
+    internal static void SetMonoFont(FontFamily family)
+    {
+        Mono = new Typeface(family);
+        MonoBold = new Typeface(family, FontStyle.Normal, FontWeight.Bold);
+        textCache.Clear();
     }
 
     public static void DrawText(this DrawingContext ctx, TextLayout t, Point at) => t.Draw(ctx, at);

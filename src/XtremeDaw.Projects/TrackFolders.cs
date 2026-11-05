@@ -221,6 +221,19 @@ public static class TrackFolders
         Rebuild(p, seq);
     }
 
+    /// <summary>New tracks, each right after the track it goes with and in its folder (a duplicate under its original).</summary>
+    internal static void PlaceAfter(Project p, IReadOnlyList<(Track After, Track Track)> pairs)
+    {
+        var seq = Sequence(p);
+        foreach (var (after, t) in pairs)
+        {
+            t.FolderId = after.FolderId;
+            int at = seq.IndexOf(after);
+            seq.Insert(at < 0 ? seq.Count : at + 1, t);
+        }
+        Rebuild(p, seq);
+    }
+
     /// <summary>Called after a track left the list: an empty folder after it keeps its place.</summary>
     internal static void TrackRemoved(Project p, int index)
     {

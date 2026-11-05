@@ -108,7 +108,7 @@ public partial class MainWindow
         refresh.Add(() => shapes.IsVisible = IsBeat());
         body.Children.Add(shapes);
 
-        // the knobs: on the beat the curve's; with a sidechain a compressor's, its attack out of the fine controls
+        // the knobs, all in sight (asked by the user): on the beat the curve's with its attack and offset; with a sidechain a compressor's
         var knobs = new List<Knob>();
         var grid = FxGrid(knobs, 6);
         void Add(Panel to, List<Knob> list, string pid, Func<bool>? shown)
@@ -117,9 +117,12 @@ public partial class MainWindow
             to.Children.Add(cell);
             list.Add(knob);
         }
-        foreach (var pid in new[] { "threshold", "attack", "hold", "keyMs" }) Add(grid, knobs, pid, IsKeyed);
+        Add(grid, knobs, "threshold", IsKeyed);
+        Add(grid, knobs, "attack", null);
+        foreach (var pid in new[] { "hold", "keyMs" }) Add(grid, knobs, pid, IsKeyed);
         Add(grid, knobs, "length", IsBeat);
         Add(grid, knobs, "curve", null);
+        Add(grid, knobs, "offset", IsBeat);
         foreach (var p in FxDefs.Common(TrackInserts.Pump))
         {
             var (cell, knob) = FxKnobCell(o, id, p, refresh);
@@ -127,24 +130,6 @@ public partial class MainWindow
             knobs.Add(knob);
         }
         body.Children.Add(grid);
-
-        var fineKnobs = new List<Knob>();
-        var fineGrid = FxGrid(fineKnobs, 6);
-        Add(fineGrid, fineKnobs, "attack", null);
-        Add(fineGrid, fineKnobs, "offset", null);
-        fineGrid.IsVisible = false;
-        var button = new Button { Classes = { "ghost" }, FontSize = 11, Padding = new Thickness(8, 6), Focusable = false, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
-        bool open = false;
-        void Label() => button.Content = (open ? "▾ " : "▸ ") + Loc.T("insp.fine");
-        Label();
-        button.Click += (_, _) => { open = !open; Label(); fineGrid.IsVisible = open && IsBeat(); };
-        refresh.Add(() =>
-        {
-            button.IsVisible = IsBeat();
-            fineGrid.IsVisible = open && IsBeat();
-        });
-        body.Children.Add(button);
-        body.Children.Add(fineGrid);
     }
 
     /// <summary>The track a sidechain starts on: one named like a kick, or the first other track; null when there is none.</summary>

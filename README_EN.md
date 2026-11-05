@@ -29,6 +29,9 @@ It also makes **videos**: if you record with a camera, every take keeps its pict
 one panel per take, with color grading and formats for social media. It is an extra for when you need it; without a
 camera, it works like any other DAW.
 
+XTreme is **built from scratch**: the audio engine, effects, instruments and interface are its own. It borrows ideas
+from the best DAWs on the market, but is not based on the code of any of them.
+
 <details>
 <summary><b>Before installing</b></summary>
 
@@ -98,7 +101,7 @@ More details in [Requirements](DETALLES_EN.md#requirements).
   `cache/`.
 - A full **mixer** with **buses**: every track or folder picks its output (the master or a bus) and sends to the
   buses (before or after the fader); the buses go to the master. A bus has volume, pan and effects: use it for a
-  reverb, a delay or to process a group. Folders only group. Strips are reordered by dragging (the timeline
+  reverb, a delay or to process a group. A folder is a channel too: effects, pan, fader, M and S (its solo plays its tracks). Strips are reordered by dragging (the timeline
   follows), sit on the left or the right, and named separators keep big projects tidy.
 - **A | B** on the mixer bar: two mixes of the same takes (channels, sends and buses) to compare while it plays;
   B starts as a copy of A, and right-click copies one over the other or forgets the other.

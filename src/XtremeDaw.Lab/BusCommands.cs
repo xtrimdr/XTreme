@@ -8,10 +8,11 @@ namespace XtremeDaw.Lab;
 /// <summary>
 /// xtlab's side of the buses and the routing: <c>proyecto buses</c> lists and edits the buses (like the mixer's bus
 /// strips), <c>proyecto envios</c> the output and sends of a track, a folder or a bus (like the Salida selector, the
-/// send panels and their PRE chip), and <see cref="Check"/> (part of <c>comprobar-dsp</c>) verifies that a folder is a
-/// plain sum, that a pre-fader send ignores the fader, that the live classes block by block sound like the export
-/// through a chain of folder and buses, that a stem goes through its buses, and the model: loops refused, version 2
-/// projects turned into buses, normalizing and undo.
+/// send panels and their PRE chip), and <see cref="Check"/> (part of <c>comprobar-dsp</c>) verifies that a folder at
+/// rest is a plain sum, that a pre-fader send ignores the fader, that the live classes block by block sound like the
+/// export through a chain of folder and buses, that a stem goes through its buses, that a folder is a channel (fader,
+/// pan, slot, mute and a solo that solos its tracks), and the model: loops refused, version 2 projects turned into
+/// buses (and their folders' channel brought back), normalizing and undo.
 /// </summary>
 static class BusCommands
 {
@@ -20,9 +21,13 @@ static class BusCommands
     /// <summary>A new project's buses ("Reverb" first, then "Delay") as the export takes them, for mixes without a project.</summary>
     public static MixBusSpec DefaultBus(double bpm) => ChannelDsp.Bus(new Project { Settings = new ProjectSettings { Bpm = bpm } });
 
-    /// <summary>xtlab proyecto buses carpeta [agregar [nombre] [--tipo reverb|delay|vacio] | quitar n | renombrar n nombre | volumen n x | paneo n x | mute n]</summary>
+    /// <summary>
+    /// xtlab proyecto buses carpeta [agregar [nombre] [--tipo reverb|delay|vacio] | quitar n | renombrar n nombre | volumen n x | paneo n x | mute n],
+    /// or with <c>--carpeta id|n|nombre</c> a folder's channel (#134): [volumen x | paneo x | mute | solo].
+    /// </summary>
     public static int Buses(string dir, Args a)
     {
+        if (a.Get("carpeta") is { } folderId) return FolderChannel(dir, folderId, a);
         using var store = ProjectStore.Open(dir);
         var p = store.Project;
         string op = a.Positional.ElementAtOrDefault(2) ?? "";
@@ -98,6 +103,47 @@ static class BusCommands
             for (int k = 0; k < b.Inserts.Count; k++) Console.WriteLine($"       {k + 1}. {InsertCommands.Describe(b.Inserts[k])}");
             foreach (var s in b.Sends) Console.WriteLine($"       → {ProjectBuses.Find(p, s.BusId)?.Name ?? s.BusId}  {Send(s.Level, s.On, s.Pre)}");
         }
+        return 0;
+    }
+
+    /// <summary>A folder by its id, its number in the project's folders (separators count, as in «carpeta:n») or its name; never a separator.</summary>
+    public static Folder FindFolder(Project p, string n)
+    {
+        var f = p.Folders.Find(x => x.Id == n) ?? (int.TryParse(n, out int k) && k >= 1 && k <= p.Folders.Count ? p.Folders[k - 1] : null)
+            ?? p.Folders.Find(x => string.Equals(x.Name, n, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ArgumentException($"No encontré esa carpeta (hay {p.Folders.Count}).");
+        return f.Separator ? throw new ArgumentException($"«{f.Name}» es un separador: no tiene canal.") : f;
+    }
+
+    /// <summary>xtlab proyecto buses carpeta --carpeta n [volumen x | paneo x | mute | solo]: a folder's fader, pan, M and S, like its mixer strip.</summary>
+    static int FolderChannel(string dir, string folderId, Args a)
+    {
+        using var store = ProjectStore.Open(dir);
+        var p = store.Project;
+        var f = FindFolder(p, folderId);
+        string op = a.Positional.ElementAtOrDefault(2) ?? "";
+        string v1 = a.Positional.ElementAtOrDefault(3) ?? "";
+        double Num(string s) => double.Parse(s.Replace(',', '.'), CultureInfo.InvariantCulture);
+        bool changed = true;
+        switch (op)
+        {
+            case "": changed = false; break;
+            case "volumen": f.Volume = Math.Clamp(Num(v1), 0, 1.5); break;
+            case "paneo": f.Pan = Math.Clamp(Num(v1), -1, 1); break;
+            case "mute": f.Muted = !f.Muted; break;
+            case "solo": f.Solo = !f.Solo; break;
+            default: throw new ArgumentException("buses --carpeta n: volumen x | paneo x | mute | solo");
+        }
+        if (changed)
+        {
+            if (store.ReadOnly) throw new IOException(store.ReadOnlyReason);
+            store.Save();
+        }
+        int n = p.Tracks.Count(t => t.FolderId == f.Id);
+        Console.WriteLine($"Carpeta {f.Name}  {Fmt(f.Volume)}{(f.Pan != 0 ? $" · paneo {f.Pan:+0.00;-0.00}" : "")}{(f.Muted ? " · mute" : "")}{(f.Solo ? " · solo" : "")}"
+            + $" · {n} pista(s) · sale a {OutName(p, f.Output)}  [{f.Id}]");
+        for (int k = 0; k < f.Inserts.Count; k++) Console.WriteLine($"       {k + 1}. {InsertCommands.Describe(f.Inserts[k])}");
+        foreach (var s in f.Sends) Console.WriteLine($"       → {ProjectBuses.Find(p, s.BusId)?.Name ?? s.BusId}  {Send(s.Level, s.On, s.Pre)}");
         return 0;
     }
 
@@ -211,7 +257,7 @@ static class BusCommands
         double Diff((float[] Left, float[] Right) a, (float[] Left, float[] Right) b) => Math.Max(MaxDiff(a.Left, b.Left), MaxDiff(a.Right, b.Right));
         (float[] Left, float[] Right) Mix(MixTrackSpec[] tracks, MixBusSpec bus, int only = -1) => MixRenderer.Render(tracks, bus, 5, sr, only: only, limit: false);
 
-        // (a) a folder is a plain sum: its tracks routed through it sound exactly like without it
+        // (a) a folder at rest (0 dB, centered, no slots) is a plain sum: its tracks routed through it sound exactly like without it
         MixTrackSpec[] Two(int output) =>
         [
             new() { Clips = [cx], Inserts = [], Volume = 0.8, Pan = -0.3, Output = output },
@@ -284,6 +330,49 @@ static class BusCommands
         MixTrackSpec[] Unsent() => [.. Routed().Select(t => new MixTrackSpec { Clips = t.Clips, Inserts = [], Volume = t.Volume, Pan = t.Pan, Output = t.Output })];
         Line("Buses: bus en mute = sin él", Diff(Mix(Routed(), new MixBusSpec { Bpm = bpm, Nodes = mutedReverb }), Mix(Unsent(), new MixBusSpec { Bpm = bpm, Nodes = noReverb })), 1e-7, "~0");
 
+        // (e) a folder is a channel (#134): from the project (ChannelDsp), its fader (-6 dB) scales its tracks' sum, its
+        // pan, slot and fader sound the same live and exported, its mute silences it and its solo solos its tracks
+        var fp = new Project();
+        fp.Settings.Buses.Clear();
+        fp.Tracks.Add(new Track { Name = "Gtr", Channel = { Volume = 0.8, Pan = -0.3 } });
+        fp.Tracks.Add(new Track { Name = "Voz", Channel = { Volume = 0.6, Pan = 0.5 } });
+        fp.Normalize();
+        string ffId = TrackFolders.Add(fp, "G", [fp.Tracks[0].Id]);
+        var ff = fp.Folders.Find(f => f.Id == ffId)!;
+        double minus6 = Math.Pow(10, -6 / 20.0);
+        MixTrackSpec[] FolderTracks()
+        {
+            var ids = ChannelDsp.Nodes(fp);
+            return [ChannelDsp.Track(fp, ids, fp.Tracks[0], [cx], -24), ChannelDsp.Track(fp, ids, fp.Tracks[1], [cy], -24)];
+        }
+        ff.Volume = minus6;
+        var faded = Mix(FolderTracks(), ChannelDsp.Bus(fp));
+        // the same as the folder's track with its own fader 6 dB down (the other track as it is)
+        MixTrackSpec[] byHand =
+        [
+            new() { Clips = [cx], Inserts = [], Volume = 0.8 * minus6, Pan = -0.3 },
+            new() { Clips = [cy], Inserts = [], Volume = 0.6, Pan = 0.5 },
+        ];
+        Line("Buses: carpeta a -6 dB", ChannelDsp.Bus(fp).Nodes is [{ Volume: var fv }] && fv == minus6 ? Diff(faded, Mix(byHand, new MixBusSpec())) : 1, 1e-6, "~0");
+        ff.Pan = -0.4;
+        ff.Inserts.Add(new InsertSlot { Type = InsertSlot.EqKind, Eq = new EqSettings { On = true } });
+        ff.Inserts[0].Eq!.Bands[2].On = true;
+        ff.Inserts[0].Eq!.Bands[2].Gain = 6;
+        var fspec = ChannelDsp.Bus(fp);
+        var fexport = Mix(FolderTracks(), fspec);
+        bool shaped = fspec.Nodes is [{ Pan: -0.4, Inserts: [{ EqOn: true }] }] && Diff(fexport, faded) > 1e-3;
+        Line("Buses: carpeta, vivo = exportación", shaped ? Diff(fexport, Live(FolderTracks(), [.. fspec.Nodes], 5, sr)) : 1, 1e-6, "~0");
+        ff.Muted = true;
+        var onlyVoz = new MixTrackSpec[] { new() { Clips = [cy], Inserts = [], Volume = 0.6, Pan = 0.5 } };
+        Line("Buses: carpeta en mute", Diff(Mix(FolderTracks(), ChannelDsp.Bus(fp)), Mix(onlyVoz, new MixBusSpec())), 0, "exacto");
+        ff.Muted = false;
+        ff.Solo = true;
+        // soloing the folder solos its track: the root's is silent, the folder's chain still heard
+        var soloed = FolderTracks();
+        var gtrAlone = Mix([soloed[0], new MixTrackSpec { Clips = [cy], Inserts = [], Muted = true }], ChannelDsp.Bus(fp));
+        Line("Buses: solo de carpeta", soloed is [{ Solo: true }, { Solo: false }] && ChannelDsp.Soloed(fp, fp.Tracks[0]) && !ChannelDsp.Soloed(fp, fp.Tracks[1])
+            ? Diff(Mix(soloed, ChannelDsp.Bus(fp)), gtrAlone) : 1, 0, "exacto");
+
         // (d) the model: names, removal, loops refused, the run order, normalizing, version 2, saving and undo
         var p = new Project();
         p.Tracks.Add(new Track { Name = "A" });
@@ -317,10 +406,12 @@ static class BusCommands
             && !ProjectBuses.ShowSend(p, hideCh, ProjectBuses.DelayId, false) && ProjectBuses.ShowSend(p, hideCh, ProjectBuses.DelayId, true)
             && hideCh.SendTo(ProjectBuses.DelayId) is { Hidden: false, On: true, Level: 0 }
             && ProjectBuses.Shown(p, g).Count == 0;
-        // a folder never sends pre-fader
+        // a folder sends pre-fader like a track (#134: it has a fader)
         var folder = new Folder { Name = "F" };
         p.Folders.Add(folder);
-        bool folderPost = ProjectBuses.SetSend(p, folder, ProjectBuses.DelayId, 0.4, pre: true) is { Pre: false };
+        bool folderPost = ProjectBuses.SetSend(p, folder, ProjectBuses.DelayId, 0.4, pre: true) is { Pre: true };
+        p.Normalize();
+        folderPost &= folder.Sends.Find(s => s.BusId == ProjectBuses.DelayId) is { Pre: true } &&ChannelDsp.Sends(ChannelDsp.Nodes(p), folder) is [{ Pre: true }];
 
         // a file with buses fed by buses (they go: a bus goes to the master), a send to nowhere and repeated ids is put right
         const string loopJson = """
@@ -346,9 +437,12 @@ static class BusCommands
         bool converted = old.Settings.Buses.Select(b => b.Id).SequenceEqual([ProjectBuses.ReverbId, ProjectBuses.DelayId, "ret-a"])
             && old.Settings.Buses[0] is { Muted: true, Inserts: [{ Reverb: { Decay: 3.1, Muted: false } }] } && old.Settings.Buses[1].Inserts[0].Delay?.Division == "1/4"
             && och.SendTo(ProjectBuses.ReverbId) is { Level: 0.4, Pre: true, On: true } && och.SendTo(ProjectBuses.DelayId) is { Level: 0.2, On: false }
-            && och.SendTo("ret-a") is { Level: 0.5 } && old.Folders[0].Extra?.ContainsKey("volume") != true;
+            && och.SendTo("ret-a") is { Level: 0.5 }
+            // what version 2 saved on a folder (fader, mute, slots) comes back as its channel (#134), not as unknown data
+            && old.Folders[0] is { Volume: 0.5, Muted: true, Solo: false, Inserts: [{ Id: "fx-x", Type: InsertSlot.EqKind }] } && old.Folders[0].Extra?.ContainsKey("volume") != true;
         string resaved = JsonSerializer.Serialize(old, ProjectStore.Json);
-        bool clean = !resaved.Contains("\"reverbSend\"") && !resaved.Contains("\"returnId\"") && !resaved.Contains("\"returns\"") && !resaved.Contains("\"volume\": 0.5");
+        bool clean = !resaved.Contains("\"reverbSend\"") && !resaved.Contains("\"returnId\"") && !resaved.Contains("\"returns\"")
+            && ProjectStore.Parse(resaved).Folders[0] is { Volume: 0.5, Muted: true, Inserts.Count: 1 };
 
         // saved and read back the same, and one undo step takes a new bus and its sends away (redo brings them back)
         var back = ProjectStore.Parse(JsonSerializer.Serialize(p, ProjectStore.Json));

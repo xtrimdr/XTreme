@@ -23,8 +23,8 @@ namespace XtremeDaw.App;
 /// the web (asked by the user): every strip is a card, all strips share the same rows so every meter has the same
 /// height, and the strips give way part by part as they narrow (<see cref="NarrowParts"/>) instead of cutting their
 /// controls. An effect opens in a small window of its own (<see cref="ShowSlotWindow"/>).
-/// Track folders (native only) show as a tinted group with their name above it: a folder strip first (no fader: its
-/// output, its sends and the meter of its tracks' sum), then its tracks, unless the group is folded.
+/// Track folders (native only) show as a tinted group with their name above it: a folder strip first (a channel like a
+/// bus's: its output, effects, sends, pan, M S and fader over its tracks' sum), then its tracks, unless the group is folded.
 /// </summary>
 public partial class MainWindow
 {
@@ -52,11 +52,64 @@ public partial class MainWindow
     /// <summary>The most a list can be stretched to (px).</summary>
     const double ListMaxH = 600;
 
+    /// <summary>The least a list section shows (px): one row and the room its grip keeps under it.</summary>
+    const double ListMinH = CompactRowH + 6;
+
     /// <summary>
     /// The compact strips' controls row (px), the same on every strip so faders stay level: the effects and the sends
-    /// (each shown or not, at the height the user dragged it to) plus pan and M S ●.
+    /// (each shown or not, at the height it is shown, <see cref="ShownLists"/>) plus pan and M S ●.
     /// </summary>
-    double StripTopH => (mixerFx ? ListHeadH + mixerFxH : 0) + (SendsRow ? ListHeadH + mixerSendsH : 0) + PanRowH + TogglesRowH;
+    double StripTopH
+    {
+        get
+        {
+            var (fx, sends) = ShownLists();
+            return StripHeadsH + fx + sends + PanRowH + TogglesRowH;
+        }
+    }
+
+    /// <summary>The titles of the shown list sections (px).</summary>
+    double StripHeadsH => (mixerFx ? ListHeadH : 0) + (SendsRow ? ListHeadH : 0);
+
+    /// <summary>What a strip takes besides its fader and its lists (px): card margin and border, the grid's margin, head,
+    /// the lists' titles, pan, M S ●, the fader's margin and the foot.</summary>
+    double StripBaseH => StripGap * 2 + 2 + 14 + StripHeadH + StripHeadsH + PanRowH + TogglesRowH + 6 + StripFootH;
+
+    /// <summary>
+    /// The room the lists have in the mixer's height as it is now (px), leaving <see cref="FaderRoomH"/> to the fader;
+    /// unbounded before the strips are measured.
+    /// </summary>
+    double ListRoom
+    {
+        get
+        {
+            double h = mixerScroll.Viewport.Height;
+            return h > 0 ? h - StripBaseH - FaderRoomH : double.PositiveInfinity;
+        }
+    }
+
+    /// <summary>
+    /// The effects and sends sections as shown (0 when hidden): the heights the user chose (<see cref="mixerFxH"/>,
+    /// <see cref="mixerSendsH"/>), shrunk alike down to <see cref="ListMinH"/> when the mixer is shorter than they and a
+    /// usable fader need. The lists never make the mixer taller (asked by the user): it is made taller by hand, and then
+    /// they get their height back.
+    /// </summary>
+    (double Fx, double Sends) ShownLists()
+    {
+        double fx = mixerFx ? mixerFxH : 0, sends = SendsRow ? mixerSendsH : 0, room = ListRoom;
+        if (fx + sends <= room) return (fx, sends);
+        double minFx = mixerFx ? ListMinH : 0, minSends = SendsRow ? ListMinH : 0;
+        double extra = fx + sends - minFx - minSends;
+        double k = extra > 0 ? Math.Clamp((room - minFx - minSends) / extra, 0, 1) : 0;
+        return (Math.Floor(minFx + (fx - minFx) * k), Math.Floor(minSends + (sends - minSends) * k));
+    }
+
+    /// <summary>The most one list can take now (px): what the mixer's height leaves beside the other one as shown.</summary>
+    double ListCap(bool sends)
+    {
+        var (fx, s) = ShownLists();
+        return Math.Max(ListMinH, Math.Min(ListMaxH, ListRoom - (sends ? fx : s)));
+    }
     /// <summary>The sends' section takes its room when shown and there is a bus to send to.</summary>
     bool SendsRow => mixerSends && Buses.Count > 0;
     /// <summary>Space between strip cards.</summary>
@@ -74,23 +127,23 @@ public partial class MainWindow
     const double FaderRoomH = 120;
     /// <summary>What the mixer's place takes around the strips (host margin, mini timeline, header, scroll bar) until it is measured.</summary>
     const double MixerChromeGuess = 92;
+    /// <summary>More than this around the strips is a measure taken mid-layout, never the real chrome (px).</summary>
+    const double MixerChromeMax = 240;
     /// <summary>The share of the window the mixer's minimum never goes past, so a small window can still show the timeline.</summary>
     const double MixerMinShare = 0.7;
     double mixerChromeH = MixerChromeGuess;
-    /// <summary>What a strip takes besides its fader (px): card margin and border, the grid's margin, head, controls, the fader's margin and the foot.</summary>
-    double StripFixedH => StripGap * 2 + 2 + 14 + StripHeadH + StripTopH + 6 + StripFootH;
-
     /// <summary>
-    /// The mixer's least height: room for every strip's head, its shown lists and a usable fader, so it grows with the
-    /// lists (dragging a list taller pushes the timeline instead of crushing the faders). Capped in a small window;
-    /// stacked, by what the timeline above keeps (a share of the place there took the faders' room).
+    /// The mixer's least height: room for every strip's head, a row of each shown list and a usable fader. It doesn't
+    /// follow the lists' heights (asked by the user: a list dragged taller never pushes the mixer; past the mixer's
+    /// height they shrink, <see cref="ShownLists"/>). Capped in a small window; stacked, by what the timeline above keeps.
     /// </summary>
     double MixerMinH
     {
         get
         {
             if (masteringView || pianoView) return ViewMinH;
-            double min = Math.Ceiling(mixerChromeH + StripFixedH + FaderRoomH);
+            double lists = (mixerFx ? ListMinH : 0) + (SendsRow ? ListMinH : 0);
+            double min = Math.Ceiling(mixerChromeH + StripBaseH + lists + FaderRoomH);
             if (stackedViews && AudioArea.Bounds.Height > 0) min = Math.Min(min, AudioArea.Bounds.Height - TimelineMinH);
             else if (Root.Bounds.Height > 0) min = Math.Min(min, Root.Bounds.Height * MixerMinShare);
             return Math.Max(ViewMinH, min);
@@ -101,6 +154,20 @@ public partial class MainWindow
     /// Applies <see cref="MixerMinH"/> to the row the mixer is in (after the lists change, or back from another view). The
     /// row grows to it, but the height the user chose stays: a minimum that shrinks again gives it back.
     /// </summary>
+    /// <summary>
+    /// What the mixer's place takes besides the strips, as laid out now (the mini timeline comes and goes with the layout).
+    /// Not while maximized: there the mini timeline shows and the header fits in one row, and that minimum would bring the
+    /// mixer back taller and stuck at it when the panel is restored. Nor in its own window, with its mini timeline.
+    /// </summary>
+    void MeasureMixerChrome()
+    {
+        if (!MixerShown || maxPanel != MaxPanel.None || MixerOut || mixerScroll.Viewport.Height <= 0) return;
+        double chrome = MixerHost.Bounds.Height + MixerHost.Margin.Top + MixerHost.Margin.Bottom - mixerScroll.Viewport.Height;
+        if (chrome <= 0 || chrome > MixerChromeMax || Math.Abs(chrome - mixerChromeH) <= 0.5) return;
+        mixerChromeH = chrome;
+        ApplyMixerMinHeight();
+    }
+
     void ApplyMixerMinHeight()
     {
         if (!MixerShown || maxPanel == MaxPanel.Views || MixerOut || (stackedViews && !AudioSplitter.IsVisible)) return;
@@ -231,7 +298,13 @@ public partial class MainWindow
             SaveViewPref("mixerHeight", mixerH.ToString(System.Globalization.CultureInfo.InvariantCulture));
         };
         // stacked, the minimum is a share of this place
-        AudioArea.SizeChanged += (_, e) => { if (e.HeightChanged) ApplyMixerMinHeight(); };
+        AudioArea.SizeChanged += (_, e) =>
+        {
+            if (!e.HeightChanged) return;
+            ApplyMixerMinHeight();
+            // a shorter place takes it back under the timeline; a taller one gives it its height again
+            if (stackedViews && AudioSplitter.IsVisible && !splitterDragging && MixerShown) AudioArea.RowDefinitions[2].Height = new GridLength(StackedMixerH);
+        };
         AudioSplitter.DoubleTapped += (_, _) =>
         {
             if (masteringView) { KeepMasteringHeight(double.NaN); return; }
@@ -257,14 +330,9 @@ public partial class MainWindow
         mixerScroll.SizeChanged += (_, _) =>
         {
             mixerStrips.MinWidth = mixerScroll.Viewport.Width;
-            // what the place takes besides the strips, as laid out now (the mini timeline comes and goes with the layout).
-            // Not while maximized: there the mini timeline shows and the header fits in one row, and that minimum would
-            // bring the mixer back taller and stuck at it when the panel is restored. Nor in its own window, with its mini timeline
-            if (MixerShown && maxPanel == MaxPanel.None && !MixerOut && mixerScroll.Viewport.Height > 0)
-            {
-                double chrome = MixerHost.Bounds.Height + MixerHost.Margin.Top + MixerHost.Margin.Bottom - mixerScroll.Viewport.Height;
-                if (chrome > 0 && Math.Abs(chrome - mixerChromeH) > 0.5) { mixerChromeH = chrome; ApplyMixerMinHeight(); }
-            }
+            // the host's bounds are set after its children's: read here they still hold the last pass's height (the
+            // maximized one, coming back from it), so the chrome is measured once the whole layout is done
+            Dispatcher.UIThread.Post(MeasureMixerChrome, DispatcherPriority.Background);
             RefreshMixer();
         };
         // the same two-button switch as the timeline's corner
@@ -430,7 +498,7 @@ public partial class MainWindow
             b.Click += (_, _) => ClearAllToggles(solo);
             headerRefresh.Add(() =>
             {
-                bool lit = tracks.Any(t => solo ? t.Channel.Solo : t.Channel.Muted);
+                bool lit = tracks.Any(t => solo ? t.Channel.Solo : t.Channel.Muted) || Folders.Any(f => solo ? f.Solo : f.Muted);
                 b.IsEnabled = store != null && !store.ReadOnly && !restoring && tracks.Any(t => t.Track.HasContent);
                 b.Classes.Set("lit", lit);
                 b.Background = lit ? (solo ? Palette.Accent : Palette.Mute) : Brushes.Transparent;
@@ -481,7 +549,7 @@ public partial class MainWindow
     {
         Audio.PlaybackEngine.FxBypass = on;
         foreach (var t in tracks) t.ApplyInserts();
-        engine.ApplyBusSlots(Buses);
+        engine.ApplyBusSlots();
         engine.ApplyMaster(MasterSet);
         RefreshMixer();
     }
@@ -493,7 +561,7 @@ public partial class MainWindow
 
     static double ListHeight(string key, double fallback) =>
         double.TryParse(AppConfig.Get(key), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double h)
-            ? Math.Clamp(h, CompactRowH + 6, ListMaxH) : fallback;
+            ? Math.Clamp(h, ListMinH, ListMaxH) : fallback;
 
     /// <summary>
     /// A switch of the mixer's header (asked by the user): "Efectos" or "Envíos" shows or hides that section on every
@@ -616,7 +684,8 @@ public partial class MainWindow
         // a new width or layout only resizes the cards or shows the other layout (see compactMixer)
         string key = string.Join(",", tracks.Select(t => t.Track.Id + ":" + t.Clips.Count + ":" + t.Track.FolderId + ":" + t.Track.MixerSide + ":" + string.Join("/", t.Channel.Slots.Select(s => s.Id))
                 + ":" + string.Join("/", t.Channel.Sends.Where(s => !s.Hidden).Select(s => s.BusId))))
-            + "|" + string.Join(",", Folders.Select(f => f.Id + ":" + f.Index + ":" + f.MixerCollapsed + ":" + f.Separator + ":" + f.MixerSide + ":" + string.Join("/", f.Sends.Where(s => !s.Hidden).Select(s => s.BusId))))
+            + "|" + string.Join(",", Folders.Select(f => f.Id + ":" + f.Index + ":" + f.MixerCollapsed + ":" + f.Separator + ":" + f.MixerSide + ":" + string.Join("/", f.Sends.Where(s => !s.Hidden).Select(s => s.BusId))
+                + ":" + string.Join("/", f.Inserts.Select(s => s.Id + s.Type))))
             // a bus's routing changes which buses the others can send to: their send panels come and go
             + "|" + string.Join(",", Buses.Select(b => b.Id + ":" + b.Name + ":" + b.MixerSide + ":" + b.Output + ":" + string.Join("/", b.Sends.Select(x => x.BusId)) + ":" + string.Join("/", b.Inserts.Select(s => s.Id + s.Type))))
             + "|" + string.Join("/", MasterSet.Slots.Select(s => s.Id + s.Type));
@@ -1072,7 +1141,7 @@ public partial class MainWindow
         bool narrow = w < NarrowW, tiny = w < TinyW;
         meter.Scale = !narrow;
         db.IsVisible = !narrow;
-        // a folder strip has no fader: only its meter
+        // a strip without a fader (none left: kept for one that has only its meter)
         if (fader != null) fader.Slim = tiny;
         if (faders != null) faders.Spacing = tiny ? 2 : 4;
         double side = tiny ? 2 : narrow ? 3 : 6;
@@ -1326,23 +1395,6 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// The compact folder strip's controls, level with the track strips beside it: an empty section where their effects
-    /// go (a folder has none), its sends like theirs (asked by the user: not only from the inspector), and its output
-    /// where their pan and M S ● go, so it shows whichever sections are on.
-    /// </summary>
-    Control CompactFolderControls(Router router)
-    {
-        var g = new Grid();
-        ListSection(g, mx.FxRows, new Border(), new Border());
-        ListSection(g, mx.SendRows, ListHead(Loc.T("mix.list.sends"), Loc.T("send.add.tip"), b => OpenAnchoredMenu(Popup(SendChoices(router), 220), b)), ListBox(CompactSends(router), true));
-        var output = OutputSelect(router, mx.Refresh);
-        output.VerticalAlignment = VerticalAlignment.Top;
-        output.Margin = new Thickness(0, 2, 0, 0);
-        Grid.SetRow(output, g.RowDefinitions.Count); g.RowDefinitions.Add(new RowDefinition(PanRowH + TogglesRowH, GridUnitType.Pixel)); g.Children.Add(output);
-        return g;
-    }
-
-    /// <summary>
     /// A compact list in its section: it scrolls when it holds more than fits, and a grip along its bottom (the divider
     /// to the next section, with a handle in its middle so it is found) stretches the section on every strip at once
     /// (asked by the user), remembered in config.json; a double click fits it to the longest list, and a second one
@@ -1368,13 +1420,16 @@ public partial class MainWindow
             e.Handled = true;
             if (e.ClickCount == 2)
             {
-                double fit = FitListH(sends);
-                SetListH(sends, Math.Round(fit) == (sends ? mixerSendsH : mixerFxH) ? sends ? SendsListH : FxListH : fit, true);
+                // what fits in the mixer's height: past it, the mixer is made taller by hand first
+                double fit = Math.Round(Math.Min(FitListH(sends), ListCap(sends)));
+                var (fxNow, sendsNow) = ShownLists();
+                SetListH(sends, fit == Math.Round(sends ? sendsNow : fxNow) ? sends ? SendsListH : FxListH : fit, true);
                 return;
             }
             dragging = true;
             fromY = e.GetPosition(this).Y;
-            fromH = sends ? mixerSendsH : mixerFxH;
+            var (fxFrom, sendsFrom) = ShownLists();
+            fromH = sends ? sendsFrom : fxFrom;
             e.Pointer.Capture(grip);
         };
         grip.PointerMoved += (_, e) =>
@@ -1401,13 +1456,31 @@ public partial class MainWindow
         return n == 0 ? sends ? SendsListH : FxListH : Math.Min(ListMaxH, n * (CompactRowH + 1) - 1 + 6);
     }
 
-    /// <summary>A list section's new height, on every strip (and saved when <paramref name="save"/>).</summary>
+    /// <summary>
+    /// A list section's new height, on every strip (and saved when <paramref name="save"/>), no taller than what the
+    /// mixer's height leaves (<see cref="ListCap"/>). The other list keeps the height it is shown at, so what shows is
+    /// what was chosen.
+    /// </summary>
     void SetListH(bool sends, double h, bool save)
     {
-        h = Math.Round(Math.Clamp(h, CompactRowH + 6, ListMaxH));
-        if (sends) mixerSendsH = h; else mixerFxH = h;
+        var (fx, s) = ShownLists();
+        h = Math.Round(Math.Clamp(h, ListMinH, ListCap(sends)));
+        if (sends)
+        {
+            mixerSendsH = h;
+            if (mixerFx) mixerFxH = Math.Max(ListMinH, fx);
+        }
+        else
+        {
+            mixerFxH = h;
+            if (SendsRow) mixerSendsH = Math.Max(ListMinH, s);
+        }
         ApplyMixerHeights();
-        if (save) SaveViewPref(sends ? "mixer.sendsH" : "mixer.fxH", h.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (save)
+        {
+            SaveViewPref("mixer.fxH", mixerFxH.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            SaveViewPref("mixer.sendsH", mixerSendsH.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
     }
 
     /// <summary>
@@ -1417,15 +1490,17 @@ public partial class MainWindow
     void ApplyMixerHeights()
     {
         var layout = mixerLayout;
-        foreach (var r in layout.TopRows) r.Height = new GridLength(StripTopH, GridUnitType.Pixel);
+        var (fx, sends) = ShownLists();
+        double top = StripTopH;
+        foreach (var r in layout.TopRows) r.Height = new GridLength(top, GridUnitType.Pixel);
         foreach (var (row, what, head) in layout.FxRows)
         {
-            row.Height = new GridLength(mixerFx ? head ? ListHeadH : mixerFxH : 0, GridUnitType.Pixel);
+            row.Height = new GridLength(mixerFx ? head ? ListHeadH : fx : 0, GridUnitType.Pixel);
             what.IsVisible = mixerFx;
         }
         foreach (var (row, what, head) in layout.SendRows)
         {
-            row.Height = new GridLength(SendsRow ? head ? ListHeadH : mixerSendsH : 0, GridUnitType.Pixel);
+            row.Height = new GridLength(SendsRow ? head ? ListHeadH : sends : 0, GridUnitType.Pixel);
             what.IsVisible = SendsRow;
         }
         ApplyMixerMinHeight();
@@ -1469,7 +1544,7 @@ public partial class MainWindow
 
     /// <summary>
     /// The power switch of a list's row (asked by the user: the ⏻ of a real switch, the same glyph as an effect panel's
-    /// ON/OFF): accent and the glow when on (class power-on, App.axaml), grey when off.
+    /// ON/OFF): an accent glyph on a soft accent block when on (class power-on, App.axaml), a grey glyph when off.
     /// </summary>
     Button ListPower(Func<bool> on, Action toggle, List<Action>? refresh = null)
     {
@@ -1491,8 +1566,12 @@ public partial class MainWindow
         return b;
     }
 
-    /// <summary>A row of the compact effects list: its power switch and its name, on a block that lights under the pointer.</summary>
-    Border ListRow(string name, string type, Func<bool> on, Action toggle, Func<string> brief, List<Action>? refresh = null)
+    /// <summary>
+    /// A row of the compact effects list: its power switch and its name, on a block that lights under the pointer. With
+    /// <paramref name="apart"/> (the inspector's strip, asked by the user: like its sends) the switch sits outside, left
+    /// of a block drawn as a send's bar.
+    /// </summary>
+    Border ListRow(string name, string type, Func<bool> on, Action toggle, Func<string> brief, List<Action>? refresh = null, bool apart = false)
     {
         // its icon stays at any width (asked by the user); the name and what it is set to come in as the row widens
         var icon = FxIcon.Create(type, 11);
@@ -1503,13 +1582,28 @@ public partial class MainWindow
             Margin = new Thickness(6, 0, 0, 0), IsVisible = false };
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto") };
         var power = ListPower(on, toggle, refresh);
-        g.Children.Add(power);
         Grid.SetColumn(icon, 1); g.Children.Add(icon);
         Grid.SetColumn(text, 2); g.Children.Add(text);
         Grid.SetColumn(detail, 3); g.Children.Add(detail);
-        var row = new Border { Height = CompactRowH, CornerRadius = new CornerRadius(4), Padding = new Thickness(1, 0, 3, 0), Child = g, Background = Palette.Raised, ClipToBounds = true };
-        row.PointerEntered += (_, _) => row.Background = Palette.Hover;
-        row.PointerExited += (_, _) => row.Background = Palette.Raised;
+        Border row, block;
+        if (apart)
+        {
+            // the block is drawn as HBar draws a send: Raised over a Line border, radius 3
+            block = new Border { CornerRadius = new CornerRadius(3), BorderBrush = Palette.Line, BorderThickness = new Thickness(1), Padding = new Thickness(6, 0, 6, 0),
+                Child = g, Background = Palette.Raised, ClipToBounds = true };
+            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+            line.Children.Add(power);
+            Grid.SetColumn(block, 1); line.Children.Add(block);
+            row = new Border { Height = CompactRowH, Child = line, Background = Brushes.Transparent };
+        }
+        else
+        {
+            g.Children.Add(power);
+            row = block = new Border { Height = CompactRowH, CornerRadius = new CornerRadius(4), Padding = new Thickness(1, 0, 3, 0), Child = g, Background = Palette.Raised, ClipToBounds = true };
+        }
+        // apart, only the block lights, as a send's bar does
+        block.PointerEntered += (_, _) => block.Background = Palette.Hover;
+        block.PointerExited += (_, _) => block.Background = Palette.Raised;
         row.SizeChanged += (_, e) =>
         {
             double w = e.NewSize.Width;

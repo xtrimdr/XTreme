@@ -381,7 +381,7 @@ public partial class MainWindow
         if (line == "editor-active")
         {
             pluginProcesses[trackId] = process;
-            RawKeys.AlsoFront = [.. pluginProcesses.Values];
+            UpdatePluginFront();
             pluginFollowed = trackId;
             UpdateVirtualLive();
             UpdateKeyTarget();
@@ -395,7 +395,7 @@ public partial class MainWindow
         else if (line.StartsWith("editor-rect", StringComparison.Ordinal))
         {
             pluginProcesses[trackId] = process;
-            RawKeys.AlsoFront = [.. pluginProcesses.Values];
+            UpdatePluginFront();
             var n = line.Split(' ');
             if (n.Length == 5 && int.TryParse(n[1], out int left) && int.TryParse(n[2], out int top) && int.TryParse(n[3], out int right) && int.TryParse(n[4], out int bottom))
             {
@@ -411,7 +411,7 @@ public partial class MainWindow
     void ForgetPluginWindow(string trackId)
     {
         pluginWindows.Remove(trackId);
-        if (pluginProcesses.Remove(trackId)) RawKeys.AlsoFront = [.. pluginProcesses.Values];
+        if (pluginProcesses.Remove(trackId)) UpdatePluginFront();
         pluginBars.Remove(trackId);
         pluginTracks.Remove(trackId);
         if (pluginFollowed == trackId) pluginFollowed = pluginWindows.Keys.FirstOrDefault();

@@ -111,9 +111,12 @@ perder las notas: antes de ponerlo en la pista y antes de exportar se prueba una
   (null = sin color / con su número), `FolderId` = su carpeta.
 - **Folder** (`Project.Folders`): agrupa pistas. Sus hijas van juntas en `Project.Tracks` y la carpeta va justo antes
   (`Folder.Index`). Toda edición de orden pasa por `TrackFolders` y `TrackFolders.Normalize` repara lo que quede raro.
-  **Solo contiene** (decisión del usuario): sin fader, paneo, M/S ni efectos. Sus pistas suman ahí y van a su `Output`;
-  desde esa suma tiene sus `Sends` (nunca PRE: no tiene fader). Un **separador** es una `Folder` con `Separator`: va en
-  el mismo orden, nunca toma pistas ni rutea, y se puede ocultar del timeline (`HiddenInTimeline`). Pistas de la raíz,
+  **Es un canal** (decisión del usuario, 2026-11-04, #134; antes solo contenía): sus pistas suman ahí, pasan por sus
+  slots (`Folder.Inserts`), paneo, fader (`Volume`) y mute, y van a su `Output` y sus `Sends` (PRE como los de una
+  pista: después de los slots y el paneo). Su `Solo` vale como el solo de cada una de sus pistas (`ChannelDsp.Soloed`,
+  el mismo cálculo en vivo, en la exportación y en el timeline); su mute calla su nodo. La automatización de carpetas
+  todavía no está. Lo que la versión 2 guardaba con esos nombres vuelve como era. Un **separador** es una `Folder` con `Separator`: va en
+  el mismo orden, nunca toma pistas ni rutea ni tiene canal, y se puede ocultar del timeline (`HiddenInTimeline`). Pistas de la raíz,
   carpetas y buses tienen su lado del mixer (`MixerSide`, `MixerSides`: null = el de siempre).
 - **Buses y ruteo**: un solo concepto para "bus" y "FX" (`ProjectSettings.Buses`, `Bus`: nombre, fader, paneo, mute,
   slots, salida y envíos; una reverb o un delay son un slot más, `InsertSlot.Reverb` / `Delay`). Un proyecto nuevo vacío
@@ -178,7 +181,7 @@ exports/
 
 **Nivel profesional**, como Logic Pro o Fender Studio Pro: nada de clics ni cortes. Arrancar, parar y hacer scrub
 llevan su fundido (`PlaybackEngine.TransportFadeMs`, elegible en Configuración); los saltos, crossfade de 10 ms; el bucle no salta: gira en la muestra exacta y A entra entero, sin fundido (`LoopSplice`, pedido del usuario);
-`Stop`/`Pause` cortan en el acto y son solo para grabar, exportar o cambiar de proyecto. El estado de los efectos no
+el fundido del transporte va sobre lo que toca cada pista, antes de sus slots, y parado la cadena sigue corriendo mientras suena su cola (`LiveTrack.Ringing`: una reverb o un delay de pista no se cortan al parar); `Stop`/`Pause` cortan en el acto y son solo para grabar, exportar o cambiar de proyecto. El estado de los efectos no
 se reinicia en medio de la música. Lo que se dude se mide (`AudioGapLog`) en vez de suponerlo.
 
 El callback de ASIO (`AsioDuplex.ProcessBlock`, `PlaybackEngine.Process`) corre en el hilo del driver:
@@ -203,7 +206,7 @@ master); los envíos salen del fader (post, por defecto) o de antes (PRE: despu�
 igual los callan) hacia los buses. Carpetas y buses son nodos (`BusDspChain`: suma de lo que le llega → slots → paneo →
 fader/mute → su salida y sus envíos) que corren en orden, cada uno después de todo lo que lo alimenta
 (`ChannelDsp.Nodes`: primero las carpetas, después `ProjectBuses.Order`) → slots del master → Empuje o Destino → soft clip → limitador. El click va por fuera
-del limitador, atrasado la misma latencia. `TrackDspChain` (con `TrackSend`), `InsertRack` (los slots, de pista o
+del limitador, atrasado la misma latencia. `TrackDspChain` (con `TrackSend`), `InsertRack` (los slots, de pista, carpeta o
 bus), `BusDspChain` y `MixGraphBus` (`XtremeDaw.Audio/Dsp/MixRenderer.cs`) los usan igual la reproducción y la
 exportación: no los dupliques. La conversión proyecto → motor es una sola, `ChannelDsp` (`Track`, `Bus`, `Nodes`).
 `xtlab comprobar-dsp` corre las comprobaciones del DSP.
@@ -248,23 +251,68 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
    agentes trabajando). Abrí la copia solo si el usuario lo pide: `tools\probar.ps1 -Abrir` abre la última con la lista a
    la vista (`-Proyecto carpeta` la abre en ese proyecto). `tools\probar.ps1 -Lista` muestra lo pendiente y lo que el usuario
    marcó como que no anda, con su nota: miralo antes de seguir con algo ya entregado. Si arreglaste un ítem, corré
-   `tools\probar.ps1 -NoAbrir -Arregla 12` (con su número): vuelve a por probar en lugar de duplicarse. Si el script dice
+   `tools\probar.ps1 -NoAbrir -Arregla 12` (con su número): vuelve a Pendiente en lugar de duplicarse. Si el script dice
    "NO SE PUEDE PROBAR", contale por qué y no abras nada. Nunca abras el exe de `bin\` ni lo mandes a probar desde
    ahí: bloquea los DLL y el próximo build falla. Si hay un XTreme abierto, el script le pregunta al usuario en un
    cuadro si lo cierra (guarda antes); nunca lo cierres ni lo mates por otro lado. Si eligió cancelar (código 2), no
    insistas; si nadie contestó en 100 s (código 3), avisale y que te diga cuándo. La copia muestra en la barra de título "PRUEBA" + el commit (+ cambios), así el usuario sabe qué
    está probando.
-3. Para probar de verdad hacen falta una interfaz ASIO y un proyecto con tomas: si no los tenés, decí qué no probaste.
-4. En capturas de GDI los píxeles negros tienen alfa 0 y algunos visores los pintan blancos: mirá el RGB.
-5. Al terminar un ítem de PENDIENTES, sacalo de ahí y agregalo arriba de todo en HECHO con la fecha (AAAA-MM-DD) y una
+3. **El trabajo sale de los Pedidos del Banco de pruebas** (pedido del usuario, 2026-11-04): el usuario carga ahí,
+   numerados y con su tipo, los cambios, mejoras y correcciones que quiere, y los agentes los toman de ahí.
+   `tools\probar.ps1 -Lista` los muestra primero. Antes de empezar uno (un pedido o algo marcado No anda, Anda mal o A
+   mejorar), `tools\probar.ps1 -Toma 12`: lo reserva para tu sesión (código 2 = lo tiene otra: elegí otro); si lo dejás
+   sin hacer, `-Suelta 12`. Al terminarlo, `tools\probar.ps1 -NoAbrir -Arregla 12` (con `"qué probar"` si hace falta
+   decir cómo probarlo): pasa a Para probar para que el usuario lo pruebe. Los tres aceptan varios números (`-Arregla
+   12,14`: una sola compilación y copia). Qué hacer según el tipo: **Error**, arreglarlo; **Mejora**, ajustarlo; **Función nueva**, hacerla, y antes
+   preguntar lo que sea una decisión de diseño; **Idea**, no se programa de entrada: proponé cómo sería o llevala a
+   PENDIENTES, y que el usuario decida. Si un pedido llega por el chat, anotalo primero (`tools\probar.ps1 -Pide "qué"
+   -Tipo error|mejora|funcion|idea`), tomalo y seguí igual: así todo queda numerado en un solo lugar.
+
+   **Cómo se mantiene sincronizado el Banco** (pedido del usuario, 2026-11-04: es uno de sus pilares para desarrollar;
+   vale para toda sesión y todo subagente):
+   - El Banco (tickets) se toca **solo** con `tools\probar.ps1` (o `xtlab lista`). Nunca edites, reescribas ni borres
+     `pruebas\lista.json`, `lista.historial.jsonl` ni `lista.lock` a mano, con un script ni con git: varias sesiones y
+     el usuario escriben a la vez, y `TestList` es lo único que lo hace con bloqueo y cambio atómico.
+   - **Cada ítem es un ticket** (pedido del usuario, 2026-11-04) con su conversación en orden: el pedido o qué probar,
+     cada arreglo, cada veredicto con su nota y los comentarios de los dos lados. Nada se pisa. Antes de trabajar uno,
+     leelo entero: `tools\probar.ps1 -Ticket 12` (lo último que dijo el usuario manda, no solo el texto del principio).
+   - Para decir algo sin mandar un arreglo (una pregunta, "lo llevé a PENDIENTES", "depende del #80"):
+     `tools\probar.ps1 -Comenta 12 "texto"`. Le llega al usuario como **Nuevo**; él contesta en el mismo ticket.
+     Una pregunta que bloquea el trabajo va también en el chat, si estás en uno.
+   - **Cada ticket lleva su tema** (pedido del usuario, 2026-11-04: una lista fija, `TestItem.Topics`; `xtlab lista
+     temas` dice qué va en cada uno). Lo que anotás va con el suyo (`-Tema mixer` junto a `-Pide`, `"qué probar"` o
+     `-Arregla`), y un ticket que tomás sin tema se lo ponés (`tools\probar.ps1 -Clasifica 12 -Tema mixer`). La lista no
+     se agranda sin preguntar: una parte nueva de la app entra en el tema donde la buscaría un músico.
+   - **El tipo de un pedido también lo pone el agente** (pedido del usuario, #129: el Banco no lo pregunta): al tomar
+     uno sin tipo, `tools\probar.ps1 -Clasifica 12 -Tipo mejora` (error | mejora | funcion | idea).
+   - El `"qué probar"` de `-Arregla` es tu mensaje en el ticket ("Arreglo: …"): decí qué cambió y cómo probarlo. El
+     texto del principio del ticket no cambia.
+   - Cada cambio queda además en el historial con quién lo hizo (tu sesión sale de `CLAUDE_CODE_SESSION_ID`), también
+     lo que se sacó de la lista. Si algo no cuadra (volvió, desapareció), mirá `tools\probar.ps1 -Historial 12`
+     (`-Historial 0`: lo último de todo) y contale al usuario lo que dice.
+   - **Cada ticket lleva un título** (pedido del usuario, 2026-11-04): al tomar uno sin título, ponéselo
+     (`tools\probar.ps1 -Titula 12 "Fader del bus no guarda el valor"`): corto, de qué se trata, en el tono de la
+     app. Es lo que el usuario ve en la lista; el pedido queda como primera entrada de la línea de tiempo del ticket.
+   - `-Toma` antes de empezar, siempre; tu sesión lo puede volver a tomar sin problema. Código 2 dice qué sesión lo
+     tiene: no lo trabajes. Lo que tome un subagente lo toma la sesión que lo lanzó (comparten la sesión).
+   - `-Arregla` solo números que trabajaste vos en esta sesión y que están en un estado abierto. Si el usuario ya lo
+     marcó **Anda**, `-Arregla` no lo reabre (código 2): si hiciste otro cambio, anotalo como ítem nuevo (`-NoAbrir "qué
+     probar"`). No uses `-Arregla` para "recordarle" al usuario un ítem que sigue en Para probar.
+   - Lo que anotás, devolvés o comentás llega al Banco como **Nuevo** y se anuncia: es lo que el usuario lee primero,
+     así que va corto, concreto y dice cómo probarlo.
+   - El usuario saca ítems y limpia los que andan desde el Banco: que un número ya no esté no es un error; el historial
+     dice quién lo sacó. No lo vuelvas a anotar sin preguntar.
+4. Para probar de verdad hacen falta una interfaz ASIO y un proyecto con tomas: si no los tenés, decí qué no probaste.
+5. En capturas de GDI los píxeles negros tienen alfa 0 y algunos visores los pintan blancos: mirá el RGB.
+6. Al terminar un ítem de PENDIENTES, sacalo de ahí y agregalo arriba de todo en HECHO con la fecha (AAAA-MM-DD) y una
    línea de qué se hizo y dónde. Ideas nuevas van en PENDIENTES, en su sección.
-6. Si cambiás atajos, comandos de `xtlab` o la estructura, actualizá DETALLES.md y DETALLES_EN.md.
-7. Si cambiás cómo se usa algo o el nombre de un control, actualizá su tema de la ayuda en todos los idiomas
+7. Si cambiás atajos, comandos de `xtlab` o la estructura, actualizá DETALLES.md y DETALLES_EN.md.
+8. Si cambiás cómo se usa algo o el nombre de un control, actualizá su tema de la ayuda en todos los idiomas
    (`src/XtremeDaw.App/Assets/Help`, ver "Ayuda" en docs/interfaz.md); una función nueva que alguien vendría a buscar
    lleva su tema. Lo que el usuario va a notar suma una línea en la versión más nueva de `Assets/News` (todos los idiomas,
    ver "Novedades" en docs/interfaz.md), que puede ser la próxima, aún sin publicar. Al publicar, esa versión tiene que ser
    la de `Directory.Build.props`.
-8. **Un archivo, una sesión a la vez** (regla estricta del usuario, 2026-11-03: se perdieron cambios). Un hook
+9. **Un archivo, una sesión a la vez** (regla estricta del usuario, 2026-11-03: se perdieron cambios). Un hook
    (`tools\bloqueos.ps1`, en `.claude\settings.json`) le da cada archivo que tocás a tu sesión hasta que termina el
    turno: otra sesión que quiera editarlo, o correr un comando que lo nombre, espera sola a que lo sueltes. Lo que
    cambie un comando o un script también queda tomado, y si pisó algo de otra sesión el hook avisa. Si te dice
@@ -272,6 +320,11 @@ primer slot de cada tipo, el atajo de las perillas del timeline.
    turno y avisale al usuario qué quedó sin hacer. `git restore`, `stash`, `clean`, `reset --hard` y `checkout --`
    están bloqueados: tiran cambios sin commitear que pueden ser de otro; si hacen falta, los corre el usuario.
    `tools\bloqueos.ps1 -Lista` muestra quién tiene qué; antes de un script que reescribe muchos archivos, miralo.
-9. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.
-10. Las skills de este proyecto (`.claude/skills`) llevan el prefijo `xt_`, en la carpeta y en su `name`
-   (`xt_revisar-pruebas`; decisión del usuario, 2026-11-03).
+10. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.
+11. Las skills de este proyecto (`.claude/skills`) llevan el prefijo `xt_`, en la carpeta y en su `name`
+   (`xt_revisar-workbench`; decisión del usuario, 2026-11-03). El mod `xt-panel` (`.claude/plugins/xt-panel`, del
+   catálogo local `xtreme`, activado en `.claude/settings.json`) abre un panel al costado del chat con un botón por
+   acción de esas skills (no la barra de arriba del prompt: es una sola y la usa show-tokens). Una skill `xt_` nueva
+   aparece sola, en una tarjeta con su `description` y, si tiene `argument-hint`, un campo; las que tienen botones
+   propios están en `SECTIONS` y `COVERED`. El panel también pide skills nuevas (campo «Nueva skill»). Cambios al mod
+   se recargan con `/reload-plugins`.

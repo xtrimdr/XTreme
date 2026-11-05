@@ -1,8 +1,104 @@
 {
   "releases": [
     {
+      "version": "0.9.16",
+      "items": [
+        {
+          "icon": "E8B7",
+          "title": "Folders are channels",
+          "text": "A folder has **effects, pan, fader, M and S**, in the mixer, the inspector and the timeline. Its solo plays only its tracks, and its sends can be taken before the fader (PRE)."
+        },
+        {
+          "icon": "E765",
+          "title": "Tool keys in order",
+          "text": "Keys **1 to 9** pick the tools in the order of their buttons: Select, Pencil, Brush, Range, Split, Erase, Listen, Zoom and Hand."
+        },
+        {
+          "icon": "E8E9",
+          "title": "Interface size in px",
+          "text": "In **Settings → Appearance**, the size is picked with a slider, in half-pixel steps. **Ctrl +** and **Ctrl −** change it from anywhere; **Ctrl 0** goes back to 100 %."
+        },
+        {
+          "icon": "E8D2",
+          "title": "Note notation",
+          "text": "Right-click the piano roll's keys → **Do, Re, Mi** or **C, D, E**. It applies to the whole app."
+        },
+        {
+          "icon": "E8C8",
+          "title": "Duplicate tracks",
+          "text": "Right-click a track (or several picked ones) → **Duplicate track** copies it below with its clips and automation, or **Duplicate without content**, only its sound. Shortcut: Ctrl+Shift+D.",
+          "topic": "organize"
+        },
+        {
+          "icon": "E74D",
+          "title": "Trash can in the inspector",
+          "text": "Each effect and send in the inspector has a **trash can** on its right to remove it in one click. The Effects, Sends and Output titles are bigger.",
+          "topic": "inspector"
+        },
+        {
+          "icon": "E768",
+          "title": "Space always goes to the transport",
+          "text": "In the library, **Space** no longer plays the sample: it always starts or stops the song. What the library is playing stops when you click elsewhere in the window or press play.",
+          "topic": "import"
+        },
+        {
+          "icon": "E8A5",
+          "title": "A tidier piano roll",
+          "text": "The piano roll's bar has fewer buttons: **Pattern** holds the length and the instruments, the **Snap** has the grid and **View** the shortcuts. At the bottom, always at hand, Draw, Paint, Slice and **Chords**, and **Expression** with its dropdown to pick velocity, mod X, mod Y, pan or release. In a small window it wraps without overlapping.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E771",
+          "title": "More to pick in Appearance",
+          "text": "In **Settings → Appearance**, besides the knobs: the style of **faders**, **meters** and **waveforms**, the interface's **font**, the **numbers'** font (also a 14-segment digital one and Orbitron) and the **size**, in every window. It shows as you pick, and each has its **Reset**.",
+          "topic": "look"
+        },
+        {
+          "icon": "E92E",
+          "title": "Keys to plugin",
+          "text": "A plugin window's bar has a single button, **Keys to plugin**. On, every key goes to the plugin while its window is in front. Off, every key goes to XTreme: transport, shortcuts and the virtual keyboard, effect windows included.",
+          "topic": "shortcuts"
+        },
+        {
+          "icon": "E995",
+          "title": "Mono, stereo or mixed",
+          "text": "Each audio track says next to its name whether its clips are **Mono**, **Stereo** or **Mixed**, and so does the inspector. **Show left and right** shows each side's wave; **L R**, at the foot of the tracks, does it on all of them at once.",
+          "topic": "import"
+        },
+        {
+          "icon": "E74F",
+          "title": "Cut audio",
+          "text": "**Cut audio**, in the transport (or {key:cutAudio}), stops and silences reverb and delay tails and notes left sounding, right away.",
+          "topic": "reverb-delay"
+        },
+        {
+          "icon": "E8C4",
+          "title": "Live keys in the piano roll",
+          "text": "What you play on a **MIDI keyboard** or the **virtual keyboard** lights up on the **piano roll**'s keyboard and along its row, and fades out when you let go.",
+          "topic": "midi-track"
+        },
+        {
+          "icon": "E71B",
+          "title": "Linked files apart",
+          "text": "In the **Library**, **Unlink unused** takes unused linked files out of the project and leaves them where they are. **Delete unused** sends only the project's own files to the Recycle Bin.",
+          "topic": "library"
+        },
+        {
+          "icon": "E710",
+          "title": "Use, where you are",
+          "text": "**Use** in the **Library** puts the channel on the selected track, at the playhead. With no track selected, or that stretch taken, it goes to a new track.",
+          "topic": "library"
+        }
+      ]
+    },
+    {
       "version": "0.9.15",
       "items": [
+        {
+          "icon": "E9D9",
+          "title": "Effect tails on stop",
+          "text": "On stop, a **Reverb** or **Delay** in a channel slot rings on until it dies out, as on a bus."
+        },
         {
           "icon": "E9D9",
           "title": "Lighter reverb",

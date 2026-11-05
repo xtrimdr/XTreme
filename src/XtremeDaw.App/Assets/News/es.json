@@ -1,8 +1,104 @@
 {
   "releases": [
     {
+      "version": "0.9.16",
+      "items": [
+        {
+          "icon": "E8B7",
+          "title": "La carpeta es un canal",
+          "text": "Una carpeta tiene **efectos, paneo, fader, M y S**, en el mixer, el inspector y el timeline. Su solo deja sonar solo sus pistas, y sus envíos pueden salir antes del fader (PRE)."
+        },
+        {
+          "icon": "E765",
+          "title": "Teclas de las herramientas en orden",
+          "text": "Las teclas **1 a 9** eligen las herramientas en el orden de sus botones: Seleccionar, Lápiz, Pincel, Rango, Dividir, Borrar, Escuchar, Zoom y Mano."
+        },
+        {
+          "icon": "E8E9",
+          "title": "Tamaño de la interfaz en px",
+          "text": "En **Configuración → Apariencia**, el tamaño se elige con un deslizador, de a medio px. **Ctrl +** y **Ctrl −** lo cambian desde cualquier lado; **Ctrl 0** vuelve al 100 %."
+        },
+        {
+          "icon": "E8D2",
+          "title": "Notación de las notas",
+          "text": "Clic derecho en las teclas del piano roll → **Do, Re, Mi** o **C, D, E**. Vale para toda la app."
+        },
+        {
+          "icon": "E8C8",
+          "title": "Duplicar pistas",
+          "text": "Clic derecho en una pista (o en varias elegidas) → **Duplicar pista** la copia debajo con sus clips y su automatización, o **Duplicar sin contenido**, solo con su sonido. Atajo: Ctrl+Shift+D.",
+          "topic": "organize"
+        },
+        {
+          "icon": "E74D",
+          "title": "Papelera en el inspector",
+          "text": "Cada efecto y envío del inspector tiene una **papelera** a la derecha para sacarlo con un clic. Los títulos Efectos, Envíos y Salida se ven más grandes.",
+          "topic": "inspector"
+        },
+        {
+          "icon": "E768",
+          "title": "Espacio siempre al transporte",
+          "text": "En la librería, **Espacio** ya no escucha el sample: siempre arranca o para la canción. Lo que suena en la librería se corta al hacer clic en otra parte de la ventana o al darle play.",
+          "topic": "import"
+        },
+        {
+          "icon": "E8A5",
+          "title": "Piano roll más ordenado",
+          "text": "La barra del piano roll tiene menos botones: **Patrón** junta el largo y los instrumentos, el **Imán** trae la grilla y **Vista** los atajos. Abajo, siempre a mano, Dibujar, Pintar, Cortar y **Acordes**, y **Expresión** con su desplegable para elegir velocidad, mod X, mod Y, paneo o release. En una ventana chica baja de fila sin pisarse.",
+          "topic": "scales-chords"
+        },
+        {
+          "icon": "E771",
+          "title": "Más para elegir en Apariencia",
+          "text": "En **Configuración → Apariencia**, además de las perillas: el estilo de los **faders**, los **medidores** y las **ondas**, la **fuente** de la interfaz, la de los **números** (también una digital de 14 segmentos y Orbitron) y el **tamaño**, en todas las ventanas. Se ve al elegir, y cada uno tiene su **Restablecer**.",
+          "topic": "look"
+        },
+        {
+          "icon": "E92E",
+          "title": "Teclas al plugin",
+          "text": "La barra de la ventana de un plugin tiene un solo botón, **Teclas al plugin**. Prendido, todas las teclas van al plugin mientras su ventana está adelante. Apagado, todas van a XTreme: transporte, atajos y teclado virtual, también con la ventana de un efecto.",
+          "topic": "shortcuts"
+        },
+        {
+          "icon": "E995",
+          "title": "Mono, estéreo o mixto",
+          "text": "Cada pista de audio dice al lado del nombre si sus clips son **Mono**, **Estéreo** o **Mixto**, y el inspector también. Con **Ver izquierdo y derecho** se ve la onda de cada lado; **L R**, al pie de las pistas, lo hace en todas a la vez.",
+          "topic": "import"
+        },
+        {
+          "icon": "E74F",
+          "title": "Cortar audio",
+          "text": "**Cortar audio**, en el transporte (o {key:cutAudio}), detiene y calla al toque las colas de reverb y delay y las notas que quedaron sonando.",
+          "topic": "reverb-delay"
+        },
+        {
+          "icon": "E8C4",
+          "title": "Teclas en vivo en el piano roll",
+          "text": "Lo que tocás en un **teclado MIDI** o en el **teclado virtual** se ilumina en el teclado del **piano roll** y en su fila, y se apaga suave al soltar.",
+          "topic": "midi-track"
+        },
+        {
+          "icon": "E71B",
+          "title": "Vinculados aparte",
+          "text": "En la **Biblioteca**, **Desvincular no usados** saca del proyecto los vinculados sin usar y deja sus archivos donde están. **Borrar no usados** manda a la Papelera solo los archivos del proyecto.",
+          "topic": "library"
+        },
+        {
+          "icon": "E710",
+          "title": "Usar, donde estás",
+          "text": "**Usar** en la **Biblioteca** pone el canal en la pista elegida, en el cabezal. Sin pista elegida, o con ese tramo ocupado, va a una pista nueva.",
+          "topic": "library"
+        }
+      ]
+    },
+    {
       "version": "0.9.15",
       "items": [
+        {
+          "icon": "E9D9",
+          "title": "Colas de los efectos al parar",
+          "text": "Al parar, una **Reverb** o un **Delay** en un slot de canal sigue sonando hasta apagarse, como en un bus."
+        },
         {
           "icon": "E9D9",
           "title": "Reverb más liviana",

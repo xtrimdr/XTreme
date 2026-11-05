@@ -2,10 +2,12 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using XtremeDaw.App.Audio;
 using XtremeDaw.App.Controls;
 using XtremeDaw.Audio;
@@ -145,7 +147,6 @@ public partial class MainWindow
         sampleList.Picked += PickSample;
         sampleList.Toggled += ToggleSampleFolder;
         sampleList.Activated += f => _ = InsertSamples(f);
-        sampleList.ListenPressed += ToggleSampleListen;
         sampleList.FavoritePressed += ToggleSampleFavorite;
         sampleList.MenuRequested += OpenSampleMenu;
         sampleList.DragRequested += DragSample;
@@ -168,6 +169,17 @@ public partial class MainWindow
             SampleOut.Dispose();
             samples.Dispose();
         };
+        // The library's buttons never keep the focus, so Space and the other shortcuts always reach the transport.
+        foreach (var c in new Control[] { samplePlay, sampleLoop, sampleAuto, samplePicture, sampleVolume, clear, add, rescan, sampleEmptyAdd })
+            c.Focusable = false;
+        foreach (var (_, b) in sampleFilterButtons.Concat(libraryViewButtons)) b.Focusable = false;
+        // A click anywhere else in the window stops what the library is playing.
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (sampleLoaded == null && sampleLoad == null) return;
+            if (e.Source is Visual v && (v == sampleView || sampleView.IsVisualAncestorOf(v))) return;
+            StopSample();
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
         foreach (string path in ReadSampleOpen()) sampleOpen.Add(path);
         SetLibraryView(AppConfig.Get("libraryView") == "samples" ? "samples" : "project", save: false);
     }

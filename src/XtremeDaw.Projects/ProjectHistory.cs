@@ -117,10 +117,12 @@ public static class ProjectHistory
         long bytes = 0;
         foreach (var m in media)
         {
-            long size = MediaBytes(projectDir, m);
+            long size = m.Linked ? 0 : MediaBytes(projectDir, m);
             try
             {
-                foreach (var f in new[] { m.Video, m.Audio }) Trash(projectDir, f);
+                // a linked file is the user's, wherever it lives (even inside the project folder): it is only unlinked
+                if (!m.Linked)
+                    foreach (var f in new[] { m.Video, m.Audio }) Trash(projectDir, f);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException)
             {

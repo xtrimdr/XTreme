@@ -25,6 +25,7 @@ static class Shortcuts
     [
         new("play", Loc.T("sc.group.transport"), Loc.T("sc.play"), [G(Key.Space)]),
         new("toStart", Loc.T("sc.group.transport"), Loc.T("sc.toStart"), [G(Key.Home)]),
+        new("cutAudio", Loc.T("sc.group.transport"), Loc.T("sc.cutAudio"), [G(Key.OemPeriod, KeyModifiers.Control)]),
         new("record", Loc.T("sc.group.transport"), Loc.T("sc.record"), [G(Key.R, KeyModifiers.Shift), G(Key.Multiply)]),
         new("click", Loc.T("sc.group.transport"), Loc.T("sc.click"), [G(Key.C)]),
         new("countIn", Loc.T("sc.group.transport"), Loc.T("sc.countIn"), [G(Key.C, KeyModifiers.Shift)]),
@@ -40,6 +41,7 @@ static class Shortcuts
         new("solo", Loc.T("sc.group.tracks"), Loc.T("sc.solo"), [G(Key.S)]),
         new("arm", Loc.T("sc.group.tracks"), Loc.T("sc.arm"), [G(Key.R)]),
         new("newTrack", Loc.T("sc.group.tracks"), Loc.T("sc.newTrack"), [G(Key.N, KeyModifiers.Control | KeyModifiers.Shift)]),
+        new("duplicateTrack", Loc.T("sc.group.tracks"), Loc.T("sc.duplicateTrack"), [G(Key.D, KeyModifiers.Control | KeyModifiers.Shift)]),
         new("virtualKeys", Loc.T("sc.group.tracks"), Loc.T("sc.virtualKeys"), [G(Key.K, KeyModifiers.Control)]),
         new("delete", Loc.T("sc.group.editing"), Loc.T("sc.delete"), [G(Key.Delete)]),
         new("split", Loc.T("sc.group.editing"), Loc.T("sc.split"), [G(Key.X, KeyModifiers.Alt), G(Key.Insert)]),
@@ -68,16 +70,19 @@ static class Shortcuts
         new("rightPanel", Loc.T("sc.group.view"), Loc.T("sc.rightPanel"), [G(Key.P)]),
         new("maximize", Loc.T("sc.group.view"), Loc.T("sc.maximize"), [G(Key.Enter)]),
         new("fullScreen", Loc.T("sc.group.view"), Loc.T("sc.fullScreen"), [G(Key.F11)]),
+        new("uiLarger", Loc.T("sc.group.view"), Loc.T("sc.uiLarger"), [G(Key.OemPlus, KeyModifiers.Control), G(Key.Add, KeyModifiers.Control)]),
+        new("uiSmaller", Loc.T("sc.group.view"), Loc.T("sc.uiSmaller"), [G(Key.OemMinus, KeyModifiers.Control), G(Key.Subtract, KeyModifiers.Control)]),
+        new("uiReset", Loc.T("sc.group.view"), Loc.T("sc.uiReset"), [G(Key.D0, KeyModifiers.Control), G(Key.NumPad0, KeyModifiers.Control)]),
         new("help", Loc.T("sc.group.view"), Loc.T("sc.help"), [G(Key.F1)]),
         new("toolSelect", Loc.T("sc.group.tools"), Loc.T("sc.toolSelect"), [G(Key.D1), G(Key.NumPad1)]),
-        new("toolRange", Loc.T("sc.group.tools"), Loc.T("sc.toolRange"), [G(Key.D2), G(Key.NumPad2)]),
-        new("toolDraw", Loc.T("sc.group.tools"), Loc.T("sc.toolDraw"), [G(Key.D8), G(Key.NumPad8)]),
-        new("toolPaint", Loc.T("sc.group.tools"), Loc.T("sc.toolPaint"), [G(Key.D9), G(Key.NumPad9)]),
-        new("toolSplit", Loc.T("sc.group.tools"), Loc.T("sc.toolSplit"), [G(Key.D3), G(Key.NumPad3)]),
-        new("toolErase", Loc.T("sc.group.tools"), Loc.T("sc.toolErase"), [G(Key.D4), G(Key.NumPad4)]),
-        new("toolListen", Loc.T("sc.group.tools"), Loc.T("sc.toolListen"), [G(Key.D5), G(Key.NumPad5)]),
-        new("toolZoom", Loc.T("sc.group.tools"), Loc.T("sc.toolZoom"), [G(Key.D6), G(Key.NumPad6)]),
-        new("toolHand", Loc.T("sc.group.tools"), Loc.T("sc.toolHand"), [G(Key.D7), G(Key.NumPad7)]),
+        new("toolDraw", Loc.T("sc.group.tools"), Loc.T("sc.toolDraw"), [G(Key.D2), G(Key.NumPad2)]),
+        new("toolPaint", Loc.T("sc.group.tools"), Loc.T("sc.toolPaint"), [G(Key.D3), G(Key.NumPad3)]),
+        new("toolRange", Loc.T("sc.group.tools"), Loc.T("sc.toolRange"), [G(Key.D4), G(Key.NumPad4)]),
+        new("toolSplit", Loc.T("sc.group.tools"), Loc.T("sc.toolSplit"), [G(Key.D5), G(Key.NumPad5)]),
+        new("toolErase", Loc.T("sc.group.tools"), Loc.T("sc.toolErase"), [G(Key.D6), G(Key.NumPad6)]),
+        new("toolListen", Loc.T("sc.group.tools"), Loc.T("sc.toolListen"), [G(Key.D7), G(Key.NumPad7)]),
+        new("toolZoom", Loc.T("sc.group.tools"), Loc.T("sc.toolZoom"), [G(Key.D8), G(Key.NumPad8)]),
+        new("toolHand", Loc.T("sc.group.tools"), Loc.T("sc.toolHand"), [G(Key.D9), G(Key.NumPad9)]),
         .. PianoKeys(),
     ];
 
@@ -100,7 +105,7 @@ static class Shortcuts
             yield return new(PianoPrefix + id, Loc.T("sc.group.piano"), Loc.Or($"tool.{id}", Loc.T($"sc.piano.{id}")), keys);
     }
 
-    /// <summary>The ones that keep working with a plugin's window in front (<see cref="MainWindow.TellPluginKeys"/>).</summary>
+    /// <summary>The transport's actions.</summary>
     public static IEnumerable<Action> Transport => All.Where(a => a.Group == Loc.T("sc.group.transport"));
 
     /// <summary>The Windows virtual key, for what a plugin's window has to recognize; 0 if it has none here.</summary>

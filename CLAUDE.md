@@ -17,10 +17,24 @@ tools\probar.ps1 -NoAbrir "qué probar"
 
 # No preguntes si lo abre: queda en la lista. Solo si el usuario lo pide: la última copia con la lista a la vista
 tools\probar.ps1 -Abrir
+# O el Banco de pruebas solo, sin XTreme (XTreme.exe --banco, un programa aparte)
+tools\probar.ps1 -Banco
 
-# Qué falta probar y qué marcó el usuario como que no anda o anda mal; un arreglo vuelve a por probar con su número
+# Los pedidos del usuario (de ahí sale el trabajo), qué falta probar y qué marcó como que no anda o anda mal
 tools\probar.ps1 -Lista
+
+# Un pedido o algo marcado (No anda, Anda mal, A mejorar): tomarlo antes de empezar (código 2 = lo tiene otra sesión),
+# y al terminarlo vuelve a Pendiente con su número. Varios van juntos (60,61): una sola compilación y copia.
+# Lo pedido por chat se anota primero.
+tools\probar.ps1 -Toma 12
 tools\probar.ps1 -NoAbrir -Arregla 12
+tools\probar.ps1 -Pide "qué cambiar" -Tipo error   # error | mejora | funcion | idea
+# Cada ticket lleva su tema (lista fija: xtlab lista temas): -Tema mixer al anotar, o a uno que ya está:
+tools\probar.ps1 -Clasifica 12 -Tema mixer
+# Y el tipo, que el Banco no pregunta (los pedidos llegan sin tipo):
+tools\probar.ps1 -Clasifica 12 -Tipo mejora
+# Y su título corto, que pone el agente al tomarlo:
+tools\probar.ps1 -Titula 12 "Fader del bus no guarda el valor"
 ```
 
 No hay proyecto de tests: las pruebas son comandos de `xtlab`

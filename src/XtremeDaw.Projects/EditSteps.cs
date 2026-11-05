@@ -380,9 +380,8 @@ public static class EditSteps
             if (Bool(was, "hiddenInTimeline") != Bool(f, "hiddenInTimeline"))
                 Add("folder", "folder-hide", P(Bool(f, "hiddenInTimeline") ? T("step.sepHide", "Ocultaste del timeline ") : T("step.sepShow", "Mostraste en el timeline ")), Q(name));
             if (!Same(was, f, "color")) Add("color", "folder-color", P(T("step.trackColor", "Color de ")), Q(name));
-            if (!Same(was, f, "output"))
-                Add("move", "route", P(T("step.output", "Salida de ")), Q(name), P(" → "), Q(Str(f, "output") is { } bus ? busNames.GetValueOrDefault(bus, "") : "Master"));
-            Sends(was["sends"] as JsonArray, f["sends"] as JsonArray, name, changes, busNames);
+            // a folder is a channel (#134): fader, pan, M, S, slots, output and sends, in the same sentences
+            Channel(was, f, name, changes, busNames);
             if (!Same(was, f, "mixerSide")) Add("move", "folder-side", P(T("step.side", "Cambiaste de lado en el mixer a ")), Q(name));
             if (!Same(was, f, "height") || !Same(was, f, "heightScale")) Add("edit", "folder-height", P(T("step.height", "Altura de ")), Q(name));
         }

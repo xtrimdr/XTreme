@@ -8,6 +8,12 @@ static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // the Banco de pruebas on its own (Bench): no audio, no session log of a session that is not one
+        if (Bench.In(args))
+        {
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            return;
+        }
         // The ASIO callback is managed code, so every blocking GC stalls it: keep full collections in the background.
         // Short ones still stop it, so the UI avoids allocation bursts while audio runs (see MainWindow.mixerLayout).
         SessionLog.Start(args);

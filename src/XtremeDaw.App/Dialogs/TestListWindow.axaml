@@ -2,33 +2,103 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:XtremeDaw.App"
         x:Class="XtremeDaw.App.Dialogs.TestListWindow"
-        Title="{loc:T test.list.title}" Width="480" Height="600" MinWidth="340" MinHeight="260"
+        Title="{loc:T test.list.title}" Width="540" Height="640" MinWidth="340" MinHeight="260"
         ShowInTaskbar="True" ShowActivated="False" WindowStartupLocation="Manual"
-        Background="{StaticResource App}" ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="36">
+        Background="{StaticResource App}" ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="44">
 
-  <Grid RowDefinitions="36,Auto,*,Auto">
-    <Border x:Name="Header" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
-      <TextBlock Text="{loc:T test.list.title}" FontSize="12.5" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+  <Grid RowDefinitions="44,Auto,Auto,Auto,*,Auto">
+    <!-- The accent line under the title gives the window its own face next to the app. -->
+    <Border x:Name="Header" Background="{StaticResource Panel}" BorderBrush="{StaticResource Accent40}" BorderThickness="0,0,0,2">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" ClipToBounds="True">
+          <Border Width="26" Height="26" CornerRadius="6" Background="{StaticResource AccentSoft}">
+            <TextBlock Classes="icon" Text="&#xE9D5;" FontSize="13" Foreground="{StaticResource Accent}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <TextBlock Text="{loc:T test.list.title}" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <Border x:Name="BuildBadge" CornerRadius="5" Padding="6,1" Background="{StaticResource Hover}" VerticalAlignment="Center" IsVisible="False">
+            <TextBlock x:Name="BuildText" Classes="dim mono" FontSize="11" />
+          </Border>
+        </StackPanel>
+        <!-- The window's own buttons, left of the system's (minimize, maximize, close take ~138 px). -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="8,0,142,0" VerticalAlignment="Center">
+          <Button x:Name="NewRequestButton" Classes="ghost" AutomationProperties.Name="{loc:T test.list.request.new}">
+            <TextBlock Classes="icon" Text="&#xE710;" FontSize="13" />
+          </Button>
+          <Button x:Name="OpenAppButton" Classes="ghost" IsVisible="False" AutomationProperties.Name="{loc:T test.list.openapp}">
+            <TextBlock Classes="icon" Text="&#xE768;" FontSize="13" />
+          </Button>
+          <Button x:Name="ClaudeButton" Classes="ghost" IsVisible="False" AutomationProperties.Name="{loc:T test.list.claude}">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Classes="icon" Text="&#xE99A;" FontSize="13" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+              <TextBlock Classes="icon" Text="&#xE70D;" FontSize="8" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
     </Border>
 
-    <Border Grid.Row="1" Classes="seg" Margin="10,10,10,0" HorizontalAlignment="Left">
-      <StackPanel Orientation="Horizontal">
-        <ToggleButton x:Name="PendingTab" Classes="seg" />
-        <ToggleButton x:Name="NotedTab" Classes="seg" />
-        <ToggleButton x:Name="FixTab" Classes="seg" />
-        <ToggleButton x:Name="DoneTab" Classes="seg" />
+    <!-- What arrived while the bench was open, or while it was closed: says it, and "Ver" goes to it. -->
+    <Border x:Name="NewsBar" Grid.Row="1" IsVisible="False" Margin="10,10,10,0" Background="{StaticResource AccentSoft}"
+            BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="12,6,6,6">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <TextBlock Classes="icon" Text="&#xEA8F;" FontSize="12" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+        <TextBlock x:Name="NewsText" Grid.Column="1" Margin="8,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        <Button x:Name="NewsShow" Grid.Column="2" Classes="btn sm primary" Content="{loc:T test.list.news.show}" />
+        <Button x:Name="NewsClose" Grid.Column="3" Classes="act" Margin="4,0,0,0" ToolTip.Tip="{loc:T common.close}">
+          <TextBlock Classes="icon" Text="&#xE711;" FontSize="10" />
+        </Button>
+      </Grid>
+    </Border>
+
+    <!-- No tabs (asked by the user, #125: all of it in one vertical list); the search filters the whole list. -->
+    <Grid Grid.Row="2" Margin="10,10,18,0" ColumnDefinitions="*,Auto">
+      <!-- Folds every topic, or opens them all when they are all folded (asked by the user, #126). -->
+      <Button x:Name="FoldAllButton" Grid.Column="1" Classes="chip" Width="30" Height="30" MinHeight="30" Padding="0" Margin="6,0,0,0"
+              VerticalAlignment="Top" HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+        <TextBlock x:Name="FoldAllIcon" Classes="icon" Text="&#xE971;" FontSize="11" />
+      </Button>
+      <TextBox x:Name="SearchBox" Classes="field" Height="30" MinHeight="30"
+               VerticalAlignment="Top" VerticalContentAlignment="Center" Watermark="{loc:T test.list.search}">
+        <TextBox.InnerLeftContent>
+          <TextBlock Classes="icon" Text="&#xE721;" FontSize="11" Foreground="{StaticResource Faint}" Margin="8,0,0,0" VerticalAlignment="Center" />
+        </TextBox.InnerLeftContent>
+      </TextBox>
+    </Grid>
+
+    <!-- Outside the rows, so a list that changes while typing never takes the box away. A request, or a new skill. -->
+    <Border x:Name="Composer" Grid.Row="3" IsVisible="False" Margin="10,10,18,0" Background="{StaticResource Raised}"
+            BorderBrush="{StaticResource Accent40}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+      <StackPanel Spacing="8">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock x:Name="ComposerIcon" Classes="icon" Text="&#xE710;" FontSize="11" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+          <TextBlock x:Name="ComposerTitle" Classes="label" Foreground="{StaticResource Accent}" Text="{loc:T test.list.request.new}" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBox x:Name="RequestBox" Classes="field note" Watermark="{loc:T test.list.request.hint}" TextWrapping="Wrap" AcceptsReturn="True"
+                 MinHeight="64" MaxHeight="180" />
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+          <Button x:Name="CancelEditButton" Classes="btn sm" Content="{loc:T common.cancel}" IsVisible="False" />
+          <Button x:Name="AddButton" Classes="btn sm primary" Content="{loc:T test.list.request.add}" />
+        </StackPanel>
       </StackPanel>
     </Border>
 
     <!-- The right margin keeps the scroll bar off the window's resize border, which takes the outer ~8 px (frame + padding). -->
-    <ScrollViewer Grid.Row="2" Margin="0,0,8,0">
+    <ScrollViewer x:Name="Scroller" Grid.Row="4" Margin="0,0,8,0">
       <StackPanel x:Name="Rows" Margin="10,10,2,10" Spacing="8" />
     </ScrollViewer>
 
-    <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,8">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock x:Name="ErrorText" Classes="notice" VerticalAlignment="Center" Margin="0,0,10,0" />
-        <Button x:Name="ClearButton" Grid.Column="1" Classes="btn sm" Content="{loc:T test.list.clear}" />
+    <Border Grid.Row="5" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,8">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <WrapPanel x:Name="Totals" VerticalAlignment="Center" ItemSpacing="12" />
+        <TextBlock x:Name="ErrorText" Grid.Column="1" Classes="notice" VerticalAlignment="Center" Margin="10,0" TextWrapping="Wrap" />
+        <ToggleButton x:Name="HistoryButton" Grid.Column="2" Classes="chip" MinHeight="26" Margin="0,0,8,0">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Classes="icon" Text="&#xE81C;" FontSize="11" VerticalAlignment="Center" />
+            <TextBlock Text="{loc:T test.list.history}" FontSize="12" VerticalAlignment="Center" />
+          </StackPanel>
+        </ToggleButton>
+        <Button x:Name="ClearButton" Grid.Column="3" Classes="btn sm" Content="{loc:T test.list.clear}" />
       </Grid>
     </Border>
   </Grid>

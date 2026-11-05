@@ -50,6 +50,7 @@ public sealed class MixTrackSpec
     public double Volume { get; init; } = 1;
     public double Pan { get; init; }
     public bool Muted { get; init; }
+    /// <summary>Soloed by its channel or by its folder (<c>ChannelDsp.Soloed</c>).</summary>
     public bool Solo { get; init; }
     public SatParams Sat { get; init; } = SatParams.From(false, SatMode.Tube, 0.3);
     public CompState Comp { get; init; } = CompState.Defaults;
@@ -84,7 +85,7 @@ public sealed class MixSendSpec
 }
 
 /// <summary>
-/// A node of the mix (native only): a folder (a plain sum: no slots, pan or fader) or a bus. What is routed and sent to
+/// A node of the mix (native only): a folder or a bus, both channels with slots, pan, fader and mute. What is routed and sent to
 /// it adds up, goes through its slots, pan, fader and mute (<see cref="BusDspChain"/>), and on to its
 /// <see cref="Output"/> and its sends. Its <see cref="Output"/> and sends always point at nodes after it in
 /// <see cref="MixBusSpec.Nodes"/> (the run order), or at the master.
@@ -483,7 +484,7 @@ public sealed class TrackSend(BusDspChain? to, int index, float level, bool pre,
 }
 
 /// <summary>
-/// A node of the mix (native only), live and in the export: a folder (a plain sum, no slots, pan or fader) or a bus. What
+/// A node of the mix (native only), live and in the export: a folder or a bus, both channels. What
 /// is routed or sent to it adds up in its buffer (8192 frames, preallocated), goes through its insert slots
 /// (<see cref="InsertRack"/>, where a reverb or a delay is just one more slot), its pan (the tracks' law), its fader and
 /// its mute, and on to its output (<see cref="Out"/>: another node, or the master when null) and its sends
@@ -590,7 +591,7 @@ public sealed class BusDspChain
         float g = mute ? 0f : (float)Volume;
         float pg = mute ? 0f : 1f;
         double pan = Math.Clamp(Pan, -1, 1);
-        // at the center the pan is no pan at all: a folder (and a centered bus) passes its sum untouched
+        // at the center the pan is no pan at all: a centered folder or bus at 0 dB passes its sum untouched
         bool panned = pan != 0;
         double x = pan <= 0 ? pan + 1 : pan;
         float gl = (float)Math.Cos(x * Math.PI / 2.0);

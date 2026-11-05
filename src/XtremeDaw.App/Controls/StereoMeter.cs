@@ -108,9 +108,50 @@ public sealed class StereoMeter : Control
         e.Handled = true;
     }
 
+    string? look;
+    /// <summary>This meter's look, whatever the window's is (a sample in the settings); null follows <see cref="MeterLooks.Current"/>.</summary>
+    public string? Look
+    {
+        set { look = value; InvalidateVisual(); }
+    }
+
+    /// <summary>The LEDs' clip over both bars, kept until the size changes.</summary>
+    StreamGeometry? leds;
+    Rect ledsFor;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        MeterLooks.Changed += InvalidateVisual;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        MeterLooks.Changed -= InvalidateVisual;
+    }
+
     public override void Render(DrawingContext ctx)
     {
         double w = Bounds.Width - 10, h = (BarsH - 2) / 2;
+        string lk = look ?? MeterLooks.Current;
+        if (lk != MeterLooks.Solid && w > 0 && h > 0) RenderLook(ctx, lk, w, h);
+        else RenderSolid(ctx, w, h);
+        ctx.DrawRectangle(clip ? Palette.Rec : Palette.Raised, null, new Rect(w + 3, 0, LightW, BarsH), 2, 2);
+        if (!showScale) return;
+        var tick = Palette.Pen(Palette.Line);
+        foreach (int db in ScaleDb)
+        {
+            double x = Math.Round(w * (db - MinDb) / -MinDb) - 0.5;
+            ctx.DrawLine(tick, new Point(x, BarsH + 1), new Point(x, BarsH + 3));
+            var t = Palette.Text(db.ToString(), 8, Palette.Faint, Palette.Mono);
+            ctx.DrawText(t, new Point(Math.Clamp(x - t.Width / 2, 0, w - t.Width + 1), BarsH + 2.5));
+        }
+    }
+
+    /// <summary>The bars as they always were (<see cref="MeterLooks.Solid"/>): accent up to −6 dB, amber above.</summary>
+    void RenderSolid(DrawingContext ctx, double w, double h)
+    {
         for (int c = 0; c < 2; c++)
         {
             var r = new Rect(0, c * (h + 2), w, h);
@@ -125,15 +166,62 @@ public sealed class StereoMeter : Control
             double hk = (hold[c] - MinDb) / -MinDb;
             if (hk > 0) ctx.FillRectangle(hold[c] > -1 ? Palette.Rec : Palette.Fg, new Rect(w * hk - 1.5, r.Y, 1.5, h));
         }
-        ctx.DrawRectangle(clip ? Palette.Rec : Palette.Raised, null, new Rect(w + 3, 0, LightW, BarsH), 2, 2);
-        if (!showScale) return;
-        var tick = Palette.Pen(Palette.Line);
-        foreach (int db in ScaleDb)
+    }
+
+    /// <summary>
+    /// The bars in another look, with the same colors and thresholds: <see cref="MeterLooks.Led"/> lights whole LEDs,
+    /// <see cref="MeterLooks.Gradient"/> paints the colors as one gradient over a faint copy of the whole scale, and
+    /// <see cref="MeterLooks.Thin"/> lights a narrow line in the middle of each bar. The peak hold keeps the bar's height.
+    /// </summary>
+    void RenderLook(DrawingContext ctx, string lk, double w, double h)
+    {
+        double split = (-6 - MinDb) / -MinDb;
+        bool led = lk == MeterLooks.Led;
+        if (led)
         {
-            double x = Math.Round(w * (db - MinDb) / -MinDb) - 0.5;
-            ctx.DrawLine(tick, new Point(x, BarsH + 1), new Point(x, BarsH + 3));
-            var t = Palette.Text(db.ToString(), 8, Palette.Faint, Palette.Mono);
-            ctx.DrawText(t, new Point(Math.Clamp(x - t.Width / 2, 0, w - t.Width + 1), BarsH + 2.5));
+            var area = new Rect(0, 0, w, BarsH);
+            if (leds == null || area != ledsFor) { leds = MeterLooks.Segments(area, false); ledsFor = area; }
+        }
+        for (int c = 0; c < 2; c++)
+        {
+            var r = new Rect(0, c * (h + 2), w, h);
+            double k = Math.Clamp((level[c] - MinDb) / -MinDb, 0, 1), hk = (hold[c] - MinDb) / -MinDb;
+            double lit = led ? MeterLooks.SnapLed(w * k) : w * k;
+            using (ctx.PushClip(new RoundedRect(r, 2)))
+            using (led ? ctx.PushGeometryClip(leds!) : ctx.PushOpacity(1))
+            {
+                var bar = r;
+                if (lk == MeterLooks.Thin)
+                {
+                    double th = Math.Max(2, Math.Round(h * MeterLooks.ThinShare));
+                    bar = new Rect(0, r.Y + Math.Floor((h - th) / 2), w, th);
+                }
+                ctx.FillRectangle(Palette.Raised, bar);
+                if (lk == MeterLooks.Gradient)
+                {
+                    var grad = MeterLooks.StereoGradient(split);
+                    using (ctx.PushOpacity(MeterLooks.GhostOpacity)) ctx.FillRectangle(grad, r);
+                    if (lit > 0)
+                        using (ctx.PushClip(new Rect(0, r.Y, lit, h)))
+                            ctx.FillRectangle(grad, r);
+                }
+                else if (lit > 0)
+                {
+                    ctx.FillRectangle(Palette.Accent, new Rect(0, bar.Y, Math.Min(lit, w * split), bar.Height));
+                    if (lit > w * split) ctx.FillRectangle(Palette.Mute, new Rect(w * split, bar.Y, lit - w * split, bar.Height));
+                }
+                if (hk > 0)
+                {
+                    var brush = hold[c] > -1 ? Palette.Rec : Palette.Fg;
+                    if (led)
+                    {
+                        // the hold's whole LED
+                        double at = Math.Max(0, MeterLooks.SnapLed(w * hk) - MeterLooks.SegStep);
+                        ctx.FillRectangle(brush, new Rect(at, r.Y, MeterLooks.SegStep, h));
+                    }
+                    else ctx.FillRectangle(brush, new Rect(w * hk - 1.5, r.Y, 1.5, h));
+                }
+            }
         }
     }
 }

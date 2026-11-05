@@ -55,8 +55,10 @@ public sealed partial class PianoRollView
 
     void DrawKeyName(DrawingContext ctx, int pitch, double y)
     {
-        var text = Palette.Text(keyNames![pitch], 9.5, MidiNote.IsBlack(pitch) ? Palette.Fg : Palette.App, Palette.Ui);
-        ctx.DrawText(text, new Point(Math.Max(2, KeyW - 6 - text.Width), y + (rowH - text.Height) / 2));
+        // a black key's name goes inside the black key, light on dark, like the note names
+        bool black = MidiNote.IsBlack(pitch);
+        var text = Palette.Text(keyNames![pitch], 9.5, black ? Palette.Fg : Palette.App, Palette.Ui);
+        ctx.DrawText(text, new Point(Math.Max(2, (black ? BlackKeyW - 3 : KeyW - 6) - text.Width), y + (rowH - text.Height) / 2));
     }
 
     /// <summary>A slide's bar (along the top, at the end it slides from) and a portamento's dot, so what a note does

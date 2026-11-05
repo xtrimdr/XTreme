@@ -14,7 +14,7 @@ namespace XtremeDaw.App;
 /// The buses (native only, <see cref="ProjectBuses"/>) and where every track, folder and bus sends its sound: a strip per
 /// bus, built and selected like a track's (badge with its color and icon, name, mute, its insert slots with the same
 /// panels as a track's, where a reverb or a delay is one more slot, pan, fader and meter), the Salida selector and the send panels every strip has, the
-/// Canal tab's output and send sections, and the PRE chip every send has (but a folder's: it has no fader). Every edit is
+/// Canal tab's output and send sections, and the PRE chip every send has. Every edit is
 /// an undo step (per control, like the strips), heard at once through <see cref="Audio.PlaybackEngine.SetBuses"/>.
 /// </summary>
 public partial class MainWindow
@@ -65,8 +65,6 @@ public partial class MainWindow
         public required Func<IRouted?> Get { get; init; }
         /// <summary>An edit: one undo step per key, heard at once, saved. The function says whether anything changed.</summary>
         public required Action<Func<Project, IRouted, bool>, string> Edit { get; init; }
-        /// <summary>A folder: no fader, so no PRE.</summary>
-        public bool Folder { get; init; }
         /// <summary>A bus's own id: it never sends to itself.</summary>
         public string? BusId { get; init; }
         /// <summary>The track it is: only a track's sends have lanes.</summary>
@@ -98,7 +96,6 @@ public partial class MainWindow
         {
             Get = () => FolderById(id),
             Edit = (change, key) => { if (FolderById(id) is { } f) FolderEdit(f, x => change(store!.Project, x), key); },
-            Folder = true,
         };
     }
 
@@ -240,7 +237,7 @@ public partial class MainWindow
 
     /// <summary>
     /// A send's actions, from a right click on it in the mixer or the inspector (asked by the user, like an effect's):
-    /// turn it on or off, take it before or after the fader (not a folder's: it has no fader), go to its bus, take it
+    /// turn it on or off, take it before or after the fader, go to its bus, take it
     /// out of the list. Each one an undo step.
     /// </summary>
     void ShowSendMenu(Router r, string busId, Control anchor)
@@ -257,12 +254,11 @@ public partial class MainWindow
             }, enabled: enabled, icon: "\ue7e8"),
         };
         if (r.Track is { } automated) items.Add(AutomateItem(automated, AutoTarget.Send(busId)));
-        if (!r.Folder)
-            items.Add(MenuAction(Loc.T(pre ? "send.menu.post" : "send.menu.pre"), () =>
-            {
-                r.Edit((p, y) => ProjectBuses.SetSend(p, y, busId, pre: !pre) != null, $"send.{busId}.pre");
-                return Task.CompletedTask;
-            }, enabled: enabled, icon: "\ue8cb", tip: Loc.T(pre ? "send.menu.post.tip" : "send.menu.pre.tip")));
+        items.Add(MenuAction(Loc.T(pre ? "send.menu.post" : "send.menu.pre"), () =>
+        {
+            r.Edit((p, y) => ProjectBuses.SetSend(p, y, busId, pre: !pre) != null, $"send.{busId}.pre");
+            return Task.CompletedTask;
+        }, enabled: enabled, icon: "\ue8cb", tip: Loc.T(pre ? "send.menu.post.tip" : "send.menu.pre.tip")));
         items.Add(MenuAction(Loc.T("send.menu.bus", bus.Name), () => { SelectBus(busId); return Task.CompletedTask; }, icon: "\ue8a7"));
         items.Add(new Separator());
         items.Add(MenuAction(Loc.T("send.menu.remove"), () =>
@@ -551,6 +547,7 @@ public partial class MainWindow
         sendRefresh.Clear();
         stripSends.Children.Clear();
 
+        var sendIds = new Dictionary<Control, string>();
         var sends = CompactSends(router, sendRefresh, (id, line) =>
         {
             string title = "bus:" + id;
@@ -558,12 +555,18 @@ public partial class MainWindow
             sectionLooks[title] = (FxIcon.Bus, () => router.Get() is { } x && ProjectBuses.SendOf(x, id) is var s && s.On && s.Level > 0);
             sendSections.Add(title);
             sendRows[title] = line;
+            sendIds[line] = id;
         });
         foreach (var line in sends.Children.ToList())
         {
             sends.Children.Remove(line);
             line.Height = StripRowH;
-            stripSends.Children.Add(line);
+            string id = sendIds[line];
+            stripSends.Children.Add(WithStripTrash(line, Loc.T("send.hide.tip", BusById(id)?.Name ?? ""), () =>
+            {
+                router.Edit((p, x) => ProjectBuses.ShowSend(p, x, id, false), $"send.{id}.shown");
+                return Task.CompletedTask;
+            }));
         }
 
         // where the track's output goes: its folder's, or its own choice

@@ -246,6 +246,10 @@ public sealed class LiveNotes(int sampleRate)
         events[count++] = new LiveNote { On = on, Pitch = (byte)pitch, Sounds = (byte)sounds, Velocity = (byte)velocity };
     }
 
+    /// <summary>This key sounds now (held by the hand or the pedal), as played: before the track's Transponer. Read by the
+    /// UI to light it; a stale read only lights it a tick late.</summary>
+    public bool IsSounding(int pitch) => sounding[pitch & 0x7F];
+
     /// <summary>The notes sounding now as note-ons (a plugin that was told "all notes off" gets them back).</summary>
     public int Sounding(Span<LiveNote> into)
     {

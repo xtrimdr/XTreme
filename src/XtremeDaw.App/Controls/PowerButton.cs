@@ -23,6 +23,10 @@ public sealed class PowerButton : Button
     /// <summary>The state shown, null before the first <see cref="Refresh"/>.</summary>
     bool? shown;
 
+    /// <summary>Styled as a Button: a type selector matches the exact style key, so without this App.axaml's
+    /// <c>Button.chip.power</c> (its ON fill) never reached it and ON looked like OFF.</summary>
+    protected override Type StyleKeyOverride => typeof(Button);
+
     /// <param name="isOn">Whether the effect is on now.</param>
     /// <param name="toggle">Switches it.</param>
     /// <param name="tip">The tooltip for a state (what a click does); by default "Prender" / "Apagar".</param>

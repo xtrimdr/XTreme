@@ -441,7 +441,7 @@ public sealed partial class HelpDialog : UserControl
         {
             inlines.Add(mark switch
             {
-                HelpGuide.Mark.Key => new Run($" {piece} ") { FontFamily = Palette.Mono.FontFamily, FontSize = size - 1, Foreground = Palette.Fg, Background = Palette.Hover },
+                HelpGuide.Mark.Key => new Run($" {piece} ") { FontFamily = Palette.Code, FontSize = size - 1, Foreground = Palette.Fg, Background = Palette.Hover },
                 HelpGuide.Mark.Bold => new Run(piece) { FontWeight = FontWeight.SemiBold, Foreground = Palette.Fg },
                 HelpGuide.Mark.Icon => new Run(piece) { FontFamily = IconFont, Foreground = Palette.Accent },
                 _ => new Run(piece),

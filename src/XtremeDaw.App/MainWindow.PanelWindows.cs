@@ -238,7 +238,8 @@ public partial class MainWindow
                 mixerViews.Children.Remove(masteringScroll);
                 mixerPins.Children.Remove(masteringPin);
                 Grid.SetColumn(masteringPin, 1);
-                return new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { masteringScroll, masteringPin } };
+                // the pinned meter goes along: the view keeps its notips (App.axaml) in its own window
+                return new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Classes = { "notips" }, Children = { masteringScroll, masteringPin } };
             case FloatInspector:
                 c = InspectorBar.Child!;
                 InspectorBar.Child = null;

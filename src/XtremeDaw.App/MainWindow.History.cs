@@ -162,7 +162,13 @@ public partial class MainWindow
             foreach (var g in visible.GroupBy(m => m.CreatedAt.ToLocalTime().Date))
             {
                 list.Children.Add(DayHeader(ProjectHistory.DayLabel(g.Key), list.Children.Count == 0));
-                foreach (var m in g) list.Children.Add(m.Id == historyDeletingTake ? TakeDeleteRow(st, m) : TakeRow(st, m, used.Contains(m.Id), editable));
+                bool firstRow = true;
+                foreach (var m in g)
+                {
+                    if (!firstRow) list.Children.Add(RowSeparator());
+                    firstRow = false;
+                    list.Children.Add(m.Id == historyDeletingTake ? TakeDeleteRow(st, m) : TakeRow(st, m, used.Contains(m.Id), editable));
+                }
             }
             historyTakes.Children.Add(list);
         }
@@ -176,7 +182,11 @@ public partial class MainWindow
         else
         {
             var list = new StackPanel { Margin = new Thickness(-16, -4) };
-            foreach (var e in exports) list.Children.Add(e.File == historyDeletingExport ? ExportDeleteRow(st, e) : ExportRow(st, e, editable));
+            foreach (var e in exports)
+            {
+                if (list.Children.Count > 0) list.Children.Add(RowSeparator());
+                list.Children.Add(e.File == historyDeletingExport ? ExportDeleteRow(st, e) : ExportRow(st, e, editable));
+            }
             historyExports.Children.Add(list);
         }
 
@@ -209,6 +219,13 @@ public partial class MainWindow
         Text = label.ToUpperInvariant(), Classes = { "label" }, Margin = new Thickness(16, first ? 4 : 12, 16, 4),
     };
 
+    /// <summary>The faint line between two rows of a list (asked by the user: the items ran into each other), inset
+    /// like the rows' text so it doesn't reach the edges.</summary>
+    static Control RowSeparator() => new Border
+    {
+        Height = 1, Background = Palette.Alpha(Palette.LineColor, 0.6), Margin = new Thickness(16, 0), IsHitTestVisible = false,
+    };
+
     /// <summary>A Fluent glyph; without a brush it takes the button's color.</summary>
     static TextBlock HistoryIcon(string glyph, double size = 12, IBrush? brush = null)
     {
@@ -229,17 +246,23 @@ public partial class MainWindow
     }
 
     /// <summary>A list row: Raised at 60 % on hover, and its hover-only actions show while pointed at or focused.</summary>
-    static Border HistoryRow(Control child, IEnumerable<Control> hoverOnly, Thickness padding)
+    /// <param name="collapse">The hover-only buttons leave their room while hidden, for the text beside them (the
+    /// Biblioteca's names, asked by the user: they were cut by buttons nobody saw); otherwise they only fade.</param>
+    static Border HistoryRow(Control child, IEnumerable<Control> hoverOnly, Thickness padding, bool collapse = false)
     {
         var hidden = hoverOnly.ToList();
-        foreach (var h in hidden) h.Opacity = 0;
         var row = new Border { Child = child, Padding = padding, Background = Brushes.Transparent };
         void Show(bool on)
         {
             bool focus = row.IsKeyboardFocusWithin;
             row.Background = on || focus ? Palette.Alpha(Palette.RaisedColor, 0.6) : Brushes.Transparent;
-            foreach (var h in hidden) h.Opacity = on || focus ? 1 : 0;
+            foreach (var h in hidden)
+            {
+                if (collapse) h.IsVisible = on || focus;
+                else h.Opacity = on || focus ? 1 : 0;
+            }
         }
+        Show(false);
         row.PointerEntered += (_, _) => Show(true);
         row.PointerExited += (_, _) => Show(false);
         row.GotFocus += (_, _) => Show(true);
@@ -250,7 +273,7 @@ public partial class MainWindow
     Control TakeRow(ProjectStore st, Media m, bool inTimeline, bool editable)
     {
         bool current = takePreview.PlayingId == m.Id, playing = current && !takePreview.Paused;
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto,Auto"), ColumnSpacing = 8 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 8 };
         var play = RowButton(playing ? "\uE769" : "\uF5B0", Loc.T(playing ? "hist.pause" : current ? "hist.resume" : "hist.listen"), () => TogglePreview(st, m));
         if (current) play.Foreground = Palette.Accent;
         grid.Children.Add(play);
@@ -259,7 +282,8 @@ public partial class MainWindow
         text.Children.Add(new TextBlock { Text = m.Name, FontSize = 13, Foreground = inTimeline ? Palette.Fg : Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis });
         // the tags go in their own boxes under the name, lit while the take is in the timeline (asked by the user: the
         // list has to read at a glance); an offline file never lights up
-        var tags = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        // a badge that doesn't fit whole drops to the next line (the info trims first): with the hover buttons shown they ran under "Usar"
+        var tags = new Controls.FitRow { Spacing = 4, Margin = new Thickness(0, 3, 0, 0) };
         Border Badge(string text, string? glyph = null, bool lit = false)
         {
             var fg = lit ? Palette.Accent : Palette.Faint;
@@ -293,12 +317,15 @@ public partial class MainWindow
             Classes = { "mono" }, FontSize = 10, Foreground = Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
             Text = $"{m.CreatedAt.ToLocalTime():HH:mm} · {ProjectHistory.FormatDuration(m.DurationSec)} · {ProjectHistory.FormatBytes(historyBytes.GetValueOrDefault(m.Id))}",
         };
-        Grid.SetColumn(info, 1);
-        text.Children.Add(new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 8, Margin = new Thickness(0, 3, 0, 0), Children = { tags, info } });
+        tags.Children.Add(info);
+        tags.Rest = info;
+        text.Children.Add(tags);
         Grid.SetColumn(text, 1); grid.Children.Add(text);
 
         var reveal = RowButton("\uE838", Loc.T("hist.reveal"), () => RevealInExplorer(st.Dir, m.Video ?? m.Audio));
-        Grid.SetColumn(reveal, 4); grid.Children.Add(reveal);
+        // the buttons on the right, in one panel: the hidden ones collapse and leave no gap
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(buttons, 2); grid.Children.Add(buttons);
         var hover = new List<Control> { reveal };
         bool canPlace = editable && historyBusyId == null;
         if (lost)
@@ -307,16 +334,17 @@ public partial class MainWindow
             var folder = RowButton("", Loc.T("hist.findFolder.tip"), async () => await FindInFolder(st));
             file.Foreground = folder.Foreground = Palette.Accent;
             file.IsEnabled = folder.IsEnabled = canPlace;
-            Grid.SetColumn(file, 2); grid.Children.Add(file);
-            Grid.SetColumn(folder, 3); grid.Children.Add(folder);
+            buttons.Children.Add(file);
+            buttons.Children.Add(folder);
         }
         else if (m.Linked)
         {
             var copy = RowButton("", Loc.T("hist.copyIn"), async () => await CopyLinked(st, m));
             copy.IsEnabled = canPlace;
             hover.Add(copy);
-            Grid.SetColumn(copy, 3); grid.Children.Add(copy);
+            buttons.Children.Add(copy);
         }
+        buttons.Children.Add(reveal);
         if (!inTimeline)
         {
             // a linked file is the user's: taking it out of the project only unlinks it, with nothing to confirm (asked by the user)
@@ -325,7 +353,7 @@ public partial class MainWindow
                 : RowButton("", Loc.T("hist.trashTake"), () => { historyDeletingTake = m.Id; RefreshHistory(); }, danger: true);
             trash.IsEnabled = editable && historyBusyId == null && !historyTakeBusy;
             hover.Add(trash);
-            Grid.SetColumn(trash, 5); grid.Children.Add(trash);
+            buttons.Children.Add(trash);
         }
         Control action;
         if (historyBusyId == m.Id)
@@ -347,10 +375,10 @@ public partial class MainWindow
             use.Click += async (_, _) => await UseTake(m);
             action = use;
         }
-        Grid.SetColumn(action, 6); grid.Children.Add(action);
-        if (!current) return DraggableTake(HistoryRow(grid, hover, new Thickness(8, 6, 16, 6)), m, editable);
+        buttons.Children.Add(action);
+        if (!current) return DraggableTake(HistoryRow(grid, hover, new Thickness(8, 6, 16, 6), collapse: true), m, editable);
         (takePlayer.Parent as Panel)?.Children.Remove(takePlayer); // it moves with the take across refreshes
-        return DraggableTake(HistoryRow(new StackPanel { Children = { grid, takePlayer } }, hover, new Thickness(8, 6, 16, 8)), m, editable);
+        return DraggableTake(HistoryRow(new StackPanel { Children = { grid, takePlayer } }, hover, new Thickness(8, 6, 16, 8), collapse: true), m, editable);
     }
 
     /// <summary>A press on the row itself (its buttons and the wave keep theirs) that travels becomes a drag to the timeline.</summary>
@@ -520,37 +548,49 @@ public partial class MainWindow
         return new Border { Child = grid, Background = Palette.RecSoft, Padding = new Thickness(16, 6, 8, 6) };
     }
 
+    /// <summary>
+    /// What is not on the timeline, as two buttons (asked by the user: one "Borrar" for both read as if the linked files
+    /// were deleted too): "Desvincular no usados" only takes the linked ones out of the project, without asking, since their
+    /// files stay where they are; "Borrar no usados" sends the project's own files to the Recycle Bin, after confirming.
+    /// </summary>
     Control PurgeButton(List<Media> unused, bool editable)
     {
-        long bytes = unused.Sum(m => historyBytes.GetValueOrDefault(m.Id));
-        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
-        content.Children.Add(HistoryIcon("\uE74D"));
-        content.Children.Add(new TextBlock
+        var own = unused.Where(m => !m.Linked).ToList();
+        var linked = unused.Where(m => m.Linked).ToList();
+        var stack = new Controls.EvenRow { Spacing = 8 };
+        if (linked.Count > 0)
         {
-            Text = unused.Count == 0 ? Loc.T("hist.purge.none") : Loc.T("hist.purge.button", unused.Count, ProjectHistory.FormatBytes(bytes)),
-            FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
-        });
-        var b = new Button { Classes = { "chip", "purge" }, Content = content, Height = 32, MinHeight = 32, HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Center, IsEnabled = editable && unused.Count > 0 };
-        // only linked ones left: they are just unlinked, nothing goes to the Recycle Bin, so nothing to confirm
-        b.Click += async (_, _) =>
+            var unlink = Wide("\uE71B", Loc.T("hist.purge.unlink", linked.Count), ["chip"], editable);
+            ToolTip.SetTip(unlink, Loc.T("hist.purge.unlink.tip"));
+            unlink.Click += async (_, _) => { if (store is { } st) await PurgeUnused(st, linked); };
+            stack.Children.Add(unlink);
+        }
+        if (own.Count > 0 || linked.Count == 0)
         {
-            if (unused.All(m => m.Linked) && store is { } st) await PurgeUnused(st, unused);
-            else { historyConfirmPurge = true; RefreshHistory(); }
-        };
-        return b;
-    }
+            long bytes = own.Sum(m => historyBytes.GetValueOrDefault(m.Id));
+            var delete = Wide("\uE74D", own.Count == 0 ? Loc.T("hist.purge.none") : Loc.T("hist.purge.button", own.Count, ProjectHistory.FormatBytes(bytes)),
+                ["chip", "purge"], editable && own.Count > 0);
+            if (own.Count > 0) ToolTip.SetTip(delete, Loc.T("hist.purge.tip"));
+            delete.Click += (_, _) => { historyConfirmPurge = true; RefreshHistory(); };
+            stack.Children.Add(delete);
+        }
+        return stack;
 
-    /// <summary>What "Borrar no usados" will do: the project's own files go to the Recycle Bin, the linked ones are only unlinked.</summary>
-    static string PurgeText(List<Media> unused, long bytes)
-    {
-        int own = unused.Count(m => !m.Linked), linked = unused.Count - own;
-        string text = Loc.T("hist.purge.confirm", Loc.T(own == 1 ? "hist.channels.one" : "hist.channels.many", own), ProjectHistory.FormatBytes(bytes));
-        return linked == 0 ? text : text + " " + Loc.T(linked == 1 ? "hist.purge.linked.one" : "hist.purge.linked.many", linked);
+        static Button Wide(string glyph, string text, string[] classes, bool enabled)
+        {
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
+            content.Children.Add(HistoryIcon(glyph));
+            content.Children.Add(new TextBlock { Text = text, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+            var b = new Button { Content = content, Height = 32, MinHeight = 32, HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center, IsEnabled = enabled };
+            b.Classes.AddRange(classes);
+            return b;
+        }
     }
 
     Control PurgeConfirm(ProjectStore st, List<Media> unused)
     {
+        unused = unused.Where(m => !m.Linked).ToList(); // the linked ones have their own button
         long bytes = unused.Sum(m => historyBytes.GetValueOrDefault(m.Id));
         var stack = new StackPanel { Spacing = 12 };
         var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 8 };
@@ -560,7 +600,7 @@ public partial class MainWindow
         var text = new TextBlock
         {
             FontSize = 12, Foreground = Palette.Fg, TextWrapping = TextWrapping.Wrap,
-            Text = PurgeText(unused, bytes),
+            Text = Loc.T("hist.purge.confirm", Loc.T(unused.Count == 1 ? "hist.channels.one" : "hist.channels.many", unused.Count), ProjectHistory.FormatBytes(bytes)),
         };
         Grid.SetColumn(text, 1); line.Children.Add(text);
         stack.Children.Add(line);
@@ -617,8 +657,11 @@ public partial class MainWindow
         RefreshHistory();
         try
         {
+            // like dropping it there (asked by the user): on the selected track at the playhead, or a new track when
+            // none is selected or that stretch is taken
             string? selected = sel?.Track.Id;
-            await EditTimeline(p => ClipEditing.AddMedia(p, m.Id, selected), null);
+            double at = engine.PositionSec;
+            await EditTimeline(p => ClipEditing.PlaceMedia(p, m.Id, at, selected), null);
         }
         finally
         {

@@ -385,12 +385,12 @@
           "id": "import",
           "icon": "E896",
           "title": "Importar audio y usar samples",
-          "keywords": "traer archivo wav mp3 sample loop arrastrar biblioteca pista base copiar vincular duplicar media",
+          "keywords": "traer archivo wav mp3 sample loop arrastrar biblioteca pista base copiar vincular duplicar media mono estéreo stereo canales izquierdo derecho onda",
           "intro": "Lo que importás se copia al proyecto o se vincula donde está, sin duplicarlo.",
           "steps": [
             "Arrastrá el archivo al timeline, o tocá **Nueva pista → Importar audio…**.",
             "Para tus carpetas de sonidos, abrí **Biblioteca → Samples** y sumá una carpeta.",
-            "Escuchá con **Espacio** y arrastrá el sample a una pista, desde la lista o desde el reproductor: el nombre, o la onda sacándola hacia arriba o abajo.",
+            "Escuchá con el botón de reproducir o con **Auto** prendido (suena al elegirlo), y arrastrá el sample a una pista, desde la lista o desde el reproductor: el nombre, o la onda sacándola hacia arriba o abajo.",
             "Para traer varios, marcalos con **Ctrl** o **Shift** y arrastralos juntos: caen uno abajo del otro, y si no hay pistas libres se crean nuevas.",
             "Elegí **Copiar al proyecto** o **Vincular**. Con **No mostrar más** queda esa opción; se cambia en **Configuración → Guardado y exportación**."
           ],
@@ -399,7 +399,8 @@
             "Si movés o borrás un archivo vinculado, sus clips quedan sin conexión. En la Biblioteca llevan la marca **Vinculado**.",
             "Para traer un vinculado adentro, tocá **Copiar al proyecto** en su fila de la Biblioteca. Tu archivo queda donde está.",
             "Si un archivo se movió, tocá **Elegir el archivo…** o **Buscar en una carpeta…** en la Biblioteca o en el menú del clip gris.",
-            "Quitar un canal vinculado de la Biblioteca (o con **Borrar no usados**) lo saca del proyecto sin preguntar: tu archivo no se toca. Un paquete lleva copia de los vinculados.",
+            "Quitar un canal vinculado de la Biblioteca (o con **Desvincular no usados**) lo saca del proyecto sin preguntar: tu archivo no se toca. Un paquete lleva copia de los vinculados.",
+            "Al lado del nombre de la pista, un badge dice si sus clips son **Mono**, **Estéreo** o **Mixto** (hay de los dos). En una estéreo o mixta, **Ver izquierdo y derecho** (en el menú de la pista o en el inspector) muestra la onda de cada lado, izquierdo arriba y derecho abajo. **L R**, al pie de las pistas, lo prende o lo apaga en todas las estéreo a la vez.",
             "Lo que solo lee FFmpeg no se vincula: entra como WAV.",
             "Formatos: WAV, MP3, FLAC, OGG, M4A y AIFF. Algunos necesitan FFmpeg."
           ],
@@ -471,17 +472,18 @@
           "id": "organize",
           "icon": "E8B7",
           "title": "Ordenar las pistas",
-          "keywords": "carpeta color icono nombre renombrar separador agrupar mover",
+          "keywords": "carpeta color icono nombre renombrar separador agrupar mover duplicar copiar pista",
           "intro": "Para que un proyecto grande siga siendo fácil de leer.",
           "steps": [
             "Doble clic en el nombre de una pista la renombra.",
             "Tocá su insignia para elegir color e ícono.",
             "Arrastrá una pista por su manija para cambiarla de lugar.",
-            "**Nueva pista → Carpeta** agrupa pistas: arrastralas adentro por la manija."
+            "**Nueva pista → Carpeta** agrupa pistas: arrastralas adentro por la manija.",
+            "Clic derecho en la pista → **Duplicar pista** ({key:duplicateTrack}) la copia debajo con todo; **Duplicar sin contenido**, solo con su sonido."
           ],
           "notes": [
-            "La carpeta solo agrupa. Para procesar un grupo, mandala a un bus y poné los efectos ahí.",
-            "**Ctrl+clic** en los encabezados elige varias pistas: el clic derecho y {key:delete} actúan sobre todas."
+            "Una carpeta también es un canal: sus efectos, paneo y fader van sobre la suma de sus pistas, y su **S** deja sonar solo sus pistas.",
+            "**Ctrl+clic** en los encabezados elige varias pistas: el clic derecho, {key:delete} y {key:duplicateTrack} actúan sobre todas."
           ],
           "see": ["reverb-delay"]
         },
@@ -617,7 +619,7 @@
           ],
           "notes": [
             "Sigue el tempo del proyecto y cae en el tiempo aunque arranques en cualquier lugar.",
-            "En los controles finos: **Ataque** (cuánto tarda en bajar) y **Desplazar** (antes o después del tiempo).",
+            "Al lado: **Ataque** (cuánto tarda en bajar) y **Desplazar** (antes o después del tiempo).",
             "El gráfico muestra la curva sobre el sonido (lo que entra, tenue; lo que sale, en color) y una línea que la recorre con lo que suena. Con **Sidechain**, la barra de la derecha es el nivel de la pista que manda: dispara al pasar la raya de acento.",
             "Con **Sidechain** la otra pista le da forma: cuanto más fuerte suena, más baja (un golpe suave baja menos, una nota larga lo mantiene abajo) y vuelve con la **Curva**. Las perillas pasan a ser las de un compresor: **Umbral** (Auto: 24 dB debajo de su pico reciente; a 24 dB sobre el umbral baja toda la profundidad), **Ataque**, **Hold** y **Release**.",
             "El medidor de reducción de la tira muestra cuánto baja."
@@ -709,7 +711,8 @@
             "Subí el nivel del envío hasta que se oiga como querés."
           ],
           "notes": [
-            "**PRE** saca el envío antes del fader: sigue sonando aunque bajes la pista."
+            "**PRE** saca el envío antes del fader: sigue sonando aunque bajes la pista.",
+            "Al detener, las colas siguen sonando hasta apagarse. Para callarlas ya, tocá **Cortar audio** (el parlante tachado del transporte) o {key:cutAudio}: corta también las notas que quedaron sonando."
           ],
           "see": ["add-fx", "mixer"]
         },
@@ -1006,7 +1009,8 @@
           "notes": [
             "{key:quantize} acomoda las notas a la grilla.",
             "El imán del piano roll es propio, o **Igual que el timeline**.",
-            "Lo que tocás en el piano roll suena por los efectos y el fader de la pista: en una pista silenciada no se oye."
+            "Lo que tocás en el piano roll suena por los efectos y el fader de la pista: en una pista silenciada no se oye.",
+            "Lo que tocás en un teclado MIDI o en el teclado virtual se ilumina en el teclado del piano roll y en su fila."
           ],
           "see": ["scales-chords", "instrument", "midi-keyboard", "patterns"]
         },
@@ -1019,7 +1023,7 @@
           "steps": [
             "En el **Piano roll**, o en el teclado virtual, tocá **Escala** y elegí la tónica y la escala.",
             "El piano roll muestra solo las filas de la escala, y las notas que escribís o movés van solas a ella. Una nota que ya estaba fuera de la escala sigue a la vista, en su fila.",
-            "Prendé **Acordes** ({key:chordTool}) y hacé clic en una nota: escribe el acorde que le corresponde en la escala.",
+            "En la barra de abajo del piano roll, prendé **Acordes** ({key:chordTool}) y hacé clic en una nota: escribe el acorde que le corresponde en la escala.",
             "Sobre el acorde aparece el selector: **F** es la posición fundamental y **1**, **2** y **3**, las inversiones. También con las teclas 1 a 4, o con {wheel:wheelHeight} sobre el acorde (o sobre el que vas a escribir). Cada inversión queda cerca de donde estaba: el acorde no se va para arriba.",
             "Arrastrá el acorde para moverlo: arriba y abajo sigue la escala, así que cambia de acorde sin salirse de tono."
           ],
@@ -1121,7 +1125,7 @@
             "**Enter** aplica y **Esc** cancela. Un clic en las notas también aplica. Cada aplicación es un paso de deshacer.",
             "**Escribir**, **Pintar** y **Cortar** cambian qué hace el clic en la grilla. Con Ctrl+Alt y arrastrando elegís con un lazo.",
             "Doble clic en una nota abre su tarjeta: velocidad, paneo, release, modulación, color, slide y portamento.",
-            "**Vista** cambia el carril de abajo, muestra otras pistas en gris y pone una forma de onda de fondo. Clic derecho en una tecla la nombra.",
+            "**Expresión**, en la barra de abajo, muestra u oculta la franja de abajo, y su desplegable elige qué muestra: velocidad, mod X, mod Y, paneo o release. **Vista** muestra otras pistas en gris y pone una forma de onda de fondo. Clic derecho en una tecla la nombra.",
             "En **Escala**, **Teclado MIDI a la escala** hace que lo que tocás caiga en la escala. **Arpegiador**, en Herramientas, arpegia el teclado y graba lo que suena."
           ],
           "see": [
@@ -1176,11 +1180,11 @@
           "keywords": "loop ritmo bateria enlazar clips iguales fl studio instrumentos notas fantasma",
           "intro": "Clips enlazados: editar uno cambia todos.",
           "steps": [
-            "Tocá **Crear patrón** arriba del piano roll, o clic derecho en un clip MIDI → **Crear patrón**.",
+            "Tocá **Convertir en patrón** arriba del piano roll, o clic derecho en un clip MIDI → **Convertir en patrón**.",
             "Duplicá o copiá el clip: la copia queda enlazada. Sus clips llevan el ícono de cadena, y al señalar uno se marcan todos.",
             "Estirá un clip por el borde derecho para repetir la vuelta.",
-            "**Varios instrumentos**: en el piano roll, **Sumar instrumento**. Cada uno va en su pista, con sus notas, y una línea une los clips que suenan juntos.",
-            "En el chip de instrumentos, un clic pasa a otro instrumento y el ojo muestra u oculta sus notas fantasma.",
+            "**Varios instrumentos**: en el piano roll, **Patrón** → **Sumar instrumento**. Cada uno va en su pista, con sus notas, y una línea une los clips que suenan juntos.",
+            "En **Patrón** también está el largo de la vuelta; en su lista de instrumentos, un clic pasa a otro instrumento y el ojo muestra u oculta sus notas fantasma.",
             "**Hacer único** saca un clip del patrón."
           ],
           "notes": [
@@ -1296,8 +1300,8 @@
           "intro": "**Biblioteca**, en el panel derecho, lista todo lo grabado e importado: usado o no.",
           "steps": [
             "Escuchá cada uno con su botón de reproducir.",
-            "Arrastrala al timeline para volver a usarla.",
-            "**Borrar no usados** manda a la Papelera lo que no está en el timeline."
+            "Arrastrala al timeline para volver a usarla, o tocá **Usar**: va a la pista elegida, en el cabezal (sin pista elegida, a una nueva).",
+            "**Borrar no usados** manda a la Papelera los archivos del proyecto que no están en el timeline. Los vinculados van aparte, con **Desvincular no usados**: salen del proyecto y sus archivos quedan donde están."
           ],
           "notes": [
             "Quitar un clip del timeline nunca borra su archivo.",
@@ -1341,7 +1345,7 @@
           "notes": [
             "En **Atajos de teclado** está la lista completa y se cambia cualquiera.",
             "En **Distribución de teclas** elegís las teclas de Cubase, Logic Pro, FL Studio, Reaper o Studio Pro. Tus cambios quedan guardados en cada una. Lo que ese DAW no tiene sigue con la tecla de XTreme.",
-            "Con la ventana de un plugin adelante andan los del grupo **Transporte**, salvo mientras escribís en un campo de texto del plugin. Si un plugin no se lleva bien con eso, en la barra de su ventana **Teclas al plugin** le deja todas las teclas y **Teclas a XTreme** las manda todas a la app (salvo Alt+Tab y Alt+F4). Con los dos apagados vuelve a lo de siempre. Vale para todas las ventanas de plugins."
+            "Con la ventana de un plugin adelante, las teclas van a XTreme: transporte, atajos y teclado virtual (salvo Alt+Tab y Alt+F4). Con **Teclas al plugin** prendido en la barra de su ventana, van todas al plugin mientras su ventana está adelante, y el teclado virtual no toca. Vale para todas las ventanas de plugins."
           ],
           "settings": "shortcuts"
         },
@@ -1349,14 +1353,14 @@
           "id": "look",
           "icon": "E771",
           "title": "Cambiar el color y el diseño",
-          "keywords": "tema acento apariencia vertical paneles ocultar pantalla completa perillas knobs estilo neumorfico",
+          "keywords": "tema acento apariencia vertical paneles ocultar pantalla completa perillas knobs estilo neumorfico faders medidores ondas fuente letra números digital segmentos lcd orbitron restablecer fábrica tamaño escala zoom",
           "intro": "Casi todo está en la barra de título.",
           "steps": [
             "El selector de tema elige el color de acento y el fondo.",
             "El botón de diseño {icon:E80A} cambia entre **Clásico** y **Vertical**.",
             "Los dos botones de panel ocultan los costados.",
             "{key:fullScreen} pasa a pantalla completa.",
-            "El estilo de las perillas se elige en **Configuración → Apariencia**."
+            "En **Configuración → Apariencia** se elige el estilo de las perillas, los faders, los medidores y las ondas, la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica."
           ],
           "settings": "view"
         },

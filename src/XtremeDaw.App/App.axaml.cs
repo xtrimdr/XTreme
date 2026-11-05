@@ -13,11 +13,24 @@ public partial class App : Application
     {
         Loc.Load();
         UiTheme.Apply(UiTheme.Read(), persist: false);
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime bench && Bench.In(bench.Args ?? []))
+        {
+            // the bench alone: the same look (theme, fonts, size) and nothing of the DAW
+            Controls.UiFonts.Load();
+            Bench.Run(bench);
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
         Shortcuts.Load();
         SaveMode.Load();
         ImportMode.Load();
         TrackKnobs.Load();
         Controls.KnobLooks.Load();
+        Controls.FaderLooks.Load();
+        Controls.MeterLooks.Load();
+        Controls.WaveLooks.Load();
+        NoteNames.Load();
+        Controls.UiFonts.Load();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // XTreme.exe [carpeta | proyecto.xtp] (a double click on a .xtp passes the file)

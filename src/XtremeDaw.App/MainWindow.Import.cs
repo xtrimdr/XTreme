@@ -40,6 +40,8 @@ public partial class MainWindow
     IReadOnlyList<SampleFile> carried = [];
     /// <summary>The last plan shown while dragging, made again only when the place or the files change.</summary>
     (double Sec, string? TrackId, int Count, string?[] Targets)? dropPlan;
+    /// <summary>The same for a take of the project: its ghost, made again only when the place changes.</summary>
+    (double Sec, string? TrackId, string MediaId, Controls.TimelineView.DropGhost[] Ghosts)? takePlan;
 
     void InitImport()
     {
@@ -58,10 +60,10 @@ public partial class MainWindow
             bool can = CanImport() && (FromLibrary(e) ? Timeline.DropTarget(e.GetPosition(Timeline), e.KeyModifiers) != null : DroppedFiles(e).Any());
             e.DragEffects = can ? DragDropEffects.Copy : DragDropEffects.None;
             if (!can) Timeline.HideDrop();
-            else if (e.DataTransfer.Contains(TakeDrag)) Timeline.ShowDrop(e.GetPosition(Timeline), e.KeyModifiers);
+            else if (e.DataTransfer.TryGetValue(TakeDrag) is { } carriedTake) ShowTakeGhost(e, carriedTake);
             else ShowDropGhosts(e);
         });
-        AddHandler(DragDrop.DragLeaveEvent, (_, _) => { Timeline.HideDrop(); dropPlan = null; });
+        AddHandler(DragDrop.DragLeaveEvent, (_, _) => { Timeline.HideDrop(); dropPlan = null; takePlan = null; });
         AddHandler(DragDrop.DropEvent, async (_, e) =>
         {
             if (e.DataTransfer.TryGetValue(PatternDrag) is { } pattern)
@@ -78,6 +80,7 @@ public partial class MainWindow
             var targets = place is { } planned ? DropTargets(files, planned.Sec, planned.TrackId) : null;
             Timeline.HideDrop();
             dropPlan = null;
+            takePlan = null;
             if (e.DataTransfer.TryGetValue(TakeDrag) is { } take)
             {
                 if (place is { } spot && CanImport()) await EditTimeline(p => ClipEditing.PlaceMedia(p, take, spot.Sec, spot.TrackId), null);
@@ -127,6 +130,25 @@ public partial class MainWindow
             ghosts[k] = new(targets[k], file?.DurationSec is > 0 and var d ? d : 0, Path.GetFileName(files[k]));
         }
         Timeline.ShowDrop(at.Sec, ghosts);
+    }
+
+    /// <summary>A take of the project carried from the Biblioteca, drawn like a carried sample: a ghost of its length on
+    /// the track that takes it, or on a new row (<see cref="ClipEditing.PlanMedia"/>, the same rule as the drop).</summary>
+    void ShowTakeGhost(DragEventArgs e, string mediaId)
+    {
+        if (store == null || Timeline.DropTarget(e.GetPosition(Timeline), e.KeyModifiers) is not { } at)
+        {
+            Timeline.HideDrop();
+            return;
+        }
+        if (takePlan is not { } last || last.Sec != at.Sec || last.TrackId != at.TrackId || last.MediaId != mediaId)
+        {
+            var plan = ClipEditing.PlanMedia(store.Project, mediaId, at.Sec, at.TrackId);
+            Controls.TimelineView.DropGhost[] ghosts = plan is { } g ? [new(g.TrackId, g.LengthSec, g.Name)] : [];
+            takePlan = last = (at.Sec, at.TrackId, mediaId, ghosts);
+        }
+        if (last.Ghosts.Length == 0) Timeline.HideDrop();
+        else Timeline.ShowDrop(at.Sec, last.Ghosts);
     }
 
     bool CanImport() => store != null && !store.ReadOnly && !restoring && !Projects.IsVisible && !RecordingBusy;

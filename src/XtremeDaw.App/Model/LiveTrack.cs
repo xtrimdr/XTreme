@@ -57,6 +57,11 @@ public sealed class MediaAudio
     public int SourceSampleRate { get; }
     public float[] PeakMin { get; }
     public float[] PeakMax { get; }
+    /// <summary>Each side's peaks, for a track that shows its stereo clips as two waves; null when <see cref="Mono"/>.</summary>
+    public float[]? PeakMinL { get; }
+    public float[]? PeakMaxL { get; }
+    public float[]? PeakMinR { get; }
+    public float[]? PeakMaxR { get; }
     public double RmsDb { get; }
     readonly Lazy<CompPresets.TakeEnvelope> envelope;
     /// <summary>For the compressor's analyze button: read on first use only, from any thread.</summary>
@@ -92,6 +97,23 @@ public sealed class MediaAudio
             PeakMax[b] = hi;
         }
         Mono = L.AsSpan().SequenceEqual(R);
+        if (!Mono)
+        {
+            (PeakMinL, PeakMaxL, PeakMinR, PeakMaxR) = (new float[bins], new float[bins], new float[bins], new float[bins]);
+            for (int b = 0; b < bins; b++)
+            {
+                float lo = 0, hi = 0, rlo = 0, rhi = 0;
+                for (int i = b * PeakBin, end = Math.Min(L.Length, i + PeakBin); i < end; i++)
+                {
+                    float l = L[i], r = R[i];
+                    if (l < lo) lo = l;
+                    if (l > hi) hi = l;
+                    if (r < rlo) rlo = r;
+                    if (r > rhi) rhi = r;
+                }
+                (PeakMinL[b], PeakMaxL[b], PeakMinR[b], PeakMaxR[b]) = (lo, hi, rlo, rhi);
+            }
+        }
         RmsDb = LevelAnalysis.Analyze([L, R], SampleRate).RmsDb;
         envelope = new(() => CompPresets.Analyze([L, R], SampleRate));
     }
@@ -367,6 +389,9 @@ public sealed class LiveClip
 /// and the live meters. Timeline edits re-point <see cref="Track"/> and swap <see cref="Clips"/> for a new list
 /// (never changed in place: the audio thread may be walking the old one), keeping the chain's state.
 /// </summary>
+/// <summary>What a track's clips are: none with audio, all mono, all stereo, or both (<see cref="LiveTrack.Layout"/>).</summary>
+public enum ChannelLayout { None, Mono, Stereo, Mixed }
+
 public sealed class LiveTrack
 {
     /// <summary>10 ms at 48 kHz: a clip that starts playing its transposed audio, or goes silent or comes back from it, crossfades, never clicks.</summary>
@@ -379,6 +404,27 @@ public sealed class LiveTrack
     public Channel Channel => Track.Channel;
     public IReadOnlyList<LiveClip> Clips { get; set; }
     public TrackDspChain Chain { get; }
+
+    /// <summary>
+    /// Mono, stereo or both among its clips, for the header's badge and the inspector. A clip whose sides are the same
+    /// samples counts as mono, as the mixer shows it (<see cref="MediaAudio.Mono"/>); an offline one goes by its file.
+    /// </summary>
+    public ChannelLayout Layout
+    {
+        get
+        {
+            bool mono = false, stereo = false;
+            // by index: the header reads it every frame, and a foreach over the interface allocates its enumerator
+            var clips = Clips;
+            for (int i = 0; i < clips.Count; i++)
+            {
+                var c = clips[i];
+                if (c.Audio is { } a) { if (a.Mono) mono = true; else stereo = true; }
+                else if (c.Media is { Channels: > 0 } m) { if (m.Channels == 1) mono = true; else stereo = true; }
+            }
+            return mono && stereo ? ChannelLayout.Mixed : stereo ? ChannelLayout.Stereo : mono ? ChannelLayout.Mono : ChannelLayout.None;
+        }
+    }
 
     // engine scratch + meters (written on the audio thread, read by the UI)
     public readonly float[] BufL = new float[TrackDspChain.MaxBlockSize];
@@ -402,8 +448,12 @@ public sealed class LiveTrack
     public IReadOnlyDictionary<string, BusDspChain>? Nodes { get; set; }
     /// <summary>The Escuchar tool is playing this track alone (native only): a solo that is not saved and does not light S.</summary>
     public volatile bool ListenSolo;
-    public bool Soloed => Channel.Solo || ListenSolo;
-    public bool Silenced => Channel.Muted;
+    /// <summary>Its folder is soloed (<see cref="ChannelDsp.FolderSoloed"/>), which solos it too; set by the UI in <see cref="PlaybackEngine.SetBuses"/>.</summary>
+    public volatile bool FolderSolo;
+    public bool Soloed => Channel.Solo || FolderSolo || ListenSolo;
+    /// <summary>Its folder is muted: only shown (dimmed), the folder's node is what goes silent. Set with <see cref="FolderSolo"/>.</summary>
+    public bool FolderMuted;
+    public bool Silenced => Channel.Muted || FolderMuted;
 
     public LiveTrack(Track track, IReadOnlyList<LiveClip> clips, int sampleRate)
     {
@@ -635,7 +685,7 @@ public sealed class LiveTrack
         Chain.Volume = cur.Volume;
         Chain.Pan = cur.Pan;
         Chain.Muted = cur.Muted;
-        Chain.Solo = cur.Solo || ListenSolo;
+        Chain.Solo = cur.Solo || FolderSolo || ListenSolo;
         ApplyAutomation();
         ApplyInserts();
         ApplySends();
@@ -736,7 +786,8 @@ public sealed class LiveTrack
         ReadOnlySpan<float> wOut = default,
         int turnAt = -1,
         long turnTo = 0,
-        long loopEnd = 0)
+        long loopEnd = 0,
+        ReadOnlySpan<float> fade = default)
     {
         long t0 = Stopwatch.GetTimestamp();
         var bl = Chain.BufferL(n);
@@ -773,6 +824,15 @@ public sealed class LiveTrack
             }
         }
         Interlocked.Add(ref instrumentTicks, Stopwatch.GetTimestamp() - played);
+        // the transport's fade goes on what the track plays, before its slots: a reverb or a delay rings on after a stop
+        if (fade.Length == n)
+            for (int i = 0; i < n; i++)
+            {
+                bl[i] *= fade[i];
+                br[i] *= fade[i];
+            }
+        tailLeft = TailFrames;
+        quietFrames = 0;
         // the keyboard: through the plugin above, or the test tone here
         if (inst != null || own != null) Keys.Skip(n);
         else Keys.Render(n, bl, br);
@@ -801,6 +861,7 @@ public sealed class LiveTrack
             bool sounds = inst.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys);
             Interlocked.Add(ref instrumentTicks, Stopwatch.GetTimestamp() - t0);
             if (sounds) Output(n, anySolo, masterL, masterR, 0);
+            else Ring(n, anySolo, masterL, masterR);
             Keys.Skip(n);
             return;
         }
@@ -809,10 +870,15 @@ public sealed class LiveTrack
             bool sounds = own.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys, Chain.Frame);
             Interlocked.Add(ref instrumentTicks, Stopwatch.GetTimestamp() - t0);
             if (sounds) Output(n, anySolo, masterL, masterR, 0);
+            else Ring(n, anySolo, masterL, masterR);
             Keys.Skip(n);
             return;
         }
-        if (!Keys.Active && !Preview.Active) return;
+        if (!Keys.Active && !Preview.Active)
+        {
+            Ring(n, anySolo, masterL, masterR);
+            return;
+        }
         var bl = Chain.BufferL(n);
         var br = Chain.BufferR(n);
         bl.Clear();
@@ -831,8 +897,47 @@ public sealed class LiveTrack
     /// <summary>The share of real time the last <see cref="TakeLoad"/> measured, for the DSP tooltip: the whole track and its instrument, in %.</summary>
     public double LoadPercent, InstrumentPercent;
 
-    /// <summary>The engine runs <see cref="MixIdle"/> for it: an instrument, or the keyboard or the piano roll still sounding.</summary>
-    public bool RunsIdle => instrument != null || native != null || Keys.Active || Preview.Active;
+    /// <summary>The longest a track's slots ring on after it stops playing: past the longest reverb (14 s).</summary>
+    const double TailSec = 15;
+    /// <summary>A tail is over once its output stays this quiet (-100 dB) for <see cref="QuietSec"/>.</summary>
+    const float TailSilence = 1e-5f;
+    /// <summary>Longer than the longest delay, so a quiet gap between two echoes doesn't end the tail.</summary>
+    const double QuietSec = DelayBus.MaxDelaySec + 0.5;
+
+    int TailFrames => (int)(TailSec * sampleRate);
+    // audio thread: how long the slots still ring stopped, and how long their output has been quiet
+    int tailLeft, quietFrames;
+    /// <summary>The block's loudest output, from <see cref="RunChain"/>.</summary>
+    float blockPeak;
+
+    /// <summary>Its slots still ring after the song stopped (a reverb, a delay): the engine keeps running the chain, and doesn't reset it on Play.</summary>
+    public bool Ringing => tailLeft > 0;
+
+    /// <summary>The panic (<see cref="XtremeDaw.App.Audio.PlaybackEngine.CutAudio"/>): its notes go off, its instrument lets go of its
+    /// voices and its slots forget their tails. Audio thread, after the engine faded the output out.</summary>
+    public void Silence()
+    {
+        Keys.AllOff();
+        instrument?.Panic();
+        native?.Panic();
+        Chain.Reset();
+        tailLeft = 0;
+        quietFrames = 0;
+    }
+
+    /// <summary>Stopped, with nothing new to play: the chain runs on silence while its slots ring.</summary>
+    void Ring(int n, bool anySolo, Span<float> masterL, Span<float> masterR)
+    {
+        if (tailLeft <= 0) return;
+        Chain.BufferL(n).Clear();
+        Chain.BufferR(n).Clear();
+        Output(n, anySolo, masterL, masterR, 0);
+        quietFrames = blockPeak < TailSilence ? quietFrames + n : 0;
+        tailLeft = quietFrames >= QuietSec * sampleRate ? 0 : tailLeft - n;
+    }
+
+    /// <summary>The engine runs <see cref="MixIdle"/> for it: an instrument, the keyboard or the piano roll still sounding, or its slots' tail.</summary>
+    public bool RunsIdle => instrument != null || native != null || Keys.Active || Preview.Active || tailLeft > 0;
 
     /// <summary>The chain over what the block filled in, into its output (its folder, a bus or the master) and its sends.</summary>
     void Output(int n, bool anySolo, Span<float> masterL, Span<float> masterR, int sendOffset)
@@ -928,7 +1033,7 @@ public sealed class LiveTrack
         Chain.Volume = ch.Volume;
         Chain.Pan = ch.Pan;
         Chain.Muted = ch.Muted || RecordMuted;
-        Chain.Solo = ch.Solo || ListenSolo;
+        Chain.Solo = ch.Solo || FolderSolo || ListenSolo;
 
         Chain.ProcessFilledBuffer(
             n,
@@ -940,6 +1045,7 @@ public sealed class LiveTrack
             out double gr);
 
         GrDb = Math.Min(GrDb, gr);
+        blockPeak = Math.Max(pkL, pkR);
         if (pkL > MeterL) MeterL = pkL;
         if (pkR > MeterR) MeterR = pkR;
     }

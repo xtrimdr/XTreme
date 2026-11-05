@@ -32,3 +32,13 @@ máximo y las luces; RMS como amplitud ya integrada); cualquier tira puede alime
 toma una vez por tick (`TakeMixerRms`) y suaviza cada lado ~300 ms (`MeanSqL` / `MeanSqR`). El texto del máximo se rearma solo cuando cambia su décima.
 La escala va en `Dim` (el 0 en `Fg`) y el fondo de las barras en `Hover`: se leen con cualquier tema y también sobre una
 tira seleccionada (`Raised`).
+
+Cómo se pinta la barra lo elige el usuario en Configuración → Apariencia (`MeterLooks`: Continuo por defecto, LED,
+Degradé, Fino; "meterLook"). Un look solo cambia el dibujo de la barra; colores, umbrales, luces de clip, pico retenido
+y escala son los mismos. La geometría de los LED se arma una vez por tamaño (`MeterLooks.Segments`) y se usa como clip.
+
+## Ondas
+
+El look de la onda de los clips (`WaveLooks`: Rellena por defecto, Contorno, Rectificada, Barras; "waveLook") decide
+cómo las columnas del caché de ondas se hacen geometría (`Emit`) y cómo se pinta (`Paint`); cambiarlo vacía el caché
+una vez. Respeta L/R (`SplitWave`), la ganancia y la curva del clip y el clip offline.

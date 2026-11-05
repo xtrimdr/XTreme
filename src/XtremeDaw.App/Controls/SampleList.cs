@@ -48,8 +48,6 @@ public sealed class SampleList : Control
     public event Action<IReadOnlyList<SampleFile>>? Activated;
     /// <summary>A folder wants to open or close.</summary>
     public event Action<SampleNode>? Toggled;
-    /// <summary>Space on the list.</summary>
-    public event Action? ListenPressed;
     /// <summary>F on a file.</summary>
     public event Action<SampleFile>? FavoritePressed;
     public event Action<SampleRow, Point>? MenuRequested;
@@ -315,7 +313,8 @@ public sealed class SampleList : Control
         InvalidateVisual();
     }
 
-    /// <summary>The list's own keys. The window asks first, because Space and the arrows are also shortcuts of the project.</summary>
+    /// <summary>The list's own keys. The window asks first, because the arrows are also shortcuts of the project.
+    /// Space, Home and End are left to the transport (pedido del usuario): it answers them wherever the focus is.</summary>
     public bool HandleKey(KeyEventArgs e)
     {
         int page = host.Viewport.Height > 0 ? (int)(host.Viewport.Height / RowH) : PageRows;
@@ -337,9 +336,6 @@ public sealed class SampleList : Control
             case Key.Up: Move(selected < 0 ? 0 : selected - 1); return true;
             case Key.PageDown: Move(selected + page); return true;
             case Key.PageUp: Move(selected - page); return true;
-            case Key.Home: Move(0); return true;
-            case Key.End: Move(rows.Count - 1); return true;
-            case Key.Space: ListenPressed?.Invoke(); return true;
             case Key.Right:
                 if (Selected?.Folder is { } closed && IsOpen?.Invoke(closed) == false) Toggled?.Invoke(closed);
                 else Move(selected + 1);

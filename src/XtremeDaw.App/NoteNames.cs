@@ -1,3 +1,5 @@
+using XtremeDaw.Projects;
+
 namespace XtremeDaw.App;
 
 /// <summary>
@@ -6,15 +8,56 @@ namespace XtremeDaw.App;
 /// number like <see cref="XtremeDaw.Projects.MidiNote.Name"/> (MIDI 60 = "Do4" / "C4"), which stays the engine's
 /// name for xtlab and saved files. Every place in the window that shows a note goes through here so the systems
 /// can't drift. The names are built once, on first use (after <c>Loc.Load</c>), into arrays: drawing code only reads.
+/// The user can pick the other system from the piano roll's keys (asked by the user): <see cref="Notation"/>, kept in
+/// config.json ("noteNames"); none picked = the UI language's.
 /// </summary>
 public static class NoteNames
 {
     /// <summary>MIDI pitches with a cached name (the whole MIDI range).</summary>
     const int Pitches = 128;
 
+    /// <summary>The two systems the user can pick.</summary>
+    public const string Letters = "letters", Solfege = "solfege";
+    static readonly string[] LetterNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    static readonly string[] SolfegeNames = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"];
+    const string ConfigKey = "noteNames";
+
+    static string? picked;
     static string[]? classes, pitches, octaves;
 
-    static string[] Classes => classes ??= [.. Enumerable.Range(0, 12).Select(i => Loc.T($"note.{i}"))];
+    static string[] Classes => classes ??= picked switch
+    {
+        Letters => LetterNames,
+        Solfege => SolfegeNames,
+        _ => [.. Enumerable.Range(0, 12).Select(i => Loc.T($"note.{i}"))],
+    };
+
+    /// <summary>The system in use, <see cref="Letters"/> or <see cref="Solfege"/> (the language's when none was picked).</summary>
+    public static string Notation => picked ?? (Class(0) == LetterNames[0] ? Letters : Solfege);
+
+    /// <summary>The notation changed: whoever keeps a name drawn rebuilds it.</summary>
+    public static event Action? Changed;
+
+    public static void Load()
+    {
+        try { if (AppConfig.Get(ConfigKey) is Letters or Solfege) picked = AppConfig.Get(ConfigKey); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* the language's */ }
+    }
+
+    public static void Set(string notation)
+    {
+        if (notation is not (Letters or Solfege) || notation == Notation) return;
+        picked = notation;
+        classes = pitches = octaves = null;
+        spelled.Clear();
+        chords.Clear();
+        Changed?.Invoke();
+        _ = Task.Run(() =>
+        {
+            try { AppConfig.Set(ConfigKey, notation); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* keep this session's choice */ }
+        });
+    }
 
     /// <summary>The name of a pitch class ("Sol#", "G#"); any integer wraps to 0..11, 0 = Do / C.</summary>
     public static string Class(int pitchClass) => Classes[((pitchClass % 12) + 12) % 12];

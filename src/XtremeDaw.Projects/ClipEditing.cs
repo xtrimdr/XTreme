@@ -296,26 +296,44 @@ public static class ClipEditing
     public static string PlaceMedia(Project p, string mediaId, double atSec, string? trackId)
     {
         var media = p.FindMedia(mediaId) ?? throw new ArgumentException(Texts.T("err.clip.mediaNotFound", "Canal no encontrado en el historial."));
-        bool used = p.Tracks.Any(t => t.Clips.Any(c => c.MediaId == mediaId));
-        Clip? previousClip = null;
-        Channel? previousChannel = null;
-        if (!used && media.Extra?.TryGetValue("lastTimelineClip", out var clipJson) == true)
-            previousClip = clipJson.Deserialize<Clip>(ProjectStore.Json);
-        if (!used && media.Extra?.TryGetValue("lastTimelineChannel", out var channelJson) == true)
-            previousChannel = channelJson.Deserialize<Channel>(ProjectStore.Json);
-        var clip = previousClip ?? new Clip { MediaId = media.Id };
+        var (clip, track) = Placement(p, media, atSec, trackId);
         clip.Id = Ids.New("clp");
-        clip.AtSec = ToSample(clip.AtSec + Math.Max(0, atSec) - Window(clip, media).Start);
-        var window = Window(clip, media);
-        var track = p.Tracks.Find(t => t.Id == trackId && !t.IsMidi && (t.Clips.Count == 0 || IsFree(p, t, window.Start, window.End)));
         if (track == null)
         {
+            Channel? previousChannel = null;
+            if (!p.Tracks.Any(t => t.Clips.Any(c => c.MediaId == mediaId)) && media.Extra?.TryGetValue("lastTimelineChannel", out var channelJson) == true)
+                previousChannel = channelJson.Deserialize<Channel>(ProjectStore.Json);
             track = NewTrackFor(p, media, previousChannel);
             p.Tracks.Add(track);
         }
         else if (track.Clips.Count == 0) track.Name = media.Name;
         track.Clips.Add(clip);
         return track.Id;
+    }
+
+    /// <summary>Where <see cref="PlaceMedia"/> would put the take, without placing it: the track that takes it (null = a
+    /// new one), how long the clip is and its name, for the ghost drawn while it is carried. Null if the media is gone.</summary>
+    public static (string? TrackId, double LengthSec, string Name)? PlanMedia(Project p, string mediaId, double atSec, string? trackId)
+    {
+        if (p.FindMedia(mediaId) is not { } media) return null;
+        var (clip, track) = Placement(p, media, atSec, trackId);
+        var w = Window(clip, media);
+        return (track?.Id, Math.Max(0, w.End - w.Start), media.Name);
+    }
+
+    /// <summary>The clip a take dropped at <paramref name="atSec"/> becomes (the cut it had off the timeline, if any) and
+    /// the track that takes it; null = it needs a new one. Changes nothing.</summary>
+    static (Clip Clip, Track? Track) Placement(Project p, Media media, double atSec, string? trackId)
+    {
+        bool used = p.Tracks.Any(t => t.Clips.Any(c => c.MediaId == media.Id));
+        Clip? previousClip = null;
+        if (!used && media.Extra?.TryGetValue("lastTimelineClip", out var clipJson) == true)
+            previousClip = clipJson.Deserialize<Clip>(ProjectStore.Json);
+        var clip = previousClip ?? new Clip { MediaId = media.Id };
+        clip.AtSec = ToSample(clip.AtSec + Math.Max(0, atSec) - Window(clip, media).Start);
+        var window = Window(clip, media);
+        var track = p.Tracks.Find(t => t.Id == trackId && !t.IsMidi && (t.Clips.Count == 0 || IsFree(p, t, window.Start, window.End)));
+        return (clip, track);
     }
 
     /// <summary>A clip can land on that stretch of the track without covering anything; a locked track takes none.</summary>

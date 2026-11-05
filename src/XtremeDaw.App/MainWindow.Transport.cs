@@ -34,11 +34,24 @@ public partial class MainWindow
     static readonly string[] ClickLabels = [Loc.T("click.label.0"), Loc.T("click.label.1"), Loc.T("click.label.2"), Loc.T("click.label.3"), Loc.T("click.label.4"), Loc.T("click.label.5")];
     static readonly string[] ClickHints = [Loc.T("click.hint.0"), Loc.T("click.hint.1"), Loc.T("click.hint.2"), Loc.T("click.hint.3"), Loc.T("click.hint.4"), Loc.T("click.hint.5")];
 
+    /// <summary>The panic (asked by the user): stops and silences what still rings, tails of every slot and held notes,
+    /// the virtual keyboard's included. Not while recording.</summary>
+    void CutAudio()
+    {
+        if (engine.Recording) return;
+        virtualKeys.AllOff();
+        virtualKeys.ReleaseSustain();
+        engine.CutAudio();
+        Status(Loc.T("transport.cutAudio.done"));
+    }
+
     void InitTransport()
     {
         engine.Loop = LoopToggle.IsChecked == true;
         LoopToggle.IsCheckedChanged += (_, _) => engine.Loop = LoopToggle.IsChecked == true;
         StopButton.Click += (_, _) => engine.StopTransport();
+        CutAudioButton.Click += (_, _) => CutAudio();
+        ToolTip.SetTip(CutAudioButton, Shortcuts.Tip(Loc.T("transport.cutAudio.tip"), "cutAudio"));
         ClockButton.Click += (_, _) => SetRulerMode(!Timeline.RulerInBars);
         Tempo.Changed += TempoEdited;
         tempoAskTimer.Tick += (_, _) => AskTempo();
@@ -317,6 +330,7 @@ public partial class MainWindow
             ToolTip.SetTip(PlayButton, Shortcuts.Tip(engine.Playing ? Loc.T("transport.pause.tip") : Loc.T("transport.play.head.tip"), "play"));
         }
         StopButton.IsEnabled = !engine.Recording && (engine.Playing || pos > 0);
+        CutAudioButton.IsEnabled = !engine.Recording;
         PlayButton.IsEnabled = ToStartButton.IsEnabled = !engine.Recording;
         // a value waiting for its question (TempoEdited) stays in the box: the engine only gets it with the answer
         Tempo.Set(tempoAskTimer.IsEnabled || TempoAsk.IsVisible ? tempoAsked : engine.Bpm);

@@ -26,7 +26,7 @@ public static class KeyLayouts
             ["virtualKeys"] = "Alt+K", ["split"] = "Alt+X", ["duplicate"] = "Ctrl+D", ["deselect"] = "Ctrl+Shift+A",
             ["redo"] = "Ctrl+Shift+Z", ["fit"] = "Shift+F", ["mixer"] = "F3",
             ["leftPanel"] = "Ctrl+Alt+Left", ["rightPanel"] = "Ctrl+Alt+Right",
-            ["toolSelect"] = "D1", ["toolRange"] = "D2", ["toolSplit"] = "D3", ["toolErase"] = "D5", ["toolZoom"] = "D6", ["toolListen"] = "D9",
+            ["toolSelect"] = "D1", ["toolRange"] = "D2", ["toolSplit"] = "D3", ["toolErase"] = "D5", ["toolZoom"] = "D6", ["toolHand"] = "D7", ["toolDraw"] = "D8", ["toolListen"] = "D9",
         }, new Dictionary<string, string> { ["wheelZoom"] = "Control", ["wheelSideways"] = "Shift", ["wheelHeight"] = "Alt" }),
 
         new("logic", "Logic Pro", new Dictionary<string, string>

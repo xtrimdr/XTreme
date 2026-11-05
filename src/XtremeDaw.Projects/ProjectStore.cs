@@ -183,8 +183,9 @@ public sealed class ProjectStore : IDisposable
     {
         // 1 -> 2: the channels' sat/comp/eq became insert slots; Channel.Normalize already turned them (so a project
         // opened read-only sounds right too), here it only gets the new number.
-        // 2 -> 3: the fixed reverb and delay and the extra returns became buses, and the folders lost their fader, mute,
-        // solo and slots; the normalization already did that too (ProjectSettings, Channel, Folder).
+        // 2 -> 3: the fixed reverb and delay and the extra returns became buses; the normalization already did that too
+        // (ProjectSettings, Channel). Version 3 dropped the folders' fader, mute, solo and slots for a while; they are
+        // properties again (Folder) under the same names, so what version 2 saved comes back as it was.
         p.Version = Project.CurrentVersion;
     }
 

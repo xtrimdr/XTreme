@@ -60,6 +60,7 @@ public partial class MainWindow
         pianoRoll.ToolKeyPressed += PianoKey;
         pianoRoll.NoteDetailsRequested += OpenNoteCard;
         pianoRoll.KeyMenuRequested += ShowKeyMenu;
+        NoteNames.Changed += OnNotationChanged;
         var chords = new DispatcherTimer(TimeSpan.FromMilliseconds(ChordReadMs), DispatcherPriority.Background, (_, _) => ReadChord());
         chords.Stop();
         FollowChordTimer(chords);
@@ -72,7 +73,15 @@ public partial class MainWindow
         ToolTip.SetTip(pianoToolsButton, Loc.T("tool.menu.tip"));
         pianoToolsButton.Click += (_, _) => ShowToolCard();
         row.Children.Add(pianoToolsButton);
+        pianoViewButton.Content = IconText("", Loc.T("tool.view") + "  ▾");
+        ToolTip.SetTip(pianoViewButton, Loc.T("tool.view.tip"));
+        pianoViewButton.Click += (_, _) => ShowPianoViewMenu();
+        return row;
+    }
 
+    /// <summary>Draw, paint and slice, on the bar under the roll with the chord tool (asked by the user, 2026-11-04: the tools a click uses, always at hand).</summary>
+    Control BuildPianoWriteTools()
+    {
         var writes = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var (tool, key, glyph) in new[] { (PianoTool.Draw, "draw", ""), (PianoTool.Paint, "paint", ""), (PianoTool.Slice, "slice", "") })
         {
@@ -82,12 +91,7 @@ public partial class MainWindow
             pianoWriteButtons.Add(b);
             writes.Children.Add(b);
         }
-        row.Children.Add(new Border { Classes = { "seg" }, Child = writes, VerticalAlignment = VerticalAlignment.Center });
-
-        pianoViewButton.Content = IconText("", Loc.T("tool.view") + "  ▾");
-        ToolTip.SetTip(pianoViewButton, Loc.T("tool.view.tip"));
-        pianoViewButton.Click += (_, _) => ShowPianoViewMenu();
-        return row;
+        return new Border { Classes = { "seg" }, Child = writes, VerticalAlignment = VerticalAlignment.Center };
     }
 
     void SetWriteTool(PianoTool tool)
@@ -507,12 +511,9 @@ public partial class MainWindow
     {
         if (store == null) return;
         var refresh = new List<Action>();
-        var list = new List<object> { MenuGroup(Loc.T("tool.view.lane")) };
-        foreach (var lane in Enum.GetValues<NoteLane>())
-            list.Add(MenuCheck(Loc.T($"tool.c.lane.{lane.ToString().ToLowerInvariant()}"), () => pianoRoll.Lane == lane, () => pianoRoll.Lane = lane, refresh));
+        // which lane the bottom shows is picked on the bar under the roll, next to it (asked by the user, 2026-11-04)
+        var list = new List<object> { MenuGroup(Loc.T("tool.view.shadows")) };
         var others = tracks.Where(t => t.Track.IsMidi && t != PianoTrack()).ToList();
-        list.Add(new Separator());
-        list.Add(MenuGroup(Loc.T("tool.view.shadows")));
         if (others.Count == 0) list.Add(new MenuItem { Header = Loc.T("tool.view.noTracks"), IsEnabled = false, FontSize = 11 });
         foreach (var t in others)
             list.Add(MenuCheck(t.Track.Name, () => shadowTracks.Contains(t.Track.Id), () =>
@@ -526,6 +527,13 @@ public partial class MainWindow
         list.Add(MenuCheck(Loc.T("tool.view.noWave"), () => backWaveTrack == null, () => { backWaveTrack = null; ShowRollExtras(); }, refresh));
         foreach (var t in audio)
             list.Add(MenuCheck(t.Track.Name, () => backWaveTrack == t.Track.Id, () => { backWaveTrack = t.Track.Id; ShowRollExtras(); }, refresh));
+        // the keys and gestures (it was a chip of its own; asked by the user, 2026-11-04: fewer chips on the bar)
+        list.Add(new Separator());
+        list.Add(MenuAction(Loc.T("piano.keys") + "…", () =>
+        {
+            HelpPanel.Show("scales-chords", canOpenSettings: !Projects.IsVisible);
+            return Task.CompletedTask;
+        }));
         var menu = Popup(list, 240);
         menu.Placement = PlacementMode.BottomEdgeAlignedLeft;
         OpenAnchoredMenu(menu, pianoViewButton);
@@ -542,7 +550,34 @@ public partial class MainWindow
             c.Audio!.LengthSec - c.Clip.TrimStartSec - c.Clip.TrimEndSec, c.Audio.PeakMin, c.Audio.PeakMax, c.Audio.SampleRate / (double)MediaAudio.PeakBin))]);
     }
 
+    /// <summary>A right click on the keys: the notation the notes are named in (asked by the user: a picker, not typing)
+    /// and, below, the key's own name for this track.</summary>
     void ShowKeyMenu(int pitch)
+    {
+        var refresh = new List<Action>();
+        var list = new List<object>
+        {
+            new MenuItem { Header = Loc.T("piano.notation"), IsEnabled = false, FontSize = 11 },
+            MenuCheck(Loc.T("piano.notation.solfege"), () => NoteNames.Notation == NoteNames.Solfege, () => NoteNames.Set(NoteNames.Solfege), refresh),
+            MenuCheck(Loc.T("piano.notation.letters"), () => NoteNames.Notation == NoteNames.Letters, () => NoteNames.Set(NoteNames.Letters), refresh),
+        };
+        if (PianoTrack() != null && store is { ReadOnly: false })
+        {
+            list.Add(new Separator());
+            list.Add(MenuAction(Loc.T("piano.keyRename", NoteNames.Of(pitch)), () => { RenameKey(pitch); return Task.CompletedTask; }));
+        }
+        OpenAnchoredMenu(Popup(list, 220), pianoRoll);
+    }
+
+    /// <summary>Every name on screen follows a new notation: the drawn ones redraw, the ones set as text are set again.</summary>
+    void OnNotationChanged()
+    {
+        pianoRoll.InvalidateVisual();
+        Timeline.InvalidateVisual();
+        ShowChordTool();
+    }
+
+    void RenameKey(int pitch)
     {
         if (PianoTrack() is not { } t || store == null || store.ReadOnly) return;
         string id = t.Track.Id;

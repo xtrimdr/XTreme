@@ -130,6 +130,7 @@ public partial class MainWindow
         var list = MenuFree ? NewTrackItems() ?? [] : [];
         if (list.Count == 0) list.Add(Entry(Loc.T("sc.newTrack"), () => { }, enabled: false));
         bool picked = sel != null && CanEdit;
+        list.Add(Entry(Loc.T("sc.duplicateTrack"), DuplicateTracksShortcut,"duplicateTrack", picked));
         list.Add(new Separator());
         list.Add(Entry(Loc.T("menubar.arm"), () => { if (sel != null) ToggleArm(sel); }, "arm", picked));
         list.Add(Entry(Loc.T("menubar.mute"), () => TogglePicked(false), "mute", picked));

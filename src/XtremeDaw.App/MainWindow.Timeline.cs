@@ -34,7 +34,7 @@ public partial class MainWindow
 
     /// <summary>Column widths from which each piece of the corner toolbar fits (their widths add up from the left, the
     /// clear toggles at the right edge) and from which the footer keeps its height slider and its zoom icon.</summary>
-    const double ToolbarSnapClipsAt = TimelineView.DefaultHeaderW, ToolbarFitAt = 248, ToolbarClearAt = 220, ToolbarSnapAt = 160, FooterHeightAt = 236, FooterZoomIconAt = 156;
+    const double ToolbarSnapClipsAt = TimelineView.DefaultHeaderW, ToolbarFitAt = 248, ToolbarClearAt = 220, ToolbarSnapAt = 160, FooterHeightAt = 236, FooterZoomIconAt = 156, FooterSplitAt = 268;
 
     /// <summary>The bars above and below the track headers are as wide as the column: as it narrows, what doesn't fit
     /// goes, least used first, so nothing overlaps and the ruler mode and the zoom always stay.</summary>
@@ -50,6 +50,7 @@ public partial class MainWindow
         TimelineFooterGrid.ColumnDefinitions[4].Width = height ? GridLength.Star : new GridLength(0);
         ZoomSlider.Margin = new Thickness(0, 0, height ? 16 : 0, 0);
         ZoomIcon.IsVisible = w >= FooterZoomIconAt;
+        SplitAllButton.IsVisible = w >= FooterSplitAt;
     }
 
     void SetRulerMode(bool bars)
@@ -224,6 +225,7 @@ public partial class MainWindow
         Timeline.SetKnobs(TrackKnobs.Visible);
         TrackKnobs.Changed += () => Timeline.SetKnobs(TrackKnobs.Visible);
         KnobLooks.Changed += Timeline.InvalidateVisual;
+        FaderLooks.Changed += Timeline.InvalidateVisual;
         // a knob per send the track shows (the buses it has, ProjectBuses.Shown)
         Timeline.SendKnobs = SendKnobsOf;
         Timeline.SendState = (t, busId) =>
@@ -875,6 +877,36 @@ public partial class MainWindow
         }, "track-removed");
     }
 
+    /// <summary>
+    /// Duplicates the tracks, each copy right under its original (<see cref="TrackCopies"/>), with its clips, notes and
+    /// automation or only its settings; the copies end up selected (picked together when there are several).
+    /// </summary>
+    async Task DuplicateTracks(IReadOnlyList<string> ids, bool content)
+    {
+        if (ids.Count == 0) return;
+        List<string> copies = [];
+        await EditTimeline(p =>
+        {
+            copies = TrackCopies.Duplicate(p, [.. ids], content);
+            return copies[0];
+        }, "track-added");
+        if (copies.Count > 1) Timeline.PickTracks(copies);
+    }
+
+    /// <summary>The "Duplicar pista" key: the picked tracks, or the selected one, with their content.</summary>
+    Task DuplicateTracksShortcut() =>
+        store == null || restoring || store.ReadOnly ? Task.CompletedTask : DuplicateTracks(Timeline.PickedTrackIds, content: true);
+
+    /// <summary>A track menu's two duplicates: with its content, and only its settings.</summary>
+    IEnumerable<object> DuplicateTrackItems(List<string> ids, bool enabled)
+    {
+        bool many = ids.Count > 1;
+        yield return MenuAction(many ? Loc.T("menu.duplicateTracks", ids.Count) : Loc.T("menu.duplicateTrack"), () => DuplicateTracks(ids, content: true),
+            Shortcuts.Label("duplicateTrack"), enabled, icon: "", tip: Loc.T("menu.duplicateTrack.tip"));
+        yield return MenuAction(many ? Loc.T("menu.duplicateTracksEmpty", ids.Count) : Loc.T("menu.duplicateTrackEmpty"), () => DuplicateTracks(ids, content: false),
+            enabled: enabled, icon: "", tip: Loc.T("menu.duplicateTrackEmpty.tip"));
+    }
+
     /// <summary>The menu of a track picked with others: only what makes sense for all of them, each entry acting on all.</summary>
     List<object> TrackGroupItems(LiveTrack track, List<string> group)
     {
@@ -912,6 +944,7 @@ public partial class MainWindow
             bool locked = All(group, t => t.Locked);
             _ = EditGroup(p => Each(p, picked, t => t.Locked = !locked), locked ? "track-unlocked" : "track-locked");
         }, refresh, tip: Loc.T("lock.track.tip"), enabled: enabled));
+        list.AddRange(DuplicateTrackItems(group, enabled));
         list.Add(new Separator());
         list.AddRange(FolderItems(track, enabled));
         list.Add(new Separator());
@@ -1084,7 +1117,11 @@ public partial class MainWindow
         if (!AudioOnly && !track.Track.IsMidi)
             list.Add(MenuCheck(Loc.T("insp.inVideo"), () => Now()?.Track.Video == true,
                 () => { if (Now() is { } x) _ = SetInVideo(x, !x.Track.Video); }, refresh, tip: Loc.T("insp.inVideo.tip"), enabled: enabled));
+        if (!track.Track.IsMidi && track.Layout is ChannelLayout.Stereo or ChannelLayout.Mixed)
+            list.Add(MenuCheck(Loc.T("menu.splitWave"), () => Now()?.Track.SplitWave == true,
+                () => { if (Now() is { } x) SetSplitWave(x, !x.Track.SplitWave); }, refresh, tip: Loc.T("menu.splitWave.tip"), enabled: enabled));
         list.Add(TrackLockItem(trackId, enabled, refresh));
+        list.AddRange(DuplicateTrackItems([trackId], enabled));
         list.Add(new Separator());
         if (!track.Track.IsMidi)
             // its own menu, opened where this one was (it stays open to try one input after the other)

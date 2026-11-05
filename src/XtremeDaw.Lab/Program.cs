@@ -199,6 +199,12 @@ static class Program
               reporte comprobar            comprueba ese enlace: textos, codificación y largo
               lista [ver | agregar "qué probar" | arreglado número [--texto t]] --archivo pruebas\lista.json [--copia nombre]
                                            el Banco de pruebas de las copias de prueba (lo usa tools\probar.ps1)
+              lista pedir "qué cambiar" --tipo error|mejora|funcion|idea | tomar número | soltar número --archivo pruebas\lista.json
+                                           los pedidos del usuario: tomar uno lo reserva para esta sesión
+              lista ticket número | comentar número "qué decir" --archivo pruebas\lista.json
+                                           un ticket entero (su conversación), o decir algo en él sin cambiar su estado
+              lista historial [número] --archivo pruebas\lista.json
+                                           quién hizo qué y cuándo con un ítem (sin número, lo último de todos)
               lista comprobar              comprueba la lista sobre un archivo temporal
               atajos comprobar             ninguna distribución de otro DAW repite una tecla
               proyecto abrir    carpeta    abre un proyecto nativo y muestra pistas, avisos e historial
@@ -269,15 +275,20 @@ static class Program
                                            operación, los lista. Como el menú de cada efecto en la tira ancha del mixer;
                                            plegar n lo pliega o despliega en el mixer (no cambia el sonido)
               proyecto insertos carpeta --bus id|n [agregar … | quitar n | …], o carpeta [agregar … | cadena | quitar n | …] --master
-                                           lo mismo para un bus (la reverb y el delay solo van en buses)
+                                           lo mismo para un bus o el master
+              proyecto insertos carpeta --carpeta id|n|nombre [agregar … | quitar n | …]
+                                           lo mismo para una carpeta: sus efectos van sobre la suma de sus pistas
               proyecto buses carpeta [agregar [nombre] [--tipo reverb|delay|vacio] | quitar n | renombrar n nombre |
                         volumen n 0.8 | paneo n -0.3 | mute n | color n #rrggbb|ninguno | icono n id|ninguno]
                                            los buses, en el orden en que suenan, con sus slots, su salida y sus envíos;
                                            uno nuevo trae una reverb, un delay o nada; quitar uno se lleva los envíos que
                                            le llegaban y lo que salía a él va al master
+              proyecto buses carpeta --carpeta id|n|nombre [volumen 0.8 | paneo -0.3 | mute | solo]
+                                           el canal de una carpeta: fader, paneo, M y S (su solo deja sonar solo sus
+                                           pistas); sin operación, lo muestra con sus slots y envíos
               proyecto envios carpeta quien [bus [nivel] [--pre|--post] [--apagar|--prender] [--quitar|--sumar]] [--salida bus|master]
                                            la salida y los envíos de una pista (número o id), carpeta:n o bus:n; --pre lo
-                                           saca antes del fader (una carpeta no tiene). Un bus sale solo al master: con
+                                           saca antes del fader (después de los efectos y el paneo). Un bus sale solo al master: con
                                            bus:n lo rechaza. --quitar saca el bus de su lista (apagado, con su nivel) y
                                            --sumar lo vuelve a poner. Las opciones van después del nivel
               proyecto historial carpeta   tomas (en uso / no usadas), exportaciones y actividad, como la pestaña Historial

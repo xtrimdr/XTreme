@@ -28,6 +28,9 @@
     <AvaloniaResource Include="Assets\Lang\*.json" />
     <AvaloniaResource Include="Assets\Help\*.json" />
     <AvaloniaResource Include="Assets\News\*.json" />
+    <!-- the bundled number fonts (DSEG and Orbitron, SIL OFL 1.1: their licenses travel with the exe) -->
+    <AvaloniaResource Include="Assets\Fonts\*.ttf" />
+    <None Include="Assets\Fonts\*-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- the instrument icons' license travels with the exe -->
     <None Include="Assets\Icons\LICENSES.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

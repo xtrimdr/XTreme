@@ -250,12 +250,59 @@ La etapa 1 está hecha (ver [HECHO.md](HECHO.md)). Falta:
 
 #### 11. Más opciones en Configuración → Apariencia (pedido 2026-11-03)
 
-Los estilos de perilla (`KnobLooks`) son el primero. Falta, con el mismo criterio (elegir y verlo en vivo):
+Ya están las perillas, los faders, los medidores, las ondas, la fuente y el tamaño. Falta, con el mismo criterio
+(elegir y verlo en vivo):
 
-- [ ] Estilos de fader (la tapa de `Fader` y su riel).
 - [ ] Estilos de ventana (bordes, radios, densidad).
-- [ ] Fuente de la interfaz (la del sistema u otra) y su tamaño.
-- [ ] Ver qué más conviene hacer elegible (medidores, ondas, grilla del timeline…).
+- [ ] Ver qué más conviene hacer elegible (grilla del timeline, clips, botones…).
+- [ ] Ondas: un look espejo con el RMS adentro (hace falta guardar el RMS en el caché de picos).
+
+#### 12. Del Banco de pruebas, ya decididos (2026-11-04)
+
+- [ ] **Cortar lo que suena** (#94): con el transporte parado, Stop otra vez corta las colas de los efectos y las voces
+  (fundido corto, sin clic; `NoteInstrument.Panic`, `InstrumentPlayer.Panic`, `Chain.Reset` tras el fundido), más un
+  atajo; lo explica el tooltip de Stop. Stop no queda deshabilitado mientras algo suena (`LiveTrack.Ringing`).
+- [ ] **Ver L/R en todas** (#92): un botón en la cabecera del timeline, junto a restablecer alturas: si alguna pista
+  estéreo no lo tiene lo prende en todas, si no lo apaga en todas (`Track.SplitWave`).
+- [ ] **Notación de las notas** (#86): Do Re Mi o C D E, aparte del idioma, para toda la app (`NoteNames`, con sus
+  cachés rehechos); en un menú del clic derecho del teclado del piano roll (con "Nombrar tecla…", que hoy abre directo)
+  y en Configuración. Cambia la decisión del 2026-11-03 ("notas en el sistema del idioma").
+- [ ] **Mastering con más diseño** (#73): fichas más bajas (ícono, nombre, ⏻); la elegida en `Raised` con una lengüeta
+  que la une al editor de abajo, que va en una tarjeta con borde de acento; las apagadas en gris.
+- [ ] **Inspector: canal y secciones** (#77): una franja de 3 px con el color de la pista al costado del nombre (y su
+  fondo muy tenue); los títulos Efectos / Envíos / Salida en una banda `Raised` con ícono, 12,5 SemiBold y una rayita
+  de acento.
+
+#### 13. Accesibilidad con lector de pantalla (NVDA) (idea 2026-11-04)
+
+Indy, que prueba la app, tiene un amigo productor ciego que produce con NVDA. Hoy NVDA lee los controles comunes
+(botones, menús, listas, diálogos) por UI Automation de Avalonia, pero los dibujados a mano (timeline, piano roll,
+perillas, faders, mixer, EQ) son un rectángulo vacío. Antes de diseñar, preguntarle qué DAW usa hoy (si es REAPER con
+OSARA, copiar sus costumbres y atajos), qué hace más (audio, MIDI, mezcla) y si puede probar versiones parciales.
+Por dónde arrancar: los pasos 1 y 2.
+
+- [ ] **Todo con teclado**: moverse entre pistas, clips y slots con flechas; editar con atajos (cortar, mover a la
+  grilla, armar, mute/solo, abrir un efecto). Sirve para todos.
+- [ ] **Controles propios legibles**: `AutomationPeer` con nombre, rol y valor para `Knob`, `Fader`, la fila de pista,
+  el clip y el slot ("Fader Canal 3, -4,5 dB"), manejables con flechas y avisando cuando cambian.
+- [ ] **Anuncios hablados** de lo que pasa ("Grabando", "Clip cortado en 1.3.2", "Pista 4 armada"): por
+  `nvdaControllerClient` (dependencia nueva, a decidir) o por los anuncios de UIA, que no dependen de NVDA.
+- [ ] **Timeline y piano roll navegables**: posición en compases, clip bajo el cursor, nota/velocidad/largo en el piano
+  roll. Lo más difícil y lo que más diseño lleva.
+- [ ] **Parámetros de plugins en una lista** genérica (el host ya los conoce), porque las ventanas de los plugins no se
+  pueden hacer accesibles desde acá. Subirlo junto a los pasos 1 y 2: abre Serum y cualquier otro plugin de una vez.
+  Hoy `SayParams` (`main.cpp`) manda solo nombre y valor 0..1: falta pedir el texto de cada valor
+  (`getParamStringByValue` en VST3, `effGetParamDisplay` en VST2) para que NVDA diga "1,2 kHz" y no "0,43".
+- [ ] **Serum** (consulta del 2026-11-04; descompilarlo no: lo prohíbe su licencia y no sirve, es C++ compilado y su
+  ventana es un dibujo). Con la lista de parámetros se ajustan osciladores, filtro, envolventes, LFOs, macros y efectos.
+  Queda afuera lo que no es parámetro: navegador de presets, matriz de modulación, editor de wavetables. Para eso hay
+  parches de la comunidad que recorren la ventana con clics, imágenes y OCR:
+  - Accessibility Bundle (Sonorous Arts, gratis, menú virtual con Ctrl+Alt+V): soporta Serum (no dice si Serum 2), no
+    nombra DAW y pide el plugin en un proceso aparte, como ya corre en XTreme. **Probarlo con el amigo de Indy.**
+  - ReaHotkey (AutoHotkey, NVDA): soporta Serum 2 (presets, menú) solo en REAPER y Ableton Live 12, con coordenadas
+    calibradas para ellos; en XTreme no anda sin que lo adapten sus autores.
+  - Investigar recorrer y cargar los presets de Serum desde XTreme (leer sus archivos y pasárselos al plugin).
+  - Pedirle accesibilidad a Xfer Records con el caso concreto.
 
 ### Separar en stems: antes de publicarlo
 

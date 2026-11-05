@@ -27,6 +27,26 @@ public static class ChannelDsp
     /// <summary>A bus's slots; its delays follow <paramref name="bpm"/>.</summary>
     public static InsertSpec[] BusSpecs(Bus b, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) => Specs(b.Inserts, BusRmsDb, bpm, live, bypass);
 
+    /// <summary>A folder's slots, like a bus's: no take of its own, so its Vida reads <see cref="BusRmsDb"/>.</summary>
+    public static InsertSpec[] FolderSpecs(Folder f, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) => Specs(f.Inserts, BusRmsDb, bpm, live, bypass);
+
+    /// <summary>
+    /// A track counts as soloed when its channel is or its folder is (the user's call: soloing a folder solos its
+    /// tracks). One rule for the live engine, the export and the timeline.
+    /// </summary>
+    public static bool Soloed(Project p, Track t) => t.Channel.Solo || FolderSoloed(p, t);
+
+    /// <summary>The track's folder is soloed.</summary>
+    public static bool FolderSoloed(Project p, Track t)
+    {
+        if (t.FolderId is not { } id) return false;
+        // a loop: the timeline asks while it draws
+        var list = p.Folders;
+        for (int i = 0; i < list.Count; i++)
+            if (list[i].Id == id) return list[i].Solo && !list[i].Separator;
+        return false;
+    }
+
     /// <summary>The master's chain, all off with its ON; like a bus's, its Vida reads <see cref="BusRmsDb"/>.</summary>
     public static InsertSpec[] MasterSpecs(MasterSettings m, double bpm, bool bypass = false) => Specs(m.Slots, BusRmsDb, bpm, null, bypass || !m.On);
 
@@ -86,7 +106,7 @@ public static class ChannelDsp
             Volume = ch.Volume,
             Pan = ch.Pan,
             Muted = ch.Muted,
-            Solo = ch.Solo,
+            Solo = Soloed(p, t),
             Inserts = automator?.At(0, force: true) ?? Specs(t, rmsDb, p.Settings.Bpm),
             Output = IndexOf(nodes, TrackOutput(t)),
             Sends = Sends(nodes, ch, t),
@@ -135,7 +155,16 @@ public static class ChannelDsp
         foreach (var id in nodes)
         {
             if (p.Folders.Find(f => f.Id == id) is { } f)
-                list.Add(new MixNodeSpec { Name = f.Name, Output = IndexOf(nodes, f.Output), Sends = Sends(nodes, f) });
+                list.Add(new MixNodeSpec
+                {
+                    Name = f.Name,
+                    Volume = f.Volume,
+                    Pan = f.Pan,
+                    Muted = f.Muted,
+                    Inserts = FolderSpecs(f, p.Settings.Bpm),
+                    Output = IndexOf(nodes, f.Output),
+                    Sends = Sends(nodes, f),
+                });
             else if (p.Settings.Buses.Find(b => b.Id == id) is { } b)
                 list.Add(new MixNodeSpec
                 {

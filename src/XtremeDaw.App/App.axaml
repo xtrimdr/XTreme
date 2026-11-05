@@ -63,6 +63,7 @@
     <DropShadowEffect x:Key="HoverGlow" OffsetX="0" OffsetY="0" BlurRadius="12" Color="#22d3ee" Opacity="0.6" />
     <DropShadowEffect x:Key="RecGlow" OffsetX="0" OffsetY="0" BlurRadius="12" Color="#ef4444" Opacity="0.6" />
 
+    <!-- the interface's and the numbers' fonts: UiFonts replaces them live (Configuración → Apariencia), so it is read as a DynamicResource -->
     <FontFamily x:Key="Ui">Segoe UI Variable Text, Segoe UI</FontFamily>
     <FontFamily x:Key="Mono">Cascadia Mono, Consolas</FontFamily>
     <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
@@ -87,7 +88,7 @@
     <FluentTheme />
 
     <Style Selector="Window">
-      <Setter Property="FontFamily" Value="{StaticResource Ui}" />
+      <Setter Property="FontFamily" Value="{DynamicResource Ui}" />
       <Setter Property="Foreground" Value="{StaticResource Fg}" />
       <Setter Property="Background" Value="{StaticResource App}" />
     </Style>
@@ -131,7 +132,7 @@
       <Setter Property="Foreground" Value="{StaticResource Dim}" />
     </Style>
     <Style Selector="TextBlock.mono">
-      <Setter Property="FontFamily" Value="{StaticResource Mono}" />
+      <Setter Property="FontFamily" Value="{DynamicResource Mono}" />
     </Style>
 
     <!-- chip buttons: outlined like the web's IconButton / ChipToggle (transparent, border-line, text-dim) -->
@@ -425,6 +426,11 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="Foreground" Value="{StaticResource Faint}" />
     </Style>
+    <!-- the ⏻ of a list's row while on (class power-on; its glyph takes the accent from code): a soft accent block, so
+         on reads apart from off (transparent, Faint glyph) without the glow, which the row's clip would cut -->
+    <Style Selector="Button.ghost.slothead.power-on /template/ ContentPresenter#PART_ContentPresenter, Button.ghost.slothead.power-on:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.ghost.slothead.power-on:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Accent25}" />
+    </Style>
 
     <!-- an open popover's button (IconButton active in ui.tsx; the web's border is transparent in the top bar) -->
     <Style Selector="Button.ghost.on /template/ ContentPresenter#PART_ContentPresenter, Button.ghost.on:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.ghost.on:pressed /template/ ContentPresenter#PART_ContentPresenter">
@@ -472,10 +478,7 @@
       <Setter Property="Opacity" Value="0.45" />
     </Style>
 
-    <!-- "Borrar no usadas" (HistoryPanel.tsx): a faint outline that turns red on hover -->
-    <Style Selector="Button.chip.purge">
-      <Setter Property="Foreground" Value="{StaticResource Faint}" />
-    </Style>
+    <!-- "Borrar no usados": a plain chip, in the same color as "Desvincular no usados" beside it, that turns red on hover -->
     <Style Selector="Button.chip.purge:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.purge:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource RecSoft}" />
       <Setter Property="BorderBrush" Value="#66ef4444" />
@@ -722,8 +725,9 @@
     <Style Selector="Button.danger:pointerover, Button.discard:pointerover, Button.purge:pointerover, Button.rec-stop:pointerover">
       <Setter Property="Effect" Value="{StaticResource RecGlow}" />
     </Style>
-    <!-- an effect's ON glows while on, pointer or not (asked by the user): on or off reads at a glance -->
-    <Style Selector="Button.chip.power.on, Button.slothead.power-on">
+    <!-- an effect's ON glows while on, pointer or not (asked by the user), over its solid accent fill. Not the ⏻ of a
+         list's row: its row clips the glow to a ring round the glyph, its fill says it (above) -->
+    <Style Selector="Button.chip.power.on">
       <Setter Property="Effect" Value="{DynamicResource HoverGlow}" />
     </Style>
     <!-- text never glows: on transparent buttons (whole rows, links, check boxes) the glow would trace the letters.
@@ -739,10 +743,12 @@
       <Setter Property="Effect" Value="{DynamicResource HoverGlow}" />
     </Style>
 
-    <!-- no tooltips on the buttons of the mixer, the piano roll and Mastering (asked by the user, 2026-11-03): at the
+    <!-- no tooltips anywhere in the mixer, the piano roll and Mastering (asked by the user, 2026-11-03): at the
          bottom of the window their tooltip window opened by the pointer and a press could land on it instead of the
-         button. The class goes on each view's root, which moves with it to its own window -->
-    <Style Selector=".notips :is(Button)">
+         button. The class goes on each view's root, which moves with it to its own window. Every control, not only
+         buttons (labels, meters, bars, the editors of FxBody keep their tips in the inspector); the selector walks the
+         logical tree, so a menu opened from a control inside (its popup's logical parent) goes quiet too -->
+    <Style Selector=":is(Control).notips, .notips :is(Control)">
       <Setter Property="ToolTip.ServiceEnabled" Value="False" />
     </Style>
 

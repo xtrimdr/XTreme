@@ -40,7 +40,11 @@ pregunta en un cuadro si lo cierra (guarda el proyecto antes), así la copia nue
 lectura. Si algo falla, dice "NO SE PUEDE PROBAR" y no abre nada (desde el acceso directo, que no muestra la consola, lo avisa en un
 cuadro; queda anotado en `%APPDATA%\XTreme\sesiones.log`, junto con cada inicio y cierre de la app y sus errores). `-SoloCompilar` solo compila, y `dotnet build` también sirve.
 
-El texto queda en el **Banco de pruebas** (`pruebas\lista.json`, sobrevive a las copias). Una copia de prueba la muestra en un panel aparte, que se abre solo si hay algo pendiente y desde el botón junto a "PRUEBA": cada ítem se marca Anda o No anda, con una nota de qué falló. Un ítem de una copia más nueva que la abierta avisa que falta en esta. `-Lista` muestra lo pendiente y lo que no anda; `-Arregla 12` (con `-NoAbrir` o no) devuelve ese ítem a por probar en la copia nueva y cuenta un intento más.
+El texto queda en el **Banco de pruebas** (`pruebas\lista.json`, sobrevive a las copias). Lo muestra el Banco, un programa aparte (`XTreme.exe --banco [--lista archivo]`, uno solo a la vez), que una copia de prueba abre sola si hay algo pendiente y desde el botón junto a "PRUEBA", y que también abre `-Banco` o el acceso directo "XT-WorkBench": cada ítem se marca Anda o No anda, con una nota de qué falló. Un ítem de una copia más nueva que la abierta avisa que falta en esta. Sus botones **Revisar** abren Claude en `/xt_revisar-workbench` (un ítem, un estado o la pestaña), y el menú **Claude** de la barra de título las demás skills del proyecto; ahí mismo se elige, una vez, si abren en la app de escritorio (el mensaje queda escrito y se confirma la carpeta) o en una consola (Windows Terminal, donde arranca solo; sin la app, siempre la consola). `-Lista` lo muestra con las pestañas del Banco (Pedidos, A arreglar, Para probar y Resuelto); `-Arregla 12` (con `-NoAbrir` o no) devuelve ese ítem a Para probar en la copia nueva y cuenta un intento más, salvo que el usuario ya lo haya marcado Anda (código 2: no se reabre). Cada ítem es un **ticket** con su conversación (el pedido o qué probar, cada arreglo, cada veredicto con su nota y los comentarios): `-Ticket 12` lo muestra entero y `-Comenta 12 "texto"` dice algo en él sin cambiar su estado; `-Titula 12 "título"` le pone el título corto que el agente le da al tomarlo (el Banco lo muestra arriba y el ticket como una línea de tiempo, cada entrada de Usuario o de Agente); el `"qué probar"` de `-Arregla` queda como el mensaje del arreglo. Cada cambio queda además en `pruebas\lista.historial.jsonl`, con quién lo hizo (el usuario o la sesión de Claude): `-Historial 12` muestra el de un ítem y `-Historial 0` lo último de todos. Lo que anota o devuelve un agente llega al Banco como **Nuevo** hasta que el usuario lo ve.
+
+En la pestaña **Pedidos** del panel el usuario carga lo que quiere que se haga, numerado como el resto y con su tipo (**Error**, **Mejora**, **Función nueva** o **Idea**); de ahí sacan el trabajo los agentes. `-Toma 12` reserva un pedido, o algo marcado No anda, Anda mal o A mejorar, para una sesión (código 2 si ya lo tiene otra, y dice cuál; la misma sesión lo puede volver a tomar; a las 6 horas vence), `-Suelta 12` lo devuelve y `-Arregla 12` lo vuelve a Para probar cuando está hecho. Los tres aceptan varios números (`-Arregla 12,14`: una sola compilación y copia). `-Pide "qué" -Tipo error|mejora|funcion|idea` anota uno desde la consola.
+
+Cada ticket tiene un **tema**, de una lista fija (la parte de la app: Timeline, Mixer, Inspector, Piano roll y MIDI, Instrumentos, Efectos, Mastering, Automatización, Plugins, Audio y transporte, Video, Exportación, Análisis, Proyecto y archivos, Interfaz, Banco y herramientas; `xtlab lista temas` dice qué va en cada uno). El Banco lo muestra como un badge, filtra por tema arriba de la lista y se elige al cargar un pedido o desde el ticket. `-Tema mixer` le pone el tema a lo que se anota (`-Pide`, `"qué probar"`, `-Arregla`) y `-Clasifica 12,14 -Tema mixer` a tickets que ya están (`-Tema ninguno` lo saca).
 
 Si hay varias sesiones trabajando en esta carpeta, compilar, comprobar y copiar van de a una: `dotnet build` en Debug (`tools\turno.targets`), `probar.ps1` y los comandos pesados de `xtlab` (`comprobar-dsp`, `exportar`, `separar`…) esperan su turno (`turno.lock`, junto a `xtlab.exe`). `probar.ps1` y `xtlab` corren con prioridad baja para que la máquina siga respondiendo. Si en 9 minutos no les toca, salen con error diciendo quién lo tiene (`probar.ps1` y `xtlab`, código 4). `XtremeDaw.Audio` se compila optimizado también en Debug: así la copia de prueba y `xtlab` miden el DSP como el instalador.
 
@@ -55,7 +59,7 @@ directo **XTreme Prueba**, que abre la última copia de prueba terminada (`proba
 Todos se pueden cambiar en ⚙ Configuración → Atajos de teclado (menos Esc). Ahí mismo, **Distribución de teclas** cambia
 todos de una vez a los de Cubase, Logic Pro, FL Studio, Reaper o Studio Pro (`KeyLayouts`); los cambios propios quedan
 guardados en cada distribución. Esta tabla es la de XTreme. Con la ventana de un plugin en primer plano
-andan los del grupo Transporte, salvo mientras se escribe en un campo de texto del plugin.
+todas las teclas van a XTreme, salvo con **Teclas al plugin** prendido en su barra.
 
 | Tecla | Acción |
 |---|---|
@@ -63,6 +67,7 @@ andan los del grupo Transporte, salvo mientras se escribe en un campo de texto d
 | Shift+R o Num * | grabar (grabando: detener y guardar) |
 | R | armar / desarmar la pista seleccionada |
 | Inicio | volver al principio |
+| Ctrl+. | cortar audio: detiene y calla las colas de los efectos y las notas que siguen sonando |
 | L | repetir en loop (el rango A–B, o todo el tema) |
 | I / O | inicio (A) / final (B) del rango en el cabezal |
 | K / , / . | marcador en el cabezal / ir al anterior / al siguiente |
@@ -86,9 +91,10 @@ andan los del grupo Transporte, salvo mientras se escribe en un campo de texto d
 | Ctrl+C / Ctrl+X / Ctrl+V | copiar / cortar los clips elegidos (tomas y clips MIDI) / pegarlos en el cabezal, desde la pista elegida |
 | Supr | quitar el clip (o los marcados, o la pista vacía); con un rango, borrarlo |
 | Shift+Supr | borrar el rango y cerrar el hueco (lo de después se corre) |
-| 1 a 9 | herramientas: Seleccionar / Rango / Dividir / Borrar / Escuchar / Zoom / Mano / Lápiz / Pincel |
+| 1 a 9 | herramientas: Seleccionar / Lápiz / Pincel / Rango / Dividir / Borrar / Escuchar / Zoom / Mano |
 | Ctrl+Z / Ctrl+Y | deshacer / rehacer |
 | Ctrl+Shift+N | nueva pista |
+| Ctrl+Shift+D | duplicar la pista (o las elegidas), con su contenido |
 | Clic derecho en la regla | cómo se dibuja la grilla: Auto, igual que el imán o una subdivisión fija |
 | Arrastrar en vacío sobre las pistas (Ctrl: sumar) | marcar varios clips con un rectángulo para moverlos o borrarlos juntos |
 | Ctrl+clic / Shift+clic en un encabezado | marcar varias pistas (una por una / un rango) para moverlas juntas |
@@ -97,6 +103,7 @@ andan los del grupo Transporte, salvo mientras se escribe en un campo de texto d
 | B / P | plegar o abrir el panel del canal / del proyecto (si está oculto con su botón de la barra de título, lo vuelve a mostrar) |
 | Enter | maximizar el panel que tocaste último: video, timeline, piano roll, mixer o mastering (otra vez Enter vuelve a como estaba) |
 | F11 | pantalla completa (otra vez F11 vuelve a como estaba) |
+| Ctrl + / Ctrl − / Ctrl 0 | agranda o achica la interfaz 1 px, o la vuelve al 100 % |
 | F1 | ayuda (otra vez F1 la cierra) |
 | Rueda, Shift+rueda, Ctrl+rueda, Alt+rueda | subir y bajar, zoom, desplazar a los costados, alto de pista (los modificadores y el sentido de cada uno, con "Invertir", se cambian en Configuración → Atajos de teclado; zoom y alto también con los sliders al pie de los encabezados). En el mixer, la rueda sola y Ctrl+rueda lo desplazan a los costados y Shift+rueda (o la barra de su cabecera) agranda o achica el ancho de los canales |
 
@@ -165,6 +172,10 @@ la consola, sin abrir la ventana.
 | `version` | esta versión contra la última release de GitHub (lo que avisa la ventana y muestra "Acerca de") |
 | `reporte enlace "título" [--texto t] [--idea]` / `reporte comprobar` | el enlace al issue nuevo que abre "Enviar comentarios", sin abrir nada; `comprobar` prueba textos, codificación y largo |
 | `lista [ver \| agregar "qué probar" \| arreglado número [--texto t]] --archivo x [--copia nombre]` / `lista comprobar` | el Banco de pruebas de las copias de prueba (la usa `tools\probar.ps1`); `comprobar` la prueba sobre un archivo temporal |
+| `lista pedir "qué" --tipo error\|mejora\|funcion\|idea \| tomar número \| soltar número --archivo x` | los pedidos del usuario: anotar uno, reservarlo para una sesión o devolverlo |
+| `lista tema número tema\|ninguno \| temas --archivo x` (y `--tema t` en `agregar` y `pedir`) | el tema de un ticket, de la lista fija; `temas` la muestra con qué va en cada uno |
+| `lista ticket número \| comentar número "qué" \| titulo número "título" --archivo x` | un ticket entero, con su conversación; decir algo en él sin cambiar su estado; ponerle título (vacío lo saca) |
+| `lista historial [número] --archivo x` | quién hizo qué y cuándo con un ítem; sin número, lo último de toda la lista |
 | `atajos comprobar` | que ninguna distribución de teclas de otro DAW (`KeyLayouts`) repita una tecla |
 | `espectro [toma.wav]` | el espectro en vivo del EQ |
 | `comprobar-dsp` | comprobaciones propias del DSP: remuestreo, tomas, reinicio de la cadena, afinador, LUFS y mastering (bandas que suman plano, reducción por banda sin importar el nivel, Cinta, Ancho (graves mono y mismo volumen), soft clip, limitador prendido y apagado) y slots de efectos (un canal viejo migrado suena idéntico a la cadena fija, repetir, reordenar, cambio de lista sin saltos, el bypass de FX los apaga sin tocar el canal), puerta de ruido (baja el zumbido, deja pasar la nota, no aletea cuando una nota se apaga); además Nitidez, Claridad y Resplandor (un cuadro plano queda igual, un borde se marca, una luz en lo oscuro deja su halo de su color, los looks HDR y Soñado suman lo suyo solo con el filtro prendido) |
@@ -244,6 +255,8 @@ la consola, sin abrir la ventana.
 | `proyecto historial carpeta` | tomas en uso y no usadas, exportaciones y actividad |
 | `proyecto insertos carpeta pista [agregar vida\|comp\|eq\|puerta\|reverb\|delay\|limpieza\|multibanda\|color\|cinta\|ancho\|softclip\|limitador\|chorus\|flanger\|phaser\|tremolo\|bombeo\|fet\|optico\|vca-bus\|vca\|varimu [--en n] \| agregar vst --plugin "nombre" \| quitar n \| mover n m \| duplicar n \| prender n \| apagar n \| plegar n \| sidechain n pista\|propia]` | los slots de efectos de la pista en su orden; sin operación, los lista (`plegar` lo pliega en el mixer; `sidechain` elige la pista que escucha un compresor, una puerta o un bombeo) |
 | `proyecto insertos carpeta --bus id\|n [agregar … \| quitar n \| …]`, `proyecto insertos carpeta [agregar … \| cadena \| quitar n \| …] --master` | lo mismo para un bus o el master; `cadena` (solo `--master`) es "Cadena completa": agrega las etapas que falten |
+| `proyecto insertos carpeta --carpeta id\|n\|nombre [agregar … \| quitar n \| …]` | los slots de una carpeta (van sobre la suma de sus pistas) |
+| `proyecto buses carpeta --carpeta id\|n\|nombre [volumen x\|paneo x\|mute\|solo]` | el canal de una carpeta; sin operación lo muestra |
 | `proyecto buses carpeta [agregar [nombre] [--tipo reverb\|delay\|vacio] \| quitar n \| renombrar n nombre \| volumen n x \| paneo n x \| mute n \| color n #rrggbb\|ninguno \| icono n id\|ninguno]` | los buses, en el orden en que suenan, con sus slots, su salida y sus envíos; quitar uno se lleva los envíos que le llegaban |
 | `proyecto envios carpeta quien [bus [nivel] [--pre\|--post] [--apagar\|--prender] [--quitar\|--sumar]] [--salida bus\|master]` | la salida y los envíos de una pista (número o id) o `carpeta:n`; un bus (`bus:n`) sale solo al master, así que lo rechaza; `--quitar`/`--sumar` saca o vuelve a poner un bus en su lista |
 | `proyecto vinculados carpeta`, `proyecto copiar-vinculado carpeta medio`, `proyecto reencontrar carpeta medio --archivo X`, `proyecto reencontrar carpeta [medio] --buscar-en Y` | dónde están los archivos de cada toma, copia a media/ lo vinculado y vuelve a encontrar lo que falta |

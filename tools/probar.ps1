@@ -5,10 +5,22 @@
 #   tools\probar.ps1 "qué probar" -Proyecto D:\...\MiTema   -> same, opening that project directly
 #   tools\probar.ps1 -Abrir                  -> open the newest finished copy without building
 #   tools\probar.ps1 -Abrir -Acceso          -> same, from the desktop shortcut: it has no console, so a failure shows a window
+#   tools\probar.ps1 -Banco                  -> the Banco de pruebas alone (XTreme.exe --banco) from the newest copy; an open one comes forward
 #   tools\probar.ps1 -SinComprobar           -> skip xtlab comprobar-dsp (UI-only changes in a hurry)
 #   tools\probar.ps1 -NoAbrir "qué probar"   -> build, check, copy and add to the list (what the agent runs after each change)
 #   tools\probar.ps1 -NoAbrir -Arregla 12    -> same, for a fix: item 12 goes back to be tried on this copy
-#   tools\probar.ps1 -Lista                  -> what is left to try and what the user marked as failing
+#   tools\probar.ps1 -NoAbrir -Arregla 12,14 -> several fixes on one build and one copy
+#   tools\probar.ps1 -Lista                  -> the user's requests, what is left to try and what the user marked as failing
+#   tools\probar.ps1 -Toma 12,14             -> takes those items for this session (exit 2 if another one has any of them)
+#   tools\probar.ps1 -Suelta 12,14           -> gives them back without doing them
+#   tools\probar.ps1 -Pide "qué" -Tipo error -> a request that came by chat goes on the list too (error|mejora|funcion|idea)
+#   -Tema mixer                              -> with -Pide, "qué probar" or -Arregla: the ticket's topic (the list: xtlab lista temas)
+#   tools\probar.ps1 -Clasifica 12,14 -Tema mixer -> gives those tickets that topic (-Tema ninguno takes it off)
+#   tools\probar.ps1 -Clasifica 12 -Tipo mejora -> gives that request its kind (the bench doesn't ask for it: the agent that takes it does)
+#   tools\probar.ps1 -Historial 12           -> who did what to item 12 and when (-Historial 0: the latest changes of all)
+#   tools\probar.ps1 -Ticket 12              -> ticket 12 whole: its subject, state and conversation
+#   tools\probar.ps1 -Comenta 12 "texto"     -> says something in ticket 12 without changing its state (a question, where it went)
+#   tools\probar.ps1 -Titula 12 "título"     -> gives ticket 12 its short title (the agent names every ticket it takes)
 #   tools\probar.ps1 -SoloCompilar           -> build only, in its turn and below normal priority
 # Several sessions share this folder, so building, checking and copying go one at a time: the script holds the turn that
 # xtlab (HeavyTurn.cs) and dotnet build (turno.targets) also take until the copy is done, and runs below normal priority
@@ -22,12 +34,25 @@ param(
     [Parameter(Position = 0)][string]$Que = '',
     [string]$Proyecto = '',
     [switch]$Abrir,
+    [switch]$Banco,
     [switch]$Acceso,
     [switch]$SinComprobar,
     [switch]$NoAbrir,
     [switch]$SoloCompilar,
-    [int]$Arregla = 0,
-    [switch]$Lista
+    [int[]]$Arregla = @(),
+    [int[]]$Toma = @(),
+    [int[]]$Suelta = @(),
+    [string]$Pide = '',
+    [ValidateSet('error', 'mejora', 'funcion', 'idea', 'ninguno')][string]$Tipo = 'error',
+    # TestListCommands.TopicNames
+    [ValidateSet('', 'timeline', 'mixer', 'inspector', 'pianoroll', 'instrumentos', 'efectos', 'mastering', 'automatizacion', 'plugins',
+        'audio', 'video', 'exportar', 'analisis', 'proyecto', 'interfaz', 'banco', 'ninguno')][string]$Tema = '',
+    [int[]]$Clasifica = @(),
+    [switch]$Lista,
+    [int]$Historial = -1,
+    [int]$Ticket = 0,
+    [int]$Comenta = 0,
+    [int]$Titula = 0
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -79,6 +104,14 @@ $TurnWaitSec = 540
 
 # The app's process, and its name before the rename (a test copy from then may still be open)
 $AppProcesses = 'XTreme'
+
+# The open XTremes, leaving out the Banco de pruebas: it is the same exe (XTreme.exe --banco), saves nothing, holds no
+# audio interface and lives on its own, so opening a copy never asks to close it
+function AppRunning {
+    $bench = @(Get-CimInstance Win32_Process -Filter "Name = 'XTreme.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match '(^|\s)--banco(\s|$)' } | ForEach-Object { $_.ProcessId })
+    @(Get-Process $AppProcesses -ErrorAction SilentlyContinue | Where-Object { $bench -notcontains $_.Id })
+}
 
 # Closes one XTreme through its window, so the project is saved and a take in progress is kept. The window may stay
 # up asking something (changes it could not save, an export running): it gets time and is never forced. Once the window
@@ -188,17 +221,25 @@ function TakeTurn {
 
 # Puts what to try on the list, tied to that copy. It never stops a test: the copy is already made.
 function AddToList([string]$copy) {
-    if (-not $Que -and -not $Arregla) { return }
+    if (-not $Que -and -not $Arregla.Count) { return }
     # through the environment: Windows PowerShell breaks quotes inside an argument
     $env:XTREME_PROBAR_TEXTO = if ($Que) { $Que } else { $null }
-    if ($Arregla) { & $xtlab lista arreglado $Arregla --archivo $listFile --copia $copy }
-    else { & $xtlab lista agregar --archivo $listFile --copia $copy }
-    if ($LASTEXITCODE -ne 0) { Write-Host 'No se pudo anotar en la lista de pruebas.' -ForegroundColor Yellow }
+    if ($Arregla.Count) {
+        foreach ($n in $Arregla) {
+            & $xtlab lista arreglado $n --archivo $listFile --copia $copy
+            if ($LASTEXITCODE -ne 0) { Write-Host "No se pudo volver a anotar el $n en la lista de pruebas." -ForegroundColor Yellow }
+            elseif ($Tema) { & $xtlab lista tema $n $Tema --archivo $listFile | Out-Null }
+        }
+    } else {
+        $topic = if ($Tema -and $Tema -ne 'ninguno') { @('--tema', $Tema) } else { @() }
+        & $xtlab lista agregar --archivo $listFile --copia $copy @topic
+        if ($LASTEXITCODE -ne 0) { Write-Host 'No se pudo anotar en la lista de pruebas.' -ForegroundColor Yellow }
+    }
     $env:XTREME_PROBAR_TEXTO = $null
 }
 
 function Launch([string]$dir) {
-    $running = @(Get-Process $AppProcesses -ErrorAction SilentlyContinue)
+    $running = AppRunning
     foreach ($p in $running) { if ($p.MainWindowHandle -eq 0) { CloseApp $p } }
     $open = @($running | Where-Object { -not $_.HasExited })
     $asked = if ($open.Count) { AskClose $open } else { 'closed' }
@@ -229,7 +270,7 @@ function Launch([string]$dir) {
     $until = $opened.AddSeconds($StartWaitSec)
     $app = $null
     while (-not $app -and (Get-Date) -lt $until) {
-        $app = Get-Process XTreme -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Select-Object -First 1
+        $app = AppRunning | Where-Object { $_.Path -eq $exe } | Select-Object -First 1
         if (-not $app) { Start-Sleep -Milliseconds 250 }
     }
     if (-not $app) { Fail "pedí abrir $exe y no arrancó en $StartWaitSec s." }
@@ -242,6 +283,36 @@ function Launch([string]$dir) {
     Write-Host "Abierto: $exe" -ForegroundColor Green
 }
 
+if ($Toma.Count -or $Suelta.Count -or $Pide -or $Clasifica.Count) {
+    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    if ($Clasifica.Count) {
+        $kind = $PSBoundParameters.ContainsKey('Tipo')
+        if (-not $Tema -and -not $kind) { Fail 'falta el tema o el tipo: tools\probar.ps1 -Clasifica 12 -Tema mixer -Tipo mejora (los temas: xtlab lista temas)' }
+        $worst = 0
+        foreach ($n in $Clasifica) {
+            if ($Tema) { & $xtlab lista tema $n $Tema --archivo $listFile; if ($LASTEXITCODE -gt $worst) { $worst = $LASTEXITCODE } }
+            if ($kind) { & $xtlab lista tipo $n $Tipo --archivo $listFile; if ($LASTEXITCODE -gt $worst) { $worst = $LASTEXITCODE } }
+        }
+        exit $worst
+    }
+    if ($Pide) {
+        if ($Tipo -eq 'ninguno') { Fail 'un pedido anotado por un agente lleva su tipo: -Tipo error|mejora|funcion|idea' }
+        # through the environment: Windows PowerShell breaks quotes inside an argument
+        $env:XTREME_PROBAR_TEXTO = $Pide
+        $topic = if ($Tema -and $Tema -ne 'ninguno') { @('--tema', $Tema) } else { @() }
+        & $xtlab lista pedir --tipo $Tipo --archivo $listFile @topic
+        $code = $LASTEXITCODE
+        $env:XTREME_PROBAR_TEXTO = $null
+        exit $code
+    }
+    # one at a time, all of them: one held by another session doesn't stop the rest; the worst code wins
+    $worst = 0
+    foreach ($n in $Toma) { & $xtlab lista tomar $n --archivo $listFile; if ($LASTEXITCODE -gt $worst) { $worst = $LASTEXITCODE } }
+    foreach ($n in $Suelta) { & $xtlab lista soltar $n --archivo $listFile; if ($LASTEXITCODE -gt $worst) { $worst = $LASTEXITCODE } }
+    exit $worst
+}
+
 if ($Lista) {
     if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -249,11 +320,69 @@ if ($Lista) {
     exit $LASTEXITCODE
 }
 
-if ($Abrir) {
-    # prueba.txt is written last: a folder without it is a copy still being made (or one that died halfway)
-    $last = Get-ChildItem $copies -Directory -ErrorAction SilentlyContinue |
+if ($Ticket -gt 0) {
+    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    & $xtlab lista ticket $Ticket --archivo $listFile
+    exit $LASTEXITCODE
+}
+
+if ($Comenta -gt 0) {
+    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
+    if (-not $Que) { Fail 'falta qué decir: tools\probar.ps1 -Comenta 12 "texto"' }
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    # through the environment: Windows PowerShell breaks quotes inside an argument
+    $env:XTREME_PROBAR_TEXTO = $Que
+    & $xtlab lista comentar $Comenta --archivo $listFile
+    $code = $LASTEXITCODE
+    $env:XTREME_PROBAR_TEXTO = $null
+    exit $code
+}
+
+if ($Titula -gt 0) {
+    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
+    if (-not $Que) { Fail 'falta el título: tools\probar.ps1 -Titula 12 "título"' }
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    # through the environment: Windows PowerShell breaks quotes inside an argument
+    $env:XTREME_PROBAR_TEXTO = $Que
+    & $xtlab lista titulo $Titula --archivo $listFile
+    $code = $LASTEXITCODE
+    $env:XTREME_PROBAR_TEXTO = $null
+    exit $code
+}
+
+if ($Historial -ge 0) {
+    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    if ($Historial -gt 0) { & $xtlab lista historial $Historial --archivo $listFile } else { & $xtlab lista historial --archivo $listFile }
+    exit $LASTEXITCODE
+}
+
+# prueba.txt is written last: a folder without it is a copy still being made (or one that died halfway)
+function NewestCopy {
+    Get-ChildItem $copies -Directory -ErrorAction SilentlyContinue |
         Where-Object { (Test-Path (Join-Path $_.FullName 'prueba.txt')) -and (Test-Path (Join-Path $_.FullName 'XTreme.exe')) } |
         Sort-Object Name -Descending | Select-Object -First 1
+}
+
+if ($Banco) {
+    $last = NewestCopy
+    if (-not $last) { Fail 'todavía no hay ninguna copia de prueba. Corré tools\probar.ps1 una vez.' }
+    # through Explorer, like Launch: run from a packaged tool it would read a redirected %APPDATA%. One already open
+    # comes forward by itself (Bench.cs).
+    $lnk = Join-Path $last.FullName 'banco.lnk'
+    $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+    $s.TargetPath = Join-Path $last.FullName 'XTreme.exe'
+    $s.WorkingDirectory = $last.FullName
+    $s.Arguments = "--banco --lista `"$listFile`""
+    $s.Save()
+    explorer.exe $lnk
+    Write-Host "XT-WorkBench: $($last.Name)" -ForegroundColor Green
+    exit 0
+}
+
+if ($Abrir) {
+    $last = NewestCopy
     if (-not $last) { Fail 'todavía no hay ninguna copia de prueba. Corré tools\probar.ps1 una vez.' }
     if (Test-Path $xtlab) { AddToList $last.Name }
     Launch $last.FullName
@@ -261,7 +390,7 @@ if ($Abrir) {
 }
 
 # An app opened straight from bin\ (an old shortcut, or by hand) locks the DLLs and the build fails
-$fromBin = @(Get-Process $AppProcesses -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($bin, 'OrdinalIgnoreCase') })
+$fromBin = @(AppRunning | Where-Object { $_.Path -and $_.Path.StartsWith($bin, 'OrdinalIgnoreCase') })
 if ($fromBin.Count -and (AskClose $fromBin) -ne 'closed') {
     Fail 'hay un XTreme abierto desde bin\ y no lo cerré. Cerralo y volvé a correr esto.'
 }

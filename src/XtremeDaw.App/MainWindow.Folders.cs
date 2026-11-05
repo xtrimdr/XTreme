@@ -14,10 +14,11 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// Track folders and track presets (native only, asked by the user). Folders group tracks in the timeline and the
-/// mixer and only hold them: no fader, mute, solo or effects (the user's call); their tracks' sum goes to the folder's
-/// output and sends (<see cref="ApplyRouting"/>). Moving tracks in and out and removing a folder are timeline edits
-/// (<see cref="EditTimeline"/>); renaming, color, output and sends are folder edits with their own undo step
-/// (<see cref="FolderEdit"/>); folding is only a view, saved without undo.
+/// mixer and are a channel of their own (the user's call, #134): their tracks' sum goes through the folder's slots, pan,
+/// fader and mute to its output and sends (<see cref="ApplyRouting"/>), and its solo solos its tracks. Moving tracks in
+/// and out and removing a folder are timeline edits (<see cref="EditTimeline"/>); renaming, color, fader, pan, M, S,
+/// slots, output and sends are folder edits with their own undo step (<see cref="FolderEdit"/>); folding is only a view,
+/// saved without undo.
 /// Presets keep a track's whole strip to add it again from the "nueva pista" menu (<see cref="TrackPresets"/>).
 /// </summary>
 public partial class MainWindow
@@ -31,6 +32,7 @@ public partial class MainWindow
         }, "tracks-reordered");
         Timeline.FolderFoldRequested += f => FolderEdit(f, x => x.Collapsed = !x.Collapsed, "fold", undoable: false);
         Timeline.FolderRemoveRequested += (f, at) => _ = RemoveFolder(f, at);
+        Timeline.FolderToggled += (f, solo) => FolderChannelEdit(f.Id, x => { if (solo) x.Solo = !x.Solo; else x.Muted = !x.Muted; }, solo ? "solo" : "muted");
         Timeline.FolderContextRequested += ShowFolderMenu;
         Timeline.FolderLookRequested += (f, at) => ShowFolderLook(f, Timeline, at);
         InitFolderInspector();
@@ -38,6 +40,42 @@ public partial class MainWindow
         InitNameEditor();
         Timeline.RowHeightRequested += SetRowHeight;
         ResetHeightsButton.Click += (_, _) => ResetRowHeights();
+        SplitAllButton.Click += (_, _) => SplitAllWaves();
+    }
+
+    /// <summary>Every stereo or mixed track's left and right waves (asked by the user): on for all if any is off, else
+    /// off for all. A view setting like <see cref="SetSplitWave"/>: saved, without undo.</summary>
+    void SplitAllWaves()
+    {
+        if (store == null || store.ReadOnly || restoring) return;
+        var stereo = tracks.Where(SplitsWave).ToList();
+        if (stereo.Count == 0) return;
+        bool on = stereo.Any(t => !t.Track.SplitWave);
+        foreach (var t in stereo) t.Track.SplitWave = on;
+        MarkDirty();
+        Timeline.InvalidateVisual();
+        RefreshInspectorText();
+    }
+
+    static bool SplitsWave(LiveTrack t) => !t.Track.IsMidi && t.Layout is ChannelLayout.Stereo or ChannelLayout.Mixed;
+
+    /// <summary>Every tick: <see cref="SplitAllButton"/> on while there's a stereo track, in accent while all of them
+    /// show both sides. No LINQ; touches the button only when its state changed.</summary>
+    void RefreshSplitAllButton()
+    {
+        int stereo = 0, split = 0;
+        for (int i = 0; i < tracks.Count; i++)
+        {
+            if (!SplitsWave(tracks[i])) continue;
+            stereo++;
+            if (tracks[i].Track.SplitWave) split++;
+        }
+        bool enabled = stereo > 0 && store is { ReadOnly: false } && !restoring, lit = stereo > 0 && split == stereo;
+        if (SplitAllButton.IsEnabled == enabled && SplitAllButton.Classes.Contains("lit") == lit) return;
+        SplitAllButton.IsEnabled = enabled;
+        SplitAllButton.Classes.Set("lit", lit);
+        ((TextBlock)SplitAllButton.Content!).Foreground = lit ? Palette.Accent : Palette.Dim;
+        ToolTip.SetTip(SplitAllButton, Loc.T(lit ? "timeline.splitAll.off" : "timeline.splitAll.on"));
     }
 
     /// <summary>A track's or a folder's own height in px (null = its usual one). A track and a folded folder keep it as
@@ -53,6 +91,17 @@ public partial class MainWindow
         else if (tracks.Select(x => Automations.ById(x.Track, id)).FirstOrDefault(l => l != null) is { } lane) lane.HeightScale = h / AutomationLane.DefaultHeight;
         else return;
         RowHeightsChanged();
+    }
+
+    /// <summary>A track's stereo clips as two waves, left over right, or as one (asked by the user). A view setting like
+    /// its height: saved, without undo.</summary>
+    void SetSplitWave(LiveTrack t, bool on)
+    {
+        if (store == null || store.ReadOnly || restoring || t.Track.SplitWave == on) return;
+        t.Track.SplitWave = on;
+        MarkDirty();
+        Timeline.InvalidateVisual();
+        RefreshInspectorText();
     }
 
     double? Scale(double? h) => h is { } px && Math.Abs(px - Timeline.TrackHeight) >= 1 ? px / Timeline.TrackHeight : null;
@@ -84,18 +133,48 @@ public partial class MainWindow
     /// <summary>The folder selected in the timeline (or the mixer), or null; then no track is selected.</summary>
     Folder? SelectedFolder => Timeline.SelectedFolderId is { } id ? FolderById(id) : null;
 
-    /// <summary>A folder edit: one undo step per control (folding is not one), heard at once, saved, on screen.</summary>
-    void FolderEdit(Folder f, Action<Folder> change, string key, bool undoable = true)
+    /// <summary>
+    /// A folder edit: one undo step per control (folding is not one), heard at once, saved, on screen. A channel control
+    /// (fader, pan, M, S, a slot: <paramref name="relayout"/> false) only redraws the timeline: a fader drag doesn't lay
+    /// its rows out again on every move.
+    /// </summary>
+    void FolderEdit(Folder f, Action<Folder> change, string key, bool undoable = true, bool relayout = true)
     {
         if (syncing || restoring || store == null || store.ReadOnly) return;
         if (undoable) undo.Checkpoint(store.Project, $"folder:{f.Id}:{key}");
         change(f);
+        // a folder is a channel (#134): its fader, M, S and slots reach the engine with the routing, its VST3 slots start or stop
         ApplyRouting(store.Project, tracks);
+        SyncEffects();
         MarkDirty();
         UpdateUndoButtons();
-        Timeline.UpdateTracks(tracks, store.Project.Folders);
+        if (relayout) Timeline.UpdateTracks(tracks, store.Project.Folders);
+        else Timeline.InvalidateVisual();
         RefreshInspectorText();
         RefreshMixer();
+    }
+
+    /// <summary>A folder's slots, for the panels (<see cref="SlotPanel"/>): like a bus's, its compressor measured against its first track with audio.</summary>
+    SlotOwner SlotsOf(Folder folder)
+    {
+        string id = folder.Id;
+        return new()
+        {
+            OwnerId = id,
+            Slots = () => (FolderById(id) ?? folder).Inserts,
+            Edit = (change, key) => FolderChannelEdit(id, x => change(x.Inserts), key),
+            Recalculate = ChannelDsp.RecalculateComp,
+            Take = () => (tracks.FirstOrDefault(t => t.Track.FolderId == id && t.FirstAudio != null) ?? tracks.FirstOrDefault(t => t.FirstAudio != null))?.FirstAudio,
+            Insert = slot => engine.Node(id)?.Find(slot),
+            AddTip = Loc.T("mix.slot.add.folder.tip"),
+            DefaultPreset = () => "bus-glue",
+        };
+    }
+
+    /// <summary>A folder's channel control (fader, pan, M, S, its slots): a <see cref="FolderEdit"/> on the folder as the project has it now.</summary>
+    void FolderChannelEdit(string id, Action<Folder> change, string key)
+    {
+        if (FolderById(id) is { Separator: false } f) FolderEdit(f, change, key, relayout: false);
     }
 
     /// <summary>
@@ -370,9 +449,10 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// The folder's own strip: it only holds its tracks, so no fader, M, S or effects. Its meter shows the sum of its
-    /// tracks (what goes to its output); its sends show as bars and its output under them. It takes the mixer's zoom
-    /// width and gives way as it narrows, like the other strips.
+    /// The folder's own strip, a channel like a bus's (#134): its effects as a list, its sends as bars, the pan bar and
+    /// M S over its fader, its meter after them (what goes to its output) and its dB at the foot. Its head has the folder
+    /// glyph, "CARPETA" and its output selector (a track's strip has no output there: a folder's goes to the master or a
+    /// bus). It takes the mixer's zoom width and gives way as it narrows, like the other strips.
     /// </summary>
     Control FolderStrip(Folder folder, double width)
     {
@@ -391,27 +471,45 @@ public partial class MainWindow
             Timeline.SelectFolder(id);
             OpenAnchoredMenu(Popup(FolderMenu(F(), box, null), 240), box);
         };
+        var fader = new Fader();
+        fader.Changed += v => FolderChannelEdit(id, x => x.Volume = v, "volume");
+        var db = new TextBlock { Classes = { "mono" }, FontSize = 10, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
+        mx.Refresh.Add(() => { fader.Value = F().Volume; db.Text = ValueFormat.Db(F().Volume); });
         var meter = new MixerMeter();
-        mx.NodeMeters.Add((id, meter, null));
-        var tag = new TextBlock { Text = Loc.T("mixer.folderTag"), FontSize = 9, LetterSpacing = 0.8, Foreground = Palette.Faint, HorizontalAlignment = HorizontalAlignment.Center };
+        var faders = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { fader, meter } };
+        var tag = new TextBlock { Text = Loc.T("mixer.folderTag"), FontSize = 9, LetterSpacing = 0.8, Foreground = Palette.Faint };
         ToolTip.SetTip(tag, Loc.T("mixer.folderTag.tip"));
-        var glyph = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 13, HorizontalAlignment = HorizontalAlignment.Center };
-        var sum = new TextBlock { Text = Loc.T("mixer.folder.sum"), FontSize = 10, Foreground = Palette.Faint };
-        ToolTip.SetTip(sum, Loc.T("mixer.folder.sum.tip"));
-        mx.Refresh.Add(() =>
-        {
-            glyph.Foreground = Palette.Alpha(TimelineView.FolderColor(F()), 1);
-        });
-        var head = new StackPanel { Spacing = 4, Children = { glyph, tag } };
-        // its icon grows with the strip, like a channel's; "CARPETA" goes when it doesn't fit
+        var glyph = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+        var router = RouterOf(folder);
+        var output = OutputSelect(router, mx.Refresh);
+        output.Height = output.MinHeight = 22;
+        mx.Refresh.Add(() => glyph.Foreground = Palette.Alpha(TimelineView.FolderColor(F()), F().Muted ? 0.5 : 1));
+        // like a channel's head (StripHead): the glyph beside "CARPETA" and its output, or over the output when narrow
+        var text = new StackPanel { Spacing = 2, Children = { tag, output } };
+        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Height = StripHeadH };
+        head.Children.Add(glyph);
+        head.Children.Add(text);
         mx.Resize.Add(w =>
         {
+            // its icon grows with the strip, like a channel's; "CARPETA" goes when it doesn't fit
             glyph.FontSize = Math.Clamp(Math.Round(10 + w * 0.045), 12, 17);
-            tag.IsVisible = w >= HeadNameW;
+            bool alone = w < HeadNameW;
+            tag.IsVisible = !alone;
+            Grid.SetColumn(text, alone ? 0 : 1);
+            Grid.SetColumnSpan(text, alone ? 2 : 1);
+            Grid.SetColumnSpan(glyph, alone ? 2 : 1);
+            glyph.HorizontalAlignment = alone ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+            glyph.VerticalAlignment = alone ? VerticalAlignment.Top : VerticalAlignment.Center;
+            text.VerticalAlignment = alone ? VerticalAlignment.Bottom : VerticalAlignment.Center;
+            text.Margin = new Thickness(alone ? 0 : 7, 0, 0, 0);
         });
+        var (controls, gr) = CompactChain(SlotsOf(folder), router, () => F().Pan, v => FolderChannelEdit(id, x => x.Pan = v, "pan"),
+            StripToggle("M", Loc.T("folder.mute"), 26, () => F().Muted, true, () => FolderChannelEdit(id, x => x.Muted = !x.Muted, "muted")),
+            StripToggle("S", Loc.T("folder.solo"), 26, () => F().Solo, false, () => FolderChannelEdit(id, x => x.Solo = !x.Solo, "solo")));
+        mx.NodeMeters.Add((id, meter, gr));
         var content = new Grid();
-        var layout = StripLayout(head, CompactFolderControls(RouterOf(folder)), meter, sum);
-        NarrowParts(layout, null, null, meter, sum);
+        var layout = StripLayout(head, controls, faders, db);
+        NarrowParts(layout, faders, fader, meter, db);
         content.Children.Add(layout);
         content.Children.Add(top);
         box.Child = content;

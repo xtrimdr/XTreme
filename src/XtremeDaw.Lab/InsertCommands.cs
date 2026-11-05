@@ -6,7 +6,7 @@ namespace XtremeDaw.Lab;
 
 /// <summary>
 /// xtlab's side of the channels' insert slots: <c>proyecto insertos</c> lists and edits a track's slots (or, with
-/// <c>--bus</c>, a bus's) like the mixer strip, and <see cref="Check"/> (part of <c>comprobar-dsp</c>) verifies that a
+/// <c>--bus</c>, a bus's, with <c>--carpeta</c>, a folder's) like the mixer strip, and <see cref="Check"/> (part of <c>comprobar-dsp</c>) verifies that a
 /// version 1 channel, turned into slots, sounds exactly like the fixed chain did, that repeating, reordering and swapping
 /// slots behave, and that a bus sounds like its slots on the sum of what is routed to it.
 /// </summary>
@@ -15,7 +15,7 @@ static class InsertCommands
     const int Block = 128;
 
     /// <summary>
-    /// xtlab proyecto insertos carpeta (pista | --bus id|n) [agregar tipo [--en n] | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n | cadena]
+    /// xtlab proyecto insertos carpeta (pista | --bus id|n | --carpeta id|n|nombre) [agregar tipo [--en n] | quitar n | mover n m | duplicar n | prender n | apagar n | plegar n | cadena]
     /// <c>agregar vst --plugin "nombre"</c> adds a VST3 effect from the scanned plugins (<c>vst escanear</c>); <c>cadena</c>
     /// is the master's "Cadena completa". With <c>--master</c>, at the end of the line, it works on the master's list.
     /// </summary>
@@ -42,9 +42,17 @@ static class InsertCommands
             first = 2;
             isReturn = true;
         }
+        else if (a.Get("carpeta") is { } folderId)
+        {
+            // a folder is a channel (#134): its slots run over its tracks' sum; a new reverb starts mixed, like a track's
+            var folder = BusCommands.FindFolder(p, folderId);
+            slots = folder.Inserts;
+            name = $"Carpeta «{folder.Name}»";
+            first = 2;
+        }
         else
         {
-            string trackId = a.Positional.ElementAtOrDefault(2) ?? throw new ArgumentException("insertos: falta la pista o --bus (xtlab proyecto clips carpeta).");
+            string trackId = a.Positional.ElementAtOrDefault(2) ?? throw new ArgumentException("insertos: falta la pista, --bus o --carpeta (xtlab proyecto clips carpeta).");
             var track = p.Tracks.Find(t => t.Id == trackId)
                 ?? (int.TryParse(trackId, out int n) && n >= 1 && n <= p.Tracks.Count ? p.Tracks[n - 1] : null)
                 ?? throw new ArgumentException("No encontré esa pista.");

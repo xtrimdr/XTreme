@@ -79,6 +79,13 @@ static class ImportChecks
             Check(saved.FindMedia(lm.Id)?.Audio == lm.Audio, "la ruta sobrevive al guardado");
             var (gone, bytes, failure) = ProjectHistory.TrashMedia(proj, [lm]);
             Check(gone.Count == 1 && bytes == 0 && failure == null && File.Exists(src), "borrar la toma vinculada no toca el archivo ni dice que libera lugar");
+            string inside = Path.Combine(proj, "suelto.wav");
+            File.Copy(src, inside);
+            var near = AudioImport.LinkIn(proj, inside);
+            var nt = AudioImport.AddClip(p, near, 0);
+            var nm = p.FindMedia(nt.Clips[0].MediaId)!;
+            (gone, bytes, failure) = ProjectHistory.TrashMedia(proj, [nm]);
+            Check(nm.Linked && gone.Count == 1 && bytes == 0 && failure == null && File.Exists(inside), "un vinculado dentro de la carpeta del proyecto tampoco se borra");
             var soundless = new AudioLoader.LoadedAudio(new float[4800], new float[4800], 48000, 48000, 2, Converted: true);
             var wav = AudioImport.LinkIn(proj, src, soundless);
             Check(!Path.IsPathRooted(wav.RelativePath) && wav.RelativePath.EndsWith(".wav") && File.Exists(Path.Combine(proj, wav.RelativePath)), "lo que solo lee FFmpeg entra como WAV aunque se vincule");

@@ -34,8 +34,9 @@ public sealed class PlaybackEngine : IDisposable
     /// <summary>The folders and buses (<see cref="BusDspChain"/>) in the order they run, swapped whole like the tracks; by id on the UI side.</summary>
     volatile BusDspChain[] nodes = [];
     readonly Dictionary<string, BusDspChain> nodeById = [];
-    /// <summary>The buses the nodes were last built from, so a tempo change can update their delays.</summary>
+    /// <summary>The buses and folders the nodes were last built from, so a tempo change can update their delays.</summary>
     IReadOnlyList<Bus>? busList;
+    IReadOnlyList<Folder>? folderList;
     readonly float[] rampGain = new float[TrackDspChain.MaxBlockSize];
     readonly MixGraphBus buses = new(SampleRate) { Slots = { Keys = LiveKeys.For } };
     /// <summary>The order the tracks run in each block: a sidechain's source before the tracks that listen to it (empty = the list's).</summary>
@@ -101,6 +102,16 @@ public sealed class PlaybackEngine : IDisposable
     long recStartTimestamp;
     double? calibratedLatencyMs;
     int pendingTrackReset;
+    /// <summary>Play: resets the chains whose tail is over (<see cref="LiveTrack.Ringing"/>); a ringing one goes on.</summary>
+    int pendingQuietReset;
+    /// <summary><see cref="CutAudio"/> asked, taken by the audio thread once stopped: that block fades out to silence.</summary>
+    int pendingCut;
+    /// <summary>Audio thread: the cut's fade is done, the next block starts with every tail, note and chain cleared.</summary>
+    bool cutReset;
+    /// <summary>Audio thread: frames left of the cut's fade.</summary>
+    int cutLeft;
+    /// <summary>The cut's fade, like the transport's: short enough to feel instant, long enough not to click.</summary>
+    const int CutFrames = (int)(TransportFadeSec * SampleRate);
     /// <summary>No seek waiting for the audio thread in <see cref="pendingSeek"/>.</summary>
     const long NoSeek = long.MinValue;
     /// <summary>Frame a seek asked for while playing; the audio thread takes it (see <see cref="Seek"/>).</summary>
@@ -280,7 +291,7 @@ public sealed class PlaybackEngine : IDisposable
         {
             bpm = Math.Clamp(value, 20, 300);
             // the buses' delays follow the tempo
-            if (busList != null) ApplyBusSlots(busList);
+            ApplyBusSlots();
         }
     }
 
@@ -415,6 +426,7 @@ public sealed class PlaybackEngine : IDisposable
     public void SetBuses(Project p, IReadOnlyList<LiveTrack> list)
     {
         busList = p.Settings.Buses;
+        folderList = p.Folders;
         var ids = ChannelDsp.Nodes(p);
         var next = new BusDspChain[ids.Count];
         var known = new bool[ids.Count];
@@ -431,6 +443,14 @@ public sealed class PlaybackEngine : IDisposable
                 node.Pan = bus.Pan;
                 node.Muted = bus.Muted;
                 node.SetInserts(ChannelDsp.BusSpecs(bus, bpm, LiveVst.Of(bus.Id), FxBypass), fade: known[i]);
+            }
+            else if (p.Folders.Find(f => f.Id == ids[i]) is { } folder)
+            {
+                // a folder is a channel too (#134): its fader, pan, mute and slots over its tracks' sum
+                node.Volume = folder.Volume;
+                node.Pan = folder.Pan;
+                node.Muted = folder.Muted;
+                node.SetInserts(ChannelDsp.FolderSpecs(folder, bpm, LiveVst.Of(folder.Id), FxBypass), fade: known[i]);
             }
             next[i] = node;
             map[ids[i]] = node;
@@ -452,6 +472,8 @@ public sealed class PlaybackEngine : IDisposable
         foreach (var t in list)
         {
             t.Out = ChannelDsp.TrackOutput(t.Track) is { } to ? map.GetValueOrDefault(to) : null;
+            t.FolderSolo = ChannelDsp.FolderSoloed(p, t.Track);
+            t.FolderMuted = TrackFolders.Of(p, t.Track) is { Muted: true };
             t.Nodes = nodeById;
             t.ApplySends();
         }
@@ -476,11 +498,13 @@ public sealed class PlaybackEngine : IDisposable
         return next;
     }
 
-    /// <summary>The slots of every bus again (the tempo changed: their delays follow it; a VST3 effect came up or went away).</summary>
-    public void ApplyBusSlots(IReadOnlyList<Bus> list)
+    /// <summary>The slots of every bus and folder again (the tempo changed: their delays follow it; a VST3 effect came up or went away; the FX switch).</summary>
+    public void ApplyBusSlots()
     {
-        foreach (var b in list)
+        foreach (var b in busList ?? [])
             if (nodeById.TryGetValue(b.Id, out var node)) node.SetInserts(ChannelDsp.BusSpecs(b, bpm, LiveVst.Of(b.Id), FxBypass));
+        foreach (var f in folderList ?? [])
+            if (!f.Separator && nodeById.TryGetValue(f.Id, out var node)) node.SetInserts(ChannelDsp.FolderSpecs(f, bpm, LiveVst.Of(f.Id), FxBypass));
     }
 
     /// <summary>
@@ -617,6 +641,7 @@ public sealed class PlaybackEngine : IDisposable
         if (recording || activeCalibration != null) return;
         Interlocked.Exchange(ref pendingPause, 0);
         Interlocked.Exchange(ref cancelPause, 1);
+        Interlocked.Exchange(ref pendingCut, 0);
         stopping = false;
         if (playing) return; // a fade-out pause still in flight: it fades back in where it is
         rolling = false;
@@ -626,7 +651,7 @@ public sealed class PlaybackEngine : IDisposable
         playStartSec = Math.Max(0.0, pos / (double)SampleRate);
         double beatLen = SampleRate * 60.0 / bpm;
         nextBeat = (long)Math.Ceiling(pos / beatLen - 1e-6);
-        Interlocked.Exchange(ref pendingTrackReset, 1);
+        Interlocked.Exchange(ref pendingQuietReset, 1);
         Interlocked.Exchange(ref pendingFadeIn, 1);
         playing = true;
     }
@@ -642,6 +667,18 @@ public sealed class PlaybackEngine : IDisposable
         if (!playing || recording) return;
         stopping = true;
         Interlocked.Exchange(ref pendingPause, 1);
+    }
+
+    /// <summary>
+    /// The panic (asked by the user): stops like <see cref="FadeOutAndPause"/> and then silences everything that rings
+    /// on: slot tails on tracks, folders, buses and the master, held notes and the instruments' voices. The block that
+    /// takes it fades out, so the cut doesn't click. Not while recording.
+    /// </summary>
+    public void CutAudio()
+    {
+        if (recording) return;
+        FadeOutAndPause();
+        Interlocked.Exchange(ref pendingCut, 1);
     }
 
     /// <summary>
@@ -727,27 +764,16 @@ public sealed class PlaybackEngine : IDisposable
         }
     }
 
-    static void TransportRamp(ref float level, bool fadeIn, float rate, int n, float[] gain, Span<float> ml, Span<float> mr, BusDspChain[] nodes)
+    /// <summary>The transport's fade for this block into <paramref name="gain"/>. Each track puts it on what it plays, before its slots, so their tails ring on after a stop.</summary>
+    static void TransportRamp(ref float level, bool fadeIn, float rate, int n, float[] gain)
     {
         float x = level, step = fadeIn ? rate : -rate;
         for (int i = 0; i < n; i++)
         {
             x = Math.Clamp(x + step, 0f, 1f);
-            float g = x * x * (3 - 2 * x);
-            gain[i] = g;
-            ml[i] *= g; mr[i] *= g;
+            gain[i] = x * x * (3 - 2 * x);
         }
         level = x;
-        for (int k = 0; k < nodes.Length; k++)
-        {
-            var el = nodes[k].BufferL(n);
-            var er = nodes[k].BufferR(n);
-            for (int i = 0; i < n; i++)
-            {
-                el[i] *= gain[i];
-                er[i] *= gain[i];
-            }
-        }
     }
 
     // --- Recording (§5.8) ------------------------------------------------------------------------
@@ -1032,6 +1058,15 @@ public sealed class PlaybackEngine : IDisposable
         }
 
         var curNodes = nodes;
+        if (playing) cutLeft = 0; // played again in the middle of the cut's fade
+        if (cutReset)
+        {
+            cutReset = false;
+            buses.Reset();
+            for (int i = 0; i < curNodes.Length; i++) curNodes[i].Reset();
+            var curTracks = tracks;
+            for (int i = 0; i < curTracks.Length; i++) curTracks[i].Silence();
+        }
         if (Interlocked.Exchange(ref pendingBusReset, 0) != 0)
         {
             buses.Reset();
@@ -1042,6 +1077,13 @@ public sealed class PlaybackEngine : IDisposable
         {
             var curTracks = tracks;
             for (int i = 0; i < curTracks.Length; i++) curTracks[i].Chain.Reset();
+        }
+        if (Interlocked.Exchange(ref pendingQuietReset, 0) != 0)
+        {
+            // Play: a tail still ringing goes on under the song, the rest start clean
+            var curTracks = tracks;
+            for (int i = 0; i < curTracks.Length; i++)
+                if (!curTracks[i].Ringing) curTracks[i].Chain.Reset();
         }
 
         var ml = mixL.AsSpan(0, n);
@@ -1100,8 +1142,10 @@ public sealed class PlaybackEngine : IDisposable
             int playOffset = pos < recStart ? (int)Math.Min(n, recStart - pos) : 0;
             int playCount = n - playOffset;
 
+            if (fadeMode != 0) TransportRamp(ref fadeLevel, fadeMode > 0, rampStep, n, rampGain);
             if (playCount > 0)
             {
+                var fade = fadeMode != 0 ? rampGain.AsSpan(playOffset, playCount) : default;
                 long trackPos = Math.Max(0, pos + playOffset);
                 var subMl = ml.Slice(playOffset, playCount);
                 var subMr = mr.Slice(playOffset, playCount);
@@ -1122,7 +1166,7 @@ public sealed class PlaybackEngine : IDisposable
                 long second = xf ? xfFrom : splice ? trackPos - (lapEnd - lapStart) : LiveTrack.NoSecondRead;
                 int turnAt = splice && trackPos + playCount >= lapEnd ? (int)(lapEnd - trackPos) : -1;
                 for (int j = 0; j < list.Length; j++)
-                    list[order.Length == list.Length ? order[j] : j].MixInto(trackPos, playCount, anySolo, subMl, subMr, playOffset, second, xfIn.AsSpan(0, playCount), xfOut.AsSpan(0, playCount), turnAt, lapStart, loop && !isRec ? lapEnd : 0);
+                    list[order.Length == list.Length ? order[j] : j].MixInto(trackPos, playCount, anySolo, subMl, subMr, playOffset, second, xfIn.AsSpan(0, playCount), xfOut.AsSpan(0, playCount), turnAt, lapStart, loop && !isRec ? lapEnd : 0, fade);
                 if (xf)
                 {
                     xfFrom += playCount;
@@ -1155,7 +1199,6 @@ public sealed class PlaybackEngine : IDisposable
             }
             tracksDone = Stopwatch.GetTimestamp();
 
-            if (fadeMode != 0) TransportRamp(ref fadeLevel, fadeMode > 0, rampStep, n, rampGain, ml, mr, curNodes);
             // the folders and buses in order, each into the next node or the master (the export runs the same order)
             for (int i = 0; i < curNodes.Length; i++)
             {
@@ -1292,6 +1335,18 @@ public sealed class PlaybackEngine : IDisposable
             // naturally in real time (matching MixBus in the web app).
             for (int i = 0; i < curNodes.Length; i++) curNodes[i].End(n, ml, mr);
             buses.Process(ml, mr);
+            if (cutLeft == 0 && Interlocked.Exchange(ref pendingCut, 0) != 0) cutLeft = CutFrames;
+            if (cutLeft > 0)
+            {
+                // the cut fades out over CutFrames, whatever the block; the block after it starts with everything cleared
+                for (int i = 0; i < n; i++)
+                {
+                    float g = cutLeft > 0 ? --cutLeft / (float)CutFrames : 0f;
+                    ml[i] *= g;
+                    mr[i] *= g;
+                }
+                if (cutLeft == 0) cutReset = true;
+            }
             Correlation.Add(ml, mr, n);
             FoldMono(ref monoLevel, MonoCheck, ml, mr);
             float ol = outL, or = outR;
