@@ -50,9 +50,10 @@ public partial class MainWindow
         return true;
     }
 
-    /// <summary>The cards' margin (<c>Border.card</c>), and what the inspector adds on its right while the line is on, so
-    /// the line has room between the panels (#180: "que la separación … sea un poquito más grande").</summary>
-    const double CardMargin = 4, PointerRoom = 6;
+    /// <summary>What the inspector adds on its right while the line is on, so the line has room between the panels
+    /// (#180: "que la separación … sea un poquito más grande"); the cards' own margin depends on their look (<see cref="PanelLooks"/>).</summary>
+    const double PointerRoom = 6;
+    static double CardMargin => PanelLooks.Margin;
 
     /// <summary>Widens the gap between the inspector and the timeline while the line is on; on start and when it is switched.</summary>
     void SpaceForPointer() =>

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using XtremeDaw.Audio.Dsp;
 using XtremeDaw.Audio.Midi;
@@ -132,8 +132,16 @@ static class MidiCommands
             }
             case "patron":
             {
+                // several clips: one pattern as long as all of them, or --separados, one each
+                if (a.Get("clips") is { } many)
+                {
+                    string[] ids = many.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (a.Flag("separados")) foreach (var id in ids) Console.WriteLine(MidiPatterns.Create(p, id).Id);
+                    else Console.WriteLine(MidiPatterns.CreateFrom(p, ids).Id);
+                    break;
+                }
                 // the clip becomes a pattern (if it wasn't one), with these name and pass; --repetir stretches it
-                string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip.");
+                string clip = a.Get("clip") ?? throw new ArgumentException("Falta --clip (o --clips a,b).");
                 var c = MidiPatterns.Create(p, clip);
                 if (a.Get("nombre") is { } name) MidiPatterns.Rename(p, clip, name);
                 if (a.Get("compases") != null) MidiPatterns.SetBeats(p, clip, a.Double("compases", 4) * 4);
@@ -210,6 +218,21 @@ static class MidiCommands
                     string file = a.Get("sample") ?? throw new ArgumentException("Falta --sample archivo (o --quitar).");
                     var audio = AudioImport.Read(file, 48000);
                     GranularMedia.Set(p, t, AudioImport.CopyIn(store.Dir, file, audio), audio.Left, audio.Right, 48000);
+                }
+                break;
+            }
+            case "gm":
+            {
+                // the native General MIDI instrument: a program (0..127) or a drum kit
+                var t = TrackOf(p, a.Get("pista")) ?? throw new ArgumentException("Falta --pista (número o id de una pista MIDI).");
+                if (!t.IsMidi) throw new ArgumentException("Esa pista no es MIDI.");
+                if (a.Flag("quitar")) t.Gm = null;
+                else
+                {
+                    t.Instrument = null;
+                    t.Sampler = null;
+                    t.Granular = null;
+                    t.Gm = new GmSettings { Program = (int)a.Double("programa", 0), Drums = a.Flag("bateria") };
                 }
                 break;
             }
@@ -439,6 +462,35 @@ static class MidiCommands
 
         bool ok = own && shared && inserted && adopted && saved && left && remove && under;
         Console.WriteLine($"{"MIDI: patrón con instrumentos",-36} {removed,12} {"3",10}  {(ok ? "igual" : "DISTINTO")}");
+        return ok & CheckPatternFromMany(sr);
+    }
+
+    /// <summary>Several clips into one pattern (#201): one clip per track from the first start to the last end, sounding the same.</summary>
+    static bool CheckPatternFromMany(int sr)
+    {
+        var p = new Project();
+        p.Settings.Bpm = 120;
+        string m1 = MidiEditing.AddTrack(p), m2 = MidiEditing.AddTrack(p);
+        // track 1: a clip at 1 s (2 beats) and a looped one at 4 s; track 2: one at 2 s that ends last, at 8 s
+        var a = MidiEditing.AddClip(p, m1, 1, 2);
+        MidiEditing.AddNote(p, a.Id, 60, 0);
+        var b = MidiEditing.AddClip(p, m1, 4, 2);
+        MidiEditing.AddNote(p, b.Id, 62, 0);
+        MidiEditing.Loop(p, b.Id, 4);
+        var c = MidiEditing.AddClip(p, m2, 2, 12);
+        MidiEditing.AddNote(p, c.Id, 72, 1);
+        var before1 = ChannelDsp.Notes(p.Tracks[0], 120, sr)!.Notes;
+        var before2 = ChannelDsp.Notes(p.Tracks[1], 120, sr)!.Notes;
+        var made = MidiPatterns.CreateFrom(p, [b.Id, c.Id, a.Id]);
+        var t1 = p.Tracks[0].MidiClips!;
+        var t2 = p.Tracks[1].MidiClips!;
+        bool one = t1 is [var x] && t2 is [var y] && made == x && x.AtSec == 1 && x.LengthBeats == 14 && y.AtSec == 1 && y.LengthBeats == 14
+            && x.PatternId == y.PatternId && x.PatternPart == null && y.PatternPart != null && MidiPatterns.All(p) is [{ Clips: 2, Parts: 2, Beats: 14 }]
+            && x.Notes.Count == 3 && y.Notes is [{ Beat: 3 }];
+        bool same = before1.SequenceEqual(ChannelDsp.Notes(p.Tracks[0], 120, sr)!.Notes) && before2.SequenceEqual(ChannelDsp.Notes(p.Tracks[1], 120, sr)!.Notes);
+
+        bool ok = one && same;
+        Console.WriteLine($"{"MIDI: varios clips a un patrón",-36} {made.LengthBeats,12} {"14",10}  {(ok ? "igual" : "DISTINTO")}");
         return ok;
     }
 

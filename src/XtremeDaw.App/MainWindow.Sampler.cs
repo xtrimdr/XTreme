@@ -52,7 +52,7 @@ public partial class MainWindow
     string? samplerFront;
 
     /// <summary>The name the track's instrument goes by, wherever it shows.</summary>
-    static string InstrumentName(Track t) => t.Sampler != null ? Loc.T("sampler.name") : t.Granular != null ? Loc.T("granular.name") : t.Instrument?.Name ?? Loc.T("vst.testTone");
+    static string InstrumentName(Track t) => t.Sampler != null ? Loc.T("sampler.name") : t.Granular != null ? Loc.T("granular.name") : t.Instrument?.Name ?? t.Gm?.Name ?? Loc.T("vst.testTone");
 
     /// <summary>Hands each track its sampler (and its granular) and drops the ones no track wants. After every <see cref="ApplyTracks"/>.</summary>
     void SyncSamplers()
@@ -71,6 +71,7 @@ public partial class MainWindow
             ApplySampler(t, loaded);
         }
         SyncGranulars();
+        SyncGms();
     }
 
     void DropSampler(string trackId)
@@ -85,6 +86,7 @@ public partial class MainWindow
     {
         foreach (var id in samplers.Keys.ToList()) DropSampler(id);
         DropAllGranulars();
+        DropAllGms();
         samplerImported.Clear();
     }
 

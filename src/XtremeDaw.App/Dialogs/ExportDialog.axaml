@@ -35,6 +35,8 @@
 
       <!-- Phase 1: Setup -->
       <StackPanel x:Name="SetupPanel" Spacing="0">
+        <!-- with "Avanzado" open the form can be taller than the window: it scrolls, the footer stays -->
+        <ScrollViewer x:Name="SetupScroll" MaxHeight="640">
         <StackPanel Margin="20,16" Spacing="16">
 
           <!-- Nombre del archivo -->
@@ -130,7 +132,7 @@
             <CheckBox x:Name="StemsCheck" Content="{loc:T exp.stems}" FontSize="12" ToolTip.Tip="{loc:T exp.stems.tip}" />
           </StackPanel>
 
-          <!-- Avanzado (native only, MP4): resolution and bitrate by hand; folded, and the defaults change nothing,
+          <!-- Avanzado (native only): MP4, resolution and bitrate by hand; audio, AudioAdvancedBody. Folded, and the defaults change nothing,
                so the easy path stays as it was. Folded, the link says what is not the default. -->
           <StackPanel x:Name="AdvancedPanel" Spacing="12" Margin="0,-6,0,0">
             <Button x:Name="AdvancedToggle" Classes="link" HorizontalAlignment="Left" ToolTip.Tip="{loc:T exp.adv.tip}">
@@ -140,6 +142,83 @@
                 <TextBlock x:Name="AdvancedSummary" Classes="mono" FontSize="11" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
+            <!-- audio (#208): format, depth or bitrate, rate, channels, tail, normalize and which stems; defaults = the easy export -->
+            <StackPanel x:Name="AudioAdvancedBody" Spacing="12" IsVisible="False">
+              <StackPanel Spacing="6">
+                <TextBlock Text="{loc:T exp.adv.format}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
+                <Border Classes="seg" HorizontalAlignment="Left">
+                  <StackPanel x:Name="AdvFormatButtons" Orientation="Horizontal" Spacing="2" />
+                </Border>
+              </StackPanel>
+              <StackPanel x:Name="AdvDepthRow" Spacing="6">
+                <TextBlock Text="{loc:T exp.adv.depth}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
+                <Grid ColumnDefinitions="Auto,*">
+                  <Border Classes="seg">
+                    <StackPanel x:Name="AdvDepthButtons" Orientation="Horizontal" Spacing="2" />
+                  </Border>
+                  <CheckBox Grid.Column="1" x:Name="AdvDitherCheck" Content="{loc:T exp.adv.dither}" FontSize="12" Margin="12,0,0,0"
+                            ToolTip.Tip="{loc:T exp.adv.dither.tip}" VerticalAlignment="Center" />
+                </Grid>
+              </StackPanel>
+              <StackPanel x:Name="AdvKbpsRow" Spacing="6">
+                <TextBlock Text="{loc:T exp.adv.audioBitrate}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
+                <Border Classes="seg" HorizontalAlignment="Left">
+                  <StackPanel x:Name="AdvKbpsButtons" Orientation="Horizontal" Spacing="2" />
+                </Border>
+              </StackPanel>
+              <Grid ColumnDefinitions="Auto,24,Auto">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="{loc:T exp.adv.rate}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
+                  <Border Classes="seg" HorizontalAlignment="Left">
+                    <StackPanel x:Name="AdvRateButtons" Orientation="Horizontal" Spacing="2" />
+                  </Border>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="6">
+                  <TextBlock Text="{loc:T exp.adv.channels}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
+                  <Border Classes="seg" HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                      <Button x:Name="AdvStereoBtn" Classes="seg on" Content="{loc:T exp.adv.stereo}" />
+                      <Button x:Name="AdvMonoBtn" Classes="seg" Content="{loc:T exp.adv.mono}" ToolTip.Tip="{loc:T exp.adv.mono.tip}" />
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </Grid>
+              <StackPanel Spacing="6">
+                <TextBlock Text="{loc:T exp.adv.tail}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Border Classes="seg">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                      <Button x:Name="AdvTailAutoBtn" Classes="seg on" Content="{loc:T exp.adv.tail.auto}" ToolTip.Tip="{loc:T exp.adv.tail.auto.tip}" />
+                      <Button x:Name="AdvTailFixedBtn" Classes="seg" Content="{loc:T exp.adv.tail.fixed}" ToolTip.Tip="{loc:T exp.adv.tail.fixed.tip}" />
+                    </StackPanel>
+                  </Border>
+                  <Slider Grid.Column="1" x:Name="AdvTailSlider" Minimum="0" Maximum="30" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                          Margin="12,0" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="2" x:Name="AdvTailText" Classes="mono" FontSize="12" Foreground="{StaticResource Dim}"
+                             MinWidth="64" TextAlignment="Right" VerticalAlignment="Center" />
+                </Grid>
+              </StackPanel>
+              <StackPanel Spacing="6">
+                <TextBlock Text="{loc:T exp.adv.normalize}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <CheckBox x:Name="AdvNormalizeCheck" Content="{loc:T exp.adv.normalize.peak}" FontSize="12"
+                            ToolTip.Tip="{loc:T exp.adv.normalize.tip}" />
+                  <Slider Grid.Column="1" x:Name="AdvNormalizeSlider" Minimum="-6" Maximum="0" TickFrequency="0.1" IsSnapToTickEnabled="True"
+                          Margin="12,0" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="2" x:Name="AdvNormalizeText" Classes="mono" FontSize="12" Foreground="{StaticResource Dim}"
+                             MinWidth="64" TextAlignment="Right" VerticalAlignment="Center" />
+                </Grid>
+              </StackPanel>
+              <!-- which stems: shown while "Stems" is ticked -->
+              <StackPanel x:Name="AdvStemsRow" Spacing="6">
+                <TextBlock Text="{loc:T exp.adv.stems}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
+                <Border Background="{StaticResource Raised}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" MaxHeight="160">
+                  <ScrollViewer>
+                    <StackPanel x:Name="AdvStemsList" Margin="10,6" Spacing="2" />
+                  </ScrollViewer>
+                </Border>
+              </StackPanel>
+            </StackPanel>
             <StackPanel x:Name="AdvancedBody" Spacing="12" IsVisible="False">
               <StackPanel Spacing="6">
                 <TextBlock Text="{loc:T exp.adv.res}" FontSize="11" FontWeight="Medium" Foreground="{StaticResource Dim}" />
@@ -183,6 +262,7 @@
           <TextBlock x:Name="FullPathPreview" Classes="mono" FontSize="11" Foreground="{StaticResource Faint}"
                      TextWrapping="Wrap" Margin="0,-4,0,0" />
         </StackPanel>
+        </ScrollViewer>
 
         <!-- Setup Footer -->
         <Border BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="20,14">

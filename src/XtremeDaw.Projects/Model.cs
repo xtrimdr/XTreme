@@ -452,10 +452,28 @@ public sealed class ExportSettings
     /// <summary>Last export folder; null = the project's exports folder.</summary>
     public string? Dir { get; set; }
     public string Quality { get; set; } = "alta";
-    /// <summary>wav | mp3: the last "Exportar audio" format (native only).</summary>
+    /// <summary>wav | mp3 | flac | aiff | ogg: the last "Exportar audio" format (native only; the last three, "Avanzado").</summary>
     public string AudioFormat { get; set; } = "wav";
     /// <summary>Native only: each track that sounds also goes to its own WAV next to the export ("stems").</summary>
     public bool Stems { get; set; }
+    /// <summary>"Exportar audio" → "Avanzado" (#208): 16, 24 or 32 (float, WAV only).</summary>
+    public int AudioBits { get; set; } = XtremeDaw.Audio.AudioExportSettings.DefaultDepth;
+    /// <summary>"Avanzado": 44100, 48000 or 96000.</summary>
+    public int AudioRate { get; set; } = XtremeDaw.Audio.AudioExportSettings.DefaultRate;
+    /// <summary>"Avanzado": TPDF dither at 16 bits.</summary>
+    public bool AudioDither { get; set; } = true;
+    /// <summary>"Avanzado": MP3 and OGG bitrate (128, 192, 256, 320); null = variable.</summary>
+    public int? AudioKbps { get; set; } = XtremeDaw.Audio.AudioExportSettings.DefaultKbps;
+    /// <summary>"Avanzado": a fixed tail in seconds (0 = none); null = automatic, until it falls quiet.</summary>
+    public double? AudioTailSec { get; set; }
+    /// <summary>"Avanzado": normalize the loudest true peak to this many dBTP; null = the level as the master leaves it.</summary>
+    public double? AudioNormalizeDbtp { get; set; }
+    /// <summary>"Avanzado": the export in mono.</summary>
+    public bool AudioMono { get; set; }
+    /// <summary>"Avanzado": the tracks left out of the stems (ids); the rest that sound go.</summary>
+    public List<string> StemsSkip { get; set; } = [];
+    /// <summary>"Avanzado": the folders and buses that get a stem of their own (ids).</summary>
+    public List<string> StemNodes { get; set; } = [];
     /// <summary>Native only: the last social preset of the MP4 (<c>ExportTargets</c> id); "project" = the project's frame, mix as it is.</summary>
     public string Target { get; set; } = XtremeDaw.Audio.ExportTargets.Project;
     /// <summary>Native only: "Exportar audio" masters the mix to the streaming loudness (−14 LUFS).</summary>
@@ -471,7 +489,25 @@ public sealed class ExportSettings
         if (!XtremeDaw.Audio.ExportTargets.All.Any(t => t.Id == Target)) Target = XtremeDaw.Audio.ExportTargets.Project;
         Resolution = XtremeDaw.Audio.Mp4Exporter.NormalizeResolution(Resolution);
         BitrateMbps = XtremeDaw.Audio.Mp4Exporter.NormalizeBitrate(BitrateMbps);
+        var a = AudioSettings();
+        AudioFormat = XtremeDaw.Audio.AudioExporter.FormatId(a.Format);
+        (AudioBits, AudioRate, AudioKbps, AudioTailSec, AudioNormalizeDbtp) = (a.BitDepth, a.SampleRate, a.Kbps, a.TailSec, a.NormalizeDbtp);
+        StemsSkip = [.. (StemsSkip ?? []).Where(id => !string.IsNullOrEmpty(id)).Distinct()];
+        StemNodes = [.. (StemNodes ?? []).Where(id => !string.IsNullOrEmpty(id)).Distinct()];
     }
+
+    /// <summary>The last "Exportar audio" as the exporter takes it, made valid for its format.</summary>
+    public XtremeDaw.Audio.AudioExportSettings AudioSettings() => new XtremeDaw.Audio.AudioExportSettings
+    {
+        Format = XtremeDaw.Audio.AudioExporter.ParseFormat(AudioFormat),
+        BitDepth = AudioBits,
+        SampleRate = AudioRate,
+        Dither = AudioDither,
+        Kbps = AudioKbps,
+        TailSec = AudioTailSec,
+        NormalizeDbtp = AudioNormalizeDbtp,
+        Mono = AudioMono,
+    }.Normalized();
 }
 
 /// <summary>A recording or an imported file. Its files are never rewritten; edits live in the clips.</summary>
@@ -558,6 +594,8 @@ public sealed class Track : IAutomated
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SamplerSettings? Sampler { get; set; }
     /// <summary>The native granular a MIDI track plays with (<see cref="GranularSettings"/>), never along with <see cref="Instrument"/> or <see cref="Sampler"/>; null = none. Native only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public GranularSettings? Granular { get; set; }
+    /// <summary>The native General MIDI instrument a MIDI track plays with (<see cref="GmSettings"/>), never along with the others; null = none. Native only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public GmSettings? Gm { get; set; }
     /// <summary>
     /// The MIDI input a MIDI track plays and records from: a device's key from Configuración → MIDI; null = all of
     /// them. Native only.
@@ -601,6 +639,8 @@ public sealed class Track : IAutomated
             Granular?.Normalized();
             if (Instrument != null) Sampler = null;
             if (Instrument != null || Sampler != null) Granular = null;
+            Gm?.Normalize();
+            if (Instrument != null || Sampler != null || Granular != null) Gm = null;
             MidiInput = string.IsNullOrWhiteSpace(MidiInput) ? null : MidiInput.Trim();
             MidiChannel = Math.Clamp(MidiChannel, 0, 16);
             Arp?.Normalize();
@@ -613,6 +653,7 @@ public sealed class Track : IAutomated
             Instrument = null;
             Sampler = null;
             Granular = null;
+            Gm = null;
             MidiInput = null;
             MidiChannel = 0;
             Arp = null;
@@ -998,7 +1039,7 @@ public sealed class InsertSlot
         VstKind = Dsp.TrackInserts.Vst;
 
     public string Id { get; set; } = Ids.New("fx");
-    /// <summary>sat | comp | eq | gate | reverb | delay | vst | a master stage (<see cref="Dsp.TrackInserts.IsStage"/>)</summary>
+    /// <summary>sat | comp | eq | gate | reverb | delay | vst | tonal | a master stage (<see cref="Dsp.TrackInserts.IsStage"/>)…</summary>
     public string Type { get; set; } = EqKind;
     public SatSettings? Sat { get; set; }
     public CompSettings? Comp { get; set; }
@@ -1011,6 +1052,8 @@ public sealed class InsertSlot
     public VstSlotSettings? Vst { get; set; }
     /// <summary>A master effect's ON and its values (<see cref="FxDefs"/>).</summary>
     public StageSettings? Stage { get; set; }
+    /// <summary>A tonal balance's own target, made from the user's references (#210); null = it has none.</summary>
+    public TonalCurveSettings? Tonal { get; set; }
     /// <summary>The effect's level, 0 to 1 (<see cref="Dsp.FxShell"/>).</summary>
     public double Wet { get; set; } = 1;
     /// <summary>The dry signal's level, 0 to 1, on its own knob: both at 100 % is a parallel effect.</summary>
@@ -1094,10 +1137,17 @@ public sealed class InsertSlot
         Wet = double.IsFinite(Wet) ? Math.Clamp(Wet, 0, 1) : 1;
         Dry = double.IsFinite(Dry) ? Math.Clamp(Dry, 0, 1) : 0;
         OutputDb = double.IsFinite(OutputDb) ? Math.Clamp(OutputDb, FxDefs.Output.Min, FxDefs.Output.Max) : 0;
-        if (Dsp.TrackInserts.IsStage(Type) || Dsp.TrackInserts.IsMod(Type) || Dsp.TrackInserts.IsModel(Type))
+        if (Type != Dsp.TrackInserts.Tonal || Tonal?.Normalize() == false) Tonal = null;
+        if (Dsp.TrackInserts.IsMeter(Type))
+        {
+            // an analyzer never changes the sound: no mix, no output
+            (Wet, Dry, OutputDb) = (1, 0, 0);
+        }
+        if (Dsp.TrackInserts.IsStage(Type) || Dsp.TrackInserts.IsMod(Type) || Dsp.TrackInserts.IsModel(Type) || Dsp.TrackInserts.IsMeter(Type))
         {
             Stage ??= new();
             Stage.Normalize(Type);
+            if (Type == Dsp.TrackInserts.Tonal && Tonal == null && Stage.Get("target", 0) >= FxDefs.TonalCustom) Stage.Values["target"] = 0;
             Sat = null; Comp = null; Eq = null; Reverb = null; Delay = null; Gate = null; Vst = null;
             return;
         }

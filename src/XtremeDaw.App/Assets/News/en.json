@@ -1,6 +1,71 @@
 {
   "releases": [
     {
+      "version": "0.9.19",
+      "items": [
+        {
+          "icon": "E9D2",
+          "title": "Tonal balance",
+          "text": "**+ Effect → Analysis → Tonal balance**: compares the mix with a genre target or your own references, in four bands, the full spectrum and the low-end punch, in Stereo, Mid or Side."
+        },
+        {
+          "icon": "E8AB",
+          "title": "Mixer A | B, hidden",
+          "text": "The **A | B** mix comparison is no longer in the mixer bar: show it in **Settings → Appearance → Mixer**."
+        },
+        {
+          "icon": "E8D6",
+          "title": "Export audio: Advanced",
+          "text": "**Export audio → Advanced**: FLAC, AIFF and OGG, 16, 24 or 32-bit float with dither, bitrate or VBR, 44.1, 48 or 96 kHz, mono, a fixed tail, peak normalization and which tracks, folders or buses get a stem. Left closed, the export is the same as always."
+        },
+        {
+          "icon": "E8D6",
+          "title": "General MIDI instruments",
+          "text": "**Instrument → General MIDI**: the 128 instruments and the drum kits, with the GeneralUser GS bank. An imported **.mid** asks which tracks to bring, and each one plays with its instrument and takes its name. **Open its window** shows the instrument's window, with a keyboard to try it and knobs for envelope, filter, sensitivity, tuning and Mono with glide."
+        },
+        {
+          "icon": "E790",
+          "title": "Your own meter colors",
+          "text": "**Settings → Appearance → Meter colors**: in **Custom** pick the Low, Hot and Clip colors, or hit **Surprise me**. They apply to every meter and look."
+        },
+        {
+          "icon": "E71B",
+          "title": "Several MIDI clips to a pattern",
+          "text": "With several MIDI clips selected, right-click → **Convert to one pattern** (as long as all of them together, even when they start at different points) or **to separate patterns**."
+        },
+        {
+          "icon": "EC4F",
+          "title": "MIDI files in the Library",
+          "text": "**Library → Samples** now lists **.mid** files too, with their length and where their notes are; picking one shows its notes in the player. The **MIDI** filter shows them alone; dragged or double-clicked, they land on a MIDI track."
+        },
+        {
+          "icon": "E710",
+          "title": "New channels from the mixer",
+          "text": "Right-click the mixer's empty space: besides bus and separator, it adds **audio**, **MIDI** and **instrument** tracks, **folders** and **templates**."
+        },
+        {
+          "icon": "E8EF",
+          "title": "Note length at hand",
+          "text": "In the piano roll, the **Length** chip next to Draw, Paint and Slice picks the length of new notes: the **last note**, **same as snap** or a fixed value."
+        },
+        {
+          "icon": "E790",
+          "title": "Raised panels",
+          "text": "In **Settings → Appearance → Panels**, the inspector, the project bar, the timeline and the mixer can look **flat**, **raised** or **raised with a gradient**, and knobs and faders get the same two styles. Their colors follow the theme."
+        },
+        {
+          "icon": "E771",
+          "title": "Tron Legacy theme",
+          "text": "In the theme picker, **Tron Legacy** sets the background, accent, panels, knobs, faders, meters, waves and numbers to the film's look in one click. Each part can be changed afterwards."
+        },
+        {
+          "icon": "E8B7",
+          "title": "Separators where you want them",
+          "text": "A new mixer separator goes **where you right-click**, or after the selected channel with **Separator**. **Double-click** one to pick its color, or its name to rename it."
+        }
+      ]
+    },
+    {
       "version": "0.9.18",
       "items": [
         {

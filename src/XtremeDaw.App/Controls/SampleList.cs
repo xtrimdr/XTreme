@@ -26,7 +26,9 @@ public sealed class SampleList : Control
     /// <summary>Rows PgUp and PgDn move, when the viewer's height isn't known yet.</summary>
     const int PageRows = 12;
     const string Open = "", Closed = "", FolderGlyph = "", AudioGlyph = "", VideoGlyph = "", StarGlyph = "";
-    static readonly Typeface Icons = new("Segoe Fluent Icons, Segoe MDL2 Assets");
+    /// <summary>The same piano keys as the MIDI filter of the library.</summary>
+    const string MidiGlyph = "";
+    static readonly Typeface Icons =new("Segoe Fluent Icons, Segoe MDL2 Assets");
 
     /// <summary>Text per whole second: a row's length is drawn again on every scroll.</summary>
     static readonly Dictionary<int, string> times = [];
@@ -147,7 +149,7 @@ public sealed class SampleList : Control
         var f = row.File!;
         if (f.DurationSecValue == 0) NeedsInfo?.Invoke(f);
         bool on = f.Path == playing;
-        ctx.DrawText(f.IsVideo ? VideoGlyph : AudioGlyph, 12, on ? Palette.Accent : Palette.Faint, new Point(x + 14, y + 7), Icons);
+        ctx.DrawText(f.IsMidi ? MidiGlyph : f.IsVideo ? VideoGlyph : AudioGlyph, 12, on ? Palette.Accent : Palette.Faint, new Point(x + 14, y + 7), Icons);
 
         if (f.Broken) ctx.DrawText("—", 10, Palette.Faint, new Point(right - 10, y + 7), Palette.Mono);
         else if (f.DurationSec > 0)
@@ -159,7 +161,11 @@ public sealed class SampleList : Control
         if (w >= WaveFrom)
         {
             right -= WaveW + Pad;
-            if (f.Peaks is { } p) DrawWave(ctx, p, right + Pad, y, on);
+            if (f.Peaks is { } p)
+            {
+                if (f.IsMidi) DrawNotes(ctx, p, right + Pad, y, on);
+                else DrawWave(ctx, p, right + Pad, y, on);
+            }
         }
         if (IsFavorite?.Invoke(f) == true)
         {
@@ -178,6 +184,23 @@ public sealed class SampleList : Control
             double h = Math.Max(1, peaks[i] / 255.0 * (RowH - 10));
             ctx.FillRectangle(brush, new Rect(x + i * step, mid - h / 2, Math.Max(0.75, step - 0.25), h));
         }
+    }
+
+    /// <summary>A MIDI file's notes as a small piano roll (<see cref="SampleLibrary.MidiCols"/>): each run of a pitch, one bar.</summary>
+    static void DrawNotes(DrawingContext ctx, byte[] grid, double x, double y, bool on)
+    {
+        var brush = on ? Palette.Accent : Palette.Alpha(Palette.FaintColor, 0.8);
+        const int cols = SampleLibrary.MidiCols, rows = SampleLibrary.MidiRows;
+        double colW = WaveW / cols, rowH = (RowH - 10) / rows, bottom = y + RowH - 5;
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+            {
+                if (!SampleLibrary.MidiCell(grid, c, r)) continue;
+                int end = c + 1;
+                while (end < cols && SampleLibrary.MidiCell(grid, end, r)) end++;
+                ctx.FillRectangle(brush, new Rect(x + c * colW, bottom - (r + 1) * rowH, Math.Max(0.75, (end - c) * colW - 0.5), rowH));
+                c = end;
+            }
     }
 
     static string Time(double sec)

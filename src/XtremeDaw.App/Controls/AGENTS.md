@@ -30,7 +30,9 @@ visual (×0,82 por tick en pistas, 24 dB/s en el estéreo) se hace del lado de l
 `MixerMeter` (las tiras del mixer): dos barras L/R, cada una con RMS sólido + pico tenue con una rayita y su luz de
 clip (mismo umbral de −0,3 dB que el `StereoMeter`) que queda prendida, y el pico máximo en dBFS arriba; un clic en el
 medidor reinicia pico máximo y luces. Con `Mono` (pista con tomas mono) muestra una sola barra del ancho del par con
-el lado más fuerte. La ventana le pasa `Set(picoL, picoR, rmsL, rmsR)` (picos con su caída, que también alimentan el
+el lado más fuerte. El ancho de sus barras sigue el de la tira: `Fit` las ensancha con lo que deja el fader
+(con la escala, si se ve) en todo ancho (#199), tomando la mitad de ese lugar (#205: llenarlo entero las dejaba muy
+anchas), entre 5 px (el del máster, 7) y 14 px. La ventana le pasa `Set(picoL, picoR, rmsL, rmsR)` (picos con su caída, que también alimentan el
 máximo y las luces; RMS como amplitud ya integrada); cualquier tira puede alimentarlo así. El RMS lo suma el hilo de audio en un `RmsTap`
 (`XtremeDaw.Audio.Dsp`: suma de cuadrados por bloque en totales que solo crecen, sin reset desde la UI) y la UI lo
 toma una vez por tick (`TakeMixerRms`) y suaviza cada lado ~300 ms (`MeanSqL` / `MeanSqR`). El texto del máximo se rearma solo cuando cambia su décima.
@@ -42,8 +44,12 @@ La escala va en `Dim` (el 0 en `Fg`) y el fondo de las barras en `Hover`: se lee
 tira seleccionada (`Raised`).
 
 Cómo se pinta la barra lo elige el usuario en Configuración → Apariencia (`MeterLooks`: Continuo por defecto, LED,
-Degradé, Fino; "meterLook"). Un look solo cambia el dibujo de la barra; colores, umbrales, luces de clip, pico retenido
+Degradé, Fino, Tron: LED de luz sobre negro, los apagados tenues, del tema Tron Legacy; "meterLook"). Un look solo cambia el dibujo de la barra; colores, umbrales, luces de clip, pico retenido
 y escala son los mismos. La geometría de los LED se arma una vez por tamaño (`MeterLooks.Segments`) y se usa como clip.
+Los colores se eligen aparte (`MeterColors`, #202: "meterColors" y "meterColorsCustom"): Por defecto (los de arriba) o Custom, tres
+colores del usuario (Bajo, Caliente, Clip) para todo medidor y todo look, Tron incluido, con los mismos umbrales; los
+medidores piden sus pinceles a `MeterColors` (`MixerLevels`, `StereoLow`/`StereoHot`, `MeterLooks.StereoGradient`/`TronLevels`),
+que se arman una vez por cambio.
 
 ## Ondas
 

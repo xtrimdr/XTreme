@@ -31,10 +31,12 @@ static class Program
                 "samples" => SampleChecks.Run(a),
                 "sampler" => SamplerChecks.Run(a),
                 "granular" => GranularChecks.Run(a),
+                "gm" => GmChecks.Run(a),
                 "colas" => TailCommands.Run(a),
                 "espectro" => DspCommands.Spectrum(a),
                 "lufs" => DspCommands.Lufs(a),
                 "masterizar" => DspCommands.Master(a),
+                "balance" => TonalChecks.Run(a),
                 "afinar" => DspCommands.Tune(a),
                 "tempo" => TempoChecks.Run(a),
                 "escala" => ScaleChecks.Run(a),
@@ -95,12 +97,17 @@ static class Program
                                            renderiza la mezcla completa offline (sin la demora del limitador); con un WAV,
                                            --cadena arma los slots de la pista en ese orden (se pueden repetir: eq,vida,eq)
               exportar  [carpeta-proyecto] [--salida nombre] [--carpeta destino] [--calidad alta|estandar|borrador]
-                        [--reemplazar] [--prueba] [--audio wav|mp3] [--stems]
+                        [--reemplazar] [--prueba] [--audio wav|mp3|flac|aiff|ogg] [--stems] [--stems-buses Reverb,Delay]
+                        [--bits 16|24|32] [--frecuencia 44100|48000|96000] [--sin-dither] [--kbps 128..320|vbr]
+                        [--cola-fija 4] [--normalizar -1] [--mono]
                         [--destino project|reels|youtube|ig-square|ig-portrait] [--volumen como-esta|youtube|…]
                         [--lufs -14] [--cola 8] [--rango 12-45|1:05-1:30|loop]
                         [--codificador auto|cpu|nvenc|amf|qsv] [--resolucion 720|1080|1440|2160] [--bitrate 20]
                                            exporta el proyecto a MP4 (o la mezcla en WAV / MP3) con mezcla offline y FFmpeg;
-                                           --stems deja además un WAV por pista en "<nombre> - stems";
+                                           --stems deja además un WAV por pista en "<nombre> - stems" (--stems-buses
+                                           suma uno por esas carpetas o buses); --bits, --frecuencia, --sin-dither,
+                                           --kbps, --cola-fija (segundos exactos), --normalizar (dBTP) y --mono son el
+                                           "Avanzado" de Exportar audio (por defecto, lo último que eligió el proyecto);
                                            --destino usa el cuadro de esa red (Reels/Shorts/TikTok 9:16, YouTube 16:9,
                                            Instagram 1:1 y 4:5); el volumen es el Destino del master del proyecto
                                            (--volumen lo cambia para esta exportación; --lufs lleva la mezcla a ese
@@ -131,7 +138,15 @@ static class Program
                                            --pua es la cuarta banda (baja 2-5 kHz cuando pega la púa); --look pone
                                            un look al --cuanto-look (0 = Natural, 1 = el look entero); --sugerime
                                            muestra qué oye en el archivo y qué propone, y masteriza con eso
-              afinar    archivo.wav [--en segundos] [--umbral -50]
+              balance   archivo [--objetivo pop|rock|edm|hiphop|acoustic|orchestral] [--referencia a.wav,b.mp3]
+                        [--modo estereo|mid|side] [--curva] [--comprobar]
+                                           el Balance tonal del archivo entero contra un objetivo: las cuatro bandas
+                                           (graves 20-120 Hz, medios graves 120-1k, medios agudos 1k-5k, agudos 5k-20k)
+                                           y el punch de los graves (factor de cresta bajo 120 Hz); --referencia arma el
+                                           objetivo con esos archivos, como "Referencia…" del panel; --curva lista los
+                                           61 puntos (1/6 de octava, suavizado de 1/3) con su rango; --comprobar corre
+                                           solo sus comprobaciones (las de comprobar-dsp)
+              afinar   archivo.wav [--en segundos] [--umbral -50]
                                            la nota que oye el afinador en ese momento del archivo; --umbral es
                                            la sensibilidad de la ventana (dB, de -70 = muy sensible a -30)
               tempo     archivo [--desde s] [--hasta s]
@@ -319,6 +334,7 @@ static class Program
               midi partitura carpeta --clip id --a x.pdf   el clip como partitura en PDF (doble pentagrama, 4/4, armadura
                                            de la escala del proyecto)
               midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]   hace del clip un patrón; --repetir, cuántas vueltas dura
+              midi patron carpeta --clips a,b [--separados]   varios clips, un patrón del largo de todos juntos (una parte por pista) o uno por clip
               midi patron-insertar carpeta --clip id --pista n [--en segundos]   un clip más del patrón de ese clip
               midi patron-instrumento carpeta --clip id --pista n   suma al patrón un instrumento en esa pista (con --quitar, saca el del clip)
               midi patron-unico carpeta --clip id   saca el clip del patrón (suena igual)
@@ -347,6 +363,11 @@ static class Program
               granular archivo [--nota 60] [--segundos 4] [--modo stretch|scrub] [--posicion 0] [--velocidad 1]
                        [--densidad 20] [--tamano 0.08] [--spray 0] [--jitter 0] [--salida x.wav]
                                            toca un archivo con el granular, en una nota
+              midi gm carpeta [--pista n] [--programa 0] [--bateria] | --quitar
+                                           la pista toca con el instrumento General MIDI nativo
+              gm presets                   lista los presets del banco GM de la app (lib\gm, tools\get-gm.ps1)
+              gm [--programa 0] [--bateria] [--nota 60] [--segundos 2] [--salida x.wav]
+                                           toca una nota del banco GM
                                            el instrumento VST3 que toca la pista (de vst escanear); --quitar vuelve al
                                            tono de prueba. xtlab mezclar lo renderiza con el plugin
               midi comprobar               verifica el sonido de las notas (bloques, release, exportación, tempo) y el

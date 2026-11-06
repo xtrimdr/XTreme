@@ -380,16 +380,20 @@ public partial class MainWindow
         chain.Moved += (id, anchor, after) => SlotsEdit(o, x => ChannelInserts.MoveNextTo(x, id, anchor, after), "move");
         chain.Clicked += PickModule;
         int n = 0;
+        // the analyzers read the master's output (#210): their tiles go after Salida's, in the order they were added
+        var analyzers = new List<Border>();
         for (int i = 0; i < slots.Count; i++)
         {
             var slot = slots[i];
             if (!slot.Known) continue;
+            bool analyzer = TrackInserts.IsMeter(slot.Type);
             int nth = 1;
             for (int k = 0; k < i; k++) if (slots[k].Type == slot.Type) nth++;
             string id = slot.Id;
-            var grip = new GripDots { Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+            var grip = analyzer ? null : new GripDots { Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
             bool reduces = slot.Type is TrackInserts.Clip or TrackInserts.Limit or TrackInserts.Bands or InsertSlot.CompKind or InsertSlot.GateKind;
-            var tile = Tile(id, $"{++n}", slot.Type, SlotTitle(SlotName(slot.Type), nth), SlotHint(slot.Type), () => o.Slot(id)?.On == true,
+            string caption = analyzer ? Loc.T("fx.group.analysis").ToUpperInvariant() : $"{++n}";
+            var tile = Tile(id, caption, slot.Type, SlotTitle(SlotName(slot.Type), nth), SlotHint(slot.Type), () => o.Slot(id)?.On == true,
                 () => SlotEdit(o, id, s => s.On = !s.On, "on"), grip, reduces, out var meter);
             if (meter != null) tileOf[id] = meter;
             tile.PointerReleased += (_, e) =>
@@ -398,7 +402,8 @@ public partial class MainWindow
                 e.Handled = true;
                 ShowSlotMenu(o, id, tile, null);
             };
-            chain.AddMovable(tile, id, grip);
+            if (analyzer) analyzers.Add(tile);
+            else chain.AddMovable(tile, id, grip!);
         }
         if (n == 0)
             chain.Children.Add(new TextBlock { Text = Loc.T("master.empty"), FontSize = 12, Foreground = Palette.Faint, TextWrapping = TextWrapping.Wrap, MaxWidth = 220, VerticalAlignment = VerticalAlignment.Center });
@@ -407,6 +412,7 @@ public partial class MainWindow
             () => MasterSet.ClipOn, () => MasterEdit(m => m.ClipOn = !m.ClipOn, "clipOn"), null, true, out clipTile));
         chain.Children.Add(Tile(LimPage, salida, FxIcon.Comp, Loc.T("master.stage.lim"), Loc.T("master.stage.lim.tip") + ". " + Loc.T("master.out.note"),
             () => MasterSet.LimOn, () => MasterEdit(m => m.LimOn = !m.LimOn, "limOn"), null, true, out limTile));
+        foreach (var a in analyzers) chain.Children.Add(a);
         return chain;
     }
 
@@ -530,7 +536,7 @@ public partial class MainWindow
     /// <summary>A panel's width in the editor: its knobs in one row (at least <see cref="EditorMinCols"/> columns' worth), an EQ wider.</summary>
     static double EditorWidth(string kind, bool bands)
     {
-        if (kind == InsertSlot.EqKind) return EqEditorW;
+        if (kind is InsertSlot.EqKind or TrackInserts.Tonal) return EqEditorW;
         int knobs = FxDefs.Params(kind).Count(p => !p.Fine) + FxDefs.Common(kind).Length - (bands ? 2 : 0);
         return Math.Max(EditorMinCols, knobs) * FxCellW;
     }

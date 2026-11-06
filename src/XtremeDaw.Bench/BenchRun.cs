@@ -39,15 +39,20 @@ static partial class Bench
         TestList.Who = TestList.User;
 
         desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
-        Open(desktop, path, null, !Quiet(args));
+        // one left by a bench that closed before taking it is not for this start
+        TakeTicket(path);
+        var first = Open(desktop, path, null, !Quiet(args));
+        if (int.TryParse(ArgAfter(args, TicketArg), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int asked) && asked > 0)
+            first.ShowTicket(asked);
 
         new Thread(() =>
         {
             while (show.WaitOne())
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (desktop.MainWindow is not { } w) return;
+                    if (desktop.MainWindow is not TestListWindow w) return;
                     if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
+                    if (TakeTicket(path) is > 0 and var id) w.ShowTicket(id);
                     w.Activate();
                 });
         }) { IsBackground = true, Name = "XT-WorkBench: traer al frente" }.Start();

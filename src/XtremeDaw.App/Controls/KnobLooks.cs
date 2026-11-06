@@ -6,7 +6,8 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App.Controls;
 
 /// <summary>
-/// The looks a knob can take (asked by the user: ten to pick from in Configuración → Apariencia), the same for every
+/// The looks a knob can take (asked by the user: ten to pick from in Configuración → Apariencia, and two neumorphic ones
+/// in the panels' colors after them, and Tron, part of the Tron Legacy theme, #191), the same for every
 /// knob in the window, this control's and the timeline's. Kept in config.json ("knobLook"); an unknown id falls back
 /// to the first. Each look only paints: geometry, dragging and the value stay <see cref="Knob"/>'s. Their greys don't
 /// follow the theme, the same as the fader's; the lit arc and the glows take the accent. Nothing here allocates on a
@@ -15,10 +16,11 @@ namespace XtremeDaw.App.Controls;
 public static class KnobLooks
 {
     public const string Soft = "soft", Console = "console", Line = "line", Metal = "metal", Glass = "glass",
-        Ring = "ring", Dots = "dots", Bakelite = "bakelite", Halo = "halo", Ceramic = "ceramic";
+        Ring = "ring", Dots = "dots", Bakelite = "bakelite", Halo = "halo", Ceramic = "ceramic",
+        Raised = "raised", RaisedGradient = "raisedGradient", Tron = "tron";
 
     /// <summary>In the picker's order; the first is the default.</summary>
-    public static readonly string[] All = [Soft, Console, Line, Metal, Glass, Ring, Dots, Bakelite, Halo, Ceramic];
+    public static readonly string[] All = [Soft, Console, Line, Metal, Glass, Ring, Dots, Bakelite, Halo, Ceramic, Raised, RaisedGradient, Tron];
 
     const string ConfigKey = "knobLook";
 
@@ -176,6 +178,9 @@ public static class KnobLooks
             case Bakelite: DrawBakelite(ctx, c, d, sw, rim, angle, origin, on, hot, label); break;
             case Halo: DrawHalo(ctx, c, d, sw, rim, angle, origin, on, hot, label); break;
             case Ceramic: DrawCeramic(ctx, c, d, sw, rim, angle, origin, on, hot, label); break;
+            case Raised: DrawRaised(ctx, c, d, sw, rim, angle, origin, on, hot, label, false); break;
+            case RaisedGradient: DrawRaised(ctx, c, d, sw, rim, angle, origin, on, hot, label, true); break;
+            case Tron: DrawTron(ctx, c, d, sw, rim, angle, origin, on, hot, label); break;
             default: DrawSoft(ctx, c, d, sw, rim, angle, origin, on, hot, label); break;
         }
     }
@@ -320,12 +325,52 @@ public static class KnobLooks
         ctx.DrawLine(Palette.Pen(on ? CeramicMark : CeramicMarkOff, Math.Max(1.5, d / 24), PenLineCap.Round), Polar(c, angle, label ? dish * 0.9 : dish * 0.35), Polar(c, angle, r - 1.5));
     }
 
+    /// <summary>Neumorphic, like the Relieve panels (#191): a cap in the panel's color raised by a dark shadow
+    /// down-right and a light one up-left, a glowing dot; with the gradient, the cap shaded at 145° around a pressed
+    /// dish. The scale goes after the cap, so the shadows never dim it.</summary>
+    static void DrawRaised(DrawingContext ctx, Point c, double d, double sw, double rim, double angle, double origin, bool on, bool hot, bool label, bool gradient)
+    {
+        double r = rim - sw / 2 - Math.Max(2, d / 14), o = Math.Max(1, d / 20), blur = Math.Max(2, d / 8);
+        NeuLook.Ensure();
+        NeuLook.Raised(ctx, new RoundedRect(new Rect(c.X - r, c.Y - r, 2 * r, 2 * r), r), gradient ? NeuLook.CapGradient : NeuLook.Cap, o, blur);
+        double dish = r * 0.66;
+        if (gradient) ctx.DrawEllipse(NeuLook.Dish, null, c, dish, dish);
+        SunkScale(ctx, c, sw, rim, angle, origin, on, hot ? NeuLook.GrooveHot : NeuLook.Groove);
+        GlowDot(ctx, Polar(c, angle, label ? (gradient ? (dish + r) / 2 : r * 0.78) : r * 0.6), Math.Max(1.25, d / 22), on);
+    }
+
+    /// <summary>Tron's light lines on black (#191): a faint scale, the lit arc glowing, a black cap edged by two rings
+    /// of light and a glowing pointer.</summary>
+    static void DrawTron(DrawingContext ctx, Point c, double d, double sw, double rim, double angle, double origin, bool on, bool hot, bool label)
+    {
+        double r = rim - sw / 2 - Math.Max(2.5, d / 12), w = Math.Max(1.25, d / 26);
+        Color lit = on ? LitColor : Palette.DimColor;
+        Arc(ctx, c, rim, -135, 135, Palette.Pen(Palette.Alpha(lit, hot ? TronTrackHot : TronTrack), Math.Max(1, sw / 2), PenLineCap.Round));
+        LitArc(ctx, c, rim, angle, origin, on, sw, true);
+        ctx.DrawEllipse(Palette.Alpha(lit, TronHalo), null, c, r + w * 1.5, r + w * 1.5);
+        ctx.DrawEllipse(Palette.App, Palette.Pen(Palette.Alpha(lit, hot ? TronRingHot : TronRing), w), c, r, r);
+        if (d >= TronInnerFrom) ctx.DrawEllipse(null, Palette.Pen(Palette.Alpha(lit, TronInner)), c, r * 0.68, r * 0.68);
+        var a0 = Polar(c, angle, label ? r * 0.7 : r * 0.25);
+        var a1 = Polar(c, angle, r - w);
+        if (on) ctx.DrawLine(Palette.Pen(Palette.Alpha(lit, 0.3), w * 3, PenLineCap.Round), a0, a1);
+        ctx.DrawLine(Palette.Pen(on ? Lit : Palette.Dim, w, PenLineCap.Round), a0, a1);
+    }
+
+    /// <summary>Tron's opacities: the unlit scale, the halo around the cap, its rings (brighter under the pointer), and
+    /// the size from which the inner ring fits.</summary>
+    const double TronTrack = 0.16, TronTrackHot = 0.3, TronHalo = 0.12, TronRing = 0.7, TronRingHot = 1, TronInner = 0.22, TronInnerFrom = 30;
+
     // --- pieces ---------------------------------------------------------------------------------
 
     /// <summary>The scale sunk into the panel, with the lit arc glowing in it.</summary>
-    static void SunkScale(DrawingContext ctx, Point c, double sw, double rim, double angle, double origin, bool on, bool hot)
+    static void SunkScale(DrawingContext ctx, Point c, double sw, double rim, double angle, double origin, bool on, bool hot) =>
+        SunkScale(ctx, c, sw, rim, angle, origin, on, hot ? GrooveHot : Groove);
+
+    /// <summary>The same in <paramref name="groove"/>: the neumorphic looks sink it in the panel's own color, since
+    /// the fixed hover grey nearly matches some panels and the scale vanished under the pointer (#191).</summary>
+    static void SunkScale(DrawingContext ctx, Point c, double sw, double rim, double angle, double origin, bool on, IBrush groove)
     {
-        Arc(ctx, c, rim, -135, 135, Palette.Pen(hot ? GrooveHot : Groove, sw + 1, PenLineCap.Round));
+        Arc(ctx, c, rim, -135, 135, Palette.Pen(groove, sw + 1, PenLineCap.Round));
         if (Math.Abs(angle - origin) <= 0.5) return;
         double a = Math.Min(origin, angle), b = Math.Max(origin, angle);
         if (on) Arc(ctx, c, rim, a, b, Palette.Pen(Palette.Alpha(LitColor, 0.18), sw * 2.6, PenLineCap.Round));

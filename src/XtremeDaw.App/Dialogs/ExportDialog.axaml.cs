@@ -82,6 +82,20 @@ public sealed partial class ExportDialog : UserControl
     /// <summary>"Exportar audio" of a solo audio project, or an audio file opened from Historial.</summary>
     bool audio;
     AudioFormat audioFormat = AudioFormat.Wav;
+    /// <summary>"Avanzado" of the audio export (#208), all but the format (<see cref="audioFormat"/>); the defaults are the easy export.</summary>
+    AudioExportSettings audioAdv = AudioExportSettings.Defaults;
+    /// <summary>"Avanzado": the tracks left out of the stems and the folders and buses that get one (ids).</summary>
+    readonly HashSet<string> stemsSkip = [], stemNodes = [];
+    /// <summary>The fixed tail the slider shows while "Automática" is on, so switching back keeps it.</summary>
+    double tailFixedSec = 2;
+    /// <summary>The peak the slider shows while normalizing is off.</summary>
+    double normalizeDbtp = AudioExportSettings.DefaultNormalizeDbtp;
+    bool syncingAudioAdv;
+    /// <summary>Which tracks and buses the stems list was built for.</summary>
+    string? stemsListKey;
+    /// <summary>"WAV 24 bit · 48 kHz" for the done screen of an export just made; null = say it from the extension.</summary>
+    string? doneAudioDesc;
+    AudioExportSettings AudioChoice => (audioAdv with { Format = audioFormat }).Normalized();
     AudioExportProgress audioProgress = new(AudioExportStage.Mix, 0, 0);
     /// <summary>The export is done and the stems are being written ("Stems", native only).</summary>
     bool stemsRunning;
@@ -209,6 +223,7 @@ public sealed partial class ExportDialog : UserControl
             ResolutionButtons.Children.Add(b);
         }
         AdvancedToggle.Click += (_, _) => { advancedOpen = !advancedOpen; RenderSetupState(); };
+        BuildAudioAdvanced();
         BitrateAutoCheck.IsCheckedChanged += (_, _) =>
         {
             if (syncingBitrate) return;
@@ -371,6 +386,19 @@ public sealed partial class ExportDialog : UserControl
         var savedQuality = Mp4Exporter.ParseQuality(p?.Settings.Export.Quality);
         if (initial == null) audioFormat = AudioExporter.ParseFormat(p?.Settings.Export.AudioFormat);
         if (initial == null) StemsCheck.IsChecked = p?.Settings.Export.Stems == true;
+        if (initial == null && p != null)
+        {
+            var ex = p.Settings.Export;
+            audioAdv = ex.AudioSettings();
+            if (audioAdv.TailSec is { } ts) tailFixedSec = ts;
+            if (audioAdv.NormalizeDbtp is { } nd) normalizeDbtp = nd;
+            stemsSkip.Clear();
+            stemsSkip.UnionWith(ex.StemsSkip);
+            stemNodes.Clear();
+            stemNodes.UnionWith(ex.StemNodes);
+            stemsListKey = null;
+        }
+        doneAudioDesc = null;
         target = ExportTargets.Get(initial?.Target ?? p?.Settings.Export.Target).Id;
         rangeLoop = initial?.Range != null;
 
@@ -607,22 +635,24 @@ public sealed partial class ExportDialog : UserControl
         SetActiveSegment(QualityEstandarBtn, quality == ExportQuality.Estandar);
         SetActiveSegment(QualityBorradorBtn, quality == ExportQuality.Borrador);
 
-        SetActiveSegment(FormatWavBtn, audioFormat == AudioFormat.Wav);
-        // MP3 goes through FFmpeg; without it only WAV is on offer
+        // MP3, FLAC and OGG go through FFmpeg; without it WAV and AIFF are on offer
         bool canMp3 = XtremeDaw.Audio.Components.Ffmpeg.Ready;
         FormatMp3Btn.IsEnabled = canMp3;
         ToolTip.SetTip(FormatMp3Btn, Loc.T(canMp3 ? "exp.mp3.tip" : "exp.mp3.noFfmpeg"));
-        if (!canMp3) audioFormat = AudioFormat.Wav;
+        if (!canMp3 && AudioExporter.NeedsFfmpeg(audioFormat)) audioFormat = AudioFormat.Wav;
+        // a format of "Avanzado" lights neither: the folded link says which it is
         SetActiveSegment(FormatWavBtn, audioFormat == AudioFormat.Wav);
         SetActiveSegment(FormatMp3Btn, audioFormat == AudioFormat.Mp3);
 
         var qSpec = Mp4Exporter.GetQualitySpec(quality);
-        double estBytes = audio ? AudioExporter.EstimateBytes(audioFormat, ExportSec)
+        var achoice = AudioChoice;
+        double estBytes = audio ? AudioExporter.EstimateBytes(achoice, ExportSec)
             : Mp4Exporter.EstimateBytes(quality, outW, outH, ExportSec, bitrateMbps);
         EstBytesText.Text = $"≈ {Mp4Exporter.FormatBytes(estBytes)}";
         QualityDescText.Text = !audio ? qSpec.Title
-            : audioFormat == AudioFormat.Mp3 ? Loc.T("exp.mp3.note")
-            : Loc.T("exp.wav.note");
+            : achoice == AudioExportSettings.Defaults with { Format = audioFormat } && audioFormat == AudioFormat.Mp3 ? Loc.T("exp.mp3.note")
+            : achoice == AudioExportSettings.Defaults ? Loc.T("exp.wav.note")
+            : AudioExporter.Describe(achoice);
 
         RenderAdvanced(outW, outH);
 
@@ -654,9 +684,17 @@ public sealed partial class ExportDialog : UserControl
     /// <summary>"Avanzado": folded or open, what is not the default next to its title, and the controls as they are.</summary>
     void RenderAdvanced(int outW, int outH)
     {
-        AdvancedPanel.IsVisible = !audio;
-        AdvancedBody.IsVisible = advancedOpen;
+        AdvancedPanel.IsVisible = true;
+        AdvancedBody.IsVisible = advancedOpen && !audio;
+        AudioAdvancedBody.IsVisible = advancedOpen && audio;
         AdvancedChevron.Text = advancedOpen ? "\uE70D" : "\uE76C";
+        ToolTip.SetTip(AdvancedToggle, Loc.T(audio ? "exp.adv.tip.audio" : "exp.adv.tip"));
+        if (Bounds.Height > 0) SetupScroll.MaxHeight = Math.Max(240, Bounds.Height - 200);
+        if (audio)
+        {
+            RenderAudioAdvanced();
+            return;
+        }
         var custom = new List<string>();
         if (resolution != Mp4Exporter.DefaultResolution) custom.Add(ResolutionLabel(resolution));
         if (bitrateMbps is { } m) custom.Add(Loc.T("exp.adv.mbps", $"{m:0}"));
@@ -673,6 +711,170 @@ public sealed partial class ExportDialog : UserControl
         BitrateSlider.Opacity = bitrateMbps == null ? 0.45 : 1;
         BitrateText.Text = Loc.T("exp.adv.mbps", $"{bitrateMbps ?? auto:0.#}");
         BitrateHint.Text = bitrateMbps == null ? Loc.T("exp.adv.bitrate.autoHint") : Loc.T("exp.adv.bitrate.customHint");
+    }
+
+    /// <summary>"Avanzado" of the audio export: the segment buttons made once; their state is set in <see cref="RenderAudioAdvanced"/>.</summary>
+    void BuildAudioAdvanced()
+    {
+        foreach (var f in (AudioFormat[])[AudioFormat.Wav, AudioFormat.Mp3, AudioFormat.Flac, AudioFormat.Aiff, AudioFormat.Ogg])
+        {
+            var b = new Button { Classes = { "seg" }, Content = AudioExporter.FormatLabel(f), Tag = f };
+            b.Click += (_, _) => SetAudioFormat(f);
+            AdvFormatButtons.Children.Add(b);
+        }
+        foreach (int d in AudioExportSettings.Depths)
+        {
+            var b = new Button { Classes = { "seg" }, Content = d == 32 ? Loc.T("exp.adv.float") : $"{d} bit", Tag = d };
+            b.Click += (_, _) => { audioAdv = audioAdv with { BitDepth = d }; RenderSetupState(); };
+            AdvDepthButtons.Children.Add(b);
+        }
+        foreach (int? k in AudioExportSettings.Bitrates.Select(k => (int?)k).Append(null))
+        {
+            var b = new Button { Classes = { "seg" }, Content = k is { } kb ? $"{kb}" : "VBR", Tag = k ?? 0 };
+            ToolTip.SetTip(b, k == null ? Loc.T("exp.adv.vbr.tip") : Loc.T("exp.adv.kbps", k));
+            b.Click += (_, _) => { audioAdv = audioAdv with { Kbps = k }; RenderSetupState(); };
+            AdvKbpsButtons.Children.Add(b);
+        }
+        foreach (int r in AudioExportSettings.Rates)
+        {
+            var b = new Button { Classes = { "seg" }, Content = RateLabel(r), Tag = r };
+            b.Click += (_, _) => { audioAdv = audioAdv with { SampleRate = r }; RenderSetupState(); };
+            AdvRateButtons.Children.Add(b);
+        }
+        AdvDitherCheck.IsCheckedChanged += (_, _) =>
+        {
+            if (syncingAudioAdv) return;
+            audioAdv = audioAdv with { Dither = AdvDitherCheck.IsChecked == true };
+            RenderSetupState();
+        };
+        AdvStereoBtn.Click += (_, _) => { audioAdv = audioAdv with { Mono = false }; RenderSetupState(); };
+        AdvMonoBtn.Click += (_, _) => { audioAdv = audioAdv with { Mono = true }; RenderSetupState(); };
+        AdvTailAutoBtn.Click += (_, _) => { audioAdv = audioAdv with { TailSec = null }; RenderSetupState(); };
+        AdvTailFixedBtn.Click += (_, _) => { audioAdv = audioAdv with { TailSec = tailFixedSec }; RenderSetupState(); };
+        // moving the slider is choosing a fixed tail: it leaves "Automática" by itself
+        AdvTailSlider.ValueChanged += (_, _) =>
+        {
+            if (syncingAudioAdv) return;
+            tailFixedSec = Math.Round(AdvTailSlider.Value * 2) / 2;
+            audioAdv = audioAdv with { TailSec = tailFixedSec };
+            RenderSetupState();
+        };
+        AdvNormalizeCheck.IsCheckedChanged += (_, _) =>
+        {
+            if (syncingAudioAdv) return;
+            audioAdv = audioAdv with { NormalizeDbtp = AdvNormalizeCheck.IsChecked == true ? normalizeDbtp : null };
+            RenderSetupState();
+        };
+        AdvNormalizeSlider.ValueChanged += (_, _) =>
+        {
+            if (syncingAudioAdv) return;
+            normalizeDbtp = Math.Round(AdvNormalizeSlider.Value, 1);
+            audioAdv = audioAdv with { NormalizeDbtp = normalizeDbtp };
+            RenderSetupState();
+        };
+        StemsCheck.IsCheckedChanged += (_, _) => { if (audio) RenderSetupState(); };
+    }
+
+    /// <summary>"44,1 kHz", "48 kHz": in the system's culture.</summary>
+    static string RateLabel(int rate) => (rate / 1000.0).ToString("0.#") + " kHz";
+
+    /// <summary>"Avanzado" of the audio export: what is not the easy export next to its title, and each control as it is.</summary>
+    void RenderAudioAdvanced()
+    {
+        var s = AudioChoice;
+        bool ffmpeg = XtremeDaw.Audio.Components.Ffmpeg.Ready;
+        var custom = new List<string>();
+        if (s.Format is not (AudioFormat.Wav or AudioFormat.Mp3)) custom.Add(AudioExporter.FormatLabel(s.Format));
+        if (!s.Lossy && s.BitDepth != AudioExportSettings.DefaultDepth) custom.Add(s.BitDepth == 32 ? Loc.T("exp.adv.float") : $"{s.BitDepth} bit");
+        if (s.Lossy && s.Kbps != AudioExportSettings.DefaultKbps) custom.Add(s.Kbps is { } k ? Loc.T("exp.adv.kbps", k) : "VBR");
+        if (s.SampleRate != AudioExportSettings.DefaultRate) custom.Add(RateLabel(s.SampleRate));
+        if (s.Mono) custom.Add(Loc.T("exp.adv.mono"));
+        if (s.TailSec is { } t) custom.Add(Loc.T("exp.adv.tail.sum", t.ToString("0.#")));
+        if (s.NormalizeDbtp is { } nd) custom.Add(Dbtp(nd));
+        bool stems = StemsCheck.IsChecked == true;
+        if (stems && (stemsSkip.Count > 0 || stemNodes.Count > 0)) custom.Add(Loc.T("exp.adv.stems.sum"));
+        AdvancedSummary.Text = custom.Count > 0 ? "· " + string.Join(" · ", custom) : "";
+        if (!advancedOpen) return;
+
+        syncingAudioAdv = true;
+        foreach (var c in AdvFormatButtons.Children)
+            if (c is Button b && b.Tag is AudioFormat f)
+            {
+                b.IsEnabled = ffmpeg || !AudioExporter.NeedsFfmpeg(f);
+                ToolTip.SetTip(b, Loc.T(b.IsEnabled ? $"exp.adv.format.{AudioExporter.FormatId(f)}" : "exp.adv.format.noFfmpeg"));
+                SetActiveSegment(b, f == s.Format);
+            }
+        var depths = AudioExportSettings.DepthsFor(s.Format);
+        AdvDepthRow.IsVisible = depths.Length > 0;
+        foreach (var c in AdvDepthButtons.Children)
+            if (c is Button b && b.Tag is int d)
+            {
+                b.IsEnabled = depths.Contains(d);
+                SetActiveSegment(b, d == s.BitDepth);
+            }
+        AdvDitherCheck.IsChecked = s.Dither;
+        AdvDitherCheck.IsEnabled = s.BitDepth == 16;
+        AdvKbpsRow.IsVisible = s.Lossy;
+        foreach (var c in AdvKbpsButtons.Children)
+            if (c is Button b && b.Tag is int k) SetActiveSegment(b, k == (s.Kbps ?? 0));
+        var rates = AudioExportSettings.RatesFor(s.Format);
+        foreach (var c in AdvRateButtons.Children)
+            if (c is Button b && b.Tag is int r)
+            {
+                b.IsEnabled = rates.Contains(r);
+                SetActiveSegment(b, r == s.SampleRate);
+            }
+        SetActiveSegment(AdvStereoBtn, !s.Mono);
+        SetActiveSegment(AdvMonoBtn, s.Mono);
+        SetActiveSegment(AdvTailAutoBtn, s.TailSec == null);
+        SetActiveSegment(AdvTailFixedBtn, s.TailSec != null);
+        AdvTailSlider.Maximum = MixMaster.MaxFixedTailSec;
+        AdvTailSlider.Value = s.TailSec ?? tailFixedSec;
+        AdvTailSlider.Opacity = s.TailSec == null ? 0.45 : 1;
+        AdvTailText.Text = s.TailSec is { } ft ? Loc.T("exp.adv.sec", ft.ToString("0.0")) : Loc.T("exp.adv.tail.upTo", MixMaster.MaxTailSec.ToString("0"));
+        AdvNormalizeCheck.IsChecked = s.NormalizeDbtp != null;
+        AdvNormalizeSlider.Value = s.NormalizeDbtp ?? normalizeDbtp;
+        AdvNormalizeSlider.Opacity = s.NormalizeDbtp == null ? 0.45 : 1;
+        AdvNormalizeText.Text = Dbtp(s.NormalizeDbtp ?? normalizeDbtp);
+        syncingAudioAdv = false;
+
+        AdvStemsRow.IsVisible = stems;
+        if (stems) RenderStemsList();
+    }
+
+    /// <summary>"−1,0 dBTP": a real minus sign, one decimal, in the system's culture.</summary>
+    static string Dbtp(double v) => v.ToString("0.0").Replace('-', '−') + " dBTP";
+
+    /// <summary>
+    /// "Avanzado" → which stems: a box per track with sound (ticked unless left out) and per folder or bus (unticked
+    /// unless chosen). Rebuilt only when it is shown, never while exporting.
+    /// </summary>
+    void RenderStemsList()
+    {
+        if (currentStore?.Project is not { } p) return;
+        var nodes = ChannelDsp.Nodes(p);
+        var tracks = p.Tracks.Where(t => t.HasContent).ToList();
+        string key = string.Join("|", tracks.Select(t => t.Id + t.Name)) + "/" + string.Join("|", nodes);
+        // the boxes keep their state: rebuilt only when the tracks or the buses changed (a click must not lose its box)
+        if (key == stemsListKey && AdvStemsList.Children.Count > 0) return;
+        stemsListKey = key;
+        AdvStemsList.Children.Clear();
+        void Box(string id, string name, bool on, Action<bool> set)
+        {
+            var cb = new CheckBox { Content = name, FontSize = 12, IsChecked = on, Tag = id };
+            cb.IsCheckedChanged += (_, _) => { set(cb.IsChecked == true); RenderSetupState(); };
+            AdvStemsList.Children.Add(cb);
+        }
+        AdvStemsList.Children.Add(new TextBlock { Text = Loc.T("exp.adv.stems.tracks"), Classes = { "label" }, Margin = new Thickness(0, 2, 0, 2) });
+        foreach (var t in tracks)
+            Box(t.Id, t.Name, !stemsSkip.Contains(t.Id), on => { if (on) stemsSkip.Remove(t.Id); else stemsSkip.Add(t.Id); });
+        if (nodes.Count == 0) return;
+        AdvStemsList.Children.Add(new TextBlock { Text = Loc.T("exp.adv.stems.buses"), Classes = { "label" }, Margin = new Thickness(0, 8, 0, 2) });
+        foreach (var id in nodes)
+        {
+            string name = p.Folders.Find(f => f.Id == id)?.Name ?? p.Settings.Buses.Find(b => b.Id == id)?.Name ?? id;
+            Box(id, name, stemNodes.Contains(id), on => { if (on) stemNodes.Add(id); else stemNodes.Remove(id); });
+        }
     }
 
     static void SetActiveSegment(Button btn, bool active)
@@ -724,8 +926,9 @@ public sealed partial class ExportDialog : UserControl
         {
             var job = await Task.Run(() => BuildJob(currentStore, opts, currentLiveTracks), cts.Token);
             var format = audioFormat;
+            var settings = AudioChoice;
             var res = audio
-                ? await AudioExporter.ExportAsync(job, format, p => Dispatcher.UIThread.Post(() =>
+                ? await AudioExporter.ExportAsync(job, settings, p => Dispatcher.UIThread.Post(() =>
                 {
                     if (phase != Phase.Running) return;
                     audioProgress = p;
@@ -742,21 +945,30 @@ public sealed partial class ExportDialog : UserControl
                 cts.Token);
 
             currentStore.Project.Settings.Export.Stems = withStems;
+            if (audio) SaveAudioChoice(currentStore.Project.Settings.Export, settings);
             RecordExport(currentStore.Project, opts, res, audio ? format : null);
             ExportCompleted?.Invoke(res);
             if (withStems)
             {
                 stemsRunning = true;
                 RenderRunning();
+                // "Avanzado": the tracks not left out and the folders and buses chosen, at the export's rate
+                var p = currentStore.Project;
+                var nodeIds = ChannelDsp.Nodes(p);
+                List<int>? stemTracks = audio && stemsSkip.Count > 0
+                    ? [.. Enumerable.Range(0, p.Tracks.Count).Where(i => !stemsSkip.Contains(p.Tracks[i].Id))]
+                    : null;
+                List<int>? stemBuses = audio ? [.. stemNodes.Select(id => nodeIds.IndexOf(id)).Where(i => i >= 0).Order()] : null;
                 var (stemFolder, count) = await AudioExporter.ExportStemsAsync(job, res.FullPath, f => Dispatcher.UIThread.Post(() =>
                 {
                     if (phase != Phase.Running) return;
                     stemsFraction = f;
                     RenderRunning();
-                }), cts.Token, res.DurationSec);
+                }), cts.Token, res.DurationSec, stemTracks, stemBuses, audio ? settings.SampleRate : null);
                 doneStems = Loc.T("exp.done.stems", count, Path.GetFileName(stemFolder));
             }
 
+            doneAudioDesc = audio ? AudioExporter.Describe(settings) : null;
             OpenDone(new ExportedVideo(
                 res.FileName,
                 res.FullPath,
@@ -843,7 +1055,7 @@ public sealed partial class ExportDialog : UserControl
     void RenderAudioRunning(double elapsed)
     {
         var a = audioProgress;
-        bool mp3 = audioFormat == AudioFormat.Mp3;
+        bool mp3 = AudioExporter.NeedsFfmpeg(audioFormat);
         // the mix is most of the work; FFmpeg's MP3 pass is quick
         double overall = a.Stage switch
         {
@@ -856,7 +1068,7 @@ public sealed partial class ExportDialog : UserControl
         double trackW = ProgressBarTrack.Bounds.Width > 0 ? ProgressBarTrack.Bounds.Width : 470;
         ProgressBarFill.Width = Math.Clamp(overall * trackW, 0, trackW);
         var steps = new List<(string, string?, bool)> { (Loc.T("exp.step.mixing"), null, true) };
-        if (mp3) steps.Add((Loc.T("exp.step.mp3"), null, true));
+        if (mp3) steps.Add((Loc.T("exp.step.encode", AudioExporter.FormatLabel(audioFormat)), null, true));
         steps.Add((Loc.T("exp.step.saving"), null, false));
         int active = a.Stage == AudioExportStage.Mix ? 0 : a.Stage == AudioExportStage.Encode ? 1 : steps.Count - 1;
         RenderSteps([.. steps], active, a.Fraction);
@@ -1003,8 +1215,10 @@ public sealed partial class ExportDialog : UserControl
         DoneStage.IsVisible = doneMissing || !audio;
         AudioDoneRow.IsVisible = audio && !doneMissing;
         AudioDoneName.Text = doneVideo.FileName;
-        bool mp3 = doneVideo.FileName.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase);
-        AudioDoneInfo.Text = Loc.T("exp.done.info", Mp4Exporter.FormatTime(doneDurationSec), mp3 ? "MP3 320 kbps" : Loc.T("exp.wav24"))
+        // an export just made says what it is; one opened from Historial, its format
+        var fileFormat = AudioExporter.ParseFormat(Path.GetExtension(doneVideo.FileName).TrimStart('.'));
+        string desc = doneAudioDesc ?? (fileFormat == AudioFormat.Mp3 ? "MP3" : fileFormat == AudioFormat.Wav ? "WAV" : AudioExporter.FormatLabel(fileFormat));
+        AudioDoneInfo.Text = Loc.T("exp.done.info", Mp4Exporter.FormatTime(doneDurationSec), desc)
             + (doneVideo.Lufs is { } al ? $" · {Lufs(al)} LUFS" : "");
         DoneRevealButton.IsEnabled = !doneMissing;
 
@@ -1375,6 +1589,15 @@ public sealed partial class ExportDialog : UserControl
             SampleRate = sampleRate,
             Range = options.Range,
         };
+    }
+
+    /// <summary>"Avanzado" of the audio export into the project, so the next one starts from it.</summary>
+    void SaveAudioChoice(ExportSettings ex, AudioExportSettings s)
+    {
+        (ex.AudioBits, ex.AudioRate, ex.AudioDither, ex.AudioKbps) = (s.BitDepth, s.SampleRate, s.Dither, s.Kbps);
+        (ex.AudioTailSec, ex.AudioNormalizeDbtp, ex.AudioMono) = (s.TailSec, s.NormalizeDbtp, s.Mono);
+        ex.StemsSkip = [.. stemsSkip];
+        ex.StemNodes = [.. stemNodes];
     }
 
     /// <summary>Records a finished export into <see cref="Project.Exports"/>, <see cref="Project.Settings"/> and <see cref="Project.Log"/>.</summary>

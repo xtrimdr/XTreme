@@ -7,7 +7,7 @@ namespace XtremeDaw.App.Controls;
 
 /// <summary>
 /// A mixer strip's meter (from the web's Meter in Mixer.tsx, completed in the native app): two bars, left and right,
-/// from -48 to +3 dBFS over the green â†’ yellow â†’ red gradient, each solid up to its RMS and dimmed from there up to its
+/// from -48 to +3 dBFS over the green → yellow → red gradient, each solid up to its RMS and dimmed from there up to its
 /// peak (with a thin line on the peak), and a dB scale beside them that only shows the marks that fit. A
 /// <see cref="Mono"/> source (a track whose takes are mono) shows one bar as wide as the pair, with the louder side,
 /// so every strip keeps its width and the faders stay level. Over the bars: the peak-hold readout (the highest peak
@@ -31,35 +31,22 @@ public sealed class MixerMeter : Control
     /// <summary>Peaks above this light the clip light (dBFS), as in <see cref="StereoMeter"/>.</summary>
     public const double ClipDb = -0.3;
     static readonly double ClipAmp = Math.Pow(10, ClipDb / 20);
-    /// <summary>Under this (âˆ’100 dBFS) the readout says âˆ’âˆž.</summary>
+    /// <summary>Under this (−100 dBFS) the readout says −∞.</summary>
     const double SilentAmp = 1e-5;
     /// <summary>How much of the gradient the stretch between RMS and peak shows.</summary>
     const double PeakOpacity = 0.4;
     static readonly Cursor Hand = new(StandardCursorType.Hand);
 
-    static readonly IBrush Gradient = new LinearGradientBrush
-    {
-        StartPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-        EndPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-        GradientStops =
-        {
-            new GradientStop(Palette.MeterGreen, 0),
-            new GradientStop(Palette.MeterGreen, 0.7),
-            new GradientStop(Palette.MeterYellow, 0.84),
-            new GradientStop(Palette.MeterRed, 0.96),
-        },
-    }.ToImmutable();
-
     /// <summary>Each bar's width and the gap between the two (px); a mono bar takes the pair's width.</summary>
-    readonly double barW, pairW;
+    double barW, pairW;
     const double Gap = 1;
     /// <summary>Only over the readout: over the bars, beside the fader, a tooltip gets in the way.</summary>
     readonly string holdTip;
     double levelL, levelR, rmsL, rmsR, hold;
     bool mono, clipL, clipR, overHead;
-    /// <summary>The readout as shown, in tenths of a dB (int.MinValue = âˆ’âˆž), and its text.</summary>
+    /// <summary>The readout as shown, in tenths of a dB (int.MinValue = −∞), and its text.</summary>
     int holdTenths = int.MinValue;
-    string holdText = "-âˆž";
+    string holdText = "-∞";
     bool scale = true;
 
     public MixerMeter(bool wide = false)
@@ -74,6 +61,25 @@ public sealed class MixerMeter : Control
         VisualChildren.Add(levels);
         VisualChildren.Add(marksLayer);
     }
+
+    /// <summary>Each bar's width (px): a wider mixer strip widens its meter (#199).</summary>
+    public double BarWidth
+    {
+        set
+        {
+            if (value == barW) return;
+            barW = value;
+            pairW = 2 * barW + Gap;
+            Width = pairW + (scale ? 2 + ScaleW : 0);
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>Widens the bars with <paramref name="room"/> px (scale included, if shown): each takes
+    /// <paramref name="share"/> of its half, between <paramref name="min"/> and <paramref name="max"/> px (#199: they
+    /// grow with the strip at every width; #205: filling all of it made them too wide).</summary>
+    public void Fit(double room, double min, double max, double share = 1) =>
+        BarWidth = Math.Clamp(Math.Floor((room - (scale ? 2 + ScaleW : 0) - Gap) / 2 * share), min, max);
 
     /// <summary>The dB marks beside the bars; off, the meter is as wide as its bars and its readout is in whole dB.</summary>
     public bool Scale
@@ -111,7 +117,7 @@ public sealed class MixerMeter : Control
         MeterLooks.Changed -= InvalidateVisual;
     }
 
-    string HoldText(int tenths) => tenths == int.MinValue ? "-âˆž" : scale ? $"{tenths / 10.0:+0.0;-0.0;0.0}" : $"{Math.Round(tenths / 10.0):+0;-0;0}";
+    string HoldText(int tenths) => tenths == int.MinValue ? "-∞" : scale ? $"{tenths / 10.0:+0.0;-0.0;0.0}" : $"{Math.Round(tenths / 10.0):+0;-0;0}";
 
     /// <summary>One bar with the louder side instead of two (a mono source); the light is lit if either side clipped.</summary>
     public bool Mono
@@ -159,7 +165,7 @@ public sealed class MixerMeter : Control
     {
         hold = 0;
         holdTenths = int.MinValue;
-        holdText = "-âˆž";
+        holdText = "-∞";
         clipL = clipR = false;
         InvalidateVisual();
     }
@@ -239,6 +245,7 @@ public sealed class MixerMeter : Control
         double h = Bounds.Height - BarTop;
         if (h <= 0) return;
         string lk = look ?? MeterLooks.Current;
+        if (MeterLooks.Segmented(lk)) EnsureLeds(h);
         Span<double> xs = stackalloc double[2], ws = stackalloc double[2];
         int n = Bars(xs, ws);
         for (int b = 0; b < n; b++)
@@ -248,6 +255,8 @@ public sealed class MixerMeter : Control
             var bar = new Rect(xs[b], BarTop, ws[b], h);
             using (ctx.PushClip(new RoundedRect(bar, 2)))
                 Background(ctx, bar, lk);
+            if (lk == MeterLooks.Tron)
+                ctx.DrawRectangle(null, Palette.Pen(Palette.Alpha(Palette.AccentColor, MeterLooks.TronEdge)), new RoundedRect(bar.Deflate(0.5), 2));
         }
         if (!scale) return;
         Span<int> marks = stackalloc int[ScaleMarks.Length];
@@ -266,11 +275,7 @@ public sealed class MixerMeter : Control
         double h = Bounds.Height - BarTop;
         if (h <= 0) return;
         string lk = look ?? MeterLooks.Current;
-        if (lk == MeterLooks.Led)
-        {
-            var area = new Rect(0, BarTop, pairW, h);
-            if (leds == null || area != ledsFor) { leds = MeterLooks.Segments(area, true); ledsFor = area; }
-        }
+        if (MeterLooks.Segmented(lk)) EnsureLeds(h);
         Span<double> xs = stackalloc double[2], ws = stackalloc double[2];
         int n = Bars(xs, ws);
         for (int b = 0; b < n; b++)
@@ -282,12 +287,19 @@ public sealed class MixerMeter : Control
             var bar = new Rect(xs[b], BarTop, ws[b], h);
             using (ctx.PushClip(new RoundedRect(bar, 2)))
             {
-                if (lk == MeterLooks.Led && leds != null)
+                if (MeterLooks.Segmented(lk) && leds != null)
                     using (ctx.PushGeometryClip(leds))
                         Fill(ctx, bar, peakPct, rmsPct, lk);
                 else Fill(ctx, bar, peakPct, rmsPct, lk);
             }
         }
+    }
+
+    /// <summary>Builds the LEDs' clip for bars <paramref name="h"/> px tall, once per size.</summary>
+    void EnsureLeds(double h)
+    {
+        var area = new Rect(0, BarTop, pairW, h);
+        if (leds == null || area != ledsFor) { leds = MeterLooks.Segments(area, true); ledsFor = area; }
     }
 
     /// <summary>The dB lines over the bars.</summary>
@@ -310,9 +322,19 @@ public sealed class MixerMeter : Control
     }
 
     /// <summary>A bar's empty background in <paramref name="lk"/>: <see cref="MeterLooks.Thin"/> a narrow strip in the middle,
-    /// <see cref="MeterLooks.Gradient"/> the whole scale faintly.</summary>
-    static void Background(DrawingContext ctx, Rect bar, string lk)
+    /// <see cref="MeterLooks.Gradient"/> the whole scale faintly, <see cref="MeterLooks.Tron"/> black with its unlit LEDs
+    /// faintly in their colors.</summary>
+    void Background(DrawingContext ctx, Rect bar, string lk)
     {
+        if (lk == MeterLooks.Tron)
+        {
+            ctx.FillRectangle(Palette.App, bar);
+            if (leds != null)
+                using (ctx.PushGeometryClip(leds))
+                using (ctx.PushOpacity(MeterLooks.TronGhost))
+                    ctx.FillRectangle(MeterLooks.TronLevels(), bar);
+            return;
+        }
         if (lk == MeterLooks.Thin)
         {
             double lw = Math.Max(2, Math.Round(bar.Width * MeterLooks.ThinShare));
@@ -322,13 +344,13 @@ public sealed class MixerMeter : Control
         else ctx.FillRectangle(Palette.Hover, bar);
         if (lk == MeterLooks.Gradient)
             using (ctx.PushOpacity(MeterLooks.GhostOpacity))
-                ctx.FillRectangle(Gradient, bar);
+                ctx.FillRectangle(MeterColors.MixerLevels(), bar);
     }
 
     /// <summary>
     /// A bar's levels in <paramref name="lk"/>, over its background: the RMS solid, the stretch up to the peak dimmed with
     /// a line on the peak. <see cref="MeterLooks.Thin"/> lights a narrow strip in the middle; <see cref="MeterLooks.Led"/>
-    /// (clipped to its LEDs by the caller) lights whole LEDs.
+    /// and <see cref="MeterLooks.Tron"/> (clipped to its LEDs by the caller) light whole LEDs, Tron in its own colors.
     /// </summary>
     static void Fill(DrawingContext ctx, Rect bar, double peakPct, double rmsPct, string lk)
     {
@@ -340,7 +362,8 @@ public sealed class MixerMeter : Control
         }
         // the gradient is laid over the whole bar and clipped to each stretch, so its colors stay where the dB are
         double yPeak = bar.Y + h * (1 - peakPct), yRms = bar.Y + h * (1 - rmsPct);
-        bool led = lk == MeterLooks.Led;
+        bool led = MeterLooks.Segmented(lk);
+        var grad = lk == MeterLooks.Tron ? MeterLooks.TronLevels() : MeterColors.MixerLevels();
         if (led)
         {
             yPeak = bottom - MeterLooks.SnapLed(bottom - yPeak);
@@ -350,13 +373,13 @@ public sealed class MixerMeter : Control
         {
             using (ctx.PushClip(new Rect(lx, yPeak, lw, yRms - yPeak)))
             using (ctx.PushOpacity(PeakOpacity))
-                ctx.FillRectangle(Gradient, bar);
+                ctx.FillRectangle(grad, bar);
             // the peak's line; a LED meter lights the peak's whole LED
             using (ctx.PushClip(new Rect(bar.X, yPeak, bar.Width, led ? MeterLooks.SegStep : 1.5)))
-                ctx.FillRectangle(Gradient, bar);
+                ctx.FillRectangle(grad, bar);
         }
         if (led ? bottom - yRms > 0.01 : rmsPct > 0)
             using (ctx.PushClip(new Rect(lx, yRms, lw, bottom - yRms)))
-                ctx.FillRectangle(Gradient, bar);
+                ctx.FillRectangle(grad, bar);
     }
 }

@@ -63,6 +63,7 @@ public partial class MainWindow
         if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Granular != null)
             return !granulars.TryGetValue(trackId, out var grains) || grains.Loading ? TimelineView.InstrumentState.Loading
                 : grains.Missing ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Ready;
+        if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Gm != null) return GmState;
         var plugin = tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Instrument;
         if (plugin == null) return TimelineView.InstrumentState.TestTone;
         return instrumentFailed.Contains(FailKey(trackId, plugin)) ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Loading;
@@ -259,6 +260,7 @@ public partial class MainWindow
             t.Instrument = plugin == null ? null : PluginCatalog.Ref(plugin);
             t.Sampler = null;
             t.Granular = null;
+            t.Gm = null;
             return id;
         }, "instrument-set");
     }
@@ -267,6 +269,7 @@ public partial class MainWindow
     {
         if (track.Track.Sampler != null) OpenSamplerWindow(track.Track.Id);
         else if (track.Track.Granular != null) OpenGranularWindow(track.Track.Id);
+        else if (track.Track.Gm != null) OpenGmWindow(track.Track.Id);
         else if (instruments.TryGetValue(track.Track.Id, out var loaded))
         {
             DressPluginWindow(loaded.Bridge, loaded.Plugin.Name);
@@ -284,7 +287,9 @@ public partial class MainWindow
     /// <summary>The piano roll's key through the track's instrument, or the test tone without one: always through its chain.</summary>
     void Audition(string? trackId, int pitch, int velocity)
     {
-        if (trackId != null && samplers.TryGetValue(trackId, out var sampler))
+        if (trackId != null && gms.TryGetValue(trackId, out var gm))
+            gm.Audition(pitch, velocity, (int)(AuditionSec * PlaybackEngine.SampleRate));
+        else if (trackId != null && samplers.TryGetValue(trackId, out var sampler))
             sampler.Player.Audition(pitch, velocity, (int)(AuditionSec * PlaybackEngine.SampleRate));
         else if (trackId != null && instruments.TryGetValue(trackId, out var loaded))
             loaded.Player.Audition(pitch, velocity, (int)(AuditionSec * PlaybackEngine.SampleRate));
@@ -338,7 +343,7 @@ public partial class MainWindow
         var current = track.Track.Instrument;
         MenuItem Pick(VstPluginInfo? p, string label, string? tip = null)
         {
-            var item = MenuCheck(label, () => p == null ? track.Track.Instrument == null && track.Track.Sampler == null && track.Track.Granular == null : SamePlugin(track.Track.Instrument, p), () => _ = SetInstrument(track, p), refresh, tip: tip);
+            var item = MenuCheck(label, () => p == null ? track.Track.Instrument == null && track.Track.Sampler == null && track.Track.Granular == null && track.Track.Gm == null : SamePlugin(track.Track.Instrument, p), () => _ = SetInstrument(track, p), refresh, tip: tip);
             item.IsEnabled = enabled;
             if (p != null) PluginThumbView.AddTip(item, p);
             return item;
@@ -361,6 +366,7 @@ public partial class MainWindow
             Pick(null, Loc.T("vst.testTone"), Loc.T("vst.testTone.tip")),
             Native(),
             Grains(),
+            GmMenu(() => tracks.FirstOrDefault(x => x.Track.Id == track.Track.Id)?.Track.Gm, (n, drums) => _ = SetGm(track, n, drums), enabled, refresh),
             new Separator(),
             MenuGroup(Loc.T("vst.group.vst")),
         };
@@ -371,9 +377,9 @@ public partial class MainWindow
         items.Add(MenuAction(Loc.T(found.Count == 0 ? "vst.scan.first" : "vst.scan"), ScanPlugins,
             enabled: !PluginScan.Running, tip: Loc.T("vst.scan.tip")));
         items.Add(MenuAction(Loc.T("vst.manage.menu"), () => { Settings.Show("plugins"); return Task.CompletedTask; }, tip: Loc.T("vst.manage.tip")));
-        if (current != null || track.Track.Sampler != null || track.Track.Granular != null)
+        if (current != null || track.Track.Sampler != null || track.Track.Granular != null || track.Track.Gm != null)
             items.Add(MenuAction(Loc.T("vst.open", InstrumentName(track.Track)), () => { OpenInstrumentWindow(track); return Task.CompletedTask; },
-                enabled: track.Track.Sampler != null || track.Track.Granular != null || instruments.ContainsKey(track.Track.Id), icon: ""));
+                enabled: track.Track.Sampler != null || track.Track.Granular != null || track.Track.Gm != null || instruments.ContainsKey(track.Track.Id), icon: ""));
         return items;
     }
 
@@ -462,6 +468,11 @@ public partial class MainWindow
             MenuGroup(Loc.T("vst.group.native")),
             Native(Loc.T("sampler.name"), Loc.T("sampler.tip"), t => t.Sampler = new SamplerSettings()),
             Native(Loc.T("granular.name"), Loc.T("granular.tip"), t => t.Granular = new GranularSettings()),
+            GmMenu(() => null, (n, drums) =>
+            {
+                var gm = new GmSettings { Program = n, Drums = drums };
+                _ = NewInstrumentTrack(gm.Name, t => t.Gm = gm);
+            }, enabled, null),
             new Separator(),
             MenuGroup(Loc.T("vst.group.vst")),
         };
@@ -567,8 +578,15 @@ public partial class MainWindow
                 TimelineView.InstrumentState.Loading => Loc.T("sampler.reading"),
                 _ => GranularMedia.Of(store.Project, t.Track)?.Name ?? Loc.T("sampler.none"),
             };
+        if (t.Track.Gm != null)
+            midiNowInfo.Text = state switch
+            {
+                TimelineView.InstrumentState.Failed => Loc.T("gm.missing"),
+                TimelineView.InstrumentState.Loading => Loc.T("gm.loading"),
+                _ => Loc.T("gm.ready"),
+            };
         midiPick.IsEnabled = store is { ReadOnly: false };
-        midiOpen.IsVisible = plugin != null || t.Track.Sampler != null || t.Track.Granular != null;
+        midiOpen.IsVisible = plugin != null || t.Track.Sampler != null || t.Track.Granular != null || t.Track.Gm != null;
         midiOpen.IsEnabled = state == TimelineView.InstrumentState.Ready;
     }
 

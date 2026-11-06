@@ -391,6 +391,7 @@
           "steps": [
             "Arrastrá el archivo al timeline, o tocá **Nueva pista → Importar audio…**.",
             "Para tus carpetas de sonidos, abrí **Biblioteca → Samples** y sumá una carpeta.",
+            "Arriba de la lista, **Todo**, **Audio**, **Video**, **MIDI** y **Favoritos** muestran solo ese tipo, sin carpetas, y se combinan con la búsqueda. Un **.mid** no se escucha: al traerlo va a la pista MIDI elegida o a pistas MIDI nuevas, como **Importar .mid…**.",
             "Escuchá con el botón de reproducir o con **Auto** prendido (suena al elegirlo), y arrastrá el sample a una pista, desde la lista o desde el reproductor: el nombre, o la onda sacándola hacia arriba o abajo.",
             "Para traer varios, marcalos con **Ctrl** o **Shift** y arrastralos juntos: caen uno abajo del otro, y si no hay pistas libres se crean nuevas.",
             "Elegí **Copiar al proyecto** o **Vincular**. Con **No mostrar más** queda esa opción; se cambia en **Configuración → Guardado y exportación**."
@@ -498,7 +499,8 @@
             "Tocá su insignia para elegir color e ícono. En el inspector, el cuadrito al lado del nombre cambia el color; en una carpeta, el botón de al lado se lo pasa a sus pistas.",
             "Arrastrá una pista por su manija para cambiarla de lugar.",
             "**Nueva pista → Carpeta** agrupa pistas: arrastralas adentro por la manija.",
-            "Clic derecho en la pista → **Duplicar pista** ({key:duplicateTrack}) la copia debajo con todo; **Duplicar sin contenido**, solo con su sonido."
+            "Clic derecho en la pista → **Duplicar pista** ({key:duplicateTrack}) la copia debajo con todo; **Duplicar sin contenido**, solo con su sonido.",
+            "En el mixer, clic derecho en el espacio vacío → **Nuevo separador** lo pone donde hiciste clic; **Separador** en la cabecera, después del canal elegido. Doble clic en un separador elige su color; en su nombre, lo renombra."
           ],
           "notes": [
             "Una carpeta también es un canal: sus efectos, paneo y fader van sobre la suma de sus pistas, y su **S** deja sonar solo sus pistas.",
@@ -574,7 +576,7 @@
             "Mirá el medidor del master: la luz roja de arriba marca que se pasó de nivel."
           ],
           "notes": [
-            "{wheel:wheelZoom} sobre el mixer cambia el ancho de los canales.",
+            "{wheel:wheelZoom} sobre el mixer cambia el ancho de los canales, también sobre una perilla o un fader: con esa tecla apretada no cambia ningún valor.",
             "**Efectos** y **Envíos**, arriba, muestran u ocultan esa sección en todas las tiras. Arrastrá la línea de abajo de una lista para agrandarla o achicarla; doble clic la ajusta a la lista más larga. Clic derecho en el botón: el mismo ajuste o el alto por defecto.",
             "**MONO**, en el master, sirve para comprobar la mezcla en mono.",
             "Clic derecho en una tira: las mismas acciones que en el encabezado de la pista."
@@ -646,6 +648,31 @@
             "El medidor de reducción de la tira muestra cuánto baja."
           ],
           "see": ["sidechain", "add-fx", "comp-presets"]
+        },
+        {
+          "id": "tonal",
+          "icon": "E9D2",
+          "title": "Balance tonal",
+          "keywords": "balance tonal espectro mastering referencia graves agudos punch mid side tonal balance",
+          "intro": "El **Balance tonal** compara el balance de frecuencias de la mezcla con un objetivo. No cambia el sonido.",
+          "steps": [
+            "En el master o en cualquier pista o bus, tocá **+ Efecto** → **Análisis** → **Balance tonal**. En el master va siempre al final, después de **Salida**: lee lo que sale, con el limitador.",
+            "Elegí el **objetivo**: un género, o **Referencia…** para armarlo con una o más canciones tuyas.",
+            "Reproducí la mezcla: cada banda (**Graves**, **Medios graves**, **Medios agudos**, **Agudos**) muestra el rango del objetivo y dónde está la mezcla; si se sale, la marca cambia de color.",
+            "**Punch** es la pegada de los graves (cresta bajo 120 Hz) contra el rango del objetivo."
+          ],
+          "notes": [
+            "La vista completa suma el espectro de la mezcla sobre la banda del objetivo.",
+            "**Estéreo / Mid / Side**: los dos lados, solo el centro o solo los costados.",
+            "**Respuesta** es cuánto tiempo promedia (1 a 10 s). El botón de recargar empieza la lectura de nuevo.",
+            "Compara la forma, no el volumen: subir o bajar la mezcla no cambia la lectura.",
+            "La referencia queda guardada en el proyecto: los archivos ya no hacen falta.",
+            "Analiza mientras su panel está a la vista."
+          ],
+          "see": [
+            "add-fx",
+            "pump"
+          ]
         },
         {
           "id": "sidechain",
@@ -783,7 +810,7 @@
           "icon": "E8AB",
           "title": "Comparar dos mezclas",
           "keywords": "a b ab antes despues versiones de mezcla",
-          "intro": "**A | B**, en la barra del mixer, guarda dos mezclas del mismo tema.",
+          "intro": "**A | B**, en la barra del mixer, guarda dos mezclas del mismo tema. Viene oculto: se muestra en **Configuración → Apariencia → Mixer**.",
           "steps": [
             "Hacé una mezcla en **A**.",
             "Tocá **B**: arranca como copia de A.",
@@ -878,7 +905,7 @@
           "id": "export-audio",
           "icon": "E8D6",
           "title": "Exportar audio",
-          "keywords": "wav mp3 guardar bajar mezcla final archivo render bounce",
+          "keywords": "wav mp3 flac aiff ogg guardar bajar mezcla final archivo render bounce avanzado bits frecuencia dither mono cola normalizar",
           "intro": "Saca la mezcla a un archivo.",
           "steps": [
             "En un proyecto **Solo audio**, tocá **Exportar audio**, arriba a la derecha.",
@@ -886,7 +913,9 @@
             "Tocá exportar. Al terminar, un aviso te deja abrir el archivo en el Explorador."
           ],
           "notes": [
-            "Los archivos quedan en la carpeta **exports** del proyecto. MP3 necesita FFmpeg."
+            "Los archivos quedan en la carpeta **exports** del proyecto. MP3 necesita FFmpeg.",
+            "**Avanzado**, abajo de Calidad, suma FLAC, AIFF y OGG, la resolución (16, 24 o 32 bit float) con dither, el bitrate o VBR, la frecuencia (44,1, 48 o 96 kHz), mono, una cola fija en segundos, normalizar al pico (dBTP) y qué pistas, carpetas o buses llevan stem. Plegado, dice lo que cambiaste; sin tocarlo, exporta igual que siempre.",
+            "Lo que elegís en Avanzado queda guardado en el proyecto para la próxima exportación."
           ],
           "see": ["export-range", "export-stems", "no-ffmpeg"]
         },
@@ -1042,7 +1071,7 @@
           "keywords": "piano roll notas bateria base componer dibujar",
           "intro": "Una pista MIDI guarda notas y las toca con un instrumento.",
           "steps": [
-            "**Nueva pista → Pista MIDI**. O **Pista MIDI con instrumento** y elegí uno: la pista ya suena con él.",
+            "**Nueva pista → Pista MIDI**. O **Pista MIDI con instrumento** y elegí uno: la pista ya suena con él. En el mixer, lo mismo con clic derecho en el espacio vacío.",
             "Doble clic en un lugar vacío de la pista: crea un clip y abre el **Piano roll**.",
             "Clic en la grilla escribe una nota. Arrastrala para moverla; su borde derecho la alarga.",
             "Clic derecho borra.",
@@ -1081,14 +1110,35 @@
           "icon": "E7F5",
           "title": "Elegir un instrumento",
           "keywords": "plugin sonido piano sintetizador kontakt sampler sin sonido tono de prueba",
-          "intro": "Sin instrumento, la pista suena con un tono de prueba. Elegí el **Sampler**, el **Granular** o un plugin.",
+          "intro": "Sin instrumento, la pista suena con un tono de prueba. Elegí el **Sampler**, el **Granular**, un instrumento **General MIDI** o un plugin.",
           "steps": [
             "Elegí la pista MIDI.",
             "En el canal, abrí el desplegable **Instrumento**, o clic derecho en la pista → **Instrumento**.",
             "Elegí uno de la lista. La primera vez se buscan los plugins instalados.",
             "**Abrir la ventana** muestra el plugin."
           ],
-          "see": ["sampler", "granular", "plugins", "plugin-fail"]
+          "see": ["general-midi", "sampler", "granular", "plugins", "plugin-fail"]
+        },
+        {
+          "id": "general-midi",
+          "icon": "E8D6",
+          "title": "Instrumentos General MIDI",
+          "keywords": "general midi gm soundfont sf2 piano bateria bajo cuerdas programa instrumento nativo importar mid cancion pistas canal 10 generaluser envolvente ataque liberacion filtro brillo resonancia sensibilidad velocidad transponer afinacion mono glide",
+          "intro": "Los 128 instrumentos General MIDI y los kits de batería, sin instalar nada.",
+          "steps": [
+            "En **Instrumento**, abrí **General MIDI**: cada familia (Pianos, Guitarras, Bajos…) tiene sus 8 instrumentos, y **Batería** tiene los kits.",
+            "**Abrir la ventana** (en el inspector o el piano roll) muestra la del instrumento: las familias y los kits a la izquierda, sus instrumentos a la derecha (un clic lo elige) y un teclado para probarlo.",
+            "Abajo, las perillas cambian el sonido sobre el del banco: **Envolvente** (Ataque, Caída, Sostén, Liberación), **Filtro** (Brillo, Resonancia, Brillo vel.) y **Tocar** (Sensibilidad, Transponer, Afinación y, en **Mono**, Glide). En el centro suena como el banco; doble clic vuelve ahí y **Restablecer** las vuelve todas.",
+            "Al importar un **.mid** a pistas nuevas, cada pista toma el instrumento que pide el archivo; la del canal 10 toma la batería, con el nombre de cada tecla en el piano roll.",
+            "Si el archivo tiene más de una pista, **Importar MIDI** pregunta cuáles traer. **Todas** y **Ninguna** marcan o desmarcan la lista.",
+            "Cada pista toma el nombre que trae en el archivo; sin nombre, el de su instrumento."
+          ],
+          "notes": [
+            "El sonido es el banco **GeneralUser GS**, que viene con la app.",
+            "Al cambiar de instrumento, las perillas quedan como estaban. En la batería, Transponer no se aplica.",
+            "Al importar sobre una pista MIDI elegida, las pistas marcadas van a un solo clip. Si esa pista suena con el tono de prueba, toma el instrumento de la primera."
+          ],
+          "see": ["instrument", "midi-track"]
         },
         {
           "id": "sampler",
@@ -1165,7 +1215,7 @@
             "Elegí las notas (sin elegir ninguna, la herramienta toma todo el clip) y abrí **Herramientas** en la cabecera del piano roll.",
             "Una herramienta con ajustes abre un panel al costado: mové los valores y escuchá el resultado mientras suena.",
             "**Enter** aplica y **Esc** cancela. Un clic en las notas también aplica. Cada aplicación es un paso de deshacer.",
-            "**Escribir**, **Pintar** y **Cortar** cambian qué hace el clic en la grilla. Con Ctrl+Alt y arrastrando elegís con un lazo.",
+            "**Escribir**, **Pintar** y **Cortar** cambian qué hace el clic en la grilla. Con Ctrl+Alt y arrastrando elegís con un lazo. **Largo**, al lado, elige cuánto duran las notas nuevas: lo que dura la última que tocaste, el paso del imán o un valor fijo.",
             "Doble clic en una nota abre su tarjeta: velocidad, paneo, release, modulación, color, slide y portamento.",
             "**Expresión**, en la barra de abajo, muestra u oculta la franja de abajo, y su desplegable elige qué muestra: velocidad, mod X, mod Y, paneo o release. **Vista** muestra otras pistas en gris y pone una forma de onda de fondo. Clic derecho en una tecla la nombra.",
             "En **Escala**, **Teclado MIDI a la escala** hace que lo que tocás caiga en la escala. **Arpegiador**, en Herramientas, arpegia el teclado y graba lo que suena."
@@ -1223,6 +1273,7 @@
           "intro": "Clips enlazados: editar uno cambia todos.",
           "steps": [
             "Tocá **Convertir en patrón** arriba del piano roll, o clic derecho en un clip MIDI → **Convertir en patrón**.",
+            "Con varios clips MIDI seleccionados, clic derecho en uno: **Convertir en un patrón** arma uno solo, del largo de todos juntos (cada pista, un instrumento); **Convertir en patrones separados**, uno por clip.",
             "Duplicá o copiá el clip: la copia queda enlazada. Sus clips llevan el ícono de cadena, y al señalar uno se marcan todos.",
             "Estirá un clip por el borde derecho para repetir la vuelta.",
             "**Varios instrumentos**: en el piano roll, **Patrón** → **Sumar instrumento**. Cada uno va en su pista, con sus notas, y una línea une los clips que suenan juntos.",
@@ -1396,14 +1447,14 @@
           "id": "look",
           "icon": "E771",
           "title": "Cambiar el color y el diseño",
-          "keywords": "tema acento apariencia vertical paneles ocultar pantalla completa perillas knobs estilo neumorfico faders medidores ondas color pista clips teñido franja fuente letra números digital segmentos lcd orbitron restablecer fábrica tamaño escala zoom",
+          "keywords": "tema acento apariencia vertical paneles neumorfismo relieve sombra ocultar pantalla completa perillas knobs estilo neumorfico faders medidores ondas color pista clips teñido franja fuente letra números digital segmentos lcd orbitron tron legacy tema completo colores gradiente degradé custom sorprendeme restablecer fábrica tamaño escala zoom",
           "intro": "Casi todo está en la barra de título.",
           "steps": [
-            "El selector de tema elige el color de acento y el fondo.",
+            "El selector de tema elige el color de acento y el fondo. **Tron Legacy**, en Temas completos, cambia todo de una vez: fondo, acento, paneles, perillas, faders, medidores, ondas y números; después se puede cambiar cada parte.",
             "El botón de diseño {icon:E80A} cambia entre **Clásico** y **Vertical**.",
             "Los dos botones de panel ocultan los costados.",
             "{key:fullScreen} pasa a pantalla completa.",
-            "En **Configuración → Apariencia** se elige el estilo de las perillas, los faders, los medidores, las ondas y cómo se ve el color de cada pista en el timeline (clips tenues, llenos, solo la onda o con barra de título; franja o tinte en el encabezado, carril teñido y la selección en su color) y en el inspector (línea y tinte, solo línea, lleno o sin color; franja al costado, secciones teñidas e íconos en su color), la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica."
+            "En **Configuración → Apariencia** se elige el estilo de los paneles de la ventana (planos, en relieve o en relieve con degradé), de las perillas, los faders, los medidores, las ondas y cómo se ve el color de cada pista en el timeline (clips tenues, llenos, solo la onda o con barra de título; franja o tinte en el encabezado, carril teñido y la selección en su color) y en el inspector (línea y tinte, solo línea, lleno o sin color; franja al costado, secciones teñidas e íconos en su color), la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) los **colores de los medidores** (**Por defecto**, o **Custom**: elegís Bajo, Caliente y Clip, o tocás **Sorprendeme** para sortear tres que combinan; valen en todos los medidores y estilos y los umbrales no cambian) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica."
           ],
           "settings": "view"
         },

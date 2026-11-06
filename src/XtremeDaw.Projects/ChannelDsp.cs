@@ -106,6 +106,7 @@ public static class ChannelDsp
             Instrument = t.Instrument is { } i ? Instance(i) : null,
             Sampler = sampler,
             Granular = granular,
+            Gm = t.Instrument == null && t.Sampler == null && t.Granular == null ? t.Gm?.Rig() : null,
             Tempo = p.Settings.Bpm,
             Volume = ch.Volume,
             Pan = ch.Pan,
@@ -216,6 +217,8 @@ public static class ChannelDsp
                 InsertSlot.VstKind => spec with { Vst = Vst(s.Vst!, live == null ? null : live(s), live == null, bypass), Bpm = bpm },
                 InsertSlot.EqKind => spec with { EqOn = s.Eq!.On && !bypass, EqBands = EqBands(s.Eq) },
                 TrackInserts.Pump => spec with { Pump = FxDefs.ToPump(s), Bpm = bpm, StageOn = s.On && !bypass },
+                // an analyzer changes nothing, but the FX bypass and the master's OFF stop it like any slot (#210)
+                TrackInserts.Tonal => spec with { StageOn = s.On && !bypass },
                 _ when TrackInserts.IsMod(s.Type) => spec with { Mod = FxDefs.ToMod(s), StageOn = s.On && !bypass },
                 _ when TrackInserts.IsModel(s.Type) => spec with { Model = FxDefs.ToCompModel(s), StageOn = s.On && !bypass },
                 _ => spec with { Stage = FxDefs.ToMaster(s), StageOn = s.On && !bypass },

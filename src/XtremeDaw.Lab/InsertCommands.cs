@@ -146,7 +146,8 @@ static class InsertCommands
         "vca-bus" or "buscomp" => TrackInserts.BusComp,
         "vca" => TrackInserts.Vca,
         "varimu" or "vari-mu" => TrackInserts.VariMu,
-        _ => throw new ArgumentException($"No conozco el efecto «{name}»: vida, comp, eq, puerta, reverb, delay, limpieza, multibanda, color, cinta, ancho, softclip, limitador, chorus, flanger, phaser, tremolo, bombeo, fet, optico, vca-bus, vca o varimu."),
+        "balance" or "tonal" => TrackInserts.Tonal,
+        _ => throw new ArgumentException($"No conozco el efecto «{name}»: vida, comp, eq, puerta, reverb, delay, limpieza, multibanda, color, cinta, ancho, softclip, limitador, chorus, flanger, phaser, tremolo, bombeo, fet, optico, vca-bus, vca, varimu o balance."),
     };
 
     /// <summary>The kind to add to a chain: every native effect goes in any of them.</summary>
@@ -174,7 +175,7 @@ static class InsertCommands
             InsertSlot.ReverbKind => $"{on} Reverb {ReverbPreset(s.Reverb!)}{s.Reverb!.Decay:0.0} s",
             InsertSlot.GateKind => $"{on} Puerta {(s.Gate!.Mode switch { "soft" => "suave", "hard" => "firme", _ => "normal" })} {s.Gate.Threshold:0.#} dB",
             InsertSlot.DelayKind => $"{on} Delay {(s.Delay!.Sync ? s.Delay.Division : $"{s.Delay.TimeMs:0} ms")} · repite {s.Delay.Feedback * 100:0}%",
-            _ when TrackInserts.IsStage(s.Type) || TrackInserts.IsMod(s.Type) || TrackInserts.IsModel(s.Type) => $"{on} {s.Type} " + string.Join(" · ", FxDefs.Params(s.Type).Select(p => $"{p.Id} {p.Get(s):0.##}")),
+            _ when TrackInserts.IsStage(s.Type) || TrackInserts.IsMod(s.Type) || TrackInserts.IsModel(s.Type) || TrackInserts.IsMeter(s.Type) => $"{on} {s.Type} " + string.Join(" · ", FxDefs.Params(s.Type).Select(p => $"{p.Id} {p.Get(s):0.##}")),
             InsertSlot.VstKind when s.Known => $"{on} VST3 {s.Vst!.Plugin.Name}{(s.Vst.Plugin.Vendor.Length > 0 ? $" · {s.Vst.Plugin.Vendor}" : "")}{(s.Vst.Plugin.State != null ? " (con su ajuste guardado)" : "")}",
             _ => $"--- {s.Type} (desconocido: se guarda tal cual y no suena)",
         } + (s.Sidechain != null ? $" · sidechain {s.Sidechain}" : "") + $"  [{s.Id}]";

@@ -22,7 +22,7 @@ static class SampleChecks
         {
             var files = SampleLibrary.Walk(Path.GetFullPath(target)).ToList();
             var hits = SampleLibrary.Search(files, a.Get("buscar") ?? "");
-            foreach (var f in hits) Console.WriteLine($"{(f.IsVideo ? "video" : "audio")}  {f.Size,12}  {Path.GetRelativePath(target, f.Path)}");
+            foreach (var f in hits) Console.WriteLine($"{(f.IsMidi ? "midi " : f.IsVideo ? "video" : "audio")}  {f.Size,12}  {Path.GetRelativePath(target, f.Path)}");
             Console.WriteLine($"{hits.Count} de {files.Count} archivos");
             return 0;
         }
@@ -70,9 +70,23 @@ static class SampleChecks
             Tone(kick2, 0.25);
             File.WriteAllText(Path.Combine(root, "léeme.txt"), "no es audio");
             File.WriteAllText(Path.Combine(root, "roto.wav"), "tampoco");
+            string groove = Path.Combine(root, "Groove.mid");
+            // one bar at 60 BPM (4 s): a low note in its first half, a higher one in the second
+            MidiFiles.Write(groove, [("Bajo", [new MidiNote { Pitch = 40, Beat = 0, Beats = 2 }, new MidiNote { Pitch = 52, Beat = 2, Beats = 2 }])], 60);
+            File.WriteAllText(Path.Combine(root, "roto.mid"), "no es MIDI");
 
             var files = SampleLibrary.Walk(root).ToList();
-            Ok(files.Count == 3, "solo toma archivos de audio o video");
+            Ok(files.Count == 5 && files.Count(f => f.IsMidi) == 2, "toma archivos de audio, video y MIDI, nada más");
+            var midi = files.First(f => f.Path == groove);
+            SampleLibrary.AnalyzeOne(midi);
+            Ok(midi is { Broken: false, DurationSec: > 3.9 and < 4.1, Peaks: { Length: SampleLibrary.PeakBins } w }
+                && SampleLibrary.MidiCell(w, 0, 1) && !SampleLibrary.MidiCell(w, 0, 13)
+                && SampleLibrary.MidiCell(w, SampleLibrary.MidiCols - 1, 13) && !SampleLibrary.MidiCell(w, SampleLibrary.MidiCols - 1, 1),
+                "un MIDI da su largo a su tempo y sus notas en tiempo y altura, no una onda");
+            var badMidi = files.First(f => f.Name == "roto.mid");
+            SampleLibrary.AnalyzeOne(badMidi);
+            Ok(badMidi.Broken, "un MIDI roto queda marcado");
+            files = [.. files.Where(f => !f.IsMidi)];
             Ok(SampleLibrary.Search(files, "seco kick BATERIAS").Count == 2, "busca varias palabras, en cualquier orden, sin acentos ni mayúsculas");
             Ok(SampleLibrary.Search(files, "kick 2").Single().Path == kick2, "los números también se buscan");
             Ok(SampleLibrary.Search(files, "snare").Count == 0, "lo que no está no aparece");
@@ -95,7 +109,7 @@ static class SampleChecks
                 lib.Open();
                 lib.AddFolder(root);
                 for (int i = 0; i < ScanTries && (lib.Scanning || lib.Files.Count == 0); i++) Thread.Sleep(10);
-                Ok(lib.Files.Count == 3, "agregar una carpeta la lee");
+                Ok(lib.Files.Count == 5, "agregar una carpeta la lee");
                 var first = lib.Files.First(f => f.Path == kick);
                 SampleLibrary.AnalyzeOne(first);
                 lib.ToggleFavorite(first);
@@ -103,8 +117,8 @@ static class SampleChecks
                 lib.Scan();
                 File.Delete(kick2);
                 lib.Scan();
-                for (int i = 0; i < ScanTries && (lib.Scanning || lib.Files.Count != 2); i++) Thread.Sleep(10);
-                Ok(lib.Files.Count == 2, "volver a leer saca lo que se borró");
+                for (int i = 0; i < ScanTries && (lib.Scanning || lib.Files.Count != 4); i++) Thread.Sleep(10);
+                Ok(lib.Files.Count == 4, "volver a leer saca lo que se borró");
             }
             using (var lib = new SampleLibrary())
             {
@@ -119,7 +133,7 @@ static class SampleChecks
             {
                 lib.Open();
                 for (int i = 0; i < ScanTries && lib.Scanning; i++) Thread.Sleep(10);
-                Ok(lib.Files.Count == 2, "una carpeta que no está conserva sus archivos");
+                Ok(lib.Files.Count == 4, "una carpeta que no está conserva sus archivos");
             }
             Directory.Move(root + "-fuera", root);
 

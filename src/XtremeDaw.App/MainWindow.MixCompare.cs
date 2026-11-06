@@ -38,7 +38,10 @@ public partial class MainWindow
             });
             seg.Children.Add(b);
         }
-        var box = new Border { Classes = { "seg" }, Child = seg, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
+        // hidden by default (#211): Configuración → Apariencia shows it
+        var box = new Border { Classes = { "seg" }, Child = seg, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0),
+            IsVisible = MixerOptions.ShowAb };
+        MixerOptions.Changed += () => box.IsVisible = MixerOptions.ShowAb;
         box.ContextRequested += (_, e) =>
         {
             e.Handled = true;

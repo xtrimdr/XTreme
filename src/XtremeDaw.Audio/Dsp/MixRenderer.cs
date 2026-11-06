@@ -43,6 +43,8 @@ public sealed class MixTrackSpec
     public SamplerRig? Sampler { get; init; }
     /// <summary>The native granular that plays <see cref="Notes"/> instead of the test tone; null = none.</summary>
     public GranularRig? Granular { get; init; }
+    /// <summary>The native General MIDI instrument that plays <see cref="Notes"/> instead of the test tone; null = none.</summary>
+    public GmRig? Gm { get; init; }
     /// <summary>The project's tempo, for the instrument's transport.</summary>
     public double Tempo { get; init; } = 120;
     /// <summary>True when there is something to play: clips or notes.</summary>
@@ -859,13 +861,15 @@ public sealed class InsertRack(int sampleRate)
     }
 
     /// <summary>Runs the slots over the block in place (and the swap fade, if the list changed). Returns their gain reduction (dB),
-    /// unless <paramref name="meters"/> is false: then each slot keeps it for whoever reads it.</summary>
-    public double Process(Span<float> bl, Span<float> br, bool meters = true)
+    /// unless <paramref name="meters"/> is false: then each slot keeps it for whoever reads it. With
+    /// <paramref name="skipAnalyzers"/> the analyzers (<see cref="TonalInsert"/>) are left for <see cref="Analyze"/>.</summary>
+    public double Process(Span<float> bl, Span<float> br, bool meters = true, bool skipAnalyzers = false)
     {
         var cur = inserts;
         double reduction = 0;
         for (int k = 0; k < cur.Length; k++)
         {
+            if (skipAnalyzers && cur[k] is TonalInsert) continue;
             if (cur[k] is Vst.VstInsert vst) vst.Frame = Frame;
             else if (cur[k] is FxShell { Inner: PumpInsert pump }) pump.Frame = Frame;
             if (Sidechains.Of(cur[k]) is { } keyed) keyed.Key.Pos = KeyOffset;
@@ -876,6 +880,14 @@ public sealed class InsertRack(int sampleRate)
         if (fadeOut > 0) FadeOutAndSwap(bl, br);
         else if (fadeIn > 0) FadeIn(bl, br);
         return reduction;
+    }
+
+    /// <summary>Only the analyzers (<see cref="TonalInsert"/>) over the block, which they never change: the master runs them
+    /// after Salida (#210), so they read what goes out.</summary>
+    public void Analyze(Span<float> bl, Span<float> br)
+    {
+        foreach (var i in inserts)
+            if (i is TonalInsert) i.Process(bl, br);
     }
 
     /// <summary>The old slots fade to silence; once there, the new ones take over and fade in from the next block.</summary>
@@ -966,17 +978,24 @@ public sealed class MixGraphBus
 
     /// <summary>
     /// The master's chain over the mix in place: its slots and <see cref="MasterChain"/> (unless <paramref name="master"/> is false),
-    /// then, with <paramref name="limit"/>, Empuje, clip and limiter.
+    /// then, with <paramref name="limit"/>, Empuje, clip and limiter; last, its analyzers, over what goes out.
     /// </summary>
     public void Process(Span<float> masterL, Span<float> masterR, bool limit = true, bool master = true)
     {
         if (master)
         {
             // their meters are read by the Mastering view, each module its own
-            if (Slots.Busy) Slots.Process(masterL, masterR, meters: false);
+            // the analyzers read the master's output, after Salida (#210): Analyze below
+            if (Slots.Busy) Slots.Process(masterL, masterR, meters: false, skipAnalyzers: true);
             Master.Process(masterL, masterR);
         }
-        if (!limit) return;
+        if (limit) Output(masterL, masterR);
+        if (master) Slots.Analyze(masterL, masterR);
+    }
+
+    /// <summary>Salida: Empuje (or the Destino's gain), clip and limiter.</summary>
+    void Output(Span<float> masterL, Span<float> masterR)
+    {
         float d = drive, t = driveTarget;
         if (d != 1 || t != 1)
         {
@@ -1075,7 +1094,7 @@ public static class MixRenderer
                 if (w.End > maxEnd) maxEnd = w.End;
             }
             // an instrument's own release and effects ring past the last note: two seconds of room
-            if (t.Notes != null) maxEnd = Math.Max(maxEnd, t.Notes.End / (double)sampleRate + (t.Instrument != null ? InstrumentTailSec : t.Sampler?.TailSec(t.Notes, sampleRate) ?? t.Granular?.TailSec ?? 0));
+            if (t.Notes != null) maxEnd = Math.Max(maxEnd, t.Notes.End / (double)sampleRate + (t.Instrument != null ? InstrumentTailSec : t.Sampler?.TailSec(t.Notes, sampleRate) ?? t.Granular?.TailSec ?? t.Gm?.TailSec ?? 0));
         }
         return maxEnd;
     }
@@ -1094,6 +1113,8 @@ public static class MixRenderer
     /// chain and the limiter, so the stems add up to the mix before the limiter and none is squashed by it. A bus that
     /// compresses works on that track alone there, not on the sum. <paramref name="limit"/> = false leaves the limiter out
     /// of the full mix too: <see cref="MixMaster"/> runs it afterwards with the loudness gain in front.
+    /// With <paramref name="onlyNode"/> it renders what comes out of that folder or bus (a bus stem, native only): the
+    /// whole mix runs as it is, but only that node's output reaches the result, without the master chain and the limiter.
     /// </summary>
     public static (float[] Left, float[] Right) Render(
         IReadOnlyList<MixTrackSpec> tracks,
@@ -1104,13 +1125,14 @@ public static class MixRenderer
         CancellationToken ct = default,
         int only = -1,
         bool limit = true,
-        double stopSec = double.PositiveInfinity)
+        double stopSec = double.PositiveInfinity,
+        int onlyNode = -1)
     {
         int frames = Math.Max(1, (int)Math.Ceiling(durationSec * sampleRate));
         var outL = new float[frames];
         var outR = new float[frames];
         RenderTo(tracks, busSpec, durationSec, (at, l, r) => { l.CopyTo(outL.AsSpan(at)); r.CopyTo(outR.AsSpan(at)); },
-            sampleRate, onProgress, ct, only, limit, stopSec: stopSec);
+            sampleRate, onProgress, ct, only, limit, stopSec: stopSec, onlyNode: onlyNode);
         return (outL, outR);
     }
 
@@ -1130,7 +1152,7 @@ public static class MixRenderer
     /// <see cref="Render"/> without keeping the result: every rendered stretch goes to <paramref name="sink"/> in order,
     /// aligned to sample 0. <paramref name="master"/> = false leaves <see cref="MasterChain"/> out; stems never go
     /// through it, like they never go through the limiter. <paramref name="stopSec"/> silences the clips and notes
-    /// there (an <see cref="ExportRange"/>'s B) while the effects ring on.
+    /// there (an <see cref="ExportRange"/>'s B) while the effects ring on. <paramref name="onlyNode"/>: see <see cref="Render"/>.
     /// </summary>
     public static void RenderTo(
         IReadOnlyList<MixTrackSpec> tracks,
@@ -1143,7 +1165,8 @@ public static class MixRenderer
         int only = -1,
         bool limit = true,
         bool master = true,
-        double stopSec = double.PositiveInfinity)
+        double stopSec = double.PositiveInfinity,
+        int onlyNode = -1)
     {
         // the tracks some slot listens to (a sidechain): each one's key, one stretch per buffer set
         var keys = KeysFor(tracks, busSpec);
@@ -1195,8 +1218,9 @@ public static class MixRenderer
         }
         var levels = Enumerable.Range(0, nodeCount).GroupBy(j => level[j]).OrderBy(g => g.Key).Select(g => g.ToArray()).ToArray();
 
-        limit &= only < 0;
-        master &= only < 0;
+        if (onlyNode >= nodeCount) onlyNode = -1;
+        limit &= only < 0 && onlyNode < 0;
+        master &= only < 0 && onlyNode < 0;
         int frames = Math.Max(1, (int)Math.Ceiling(durationSec * sampleRate));
 
         bool anySolo = false;
@@ -1242,6 +1266,12 @@ public static class MixRenderer
             {
                 var player = new Granular(sampleRate) { Sound = grains.Sound, Notes = t.Notes, Curves = grains.Curves };
                 player.Set(grains.Patch);
+                samplers[^1] = player;
+            }
+            else if (t.Gm is { } gm && t.Instrument == null && t.Notes != null)
+            {
+                var player = new GmSynth(sampleRate) { Notes = t.Notes };
+                player.Set(gm.Font, gm.Preset, gm.Tone);
                 samplers[^1] = player;
             }
             if (t.Instrument != null && t.Notes != null)
@@ -1380,7 +1410,9 @@ public static class MixRenderer
                 var b = set.Tracks[k];
                 var (_, _, _, chain, to, sends, delays) = active[k];
                 ReadOnlySpan<float> l = b.L.AsSpan(0, len), r = b.R.AsSpan(0, len);
-                BusDspChain.Add(l, r, 1f, to >= 0 ? set.NodeL[to].AsSpan(0, len) : set.L.AsSpan(0, len), to >= 0 ? set.NodeR[to].AsSpan(0, len) : set.R.AsSpan(0, len));
+                // a bus stem keeps only that node's output: what goes straight to the master stays out
+                if (to >= 0 || onlyNode < 0)
+                    BusDspChain.Add(l, r, 1f, to >= 0 ? set.NodeL[to].AsSpan(0, len) : set.L.AsSpan(0, len), to >= 0 ? set.NodeR[to].AsSpan(0, len) : set.R.AsSpan(0, len));
                 for (int i = 0; i < sends.Length; i++)
                 {
                     var s = sends[i];
@@ -1424,7 +1456,10 @@ public static class MixRenderer
                 {
                     ReadOnlySpan<float> l = set.NodeL[j].AsSpan(0, len), r = set.NodeR[j].AsSpan(0, len);
                     int to = nodeOut[j];
-                    nodes[j].OutDelay.Add(l, r, 1f, to >= 0 ? set.NodeL[to].AsSpan(0, len) : set.L.AsSpan(0, len), to >= 0 ? set.NodeR[to].AsSpan(0, len) : set.R.AsSpan(0, len));
+                    // a bus stem: that node's output is the result, the others' outputs to the master stay out
+                    if (onlyNode >= 0) to = j == onlyNode ? -1 : to;
+                    if (to >= 0 || onlyNode < 0 || j == onlyNode)
+                        nodes[j].OutDelay.Add(l, r, 1f, to >= 0 ? set.NodeL[to].AsSpan(0, len) : set.L.AsSpan(0, len), to >= 0 ? set.NodeR[to].AsSpan(0, len) : set.R.AsSpan(0, len));
                     for (int i = 0; i < nodeSends[j].Length; i++)
                     {
                         var s = nodeSends[j][i];

@@ -246,7 +246,8 @@ public sealed record InsertSpec(string Id, string Kind)
 /// <see cref="DefaultOrder"/>, the order the chain was fixed in before slots existed, so an old project sounds the same.
 /// Every native kind goes in any chain, in a <see cref="FxShell"/>, and the master's stages are kinds too
 /// (<see cref="IsStage"/>). The limiter and a VST3 go without the shell: each has a latency of its own that a dry
-/// signal would comb with, and its own way of turning off (the limiter delays its Dry to match).
+/// signal would comb with, and its own way of turning off (the limiter delays its Dry to match); the tonal balance too,
+/// as it never changes the sound.
 /// </summary>
 public static class TrackInserts
 {
@@ -281,6 +282,15 @@ public static class TrackInserts
 
     public static bool IsModel(string? kind) => kind is Fet or Opto or BusComp or Vca or VariMu;
 
+    /// <summary>
+    /// The tonal balance (<see cref="TonalInsert"/>, #210): an analyzer kept like the stages (an ON and a list of values),
+    /// that never touches the sound. It goes without the shell: nothing to mix, and not even its switch may fade.
+    /// </summary>
+    public const string Tonal = "tonal";
+
+    /// <summary>The kinds that only look at the sound (no Dry, Wet, output or lanes).</summary>
+    public static bool IsMeter(string? kind) => kind is Tonal;
+
     /// <summary>The kinds that can listen to another track (a sidechain, <see cref="IKeyed"/>).</summary>
     /// <summary>Whether the kind draws a compressor's graph (<see cref="ICompGraph"/>).</summary>
     public static bool HasCompGraph(string? kind) => kind == Comp || IsModel(kind);
@@ -299,12 +309,13 @@ public static class TrackInserts
 
     public static bool TakesKey(string? kind) => kind is Comp or Gate or Pump || IsModel(kind);
 
-    public static bool IsKind(string? kind) => kind is Sat or Comp or Eq or Reverb or Delay or Gate or Vst || IsStage(kind) || IsMod(kind) || IsModel(kind);
+    public static bool IsKind(string? kind) => kind is Sat or Comp or Eq or Reverb or Delay or Gate or Vst || IsStage(kind) || IsMod(kind) || IsModel(kind) || IsMeter(kind);
 
     public static ITrackInsert Create(string kind, int sampleRate) => kind switch
     {
         Vst => new VstInsert(sampleRate),
         Limit => new LimitInsert(sampleRate),
+        Tonal => new TonalInsert(sampleRate),
         _ => new FxShell(Native(kind, sampleRate), sampleRate),
     };
 
@@ -373,6 +384,7 @@ public static class TrackInserts
             case VcaCompInsert v: v.Set(spec.Model); break;
             case VariMuInsert m: m.Set(spec.Model); break;
             case PumpInsert p: p.Set(spec.Pump, spec.Bpm); break;
+            case TonalInsert t: t.Set(spec.On); break;
         }
     }
 

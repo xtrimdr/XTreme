@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:XtremeDaw.App"
+             x:Class="XtremeDaw.App.Dialogs.MidiImportDialog"
+             AutomationProperties.Name="{loc:T midi.pick.title}"
+             Background="{StaticResource Scrim}" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+
+  <!-- same frame as TempoDialog: asked when a MIDI file with several tracks comes in -->
+  <Border Width="512" HorizontalAlignment="Center" VerticalAlignment="Center"
+          Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <StackPanel Margin="24,22,24,20" Spacing="14">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <TextBlock Classes="icon" Text="&#xE8D6;" FontSize="20" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+        <TextBlock Classes="dialog-title" Text="{loc:T midi.pick.title}" />
+      </StackPanel>
+      <TextBlock x:Name="Body" Classes="dim" TextWrapping="Wrap" LineHeight="18" />
+      <StackPanel Orientation="Horizontal" Spacing="14">
+        <Button x:Name="AllButton" Classes="link" Content="{loc:T midi.pick.all}" />
+        <Button x:Name="NoneButton" Classes="link" Content="{loc:T midi.pick.none}" />
+      </StackPanel>
+      <Border Background="{StaticResource Raised}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8">
+        <ScrollViewer MaxHeight="340" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel x:Name="Rows" Margin="12,6" Spacing="2" />
+        </ScrollViewer>
+      </Border>
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <Button Grid.Column="1" x:Name="CancelButton" Classes="btn" Margin="8,0,0,0" Content="{loc:T common.cancel}" />
+        <Button Grid.Column="2" x:Name="ImportButton" Classes="btn primary" Margin="8,0,0,0" Padding="16,0" Content="{loc:T midi.pick.import}" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

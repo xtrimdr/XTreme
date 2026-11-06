@@ -91,7 +91,54 @@ public partial class MainWindow
             pianoWriteButtons.Add(b);
             writes.Children.Add(b);
         }
-        return new Border { Classes = { "seg" }, Child = writes, VerticalAlignment = VerticalAlignment.Center };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(new Border { Classes = { "seg" }, Child = writes, VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(BuildNoteLengthChip());
+        return row;
+    }
+
+    /// <summary>
+    /// The length a new note gets, right beside the write tools (asked by the user, #195): the last note touched (as before),
+    /// the magnet's step or a fixed value, with the magnet's names. Remembered in config.json ("pianoNoteLen").
+    /// </summary>
+    Control BuildNoteLengthChip()
+    {
+        var chip = new Button { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(chip, Loc.T("piano.noteLen.tip"));
+        static string Name(string id) => id switch
+        {
+            "last" => Loc.T("piano.noteLen.last"),
+            "snap" => Loc.T("piano.noteLen.snap"),
+            _ => SnapChoices.Label(id),
+        };
+        void Show() => chip.Content = IconText("", Loc.T("piano.noteLen", Name(pianoRoll.NoteLength)) + "  ▾");
+        void Set(string id)
+        {
+            pianoRoll.NoteLength = id;
+            Show();
+            SaveViewPref("pianoNoteLen", id);
+        }
+        string saved = Subdivisions.Migrate(AppConfig.Get("pianoNoteLen") ?? "last");
+        pianoRoll.NoteLength = saved is "last" or "snap" || Subdivisions.All.Contains(saved) ? saved : "last";
+        Show();
+        chip.Click += (_, _) =>
+        {
+            var refresh = new List<Action>();
+            var list = new List<object>();
+            foreach (string id in (string[])["last", "snap"])
+                list.Add(MenuCheck(Name(id), () => pianoRoll.NoteLength == id, () => Set(id), refresh));
+            list.Add(new Separator());
+            foreach (string id in Subdivisions.All)
+            {
+                if (SnapChoices.BreakBefore(id)) list.Add(new Separator());
+                list.Add(MenuCheck(Name(id), () => pianoRoll.NoteLength == id, () => Set(id), refresh));
+            }
+            var menu = Popup(list, 180);
+            // the bar sits at the very bottom: its menus open upward
+            menu.Placement = PlacementMode.TopEdgeAlignedLeft;
+            OpenAnchoredMenu(menu, chip);
+        };
+        return chip;
     }
 
     void SetWriteTool(PianoTool tool)
@@ -689,10 +736,12 @@ public partial class MainWindow
         try
         {
             var data = await Task.Run(() => MidiFiles.Read(path));
+            List<int>? pick = null;
+            if (data.Tracks.Count > 1 && (pick = await MidiAsk.Ask(Path.GetFileName(path), data)) == null) return;
             List<string> clips = [];
             await EditTimeline(p =>
             {
-                clips = MidiFiles.Import(p, data, trackId, atSec);
+                clips = MidiFiles.Import(p, data, trackId, atSec, pick);
                 return clips.Count > 0 ? MidiEditing.Find(p, clips[0]).Track.Id : trackId;
             }, "midi-imported");
             if (clips.Count > 0) OpenInPiano(clips[0]);

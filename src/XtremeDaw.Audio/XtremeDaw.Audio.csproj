@@ -28,6 +28,12 @@
     <None Include="..\..\lib\basic-pitch\*.onnx;..\..\lib\basic-pitch\*.txt" Link="basic-pitch\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The General MIDI bank (GeneralUser GS, free to use and redistribute) for the native GM instrument (GmSynth):
+       lib/gm is kept out of git (tools/get-gm.ps1) and goes in the installer. Without it a GM track says it is missing. -->
+  <ItemGroup>
+    <None Include="..\..\lib\gm\*.sf2;..\..\lib\gm\*.txt" Link="gm\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- DirectML's own DLL next to the program: its package doesn't copy it for .NET, and then the one of each Windows runs,
        whatever its version. StemSeparator checks a graphics card against the CPU either way. -->
   <ItemGroup>

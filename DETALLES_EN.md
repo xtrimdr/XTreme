@@ -140,6 +140,8 @@ the [Spanish version](DETALLES.md#xtlab).
 
 `xtlab midi herramienta folder --clip id --tool arpeggiate [--rate 5 …]`: runs any piano roll tool (`MidiTools.All`) with its settings by id. `xtlab midi exportar-mid folder --clip id --a x.mid`: the clip as a type 1 MIDI file, at the project's tempo. `xtlab midi importar-mid folder --de x.mid [--pista n] [--en 0]`: with `--pista`, everything in one clip on that MIDI track; without it, a new track per track of the file (per channel in a type 0). `xtlab midi partitura folder --clip id --a x.pdf`: the clip as a PDF score (grand staff, 4/4, quantized to 1/16, with the key signature of the project's scale when it is natural major or minor).
 
+`xtlab balance file [--objetivo pop|rock|edm|hiphop|acoustic|orchestral] [--referencia a.wav,b.mp3] [--modo estereo|mid|side] [--curva] [--comprobar]`: the file's tonal balance against a target: the four bands (20–120 Hz, 120 Hz–1 kHz, 1–5 kHz, 5–20 kHz) and the low-end punch; `--referencia` builds the target from those files, `--curva` lists the 61 points with their range, `--comprobar` runs only its checks.
+
 ## Stem separation models
 
 The models belong to Meta (Demucs, https://github.com/facebookresearch/demucs). XTreme neither includes nor hosts them: they download from their original source to your PC when you install them. They have their own terms and are not covered by XTreme's license. The app works without them.

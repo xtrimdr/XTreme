@@ -19,6 +19,8 @@ public static class MixMaster
 {
     /// <summary>The longest an effect tail can ring after the last clip; a delay with high feedback would go on forever.</summary>
     public const double MaxTailSec = 8;
+    /// <summary>The longest fixed tail "Avanzado" offers: time to let a long reverb ring, or room before the next song.</summary>
+    public const double MaxFixedTailSec = 30;
     /// <summary>Under this peak level a tail counts as finished: inaudible even when the loudness gain pushes it up.</summary>
     public const double TailFloorDb = -66;
     /// <summary>Kept after the last audible sample of the tail, so the very end is not shaved.</summary>
@@ -41,6 +43,9 @@ public static class MixMaster
     /// <paramref name="maxTailSec"/> = 0 cuts there like before. <paramref name="targetLufs"/> = null keeps the mix's level.
     /// With a <paramref name="range"/> the content is its B (<paramref name="contentSec"/> is ignored): the clips and notes
     /// stop there, the tails ring after it, and the result starts at its A; the loudness is measured on that stretch.
+    /// <paramref name="fixedTail"/> = true ends exactly <paramref name="maxTailSec"/> after the content (up to
+    /// <see cref="MaxFixedTailSec"/>), silence included, instead of where the tail falls quiet; a tail still sounding
+    /// there fades like one cut at the limit.
     /// </summary>
     public static MasteredMix Render(
         IReadOnlyList<MixTrackSpec> tracks,
@@ -51,9 +56,10 @@ public static class MixMaster
         double? targetLufs = null,
         Action<double>? onProgress = null,
         CancellationToken ct = default,
-        ExportRange? range = null)
+        ExportRange? range = null,
+        bool fixedTail = false)
     {
-        double tail = Math.Clamp(double.IsFinite(maxTailSec) ? maxTailSec : 0, 0, MaxTailSec);
+        double tail = Math.Clamp(double.IsFinite(maxTailSec) ? maxTailSec : 0, 0, fixedTail ? MaxFixedTailSec : MaxTailSec);
         if (range is { } rg) contentSec = rg.EndSec;
         var (preL, preR) = MixRenderer.Render(tracks, bus, contentSec + tail, sampleRate,
             onProgress == null ? null : f => onProgress(f * MixShare), ct, limit: false, stopSec: range?.EndSec ?? double.PositiveInfinity);
@@ -64,6 +70,13 @@ public static class MixMaster
         }
         int content = Math.Min(preL.Length, Math.Max(1, (int)Math.Ceiling(contentSec * sampleRate)));
         var (end, cut) = TailEnd(preL, preR, content, sampleRate);
+        if (fixedTail)
+        {
+            int want = Math.Min(Math.Min(preL.Length, preR.Length), content + (int)Math.Round(tail * sampleRate));
+            // still above the floor where it ends: it fades over the last second instead of stopping dead
+            cut = end >= want && want > content;
+            end = Math.Max(1, want);
+        }
 
         // the limiter as the master has it: the gain starts where playback has it (the Empuje, or the gain last measured
         // for this same Destino), a loudness target moves it from there; with the limiter off nothing holds the peaks, so

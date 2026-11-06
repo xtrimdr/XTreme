@@ -38,6 +38,12 @@ public partial class MainWindow
     const double NarrowW = 90;
     /// <summary>Under this width (px) a compact strip takes the slim fader and its thinnest margins.</summary>
     const double TinyW = 64;
+    /// <summary>A strip meter's bar width (px): its bars grow with the room the fader leaves (asked by the user, #199: a
+    /// wider mixer widens its meters at every width), taking <see cref="MeterShare"/> of it (#205: all of it made them
+    /// too wide), never under the minimum (the master's, its own) nor over the maximum.</summary>
+    const double MeterBarMin = 5, MeterBarMax = 14, MasterBarW = 7, MeterShare = 0.5;
+    /// <summary>A strip card's border on both sides (px), out of the room its meter can take.</summary>
+    const double StripBorders = 2;
     /// <summary>The strips' width before the user zooms the mixer (px).</summary>
     const double DefaultStripW = 120;
     /// <summary>How much one wheel notch widens or narrows the strips (the timeline's zoom is 1.18 per notch).</summary>
@@ -784,15 +790,18 @@ public partial class MainWindow
     /// <summary>
     /// The mixer's wheel, with the timeline's modifiers (<see cref="Shortcuts.Wheel"/>): its zoom widens or narrows the
     /// strips around the pointer; its sideways gesture, and the plain wheel where nothing under the pointer scrolls,
-    /// move the mixer sideways. Over a knob, fader or bar the wheel is theirs (Shift = fine), as over the timeline's knobs.
+    /// move the mixer sideways. Over a knob, fader or bar the wheel is theirs, as over the timeline's knobs, except the zoom.
     /// </summary>
     void OnMixerWheel(object? sender, PointerWheelEventArgs e)
     {
         string? wheel = Shortcuts.FindWheel(e.KeyModifiers);
+        // the zoom gesture (Shift by default) always resizes the strips, even over a control: holding it never changes a
+        // value by accident (#207). A zoom set on the plain wheel would leave the controls no wheel, so it doesn't count.
+        bool resizing = wheel == "wheelZoom" && e.KeyModifiers != KeyModifiers.None;
         bool listScrolls = false;
         for (var v = e.Source as Visual; v != null && v != mixerScroll; v = v.GetVisualParent())
         {
-            if (v is Knob or Fader or HBar or EqEditor) return;
+            if (!resizing && v is Knob or Fader or HBar or EqEditor) return;
             if (v is ScrollViewer s && s.Extent.Height > s.Viewport.Height + 0.5) listScrolls = true;
         }
         // some mice and drivers turn a modified wheel into a sideways delta, so take whichever axis moved
@@ -870,11 +879,12 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Whether a track's strip shows one bar: every take it plays is mono (<see cref="MediaAudio.Mono"/>); with none, its
+    /// Whether a track's strip shows one bar (never a MIDI track: its instrument plays in stereo): every take it plays is mono (<see cref="MediaAudio.Mono"/>); with none, its
     /// input is (a single one, or Configuración's input in a mono mode). Runs in the tick, so it allocates nothing.
     /// </summary>
     bool TrackMono(LiveTrack t)
     {
+        if (t.Track.IsMidi) return false;
         int online = 0;
         var clips = t.Clips;
         for (int i = 0; i < clips.Count; i++)
@@ -1190,6 +1200,9 @@ public partial class MainWindow
         if (faders != null) faders.Spacing = tiny ? 2 : 4;
         double side = tiny ? 2 : narrow ? 3 : 6;
         layout.Margin = new Thickness(side, 8, side, 6);
+        // the meter takes whatever the fader leaves
+        double room = w - StripBorders - 2 * side - (fader != null ? fader.Width + (faders?.Spacing ?? 0) : 0);
+        meter.Fit(room, MeterBarMin, MeterBarMax, MeterShare);
     });
 
     /// <summary>
@@ -1573,6 +1586,7 @@ public partial class MainWindow
         TrackInserts.Limit => Loc.T("master.stage.lim"),
         TrackInserts.Chorus or TrackInserts.Flanger or TrackInserts.Phaser or TrackInserts.Tremolo or TrackInserts.Pump => Loc.T("fx." + type),
         _ when TrackInserts.IsModel(type) => Loc.T("fx." + type),
+        TrackInserts.Tonal => Loc.T("fx.tonal"),
         _ => "EQ",
     };
 
@@ -1919,6 +1933,7 @@ public partial class MainWindow
         ("fx.group.sat", FxIcon.Sat, [InsertSlot.SatKind, TrackInserts.Tape]),
         ("fx.group.mod", FxIcon.Chorus, [TrackInserts.Chorus, TrackInserts.Flanger, TrackInserts.Phaser, TrackInserts.Tremolo]),
         ("fx.group.space", FxIcon.Reverb, [InsertSlot.ReverbKind, InsertSlot.DelayKind, TrackInserts.Width]),
+        ("fx.group.analysis", FxIcon.Tonal, [TrackInserts.Tonal]),
     ];
 
     /// <summary>What "+ Efecto" says of an effect.</summary>
@@ -2307,6 +2322,9 @@ public partial class MainWindow
         head.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, HorizontalAlignment = HorizontalAlignment.Center,
             Children = { mx.Lim, mono } });
         mx.Master = new MixerMeter(wide: true);
+        var masterMeter = mx.Master;
+        // alone in its strip, it fills it like the strips' meters fill what their fader leaves (#199)
+        mx.Resize.Add(w => masterMeter.Fit(Math.Max(MasterW, w) - StripBorders - 12, MasterBarW, MeterBarMax, MeterShare));
         // the foot shows the output's short-term LUFS (the transport's measurement), where "Salida" was, and under it
         // the correlation (two short lines in the fixed StripFootH)
         mx.Lufs = new TextBlock { Text = "—", Classes = { "mono" }, FontSize = 10, LineHeight = 12, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };

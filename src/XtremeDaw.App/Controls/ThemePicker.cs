@@ -22,6 +22,11 @@ public sealed class ThemePicker : Panel
     readonly Popup popup;
     readonly UniformGrid accents = new() { Columns = 5 };
     readonly UniformGrid surfaces = new() { Columns = 3 };
+    readonly Border presets = new();
+
+    /// <summary>The whole themes' tile (XTreme sets it: <c>TronLegacy.Tile</c>; the bench, which hasn't those looks, doesn't),
+    /// rebuilt every time the popover opens.</summary>
+    public static Func<Control>? Presets { get; set; }
 
     public ThemePicker() : this(null) { }
 
@@ -59,6 +64,8 @@ public sealed class ThemePicker : Panel
         }
         body.Children.Add(Group(Loc.T("theme.accent"), accents));
         body.Children.Add(Group(Loc.T("theme.surface"), surfaces));
+        // the bench keeps its own colors only: a whole theme changes XTreme's looks too
+        if (language == null && Presets != null) body.Children.Add(Group(Loc.T("theme.presets"), presets));
         var reset = new Button
         {
             Classes = { "ghost" }, Content = Loc.T("color.reset"), FontSize = 11, Height = 28, Padding = new Thickness(0),
@@ -105,7 +112,7 @@ public sealed class ThemePicker : Panel
 
     static void Pick(UiTheme.Settings t) => UiTheme.Apply(t);
 
-    static Button Swatch(Control content, string tip, double margin = 4)
+    internal static Button Swatch(Control content, string tip, double margin = 4)
     {
         var b = new Button { Classes = { "swatch" }, Content = content, Margin = new Thickness(margin), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         ToolTip.SetTip(b, tip);
@@ -180,6 +187,8 @@ public sealed class ThemePicker : Panel
             b.Click += (_, _) => Pick(UiTheme.Current with { Surface = id });
             surfaces.Children.Add(b);
         }
+
+        presets.Child = Presets?.Invoke();
     }
 
     /// <summary>The Windows color dialog (ChooseColor), modal to the window.</summary>

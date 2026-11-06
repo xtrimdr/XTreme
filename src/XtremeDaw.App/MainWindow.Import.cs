@@ -87,6 +87,16 @@ public partial class MainWindow
                 return;
             }
             if (files.Count == 0) return;
+            if (files.Any(SampleLibrary.IsMidiFile))
+            {
+                // MIDI files go onto the MIDI track under the pointer, or new ones, like "Importar .mid…"
+                if (!CanImport() || (place == null && e.DataTransfer.Contains(SampleDrag))) return;
+                string? midiTrack = place?.TrackId is { } id && tracks.Any(t => t.Track.Id == id && t.Track.IsMidi) ? id : null;
+                foreach (string m in files.Where(SampleLibrary.IsMidiFile)) await ImportMidi(m, place?.Sec ?? engine.PositionSec, midiTrack);
+                files = [.. files.Where(f => !SampleLibrary.IsMidiFile(f))];
+                if (files.Count == 0) return;
+                targets = place is { } again ? DropTargets(files, again.Sec, again.TrackId) : null;
+            }
             if (files.Count == 1 && place?.TrackId is { } onto && tracks.FirstOrDefault(t => t.Track.Id == onto) is { Track.IsMidi: true, Track.Instrument: null } && CanImport())
             {
                 await LoadSample(onto, files[0]);
@@ -114,22 +124,45 @@ public partial class MainWindow
         return targets;
     }
 
-    /// <summary>The files being carried as ghosts where they would land: on their track, or new rows under the last.</summary>
+    /// <summary>The files being carried as ghosts where they would land: on their track, or new rows under the last.
+    /// MIDI files follow the drop's own rule (the MIDI track under the pointer, else new tracks), with their length.</summary>
     void ShowDropGhosts(DragEventArgs e)
     {
-        var files = DroppedFiles(e).ToList();
-        if (Timeline.DropTarget(e.GetPosition(Timeline), e.KeyModifiers) is not { } at || DropTargets(files, at.Sec, at.TrackId) is not { } targets)
+        var all = DroppedFiles(e).ToList();
+        var midi = all.Where(SampleLibrary.IsMidiFile).ToList();
+        var files = midi.Count == 0 ? all : [.. all.Where(f => !SampleLibrary.IsMidiFile(f))];
+        if (store == null || Timeline.DropTarget(e.GetPosition(Timeline), e.KeyModifiers) is not { } at
+            || (files.Count > 0 ? DropTargets(files, at.Sec, at.TrackId) : []) is not { } targets)
         {
             Timeline.HideDrop();
             return;
         }
-        var ghosts = new Controls.TimelineView.DropGhost[files.Count];
+        string? midiTrack = at.TrackId is { } id && store.Project.Tracks.Find(t => t.Id == id) is { IsMidi: true } ? id : null;
+        double beatSec = 60 / Math.Max(1, store.Project.Settings.Bpm);
+        var ghosts = new Controls.TimelineView.DropGhost[all.Count];
+        for (int k = 0; k < midi.Count; k++) ghosts[k] = new(midiTrack, MidiFileBeats(midi[k]) * beatSec, Path.GetFileName(midi[k]));
         for (int k = 0; k < files.Count; k++)
         {
             var file = carried.FirstOrDefault(c => c.Path == files[k]);
-            ghosts[k] = new(targets[k], file?.DurationSec is > 0 and var d ? d : 0, Path.GetFileName(files[k]));
+            ghosts[midi.Count + k] = new(targets[k], file?.DurationSec is > 0 and var d ? d : 0, Path.GetFileName(files[k]));
         }
         Timeline.ShowDrop(at.Sec, ghosts);
+    }
+
+    /// <summary>A carried .mid file's length in beats (what its clip will take), read once per file and change; 0 = unreadable.</summary>
+    readonly Dictionary<string, (DateTime Written, double Beats)> midiFileBeats = [];
+
+    double MidiFileBeats(string path)
+    {
+        DateTime written;
+        try { written = File.GetLastWriteTimeUtc(path); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 0; }
+        if (midiFileBeats.TryGetValue(path, out var known) && known.Written == written) return known.Beats;
+        double beats;
+        try { beats = MidiFiles.Read(path).Tracks.Select(t => t.LengthBeats).DefaultIfEmpty(0).Max(); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or FormatException or InvalidDataException) { beats = 0; }
+        midiFileBeats[path] = (written, beats);
+        return beats;
     }
 
     /// <summary>A take of the project carried from the Biblioteca, drawn like a carried sample: a ghost of its length on

@@ -37,7 +37,7 @@ porque con ellos se recuerda qué secciones están plegadas. El idioma se elige 
 ## Colores (tokens)
 
 Definidos **dos veces y tienen que coincidir**: `App.axaml` (XAML) y `Controls/Palette.cs` (lo que se dibuja). El
-selector de tema (`UiTheme.cs`: 17 acentos, ordenados por tono, 9 fondos oscuros) cambia en vivo los pinceles de superficie y acento, así
+selector de tema (`UiTheme.cs`: 17 acentos, ordenados por tono, 10 fondos oscuros) cambia en vivo los pinceles de superficie y acento, así
 que usá siempre el pincel (`Palette.Accent`, `{StaticResource Accent}`), nunca un color escrito a mano, y leé
 `Palette.AccentColor` y compañía al dibujar, sin guardarlo. Variantes del acento en XAML: `AccentFg` (texto sobre
 acento), `AccentHover`, `AccentTint`, `Accent25/40/50/70`. Valores del tema por defecto:
@@ -118,7 +118,7 @@ Respetan la cultura del sistema (en es-AR, con coma). Volumen, ganancia, paneo y
 
 ## Formas y espaciado
 
-- Radios: **12** diálogos, **10** paneles de la ventana (tarjetas `Border.card`, 4 px de margen), **8** secciones, **6** botones/chips/cajas, **5** clips y badges, **4** toggles M/S y etiquetas, **2** barras de medidor.
+- Radios: **12** diálogos, **10** paneles de la ventana (tarjetas `Border.card`, 2 px de margen, y otros 2 alrededor de su zona para que toda separación, entre tarjetas o contra los bordes y las barras, sea de 4, la más chica que había: pedido del usuario, #193; los paneles neumórficos llevan 5 y 5, separación de 10, para que respiren sus sombras: #191), **8** secciones, **6** botones/chips/cajas, **5** clips y badges, **4** toggles M/S y etiquetas, **2** barras de medidor.
 - Bordes de 1 px en `Line`. Sin sombras, sin gradientes, sin animaciones decorativas. Única sombra: el **glow del
   hover** de todo botón (`HoverGlow`, un `DropShadowEffect` del acento que recolorea `UiTheme`; `RecGlow` en los
   rojos), puesto al final de los estilos de botón en `App.axaml` para que ninguna clase lo pierda. **El texto nunca
@@ -128,7 +128,7 @@ Respetan la cultura del sistema (en es-AR, con coma). Volumen, ganancia, paneo y
   `failed` en rojo si no se pudo guardar). En las filas el hover lo marca la fila
   (fondo `Raised` y borde `Line`); en el `CheckBox` brilla solo la cajita. Va como `Effect`
   del botón: un `BoxShadow` en el presentador queda cortado. Otra excepción pedida por el usuario: la tapa del fader
-  (`Fader`) imita la de una consola, con sombreado, ranuras y una sombra abajo, para que se vea y se agarre fácil (es el look por defecto: tapa y riel tienen ocho a elegir en Configuración → Apariencia, `FaderLooks`, "faderLook"; pedido del usuario, 2026-11-04); las perillas (`Knob.Draw`) tienen diez estilos a elegir en Configuración → Apariencia (`KnobLooks`, pedido del usuario, 2026-11-03; Neumórfico por defecto): uno nuevo es un método más ahí, con su nombre `set.look.knob.<id>`. Los de tapa clara (`KnobLooks.LightCap`) llevan oscuro el valor escrito encima. Y la
+  (`Fader`) imita la de una consola, con sombreado, ranuras y una sombra abajo, para que se vea y se agarre fácil (es el look por defecto: tapa y riel tienen diez a elegir en Configuración → Apariencia, `FaderLooks`, "faderLook"; pedido del usuario, 2026-11-04); las perillas (`Knob.Draw`) tienen doce estilos a elegir en Configuración → Apariencia (`KnobLooks`, pedido del usuario, 2026-11-03; Neumórfico por defecto): uno nuevo es un método más ahí, con su nombre `set.look.knob.<id>`. Los de tapa clara (`KnobLooks.LightCap`) llevan oscuro el valor escrito encima. Otra, pedida por el usuario (#191): los paneles de la ventana (inspector, barra del proyecto, timeline, mixer) se eligen en Configuración → Apariencia → Paneles (`PanelLooks`, "panelLook": Plano por defecto, Relieve, Relieve con degradé); los neumórficos llevan dos sombras y van sin borde, con colores sacados del tema (`MainWindow.PanelLook.cs` los repinta al cambiarlo). Lo de adentro de los paneles sigue plano, salvo las perillas y los faders Relieve y Relieve con degradé (`NeuLook`, #191), que toman los colores del panel. Y un tema completo, **Tron Legacy** (#191, `TronLegacy`, en el selector de tema bajo "Temas completos"): un clic pone el fondo `tron`, el acento `#5ce1ff`, paneles, perillas, faders y medidores Tron (línea del acento con brillo, sin sombras de relieve; los medidores, LED de luz sobre negro), ondas en contorno y Orbitron en los números; cada parte sigue eligiéndose aparte. Y la
   línea de los separadores (timeline y mixer) lleva un brillo suave de su color (el acento si no tiene uno). Los botones de color (acento, primario, peligro, grabar,
   `lit`) no cambian de color en hover: el glow es la respuesta. Su fondo y su texto van en el presentador
   (`/template/ ContentPresenter#PART_ContentPresenter`, sin estado en el selector), como los chips ON: puesto solo en

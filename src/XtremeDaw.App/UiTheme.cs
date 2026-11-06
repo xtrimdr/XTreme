@@ -32,7 +32,12 @@ static class UiTheme
         S("ocean", "Océano", "#080c12", "#101720", "#18222e", "#202d3c", "#263445", "#e7eef7", "#9cacc1", "#687b93"),
         S("coffee", "Café", "#100b08", "#1a130e", "#261c15", "#32271e", "#382c22", "#f3ece3", "#b8a797", "#847161"),
         S("smoke", "Humo", "#101112", "#191b1d", "#232629", "#2d3135", "#34393e", "#eceff1", "#a8b0b7", "#747e87"),
+        // Tron Legacy (#191): the film's blue-black, with its edges and texts tinted the cyan of its light lines
+        S(TronSurface, "Tron Legacy", "#010409", "#03090f", "#071420", "#0c1e2c", "#103446", "#e0f7ff", "#8ec3d3", "#4d7a8a"),
     ];
+
+    /// <summary>The Tron Legacy theme's surface and accent (TronLegacy, in XTreme): the film's light-line cyan.</summary>
+    public const string TronSurface = "tron", TronAccent = "#5ce1ff";
 
     /// <summary>Sorted by hue, warm to cool, so neighbours in the picker look alike.</summary>
     public static readonly (string Name, string Hex)[] Accents =

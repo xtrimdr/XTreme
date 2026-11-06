@@ -20,6 +20,8 @@ public sealed class FxIcon : Control
     public const string Chorus = "chorus", Flanger = "flanger", Phaser = "phaser", Tremolo = "tremolo";
     /// <summary>The pump, by its slot kind.</summary>
     public const string Pump = "pump";
+    /// <summary>The tonal balance, by its slot kind: an analyzer.</summary>
+    public const string Tonal = "tonal";
     /// <summary>The compressor models, by their slot kinds: each a compressor, so the compressor's gauge.</summary>
     public const string Fet = "fet", Opto = "opto", BusComp = "buscomp", Vca = "vca", VariMu = "varimu";
     /// <summary>Not an effect: the timeline's Mano tool (its button and pointer), because Segoe has no open hand.</summary>
@@ -53,6 +55,8 @@ public sealed class FxIcon : Control
         [Tremolo] = Geometry.Parse("M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"),
         // drawn for this grid: the level falling on each beat and coming back up
         [Pump] = Geometry.Parse("M2 5v14q5 0 7-14v14q5 0 7-14v14q4 0 6-9"),
+        // lucide "chart-spline": a spectrum over its axes
+        [Tonal] = Geometry.Parse("M3 3v16a2 2 0 0 0 2 2h16 M7 16c.5-2 1.5-7 4-7 2 0 2 3 4 3 2.5 0 4.5-5 5-7"),
         [Fet] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),
         [Opto] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),
         [BusComp] = Geometry.Parse("M12 14l4-4 M3.34 19a10 10 0 1 1 17.32 0"),

@@ -246,6 +246,32 @@ public static class FxDefs
         Stage("keyMs", "insp.comp.release", PumpParams.KeyMinMs, PumpParams.KeyMaxMs, 250, FxUnit.Ms, 1, "fx.pump.keyMs.tip") with { Log = true },
     ];
 
+    /// <summary>
+    /// The tonal balance (#210): how fast its reading follows (Respuesta), its target (a factory genre by its place in
+    /// <see cref="TonalTargets.Factory"/>, or <see cref="TonalCustom"/>: the slot's own, <see cref="InsertSlot.Tonal"/>)
+    /// and what it listens to (<see cref="TonalMode"/>). The two choices are steps, shown as a menu and a switch.
+    /// </summary>
+    static readonly FxParam[] TonalList =
+    [
+        Stage("speed", "fx.tonal.speed", TonalAnalyzer.MinTimeSec, TonalAnalyzer.MaxTimeSec, TonalAnalyzer.DefaultTimeSec, FxUnit.Sec, 0.5, "fx.tonal.speed.tip") with { Log = true },
+        Stepped("target", "fx.tonal.target", [.. Enumerable.Range(0, TonalTargets.Factory.Length + 1).Select(i => (double)i)], 0, FxUnit.Count, "fx.tonal.target.tip"),
+        Stepped("mode", "fx.tonal.mode", [0, 1, 2], 0, FxUnit.Count, "fx.tonal.mode.tip"),
+    ];
+
+    /// <summary>The tonal balance's "target" value that means the slot's own (made from references).</summary>
+    public static readonly int TonalCustom = TonalTargets.Factory.Length;
+
+    /// <summary>What a tonal balance compares with: its factory genre, or its own target (null while it has none).</summary>
+    public static TonalTarget? TonalTargetOf(InsertSlot s)
+    {
+        int t = (int)Math.Round(s.Stage?.Get("target", 0) ?? 0);
+        return t >= TonalCustom ? s.Tonal?.ToTarget() : TonalTargets.Factory[Math.Clamp(t, 0, TonalCustom - 1)];
+    }
+
+    public static TonalMode TonalModeOf(InsertSlot s) => (TonalMode)Math.Clamp((int)Math.Round(s.Stage?.Get("mode", 0) ?? 0), 0, 2);
+
+    public static double TonalSpeedOf(InsertSlot s) => s.Stage?.Get("speed", TonalAnalyzer.DefaultTimeSec) ?? TonalAnalyzer.DefaultTimeSec;
+
     /// <summary>The pump as the engine reads it.</summary>
     public static PumpParams ToPump(InsertSlot s)
     {
@@ -352,6 +378,7 @@ public static class FxDefs
         TrackInserts.Vca => VcaList,
         TrackInserts.VariMu => VariMuList,
         TrackInserts.Pump => PumpList,
+        TrackInserts.Tonal => TonalList,
         _ => [],
     };
 
@@ -360,13 +387,15 @@ public static class FxDefs
     /// effect's own live picture (<see cref="ScopePart"/>: the reverb's tail, the delay's echoes, a modulation's wave…).
     /// </summary>
     public const string GraphPart = "@graph", KeyPart = "@key", ScopePart = "@scope";
+    /// <summary>The tonal balance's own view: its four bands and punch, and in the full view its spectrum against the target.</summary>
+    public const string TonalPart = "@tonal";
 
     /// <summary>The family of an effect kind (<see cref="FxFamily"/>); a VST3 and an unknown kind have none.</summary>
     public static FxFamily Family(string kind) => kind switch
     {
         InsertSlot.CompKind or InsertSlot.GateKind or TrackInserts.Fet or TrackInserts.Opto or TrackInserts.BusComp or TrackInserts.Vca
             or TrackInserts.VariMu or TrackInserts.Limit or TrackInserts.Pump => FxFamily.Dynamics,
-        InsertSlot.EqKind or TrackInserts.Clean or TrackInserts.Bands or TrackInserts.Color => FxFamily.Tone,
+        InsertSlot.EqKind or TrackInserts.Clean or TrackInserts.Bands or TrackInserts.Color or TrackInserts.Tonal => FxFamily.Tone,
         InsertSlot.SatKind or TrackInserts.Tape or TrackInserts.Clip => FxFamily.Drive,
         InsertSlot.ReverbKind or InsertSlot.DelayKind or TrackInserts.Width => FxFamily.Space,
         TrackInserts.Chorus or TrackInserts.Flanger or TrackInserts.Phaser or TrackInserts.Tremolo => FxFamily.Mod,
@@ -429,6 +458,8 @@ public static class FxDefs
         [[new("fx.panel.mod", [ScopePart, "rate", "depth", "spread"], 3), new("fx.panel.feedback", ["stages", "feedback"], 2)], [OutGroup()]]) { Hero = ["rate", "depth"] };
     static readonly FxLayout TremoloLayout = new(["rate", "depth", "shape"], [[new("fx.panel.mod", [ScopePart, "rate", "depth", "shape", "spread"], 4)], [OutGroup()]]) { Hero = ["rate", "depth"] };
 
+    static readonly FxLayout TonalLayout = new(["speed"], [[new("fx.panel.tonal", [TonalPart, "speed"], 1)]]);
+
     static readonly FxLayout FetLayout = ModelLayout(["input", "makeup", "wet"], ["input", "ratio", "attack", "release"]);
     static readonly FxLayout OptoLayout = ModelLayout(["reduction", "makeup", "wet"], ["reduction", "mode"]);
     static readonly FxLayout BusCompLayout = ModelLayout(["threshold", "makeup", "wet"], ["threshold", "ratio", "attack", "release"], ["scHpf"]);
@@ -463,6 +494,7 @@ public static class FxDefs
         TrackInserts.BusComp => BusCompLayout,
         TrackInserts.Vca => VcaLayout,
         TrackInserts.VariMu => VariMuLayout,
+        TrackInserts.Tonal => TonalLayout,
         _ => null,
     };
 
@@ -483,10 +515,10 @@ public static class FxDefs
 
     /// <summary>Everything of an effect a lane can drive: its switch, its knobs, what every effect adds and an EQ's bands.</summary>
     public static IEnumerable<FxParam> Automatable(string kind) =>
-        kind == InsertSlot.VstKind ? [] : [Power, .. Params(kind), .. Common(kind), .. kind == InsertSlot.EqKind ? EqBandList : []];
+        kind == InsertSlot.VstKind || TrackInserts.IsMeter(kind) ? [] : [Power, .. Params(kind), .. Common(kind), .. kind == InsertSlot.EqKind ? EqBandList : []];
 
-    /// <summary>What every native effect adds: Dry, Wet and output (asked by the user). A VST3 has its own.</summary>
-    public static FxParam[] Common(string kind) => kind == InsertSlot.VstKind ? [] : [Dry, Wet, Output];
+    /// <summary>What every native effect adds: Dry, Wet and output (asked by the user). A VST3 has its own; an analyzer, none.</summary>
+    public static FxParam[] Common(string kind) => kind == InsertSlot.VstKind || TrackInserts.IsMeter(kind) ? [] : [Dry, Wet, Output];
 
     /// <summary>A master effect as the engine reads it: the master's own settings, with this slot's values.</summary>
     public static MasterParams ToMaster(InsertSlot s)

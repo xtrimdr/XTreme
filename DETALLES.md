@@ -22,6 +22,9 @@ Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `xtlab`. Lo g
 - Para **Extraer MIDI**: el modelo de Basic Pitch (Spotify, Apache 2.0, ~230 KB) en `lib\basic-pitch`, que baja
   `tools\get-basic-pitch.ps1` (fuera de git). El build lo copia a `basic-pitch\` junto al exe; sin él, "Extraer MIDI"
   queda deshabilitado y lo dice. Corre con ONNX Runtime (NuGet).
+- Para el instrumento **General MIDI**: el banco GeneralUser GS (S. Christian Collins, uso y redistribución libres,
+  ~31 MB) en `lib\gm`, que baja `tools\get-gm.ps1` (fuera de git). El build lo copia a `gm\` junto al exe y va en el
+  instalador; sin él, una pista General MIDI avisa que falta y calla.
 - Para **Separar en stems**: los modelos de Demucs (Meta, ~425 MB) en `lib\demucs`, que arma `tools\get-demucs.ps1`
   (fuera de git, necesita [uv](https://docs.astral.sh/uv/)). El build los copia a `demucs\` junto al exe, pero no van en
   el instalador: la licencia de los pesos no está clara. Sin ellos, la opción queda deshabilitada y lo dice.
@@ -183,7 +186,7 @@ la consola, sin abrir la ventana.
 | `looks [--look id] [--salida look.cube] [--blancos n] [--negros n] [--luz n]` | los looks de color con colores de prueba, comprobación de rango y, con `--look`, el LUT `.cube` de ese look con Blancos, Negros y Sensación de luz |
 | `masterizar archivo.wav [--cuanto 0.35] [--banda-graves\|--banda-medios\|--banda-agudos 0..1] [--corte] [--barro] [--graves] [--presencia] [--aire] [--inclinacion] [--cinta] [--ancho] [--graves-mono] [--recorte] [--empuje] [--techo] [--release] [--sin-limitador] [--volumen youtube\|instagram\|tiktok\|spotify\|apple] [--pua 0..1] [--look natural\|glue\|bright\|warm\|front\|pick [--cuanto-look 1]] [--sugerime]` | el mastering de la ventana sobre un WAV: cuánto comprime cada banda (y la Púa), cuánto recortan el soft clip (Auto incluido) y el limitador y los LUFS de entrada y salida; `--volumen` es el Destino del master (mide el archivo y usa esa ganancia en vez del Empuje), `--look` pone un look, `--sugerime` muestra qué oye y qué propone, y masteriza con eso |
 | `midi ver\|pista\|clip\|nota\|acordes\|quitar carpeta` | pistas MIDI, sus clips y sus notas (`clip --pista n --en 0 --compases 4`, `nota --clip id --altura C4 --pulso 0 --largo 1 --vel 100`, `acordes --clip id` escribe Do, Sol, Lam, Fa); `mezclar carpeta` las renderiza |
-| `midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]`, `patron-insertar --clip id --pista n [--en 0]`, `patron-instrumento --clip id --pista n` (o `--quitar`), `patron-unico --clip id`, `patron-disolver --clip id`, `patron-borrar --clip id` | hace de un clip un patrón (clips enlazados, una vuelta que se repite), suma otro clip del patrón, suma o quita un instrumento, saca uno sonando igual, termina el patrón dejando todos sus clips únicos o lo borra con sus clips |
+| `midi patron carpeta --clip id [--nombre x] [--compases 4] [--repetir 2]` (o `--clips a,b [--separados]`: varios clips, un patrón del largo de todos juntos o uno por clip), `patron-insertar --clip id --pista n [--en 0]`, `patron-instrumento --clip id --pista n` (o `--quitar`), `patron-unico --clip id`, `patron-disolver --clip id`, `patron-borrar --clip id` | hace de un clip un patrón (clips enlazados, una vuelta que se repite), suma otro clip del patrón, suma o quita un instrumento, saca uno sonando igual, termina el patrón dejando todos sus clips únicos o lo borra con sus clips |
 | `midi acorde carpeta --clip id [--raiz C4] [--tipo scale] [--inversion 0] [--pulso 0] [--largo 1] [--vel 100]` | un acorde en el clip; `scale` y `scale7` lo sacan de la escala del proyecto |
 | `midi exportar-mid carpeta --clip id --a x.mid`, `importar-mid carpeta --de x.mid [--pista n] [--en 0]` | el clip como `.mid` (tipo 1, al tempo del proyecto); un `.mid` adentro: con `--pista`, todo en un clip de esa pista MIDI, sin ella una pista nueva por cada pista del archivo (en un tipo 0, una por canal) |
 | `midi herramienta carpeta --clip id --tool arpeggiate [--rate 5 …]` | corre cualquier herramienta del piano roll (`MidiTools.All`) con sus ajustes por id |
@@ -199,6 +202,9 @@ la consola, sin abrir la ventana.
 | `midi instrumento carpeta [--pista n] --plugin "nombre" \| --quitar` | el instrumento VST3 que toca la pista; `mezclar carpeta` lo renderiza con el plugin, como la exportación |
 | `midi sampler carpeta [--pista n] --sample archivo \| --quitar` | la pista toca ese archivo con el sampler nativo |
 | `midi granular carpeta [--pista n] --sample archivo \| --quitar` | la pista toca ese archivo con el granular nativo |
+| `midi gm carpeta [--pista n] [--programa 0] [--bateria] \| --quitar` | la pista toca con el instrumento General MIDI nativo (un programa 0..127 o un kit de batería) |
+| `gm presets` / `gm [--programa 0] [--bateria] [--nota 60] [--segundos 2] [--salida x.wav]` | lista los presets del banco GM, o toca una nota de él y dice el pico |
+| `gm comprobar` | las filas General MIDI de `comprobar-dsp`: un SF2 armado ahí (afinación, loop, release, bloques, clase exclusiva), un .mid con programas y batería, y el banco de la app |
 | `granular archivo [--nota 60] [--segundos 4] [--modo stretch\|scrub] [--posicion 0] [--velocidad 1] [--densidad 20] [--tamano 0.08] [--spray 0] [--jitter 0] [--salida x.wav]` | toca un archivo con el granular en una nota: dice la raíz que encontró y el pico |
 | `sampler archivo [--nota 60] [--raiz n] [--segundos 2] [--filtro lp24] [--corte 2000] [--salida x.wav]` | toca un archivo con el sampler en una nota: dice la raíz que encontró y el pico |
 | `vst estado "nombre"` | carga el estado del plugin en una copia nueva y comprueba que vuelve igual, como al reabrir un proyecto |
@@ -222,6 +228,7 @@ la consola, sin abrir la ventana.
 | `lufs archivo` / `afinar archivo [--en segundos] [--umbral -50]` | volumen integrado de un archivo / la nota que oye el afinador en ese momento, con la sensibilidad de la ventana (dB) |
 | `tempo archivo [--desde s] [--hasta s]` | los BPM de un archivo (o de ese tramo), su primer golpe y qué tan seguro está, como "Detectar tempo" en el clic derecho de un clip |
 | `escala archivo [--desde s] [--hasta s] [--callado] [--espectro] [--bajo stem.wav]` | la escala de un archivo (o de ese tramo), sus notas, la afinación y los acordes con su tiempo, como "Detectar escala y acordes" en un clip; `--espectro` no prueba otros métodos; `--bajo` compara los acordes con ese stem de bajo; `--comprobar` corre solo sus comprobaciones |
+| `balance archivo [--objetivo pop\|rock\|edm\|hiphop\|acoustic\|orchestral] [--referencia a.wav,b.mp3] [--modo estereo\|mid\|side] [--curva] [--comprobar]` | el Balance tonal del archivo contra un objetivo: las cuatro bandas (20–120 Hz, 120 Hz–1 kHz, 1–5 kHz, 5–20 kHz) y el punch de los graves; `--referencia` arma el objetivo con esos archivos, `--curva` lista los 61 puntos con su rango, `--comprobar` corre solo sus comprobaciones |
 | `extraer-midi archivo [--melodia] [--desde s] [--hasta s] [--inicio 0.5] [--nota 0.3] [--min-ms 70] [--midi x.mid] [--bpm 120] [--verdad notas.json] [--callado]` | las notas de un archivo, como "Extraer MIDI" en un clip; `--midi` las guarda en un .mid y `--verdad` las puntúa contra notas conocidas (`[[inicio s, largo s, nota], …]`); `--comprobar` corre solo sus comprobaciones |
 | `separar archivo [--stems 2\|4\|6] [--calidad rapida\|alta\|maxima] [--modelo general\|porstem\|6] [--solo voz,bateria,bajo,guitarra,piano] [--pasadas n] [--sin-desplazar] [--desde s] [--hasta s] [--salida carpeta] [--cancelar s] [--cpu]` | separa el archivo y deja un WAV por stem, como "Separar en stems" en un clip; `--sin-desplazar` hace una pasada sin correr el audio, para comparar versiones; `--modelo`, `--solo` y `--pasadas` son el modo Avanzado del diálogo (el modelo manda sobre `--stems` y `--calidad`); `--comprobar` corre solo sus comprobaciones |
 | `nitidez [video\|imagen] [--en 1] [--nitidez 60] [--claridad 60] [--resplandor 0] [--look hdr\|dreamy] [--intensidad 100] [--alto 1080] [--ancho-preview 640] [--carpeta dir]` | compara Nitidez, Claridad y Resplandor (y lo que suman los looks HDR y Soñado) de la exportación (FFmpeg) con los de la preview sobre el mismo cuadro, a tamaño de exportación y al ancho que muestra la preview; mide cuánto cuestan por cuadro y deja PNG para mirarlas |
@@ -230,8 +237,9 @@ la consola, sin abrir la ventana.
 | `camara grabar [--dispositivo X \| --ip 192.168.1.50:4747] [--segundos 5]` | graba video como una toma y lo revisa con ffprobe |
 | `camara verificar-corte` | corta una grabación a la mitad y comprueba que el video quede |
 | `exportar [proyecto] [--calidad alta\|estandar\|borrador] [--salida nombre]` | exporta el MP4 |
-| `exportar proyecto --audio wav\|mp3` | exporta solo la mezcla |
-| `exportar proyecto … --stems` | además, un WAV por pista en `<nombre> - stems` |
+| `exportar proyecto --audio wav\|mp3\|flac\|aiff\|ogg` | exporta solo la mezcla |
+| `exportar proyecto --audio … --bits 16\|24\|32 --frecuencia 44100\|48000\|96000 [--sin-dither] [--kbps 128..320\|vbr] [--cola-fija 4] [--normalizar -1] [--mono]` | el "Avanzado" de Exportar audio (por defecto, lo último que eligió el proyecto) |
+| `exportar proyecto … --stems [--stems-buses Reverb,Delay]` | además, un WAV por pista en `<nombre> - stems` (y uno por esas carpetas o buses) |
 | `exportar proyecto … --rango 12-45\|1:05-1:30\|loop` | solo ese tramo (`loop` = el A–B del proyecto), con la cola de efectos después de B |
 | `exportar proyecto … --codificador auto\|cpu\|nvenc\|amf\|qsv` | quién codifica el video (auto = la placa de video si hay) |
 | `exportar proyecto … --resolucion 720\|1080\|1440\|2160 --bitrate 20` | el "Avanzado" del diálogo: lado corto del cuadro y bitrate del video en Mbps |

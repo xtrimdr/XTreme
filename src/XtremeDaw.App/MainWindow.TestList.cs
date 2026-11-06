@@ -65,12 +65,12 @@ public partial class MainWindow
     {
         string text = item.Thread.LastOrDefault(m => m.Kind == TestMessage.Fix && !string.IsNullOrWhiteSpace(m.Text))?.Text ?? item.Text;
         string title = Loc.T("test.list.try.toast", item.Id, item.Title ?? "");
-        Toast(text, title.TrimEnd(' ', '·'), sticky: true, (Loc.T("test.list.try.verdict"), () => OpenBench(path, activate: true)));
+        Toast(text, title.TrimEnd(' ', '·'), sticky: true, (Loc.T("test.list.try.verdict"), () => OpenBench(path, activate: true, item.Id)));
     }
 
-    void OpenBench(string path, bool activate)
+    void OpenBench(string path, bool activate, int ticket = 0)
     {
-        if (Bench.Open(path, activate) is { } why) Toast(Loc.T("test.list.open.error", why), Loc.T("test.list.title"));
+        if (Bench.Open(path, activate, ticket) is { } why) Toast(Loc.T("test.list.open.error", why), Loc.T("test.list.title"));
     }
 
     /// <summary>Reads the file and updates the button; null if it is being swapped (the next tick reads it).</summary>

@@ -615,7 +615,7 @@ public partial class MainWindow
         var plugin = t.Track.Instrument;
         string name = plugin != null && instrumentLoads.ContainsKey(t.Track.Id) ? Loc.T("vst.loading", plugin.Name) : InstrumentName(t.Track);
         pianoInstrumentButton.Content = IconText("", name + "  ▾");
-        pianoOpenButton.IsEnabled = t.Track.Sampler != null || t.Track.Granular != null || instruments.ContainsKey(t.Track.Id);
+        pianoOpenButton.IsEnabled = t.Track.Sampler != null || t.Track.Granular != null || t.Track.Gm != null || instruments.ContainsKey(t.Track.Id);
     }
 
     int TrackIndex(string? trackId) => tracks.FindIndex(t => t.Track.Id == trackId);
@@ -712,6 +712,23 @@ public partial class MainWindow
     List<object> PatternItems(string clipId, bool enabled, Point point)
     {
         var clip = MidiEditing.TryFind(store!.Project, clipId);
+        // on one of several boxed MIDI clips: one pattern as long as all of them, or one each (#201)
+        var many = Timeline.BoxedClipIds.Contains(clipId)
+            ? Timeline.BoxedClipIds.Where(id => MidiEditing.TryFind(store.Project, id) != null).ToList() : [];
+        if (many.Count > 1)
+        {
+            var loose = many.Where(id => MidiEditing.TryFind(store.Project, id)?.PatternId == null).ToList();
+            return
+            [
+                MenuAction(Loc.T("midi.pattern.createOne"), () => EditPattern(clipId, p => MidiPatterns.CreateFrom(p, many), "midi-pattern-created"),
+                    enabled: enabled, tip: Loc.T("midi.pattern.createOne.tip")),
+                MenuAction(Loc.T("midi.pattern.createEach"), async () =>
+                {
+                    await EditPattern(clipId, p => { foreach (var id in loose) MidiPatterns.Create(p, id); }, "midi-pattern-created");
+                    Timeline.BoxClips(many);
+                }, enabled: enabled && loose.Count > 0, tip: Loc.T("midi.pattern.createEach.tip")),
+            ];
+        }
         if (clip?.PatternId == null)
             return [MenuAction(Loc.T("midi.pattern.create"), () => EditPattern(clipId, p => MidiPatterns.Create(p, clipId), "midi-pattern-created"), enabled: enabled, tip: Loc.T("midi.pattern.create.tip"))];
         var lengths = PatternLengthItems(clipId, withOther: false);

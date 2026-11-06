@@ -120,8 +120,8 @@ public partial class MainWindow
         };
         sampleSearchDelay.Tick += (_, _) => { sampleSearchDelay.Stop(); RefreshSamples(); };
 
-        var filters = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,Auto") }; // the last one has the longest word
-        foreach (var (key, text, glyph) in new[] { ("all", Loc.T("smp.filter.all"), "\uE8FD"), ("audio", Loc.T("smp.filter.audio"), "\uE8D6"), ("video", Loc.T("smp.filter.video"), "\uE714"), ("favorites", Loc.T("smp.filter.favorites"), "\uE734") })
+        var filters = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,Auto") }; // the last one has the longest word
+        foreach (var (key, text, glyph) in new[] { ("all", Loc.T("smp.filter.all"), "\uE8FD"), ("audio", Loc.T("smp.filter.audio"), "\uE8D6"), ("video", Loc.T("smp.filter.video"), "\uE714"), ("midi", Loc.T("smp.filter.midi"), "\uEC4F"), ("favorites", Loc.T("smp.filter.favorites"), "\uE734") })
         {
             var b = new ToggleButton { Classes = { "seg" }, Content = IconText(glyph, text), Padding = new Thickness(4, 0), IsChecked = key == sampleFilter,
                 HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
@@ -293,7 +293,7 @@ public partial class MainWindow
             tree ??= SampleLibrary.Tree(folders, files);
             bool flat = query.Length > 0 || filter != "all";
             var rows = !flat ? SampleLibrary.Rows(tree, open)
-                : SampleLibrary.Search(files.Where(f => filter switch { "audio" => !f.IsVideo, "video" => f.IsVideo, "favorites" => samples.IsFavorite(f), _ => true }), query)
+                : SampleLibrary.Search(files.Where(f => filter switch { "audio" => !f.IsVideo && !f.IsMidi, "video" => f.IsVideo, "midi" => f.IsMidi, "favorites" => samples.IsFavorite(f), _ => true }), query)
                     .Select(f => new SampleRow(null, f, 0)).ToList();
             Dispatcher.UIThread.Post(() =>
             {
@@ -344,7 +344,61 @@ public partial class MainWindow
         samplePicked = f;
         ShowPickedSample();
         PickPencilSample(f);
-        if (sampleAuto.IsChecked == true && !f.Broken) PlaySample(f);
+        if (sampleAuto.IsChecked == true && !f.Broken && !f.IsMidi) PlaySample(f);
+        else
+        {
+            if (f.IsMidi) StopSample();
+            ShowSamplePreview(f);
+        }
+    }
+
+    /// <summary>Most notes the MIDI preview draws: beyond this a file is a blur at that size anyway.</summary>
+    const int MaxPreviewNotes = 4000;
+
+    /// <summary>
+    /// What the player's strip shows for a file that isn't playing: its notes if it is MIDI (read in the background), its
+    /// row's wave otherwise, so it never keeps the picture of the file before.
+    /// </summary>
+    void ShowSamplePreview(SampleFile f)
+    {
+        if (sampleLoaded != null) return; // something plays: the strip follows it
+        if (!f.IsMidi)
+        {
+            sampleScrubber.SetPeaks(f.Peaks is { } p ? [.. p.Select(v => v / 255f)] : null);
+            return;
+        }
+        sampleScrubber.SetPeaks(null);
+        if (f.Broken) return;
+        Task.Run(() => MidiPreview(f.Path)).ContinueWith(t => Dispatcher.UIThread.Post(() =>
+        {
+            if (samplePicked == f && sampleLoaded == null && t.IsCompletedSuccessfully) sampleScrubber.SetNotes(t.Result);
+        }), TaskScheduler.Default);
+    }
+
+    /// <summary>A MIDI file's notes as the strip draws them (<see cref="TakeScrubber.SetNotes"/>); null if unreadable.</summary>
+    static float[]? MidiPreview(string path)
+    {
+        try
+        {
+            var data = MidiFiles.Read(path);
+            var all = data.Tracks.SelectMany(t => t.Notes).OrderBy(n => n.Beat).Take(MaxPreviewNotes).ToList();
+            double beats = data.Tracks.Count == 0 ? 0 : data.Tracks.Max(t => t.LengthBeats);
+            if (all.Count == 0 || beats <= 0) return null;
+            int lo = all.Min(n => n.Pitch) - 1, hi = all.Max(n => n.Pitch) + 1;
+            var r = new float[all.Count * 3];
+            for (int i = 0; i < all.Count; i++)
+            {
+                var n = all[i];
+                r[i * 3] = (float)(n.Beat / beats);
+                r[i * 3 + 1] = (float)((n.Beat + n.Beats) / beats);
+                r[i * 3 + 2] = (float)(n.Pitch - lo) / (hi - lo);
+            }
+            return r;
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException or OutOfMemoryException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The player's texts: what is selected, what it is and where it lives.</summary>
@@ -352,7 +406,7 @@ public partial class MainWindow
     {
         var f = samplePicked;
         sampleName.Text = f?.Name ?? Loc.T("smp.none");
-        samplePlay.IsEnabled = f != null && !f.Broken;
+        samplePlay.IsEnabled = f is { Broken: false, IsMidi: false };
         samplePicture.IsVisible = f?.IsVideo == true && !AudioOnly;
         if (f == null) sampleMeta.Text = "";
         else
@@ -378,7 +432,7 @@ public partial class MainWindow
 
     void ToggleSampleListen()
     {
-        if (samplePicked is not { Broken: false } f) return;
+        if (samplePicked is not { Broken: false, IsMidi: false } f) return;
         if (sampleLoaded == f && SampleOut.Active)
         {
             SampleOut.Paused = !SampleOut.Paused;
@@ -476,7 +530,16 @@ public partial class MainWindow
 
     /// <summary>At the playhead, on the selected track when that stretch is free, like a take. Several go one under the
     /// other from the selected track down, as when they are dropped there.</summary>
-    Task InsertSamples(IReadOnlyList<SampleFile> files, bool? picture = null)
+    async Task InsertSamples(IReadOnlyList<SampleFile> files, bool? picture = null)
+    {
+        // MIDI files go to the selected MIDI track or new ones, like "Importar .mid…"; the rest, as audio
+        foreach (var m in files.Where(f => f.IsMidi && !f.Broken))
+            if (CanImport()) await ImportMidi(m.Path, engine.PositionSec, sel?.Track.IsMidi == true ? sel.Track.Id : null);
+        files = [.. files.Where(f => !f.IsMidi)];
+        if (files.Count > 0) await InsertAudioSamples(files, picture);
+    }
+
+    Task InsertAudioSamples(IReadOnlyList<SampleFile> files, bool? picture)
     {
         List<string> paths = [.. files.Select(f => f.Path)];
         bool video = picture ?? BringsPicture(paths[0]);
@@ -534,8 +597,11 @@ public partial class MainWindow
             {
                 items.Add(MenuAction(Loc.T("smp.menu.insertAudio"), () => InsertSamples(sampleList.WithMarked(f), false)));
             }
-            items.Add(MenuAction(Loc.T("smp.menu.sampler"), () => SampleToSampler(f.Path)));
-            items.Add(MenuAction(Loc.T("smp.menu.granular"), () => SampleToGranular(f.Path)));
+            if (!f.IsMidi)
+            {
+                items.Add(MenuAction(Loc.T("smp.menu.sampler"), () => SampleToSampler(f.Path)));
+                items.Add(MenuAction(Loc.T("smp.menu.granular"), () => SampleToGranular(f.Path)));
+            }
             items.Add(MenuAction(Loc.T(samples.IsFavorite(f) ? "smp.menu.unfavorite" : "smp.menu.favorite"), () => { ToggleSampleFavorite(f); return Task.CompletedTask; }, icon: ""));
             items.Add(new Separator());
             items.Add(MenuAction(Loc.T("hist.reveal"), () => { RevealInExplorer(null, f.Path); return Task.CompletedTask; }, icon: ""));

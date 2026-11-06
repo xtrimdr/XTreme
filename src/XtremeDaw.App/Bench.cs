@@ -22,6 +22,10 @@ static partial class Bench
     const string ListArg = "--lista";
     /// <summary>Started by XTreme on its own (something is pending): it shows without the focus.</summary>
     const string QuietArg = "--fondo";
+    /// <summary><c>--ticket 12</c>: the bench starts on that ticket (XTreme's "give the verdict", #198).</summary>
+    const string TicketArg = "--ticket";
+    /// <summary>In <see cref="BenchDir"/>: the ticket an open bench shows when it comes forward.</summary>
+    const string TicketFileName = "ticket.txt";
     /// <summary>Exists while a bench runs; set, the bench comes forward. Per user session (<c>Local\</c>).</summary>
     const string ShowEvent = @"Local\XTreme.Bench.Show";
     /// <summary>The bench that ran inside XTreme.exe (until #142) closes when this is set: the new one takes its place.</summary>
@@ -45,7 +49,7 @@ static partial class Bench
     /// Brings the open bench forward (only if <paramref name="activate"/>) or starts the newest one on
     /// <paramref name="listPath"/>. Returns why it could not, or null.
     /// </summary>
-    public static string? Open(string listPath, bool activate)
+    public static string? Open(string listPath, bool activate, int ticket = 0)
     {
         if (EventWaitHandle.TryOpenExisting(ShowEvent, out var open))
         {
@@ -53,6 +57,7 @@ static partial class Bench
             {
                 if (activate)
                 {
+                    if (ticket > 0) AskTicket(listPath, ticket);
                     AllowSetForegroundWindow(AnyProcess);
                     open.Set();
                 }
@@ -66,10 +71,46 @@ static partial class Bench
             start.ArgumentList.Add(ListArg);
             start.ArgumentList.Add(Path.GetFullPath(listPath));
             if (!activate) start.ArgumentList.Add(QuietArg);
+            else if (ticket > 0)
+            {
+                start.ArgumentList.Add(TicketArg);
+                start.ArgumentList.Add(ticket.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
             Process.Start(start)?.Dispose();
             return null;
         }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException) { return e.Message; }
+    }
+
+    /// <summary>
+    /// The ticket an open bench is to show when it comes forward (#198: the event carries nothing): written next to the
+    /// list before <see cref="ShowEvent"/> is set, and taken (read and deleted) by the bench.
+    /// </summary>
+    static string TicketFile(string listPath) => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(listPath))!, BenchDir, TicketFileName);
+
+    static void AskTicket(string listPath, int ticket)
+    {
+        try
+        {
+            var file = TicketFile(listPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, ticket.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* it still comes forward */ }
+    }
+
+    /// <summary>The ticket asked by <see cref="AskTicket"/>, or 0; the file goes either way.</summary>
+    static int TakeTicket(string listPath)
+    {
+        try
+        {
+            var file = TicketFile(listPath);
+            if (!File.Exists(file)) return 0;
+            string text = File.ReadAllText(file);
+            File.Delete(file);
+            return int.TryParse(text.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int id) ? id : 0;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return 0; }
     }
 
     /// <summary>The newest bench build's folder name ("20261105-111354"), or null: a Banco ticket is tried there.</summary>

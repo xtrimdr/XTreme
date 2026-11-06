@@ -876,10 +876,14 @@ public sealed partial class SettingsDialog : UserControl
             h => KnobLooks.Changed += h, h => KnobLooks.Changed -= h, SyncKnobs);
 
         // the rest of the looks build their own pickers (samples drawn by the same code, applied live)
+        viewPage.Children.Add(LookCard("panels", PanelLooks.Picker(), () => PanelLooks.Current == PanelLooks.Default,
+            () => PanelLooks.Set(PanelLooks.Default), h => PanelLooks.Changed += h, h => PanelLooks.Changed -= h));
         viewPage.Children.Add(LookCard("faders", FaderLooks.Picker(), () => FaderLooks.Current == FaderLooks.Default,
             () => FaderLooks.Set(FaderLooks.Default), h => FaderLooks.Changed += h, h => FaderLooks.Changed -= h));
         viewPage.Children.Add(LookCard("meters", MeterLooks.Picker(), () => MeterLooks.Current == MeterLooks.Default,
             () => MeterLooks.Set(MeterLooks.Default), h => MeterLooks.Changed += h, h => MeterLooks.Changed -= h));
+        viewPage.Children.Add(LookCard("meterColors", MeterColors.Editor(), () => !MeterColors.Custom,
+            () => MeterColors.SetCustom(false), h => MeterColors.Changed += h, h => MeterColors.Changed -= h));
         viewPage.Children.Add(LookCard("waves", WaveLooks.Picker(), () => WaveLooks.Current == WaveLooks.Default,
             () => WaveLooks.Set(WaveLooks.Default), h => WaveLooks.Changed += h, h => WaveLooks.Changed -= h));
         viewPage.Children.Add(LookCard("trackColor", TrackColorLooks.Picker(), () => TrackColorLooks.IsDefault,
@@ -913,6 +917,16 @@ public sealed partial class SettingsDialog : UserControl
         viewPage.Children.Add(Card(s));
         Resettable(s, () => TrackKnobs.All.All(TrackKnobs.Shows), () => { foreach (string k in TrackKnobs.All) TrackKnobs.Set(k, true); },
             h => TrackKnobs.Changed += h, h => TrackKnobs.Changed -= h, () => { foreach (var (k, b) in boxes) b.IsChecked = TrackKnobs.Shows(k); });
+
+        // the mixer's A | B, hidden by default (#211)
+        var mx = Section(Loc.T("set.view.mixer"));
+        mx.Children.Add(Help(Loc.T("set.view.mixer.help")));
+        var ab = new CheckBox { IsChecked = MixerOptions.ShowAb, FontSize = 12, Content = Loc.T("set.view.mixer.ab") };
+        ab.IsCheckedChanged += (_, _) => MixerOptions.SetShowAb(ab.IsChecked == true);
+        mx.Children.Add(ab);
+        viewPage.Children.Add(Card(mx));
+        Resettable(mx, () => !MixerOptions.ShowAb, () => MixerOptions.SetShowAb(false),
+            h => MixerOptions.Changed += h, h => MixerOptions.Changed -= h, () => ab.IsChecked = MixerOptions.ShowAb);
     }
 
     /// <summary>A card of Apariencia: its title and help ("set.look.&lt;key&gt;", ".help") over the picker, with its

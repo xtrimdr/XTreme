@@ -155,6 +155,20 @@ public sealed partial class PianoRollView : Control
     double lastBeats = 1;
     int lastVelocity = MidiNote.DefaultVelocity;
 
+    /// <summary>
+    /// The length a written or painted note gets (asked by the user, #195): "last" (the last note touched), "snap" (the
+    /// magnet's step) or one of <see cref="Subdivisions.All"/>.
+    /// </summary>
+    public string NoteLength { get; set { field = value; InvalidateVisual(); } } = "last";
+
+    /// <summary>The length the next written note gets, in beats.</summary>
+    double WriteBeats => NoteLength switch
+    {
+        "last" => lastBeats,
+        "snap" => SnapBeats > 0 ? SnapBeats : lastBeats,
+        _ => Subdivisions.Beats(NoteLength) is > 0 and var b ? b : lastBeats,
+    };
+
     MusicScale? scale;
     string chordKind = Chords.InScale;
     bool chordTool;
@@ -767,7 +781,7 @@ public sealed partial class PianoRollView : Control
             ghost = ChordOn(root);
             ghostName = Chords.Read(ghost.Order().ToList()) is { } read ? ChordLabel(read.Root[0], read.Kind) : "";
         }
-        double x = X(Math.Max(0, Snap(at, floor: true))), width = Math.Max(3, lastBeats * beatW - 1);
+        double x = X(Math.Max(0, Snap(at, floor: true))), width = Math.Max(3, WriteBeats * beatW - 1);
         var fill = Palette.Alpha(color, 0.4);
         var outline = Palette.Pen(Palette.Alpha(color, 0.9));
         foreach (int pitch in ghost)
@@ -1297,7 +1311,7 @@ public sealed partial class PianoRollView : Control
             else if (chordTool && ChordOn(WritePitch(p.Y)) is { Length: > 0 } chord)
             {
                 // the chord is selected, so it moves as one and its bar comes up as soon as it lands
-                var added = chord.Order().Select(pitch => new MidiNote { Pitch = pitch, Beat = beat, Beats = lastBeats, Velocity = lastVelocity }).ToList();
+                var added = chord.Order().Select(pitch => new MidiNote { Pitch = pitch, Beat = beat, Beats = WriteBeats, Velocity = lastVelocity }).ToList();
                 notes.AddRange(added);
                 selected.UnionWith(added);
                 hit = added[0];
@@ -1305,7 +1319,7 @@ public sealed partial class PianoRollView : Control
             }
             else
             {
-                hit = new MidiNote { Pitch = WritePitch(p.Y), Beat = beat, Beats = lastBeats, Velocity = lastVelocity };
+                hit = new MidiNote { Pitch = WritePitch(p.Y), Beat = beat, Beats = WriteBeats, Velocity = lastVelocity };
                 notes.Add(hit);
             }
         }

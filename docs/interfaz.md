@@ -189,14 +189,17 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   le pone el agente al tomarlo (`TestItem.Title`, `-Titula`), que es también lo que muestra la fila; con título, el
   pedido pasa a ser la primera entrada; sin título, el pedido hace de título.
   Sin pestañas (pedido del usuario, 2026-11-04, #125: todo en vertical): una sola lista **por temas** y, dentro de cada
-  tema, sus secciones una debajo de otra: **Para probar** (primero "Vuelven de un arreglo", después "Primera vez"),
-  **A arreglar** (No anda, Anda mal y A mejorar), **Pedidos** y **Resuelto** (`TabList`, `SectionHead`). Arriba,
+  tema, sus tickets en una sola lista, sin encabezados de sección (pedido del usuario, #197: era mucho ruido): cada
+  fila dice su estado en un chip de su color (No anda, Anda mal, A mejorar, Pedido o Para probar;
+  `StateChip`), y van primero los Nuevo, después lo que hay que arreglar, los pedidos y lo que espera prueba (`Ranked`);
+  **Resuelto** queda abajo, plegado en una línea con su cuenta (`DoneHead`). Arriba,
   **Buscar** (pedido del usuario, 2026-11-04; Ctrl+F) filtra la lista por número, texto, conversación, tema y tipo, sin
-  mayúsculas ni tildes; Enter abre el primero y Esc borra. En cada grupo van arriba los Nuevo (lo
-  que pide atención), después por número (`Ordered`, pedido del usuario, 2026-11-04). El tema de un ticket solo se lee
+  mayúsculas ni tildes; Enter abre el primero y Esc borra. El tema de un ticket solo se lee
   en la ventana: un pedido entra "A categorizar" y se lo pone el agente que lo toma (`-Clasifica`; pedido del usuario,
-  2026-11-04: era mucho para cargar); los temas son plegables (pedido del usuario, 2026-11-04, #123: sin líneas de árbol; `Tree`, `TopicHead`): un encabezado por tema con tickets (orden de `TestItem.Topics`, "A categorizar" al final), con flecha, cuenta, Nuevo y cuántos están en curso (con el spinner). Adentro, cada sección con tickets lleva su encabezado (flecha, punto y nombre en su color, cuenta, Nuevo y, en A arreglar y Pedidos, su Revisar con los números de esa sección del tema) y se pliega sola; Resuelto arranca plegada. Lo plegado queda guardado en `config.json` (`benchFolded`; #124) y buscar abre todo. Arriba de la lista, **Revisar todo** manda todos los pedidos y lo que hay para arreglar. La lista es compacta: una fila por ticket (número, Nuevo, tipo,
-  el texto en dos líneas, lo último que se dijo y el intento); un clic abre el ticket (`FillTicket`): arriba "← su
+  2026-11-04: era mucho para cargar); los temas son plegables (pedido del usuario, 2026-11-04, #123: sin líneas de árbol; `Tree`, `TopicHead`): un encabezado por tema con tickets (orden de `TestItem.Topics`, "A categorizar" al final), con flecha, un punto de color y una cuenta por estado (se lee plegado; #197), Nuevo, cuántos están en curso (con el spinner) y su Revisar con los pedidos y lo que hay para arreglar del tema. Lo plegado queda guardado en `config.json` (`benchFolded`; #124) y buscar abre todo. Arriba de la lista, **Revisar todo** manda todos los pedidos y lo que hay para arreglar. Cada ticket va en dos renglones (#204): arriba el número, el tipo y el título, solos; abajo el chip del estado (el de un pedido dice "Pedido"),
+  Nuevo o Tomado, el intento o la hora, y Probar o la consola; solo uno Nuevo suma un tercero con lo último que se dijo, que en los demás va en el
+  tooltip. La flecha de cada línea la despliega en un resumen (`Unfolded`, #197): el pedido, el último mensaje de un
+  agente y lo último del usuario después, dos líneas cada uno, y cuántos mensajes más hay en el ticket. El aviso de arriba dice número y título, no lo que se escribió (#197). Un clic abre el ticket (`FillTicket`): arriba "← su
   sección" (también Esc) y **⋯**, fijos fuera del scroll (`TicketBar`, #175) (Historial de cambios y Sacar de la lista, que pide un
   segundo clic); después el estado, el texto, la conversación (un pedido se edita en el lugar con el lápiz al lado de su texto, #177: `EditableText`), y abajo los veredictos, la respuesta y, al lado de Comentar, Probar, Ver consola y Revisar (#166). Anda (verde) se
   marca en el acto y vuelve a la lista; los otros tres se eligen y esperan a **Guardar · No anda** (Ctrl+Enter), con
@@ -503,7 +506,9 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   Fin, Re Pág y Av Pág se mueven, izquierda y derecha pliegan, Espacio escucha, Enter inserta y F marca favorito
   (`HandleKey`, antes que los atajos del proyecto). Se marcan varios archivos como en cualquier lista (pedido del usuario):
   Ctrl+clic suma o saca uno, Shift+clic y Shift+flechas marcan el tramo; arrastrar, insertar o el menú de uno marcado
-  llevan todos. Con texto buscado o un filtro la lista es plana. Largo y onda se
+  llevan todos. Con texto buscado o un filtro (Todo / Audio / Video / MIDI / Favoritos) la lista es plana. Los `.mid` también se listan
+  (pedido del usuario, #200; `SampleFile.IsMidi`): su largo sale a su tempo y su onda es cuántas notas suenan en cada tramo; no se
+  escuchan, y el reproductor muestra sus notas como un piano roll chico (`TakeScrubber.SetNotes`, #206; un archivo que no suena muestra la onda de su fila), y al insertarlos o soltarlos van por `ImportMidi` a la pista MIDI elegida (o la de abajo del mouse) o a pistas nuevas. Largo y onda se
   piden solo para las filas a la vista, en un hilo aparte; más de `MaxWaveSec` (120 s) da largo sin onda. El pie es el
   reproductor: onda para saltar (sacarla de la onda hacia arriba o abajo, o arrastrar el nombre, lleva el sample al timeline), Loop, Auto (escucha al seleccionar), Con imagen (solo con un video) y volumen. Escucha
   hasta `MaxListenSec` (10 min) por `SampleVoice`, que suma a la salida después del limitador, igual que el click: no
@@ -1003,7 +1008,7 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   sentido) sobre el mixer, que deja quieta la tira que está bajo el mouse, o con la barra de la cabecera (escala
   logarítmica, como la del timeline); solo cambia anchos, sin rearmar (`ZoomMixer`, `MixerLayout.Resize`). La rueda
   sola y el gesto de costados lo desplazan a los costados (`OnMixerWheel`); sobre una perilla, fader o barra la rueda
-  es de ese control, y una lista que tiene más para mostrar se queda con la rueda sola. Las tiras de carpeta también
+  es de ese control, salvo el gesto de zoom, que siempre cambia el ancho (#207: con Shift apretado no se cambia un valor sin querer), y una lista que tiene más para mostrar se queda con la rueda sola. Las tiras de carpeta también
   siguen el zoom; el master también (pedido del usuario), sin bajar de `MasterW`; los separadores no cambian de ancho.
 - **La tira se acomoda sola al angostarse** (pedido del usuario: el ícono del canal y los de los efectos quedan
   siempre): la cabecera (`StripHead`) lleva el badge del canal al lado del nombre, de 22 a 28 px según el ancho, y
@@ -1040,7 +1045,8 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
 - Las ediciones de canal pasan por `EditTrack`, las de las carpetas por `FolderEdit` y las de los buses por `BusEdit`
   (`BusesEdit` para agregar y quitar). Los desplegables son `SelectButton`, no `ComboBox`; con grupos abren submenús, como los presets del compresor (`CompPresetTable`: categoría → preset, pedido del usuario). Un preset se aplica directo con valores fijos (`CompPresets.Apply`); el botón **Analizar toma**, al lado, mide la toma y guarda la diferencia (`ThresholdTrim`, `MakeupTrim`), que sigue valiendo al mover Cantidad o cambiar de preset (decisión del usuario).
 - **A | B** (`MainWindow.MixCompare.cs`, `MixCompare`): segmentado en la barra del mixer, entre los M/S de limpiar y la
-  barra del ancho de los canales. La mezcla que suena es la del proyecto; la otra espera en `ProjectSettings.Compare` (solo ajustes:
+  barra del ancho de los canales. Oculto por defecto (pedido del usuario, #211): se muestra con Configuración → Apariencia
+  → Mixer (`MixerOptions`, "mixer.showAb"); ocultarlo no cambia la mezcla que suena. La mezcla que suena es la del proyecto; la otra espera en `ProjectSettings.Compare` (solo ajustes:
   el canal de cada pista, salida y envíos de las carpetas, y volumen, paneo, slots, salida y envíos de los buses, por
   id). El primer clic en la otra letra la arma como copia de esta. Nunca agrega ni saca pistas, carpetas ni buses, y
   no toca mute, solo, nombres, lados ni el master (Mastering es su propia etapa). Se aplica como Deshacer aplica un
@@ -1125,7 +1131,17 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   que suena (lee el efecto cada 33 ms; sin bloques nuevos, la línea se va y el sonido se atenúa). Con sidechain, a la
   derecha una barra con el nivel de la key (contra su pico reciente, o en dB con umbral), la raya de acento donde dispara
   y la tenue donde se rearma.
-- **"+ Efecto" por categorías** (`FxGroups`, pedido del usuario): Dinámica, Compresores clásicos, EQ, Saturación, Modulación y Espacio y estéreo
+- **Balance tonal** (`TonalView`, `MainWindow.Tonal.cs`, pedido del usuario, #210; slot `tonal`, familia Tono): analiza,
+  no toca el sonido (pasa bit a bit, sin `FxShell`; sin Dry, Wet, salida ni carriles). En el master lee la salida, después
+  del limitador (pedido del usuario, #210: `InsertRack.Analyze`), y en Mastering su ficha va después de Salida, sin mover. Arriba, presets, Empezar de nuevo y
+  Referencia… (uno o más archivos: su balance promedio pasa a ser el objetivo propio del slot, `InsertSlot.Tonal`, guardado
+  en el proyecto); el objetivo (seis géneros de fábrica, `TonalTargets`, o el propio) y Estéreo / Mid / Side. Compacto: las
+  cuatro bandas (Graves 20–120 Hz, Medios graves 120 Hz–1 kHz, Medios agudos 1–5 kHz, Agudos 5–20 kHz), cada una con el
+  rango del objetivo y la marca de la mezcla (en `Mute` si se sale), y el punch de los graves (cresta bajo 120 Hz, con su
+  valor). Full (y en Mastering): además el espectro de largo plazo (1/6 de octava, suavizado de 1/3, nivelado en 200 Hz–5 kHz)
+  sobre la banda del objetivo. Respuesta: cuánto mira hacia atrás el promedio (1–10 s). Analiza solo mientras su panel está a
+  la vista (`TonalAnalyzer.Pull` en el tick de la vista); el silencio no cuenta, así que parar deja la lectura.
+- **"+ Efecto" por categorías** (`FxGroups`, pedido del usuario): Dinámica, Compresores clásicos, EQ, Saturación, Modulación, Espacio y estéreo y Análisis
   (se abren al pasar el puntero), después VST3. Un efecto nuevo va en su grupo. Una perilla con `FxParam.Steps` va por pasos,
   como una llave, y muestra el nombre del paso si tiene uno ("Auto", "Todos").
 - **Mastering** (`MainWindow.Master.cs`, rediseñada como rack con editor, pedido del usuario, 2026-11-03): la tercera
@@ -1187,8 +1203,11 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   deselecciona todo. Pistas, carpetas y separadores se mueven en el mismo orden del timeline (`TrackFolders`, un
   `EditTimeline` con su deshacer), así que el timeline lo sigue y al revés; los buses se ordenan entre los buses de
   cualquiera de los dos lados. Los **separadores** se ven como una tira angosta (`SeparatorStrip`, `SeparatorW`; la línea con el mismo brillo que en el timeline) con su
-  nombre escrito hacia arriba y un ojo arriba que los muestra u oculta en el timeline; un clic abre su menú. "Separador" en
-  la cabecera del mixer agrega uno al final (`AddSeparatorButton`).
+  nombre escrito hacia arriba y un ojo arriba que los muestra u oculta en el timeline; un clic abre su menú y un doble clic,
+  directo su color, o sobre el nombre, renombrar (#194: por eso el menú del clic izquierdo espera `SeparatorClickWait`). Uno nuevo va donde se pide
+  (`NewMixerSeparator`, #194): "Nuevo separador" del clic derecho en el fondo, en el hueco más cercano al clic;
+  "Separador" en la cabecera (`AddSeparatorButton`), justo después del canal o la carpeta elegidos, de su lado; sin
+  nada elegido, al final del lado izquierdo.
 - **Paneo**: un solo desplegable (`BuildPanMenu`) con la apertura arriba (30 % por defecto) y las plantillas con su
   descripción; elegir una la aplica y cierra el menú.
 - **Buses** (`MainWindow.Buses.cs`, `ProjectSettings.Buses`, pedido del usuario): un solo concepto para bus y FX. A la
@@ -1204,7 +1223,9 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   llegaban y lo que salía a él pasa al Master). Sin SALIDA ni envíos: por ahora un bus sale solo al Master (decisión
   del usuario, `ProjectBuses.CanFeed`). No hay columna "+ Bus" (pedido del usuario): clic derecho en el mixer, también
   en su fondo vacío (`InitMixerMenu`) → "Nuevo bus / canal FX" agrega uno vacío (`ProjectBuses.Add`), y el efecto se
-  le suma con "+"; el mismo menú tiene "Nuevo separador". Un slot apagado deja pasar lo que le llega. Los selectores de
+  le suma con "+"; el mismo menú tiene "Nuevo separador" y, arriba, las pistas nuevas del + del timeline (audio, MIDI,
+  con instrumento, carpeta, plantilla, importar: `NewTrackItems`; pedido del usuario, #196), que van, como el separador, al hueco más cercano al clic
+  (`mixerNewAt`: lo que crea la próxima edición se mueve ahí con `MoveToSlot`, en el mismo paso de deshacer). Un slot apagado deja pasar lo que le llega. Los selectores de
   salida y los envíos de pistas y carpetas ofrecen los buses (`Targets`, `ProjectBuses.CanFeed`), y la clave de
   `RefreshMixer` lleva el ruteo de los buses para rearmar las tiras cuando cambia.
 - **Envíos en las tiras** (`Router`: pista, carpeta o bus): una barra por bus de su lista (`CompactSends`), con "+"
@@ -1296,7 +1317,7 @@ Logic o Studio One). Sigue en PENDIENTES.
   un acorde de una vez). La franja se agranda o achica desde la barrita que la separa de la grilla (40 px como mínimo,
   la grilla conserva 60; doble clic vuelve a 64; `pianoVelHeight` en config.json), pedidos del usuario. A la izquierda
   lleva su escala (127, 100, 64, 32, las que entran) y, mientras arrastrás, el valor al lado del puntero. En una barra
-  debajo de la franja, no en la cabecera (pedidos del usuario, 2026-11-02: arriba no se entendía de qué eran; `BuildPianoBottomBar`): primero lo que usa un clic, siempre a mano (pedido del usuario, 2026-11-04): Dibujar / Pintar / Cortar, **Escala** y **Acordes** juntos (pedido del usuario, 2026-11-04; el tipo de acorde ▾ aparece al lado mientras está prendido); a la derecha de todo, fijo, "Expresión" muestra u oculta la franja (`pianoVelShown`) y lo suyo se abre a su izquierda (pedido del usuario, 2026-11-04: el botón no se mueve; todos los botones de la barra y la cabecera llevan ícono): su desplegable elige qué muestra (`NoteLane`: velocidad, mod X, mod Y, paneo, release) y, solo con la franja a la vista, Lápiz / Línea (`pianoVelTool`: el lápiz
+  debajo de la franja, no en la cabecera (pedidos del usuario, 2026-11-02: arriba no se entendía de qué eran; `BuildPianoBottomBar`): primero lo que usa un clic, siempre a mano (pedido del usuario, 2026-11-04): Dibujar / Pintar / Cortar y, al lado, **Largo** (el de las notas nuevas: la última tocada, igual que el imán o un valor fijo; `PianoRollView.NoteLength`, `pianoNoteLen`, pedido del usuario, #195), **Escala** y **Acordes** juntos (pedido del usuario, 2026-11-04; el tipo de acorde ▾ aparece al lado mientras está prendido); a la derecha de todo, fijo, "Expresión" muestra u oculta la franja (`pianoVelShown`) y lo suyo se abre a su izquierda (pedido del usuario, 2026-11-04: el botón no se mueve; todos los botones de la barra y la cabecera llevan ícono): su desplegable elige qué muestra (`NoteLane`: velocidad, mod X, mod Y, paneo, release) y, solo con la franja a la vista, Lápiz / Línea (`pianoVelTool`: el lápiz
   pinta cada barra que cruza, la línea deja una rampa recta; las dos solo tocan las elegidas si hay) y "Paso de velocidad"
   (`pianoVelStep`: un chip con los valores comunes y "Otro…"; los valores van a múltiplos o a 127, Alt libre). Sus menús abren hacia arriba.
   El clic derecho en la franja pinta 100 (`MidiNote.DefaultVelocity`). "Ajustar" abre una tarjeta con Escalar (% alrededor
@@ -1317,7 +1338,7 @@ Logic o Studio One). Sigue en PENDIENTES.
 - **Instrumento VST3** (`MainWindow.Vst.cs`, `Track.Instrument`, `PluginRef`): clic derecho en la pista →
   "Instrumento: …", y lo mismo en la cabecera del piano roll: un chip con el nombre (▾ abre la lista; "(cargando…)"
   mientras abre) y un botón que abre la ventana del plugin. La lista (`InstrumentItems`, pedido del usuario) va en dos
-  grupos con título (`MenuGroup`): NATIVOS (el tono de prueba, el Sampler y el Granular) y VST3 (cada instrumento con su marca; desde 12,
+  grupos con título (`MenuGroup`): NATIVOS (el tono de prueba, el Sampler, el Granular y General MIDI) y VST3 (cada instrumento con su marca; desde 12,
   `ByVendorFrom`, un submenú por marca, con el tilde en la del que se usa), y abajo "Buscar plugins de nuevo",
   "Administrar plugins…" y "Abrir la ventana de …".
 - **Inspector de una pista MIDI** (`InitMidiInspector`, `RefreshMidiInspector`): INSTRUMENTO, una tarjeta con un
@@ -1328,6 +1349,7 @@ Logic o Studio One). Sigue en PENDIENTES.
 - **Sampler** (`MainWindow.Sampler.cs`, `Dialogs/SamplerWindow.cs`, `Track.Sampler`, pedido del usuario, 2026-11-02: lindo, funcional y fácil; un sample por ahora): en NATIVOS de la lista de instrumentos. Es una ventana por pista, en el lugar de la de un plugin ("Abrir la ventana", clic en el chip), flotando sobre la app (`Show(this)`), sin pestañas: todo a la vista. Arriba, nombre y datos del sample, Reverse, Normalizar, Cargar y Quitar, y la onda (`SamplerWaveView`): sin sample es el lugar donde soltar uno (o un clic para elegirlo; entra siempre vinculado, sin preguntar, también en el Granular: decisión del usuario, 2026-11-03); con sample se arrastran las banderas S y E (inicio y fin) y las L del loop, y las voces corren encima en una capa propia. La onda se acerca hasta ver cada muestra (pedido del usuario, 2026-11-02: clavar el loop en el cruce por cero): la ruedita hace zoom donde está el puntero, con un modificador la corre, arrastrar lo vacío la mueve y doble clic la muestra entera; de cerca dibuja el sonido mismo (no los picos), a la escala de lo que se ve, con su línea de cero. Debajo, "Ver todo", "Inicio del loop" y "Fin del loop" (van a esa bandera) e **Imán al cero** (`samplerZero` en config.json, prendido de entrada): toda bandera cae en el cruce hacia arriba más cercano de la suma de los canales, a menos de 50 ms (`SamplerSound.ZeroCrossing`), con Alt libre; prendido, de cerca los cruces se marcan con un círculo. Abajo, cuatro tarjetas: Reproducción (Nota / One shot, loop, Raíz, Detectado, Tono, Voces, Sigue la tecla, Legato, Fino, Glide, Crossfade), Amplificador (`SamplerEnvelopeView`: la envolvente con sus puntos arrastrables, A D S R, Volumen, Paneo, Vel), Filtro (tipo, Corte, Reso, Drive, su envolvente, Env, Tecla, Vel; atenuado sin filtro) y Modulación (forma, Tempo o Libre, LFO, Espera, a Tono, Filtro y Vol, y la envolvente de tono). Al pie, el teclado (`SamplerKeysView`): clic toca, más abajo más fuerte; clic derecho elige la raíz. Se apaga lo que no aplica (el loop en One shot, Legato y Glide con más de una voz, Crossfade salvo en loop hacia adelante, la perilla LFO con Tempo).
   Un archivo entra soltándolo en la ventana, soltándolo en una pista MIDI sin plugin (`InitImport`) o desde la Biblioteca ("Abrir en el sampler", en la pista elegida o en una nueva): se copia o vincula como una importación (`LoadSample`) y queda como `Media`. Un sample nuevo toma la raíz de su nombre ("Piano_C3") o de su sonido, ya afinado, y si no tiene altura y dura menos de 3 s queda en One shot. Detectado (pedido del usuario) muestra la nota y los cents del tramo entre S y E, se mide de nuevo al mover esas banderas (`MeasurePitch`) y dice "afinado" si la raíz y Fino dejan el sonido a menos de 2 cents; si no, el botón Afinar pone raíz y Fino. Mientras la ventana está al frente el teclado MIDI y el virtual tocan esa pista (`samplerFront`, `UpdateKeyTarget`) y los atajos siguen andando (`Shortcut`). Editar es un paso de deshacer por gesto (`EditSampler`, clave por perilla). Corte, Reso, Drive, Env, Volumen, Paneo y Tono, Filtro y Vol del LFO se automatizan: clic derecho en la perilla (`Automate`, que pasa por `AutomateOn`) o el submenú Sampler de Automatización de la pista; mientras suena, la perilla sigue su carril.
 - **Granular** (`MainWindow.Granular.cs`, `Dialogs/GranularWindow.cs`, `Track.Granular`, pedido del usuario, 2026-11-03: un granular como instrumento aparte): en NATIVOS, debajo del Sampler. Una ventana por pista como la del Sampler, sin pestañas. Arriba, nombre y datos del sample, Normalizar, Cargar y Quitar, y la onda (`SamplerWaveView`, la misma): las banderas S y E marcan la parte que recorre el cabezal y el cabezal de cada voz corre encima; "Ver todo" debajo. Cuatro tarjetas: Grano (`GrainShapeView`: la forma de los granos, de la misma tabla que el motor; Sync o Libre, Densidad, Tamaño, Jitter, Forma, Sesgo), Cabezal (Estirar / Recorrer, Posición, Velocidad, Spray, Sync y Reverse, BPM del sample; Velocidad, Sync, Reverse y BPM se apagan en Recorrer), Tono (Raíz, Tono, Voces, Sigue la tecla, Fino, Ancho) y Amplificador (la envolvente, A D S R, Volumen, Paneo, Vel). Al pie, el teclado. Un archivo entra soltándolo en la ventana o desde la Biblioteca ("Abrir en el granular"), por el mismo `LoadSample` del Sampler; un sample nuevo toma la raíz como en el Sampler. Editar es un paso de deshacer por gesto (`EditGranular`). Posición, Velocidad, Densidad, Tamaño, Jitter, Spray, Ancho, Volumen y Paneo se automatizan (clic derecho en la perilla o el submenú Granular de Automatización).
+- **General MIDI** (`MainWindow.Gm.cs`, `Track.Gm`, pedido del usuario, #200): en NATIVOS, debajo del Granular, un submenú con las 16 familias GM (8 programas cada una) y **Batería** con los kits GS; el tilde va en el programa y en el título de su familia. El desplegable del inspector y el chip del timeline cambian el programa (un paso de deshacer, `SetGm`); el tono queda. **Su ventana** (`Dialogs/GmWindow`, Abrir la ventana): familias y kits a la izquierda, sus programas en mosaicos a la derecha, abajo una franja de tres tarjetas de perillas (Envolvente: A/D/S/R; Filtro: Brillo, Resonancia, Brillo vel.; Tocar: Sensibilidad, Transponer, Afinación, Glide, con el chip Mono en su título) y **Restablecer**, y el teclado. Las perillas son sobre el banco (`GmTone`): las bipolares se imantan al centro, que es el sonido del banco; cada arrastre es un paso de deshacer (`EditGm`). En la batería Transponer queda deshabilitado; Glide, sin Mono. El banco (`GmBank`, GeneralUser GS en `gm\` junto al exe) se lee una vez en segundo plano; mientras tanto la pista dice que carga, y si falta, lo avisa. Al importar un `.mid` con más de una pista, **Importar MIDI** (`Dialogs/MidiImportDialog`) pregunta cuáles traer (todas marcadas, Todas / Ninguna); cada pista nueva toma su nombre del archivo (sin nombre, el de su instrumento), su programa GM y, en el canal 10, la batería con los nombres GM de sus teclas (`MidiFiles.Import`).
 - **Instrumento o efecto** (`VstPluginInfo.IsInstrument`): la búsqueda (`xtvsthost --scan`) crea cada plugin y le
   pregunta sus entradas: de audio principales (un sidechain no cuenta) y de notas. Toma notas y no audio → instrumento;
   toma audio y no notas → efecto, diga lo que diga su categoría; las dos cosas (un afinador por MIDI, un synth con
@@ -1473,6 +1495,15 @@ Logic o Studio One). Sigue en PENDIENTES.
   (el de la calidad) o un slider de 1 a 100 Mbps; mover el slider sale de Automático. Con bitrate a mano, x264 pasa de
   CRF a ese bitrate y la placa lo usa en vez del de la calidad; la calidad sigue eligiendo la velocidad del codificador.
   Se recuerda por proyecto (`ExportSettings.Resolution`, `BitrateMbps`) y la estimación del peso lo usa.
+- **Avanzado de Exportar audio** (pedido del usuario, #208): el mismo link, con otro cuerpo (`AudioAdvancedBody`).
+  Plegado y sin tocar es el modo fácil de siempre (`AudioExportSettings.Defaults`: WAV 24 bit o MP3 320, 48 kHz,
+  estéreo, cola automática, sin normalizar, un stem por pista). Adentro: Formato (WAV, MP3, FLAC, AIFF, OGG; los de
+  FFmpeg, deshabilitados sin él), Resolución 16 · 24 · 32 float (32 solo WAV) con Dither TPDF en 16, bitrate 128–320 o
+  VBR (MP3/OGG), Frecuencia 44,1 · 48 · 96 kHz (96 no en MP3/OGG), Estéreo / Mono, Cola Automática (hasta
+  `MixMaster.MaxTailSec`) o Fija (0–30 s, silencio incluido), Normalizar al pico (−6 a 0 dBTP, después del master) y,
+  con Stems tildado, qué pistas llevan stem y qué carpetas o buses suman uno. Se guarda por proyecto
+  (`ExportSettings.AudioBits`, `AudioRate`, `AudioDither`, `AudioKbps`, `AudioTailSec`, `AudioNormalizeDbtp`,
+  `AudioMono`, `StemsSkip`, `StemNodes`); `AudioExporter` lo lleva a cabo y `xtlab comprobar-dsp` lo comprueba.
 - **Masterizado y colas** (`Dsp/MixMaster.cs`): la mezcla se renderiza con el mismo `MixRenderer` sin limitador y hasta
   8 s después del último clip; corta donde reverb y delay bajan de −66 dBFS (o funde el último segundo si siguen
   sonando en el límite). Después va el `MasterLimiter` con la ganancia que lleva a los LUFS del Destino del master (arrancando de la que ya midió la ventana), midiendo con

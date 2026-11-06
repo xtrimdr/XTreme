@@ -160,8 +160,8 @@ public sealed class StereoMeter : Control
             if (k > 0)
             {
                 double split = (-6 - MinDb) / -MinDb;
-                ctx.DrawRectangle(Palette.Accent, null, new Rect(0, r.Y, w * Math.Min(k, split), h), 2, 2);
-                if (k > split) ctx.FillRectangle(Palette.Mute, new Rect(w * split, r.Y, w * (k - split), h));
+                ctx.DrawRectangle(MeterColors.StereoLow, null, new Rect(0, r.Y, w * Math.Min(k, split), h), 2, 2);
+                if (k > split) ctx.FillRectangle(MeterColors.StereoHot, new Rect(w * split, r.Y, w * (k - split), h));
             }
             double hk = (hold[c] - MinDb) / -MinDb;
             if (hk > 0) ctx.FillRectangle(hold[c] > -1 ? Palette.Rec : Palette.Fg, new Rect(w * hk - 1.5, r.Y, 1.5, h));
@@ -171,12 +171,13 @@ public sealed class StereoMeter : Control
     /// <summary>
     /// The bars in another look, with the same colors and thresholds: <see cref="MeterLooks.Led"/> lights whole LEDs,
     /// <see cref="MeterLooks.Gradient"/> paints the colors as one gradient over a faint copy of the whole scale, and
-    /// <see cref="MeterLooks.Thin"/> lights a narrow line in the middle of each bar. The peak hold keeps the bar's height.
+    /// <see cref="MeterLooks.Thin"/> lights a narrow line in the middle of each bar, and <see cref="MeterLooks.Tron"/> lights
+    /// LEDs of the gradient on black, the unlit ones faint, each bar edged in the accent. The peak hold keeps the bar's height.
     /// </summary>
     void RenderLook(DrawingContext ctx, string lk, double w, double h)
     {
         double split = (-6 - MinDb) / -MinDb;
-        bool led = lk == MeterLooks.Led;
+        bool led = MeterLooks.Segmented(lk), tron = lk == MeterLooks.Tron;
         if (led)
         {
             var area = new Rect(0, 0, w, BarsH);
@@ -196,19 +197,19 @@ public sealed class StereoMeter : Control
                     double th = Math.Max(2, Math.Round(h * MeterLooks.ThinShare));
                     bar = new Rect(0, r.Y + Math.Floor((h - th) / 2), w, th);
                 }
-                ctx.FillRectangle(Palette.Raised, bar);
-                if (lk == MeterLooks.Gradient)
+                ctx.FillRectangle(tron ? Palette.App : Palette.Raised, bar);
+                if (lk == MeterLooks.Gradient || tron)
                 {
                     var grad = MeterLooks.StereoGradient(split);
-                    using (ctx.PushOpacity(MeterLooks.GhostOpacity)) ctx.FillRectangle(grad, r);
+                    using (ctx.PushOpacity(tron ? MeterLooks.TronGhost : MeterLooks.GhostOpacity)) ctx.FillRectangle(grad, r);
                     if (lit > 0)
                         using (ctx.PushClip(new Rect(0, r.Y, lit, h)))
                             ctx.FillRectangle(grad, r);
                 }
                 else if (lit > 0)
                 {
-                    ctx.FillRectangle(Palette.Accent, new Rect(0, bar.Y, Math.Min(lit, w * split), bar.Height));
-                    if (lit > w * split) ctx.FillRectangle(Palette.Mute, new Rect(w * split, bar.Y, lit - w * split, bar.Height));
+                    ctx.FillRectangle(MeterColors.StereoLow, new Rect(0, bar.Y, Math.Min(lit, w * split), bar.Height));
+                    if (lit > w * split) ctx.FillRectangle(MeterColors.StereoHot, new Rect(w * split, bar.Y, lit - w * split, bar.Height));
                 }
                 if (hk > 0)
                 {
@@ -222,6 +223,7 @@ public sealed class StereoMeter : Control
                     else ctx.FillRectangle(brush, new Rect(w * hk - 1.5, r.Y, 1.5, h));
                 }
             }
+            if (tron) ctx.DrawRectangle(null, Palette.Pen(Palette.Alpha(Palette.AccentColor, MeterLooks.TronEdge)), new RoundedRect(r.Deflate(0.5), 2));
         }
     }
 }

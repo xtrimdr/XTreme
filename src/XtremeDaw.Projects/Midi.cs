@@ -912,14 +912,74 @@ public static class MidiPatterns
     {
         var c = Clip(p, clipId);
         if (c.PatternId != null) return c;
-        var used = All(p).Select(x => x.Name).ToHashSet();
-        int n = 1;
-        while (used.Contains($"Patrón {n}")) n++;
         c.PatternId = Ids.New("pat");
-        c.PatternName = $"Patrón {n}";
+        c.PatternName = NewName(p);
         c.PatternBeats = c.CellBeats;
         c.LoopBeats = null;
         return c;
+    }
+
+    /// <summary>The first free "Patrón n".</summary>
+    static string NewName(Project p)
+    {
+        var used = All(p).Select(x => x.Name).ToHashSet();
+        int n = 1;
+        while (used.Contains($"Patrón {n}")) n++;
+        return $"Patrón {n}";
+    }
+
+    /// <summary>
+    /// Makes several clips one new pattern (asked by the user, #201): on each track, one clip from the first clip's
+    /// start to the last one's end, as long as all of them together, holding what each one plays where it played it
+    /// (repeats written out). With clips on several tracks, each track is an instrument of the pattern. A single clip
+    /// is <see cref="Create"/>. Returns the clip on the first clip's track.
+    /// </summary>
+    public static MidiClip CreateFrom(Project p, IReadOnlyList<string> clipIds)
+    {
+        var found = clipIds.Distinct().Select(id => MidiEditing.Find(p, id)).ToList();
+        if (found.Count == 0) throw new ArgumentException(Texts.T("err.midi.clipNotFound", "Clip MIDI no encontrado."));
+        if (found.Count == 1) return Create(p, found[0].Clip.Id);
+        if (found.Select(x => x.Track).FirstOrDefault(t => t.Locked) is { } locked)
+            throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", locked.Name));
+        double bpm = p.Settings.Bpm, beatSec = 60 / Math.Max(1, bpm);
+        double start = found.Min(x => x.Clip.AtSec), end = found.Max(x => x.Clip.EndSec(bpm));
+        double beats = Math.Clamp((end - start) / beatSec, MidiClip.MinBeats, MidiClip.MaxBeats);
+        string id = Ids.New("pat"), name = NewName(p);
+        MidiClip? first = null;
+        bool firstPart = true;
+        // tracks in the project's order, so the top one is the pattern's first instrument
+        foreach (var group in found.GroupBy(x => x.Track).OrderBy(g => p.Tracks.IndexOf(g.Key)))
+        {
+            var track = group.Key;
+            var made = new MidiClip
+            {
+                AtSec = ClipEditing.ToSample(start), LengthBeats = beats, PatternId = id, PatternName = name, PatternBeats = beats,
+                PatternPart = firstPart ? null : Ids.New("prt"), Extra = group.First().Clip.Extra,
+            };
+            firstPart = false;
+            foreach (var (_, c) in group.OrderBy(x => x.Clip.AtSec))
+            {
+                double shift = (c.AtSec - start) / beatSec;
+                for (int pass = 0; pass < c.Passes; pass++)
+                    foreach (var n in c.Notes)
+                    {
+                        if (!c.Heard(n, pass, out double from, out double to)) continue;
+                        var copy = n.Copy();
+                        copy.Beat = from + shift;
+                        copy.Beats = to - from;
+                        // a note that went on from the clip before only goes on from the pattern's start
+                        if (copy.Beat > 1e-9) copy.Tie = false;
+                        made.Notes.Add(copy);
+                    }
+            }
+            var list = track.MidiClips!;
+            int at = group.Min(x => list.IndexOf(x.Clip));
+            list.RemoveAll(c => group.Any(x => x.Clip == c));
+            made.Normalize();
+            list.Insert(Math.Min(at, list.Count), made);
+            if (group.Any(x => x == found[0])) first = made;
+        }
+        return first!;
     }
 
     /// <summary>Hands <paramref name="source"/>'s name and pass to the rest of its pattern, and its notes to the rest of its part.</summary>

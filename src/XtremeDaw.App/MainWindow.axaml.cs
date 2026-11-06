@@ -690,6 +690,7 @@ public partial class MainWindow : Window
         TellTimelineKeys(e, down: true);
         if (Unsaved.HandleKey(e)) return;
         if (TempoAsk.HandleKey(e)) return;
+        if (MidiAsk.HandleKey(e)) return;
         if (ImportAsk.HandleKey(e)) return;
         if (Feedback.HandleKey(e)) return;
         if (News.HandleKey(e)) return;
@@ -1211,6 +1212,8 @@ public partial class MainWindow : Window
             restoring = false;
             Timeline.IsEnabled = TimelineToolbar.IsEnabled = TimelineFooter.IsEnabled = SessionChip.IsEnabled = true;
             Inspector.IsEnabled = sel != null || SelectedFolder != null || SelectedBus != null;
+            // the strip and name box copied the disabled state while restoring (#192)
+            RefreshInspectorText();
             RefreshColorPanel();
             ApplyMode();
             RefreshMixer();

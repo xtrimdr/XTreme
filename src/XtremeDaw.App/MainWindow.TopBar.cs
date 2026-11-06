@@ -56,6 +56,7 @@ public partial class MainWindow
         MonitorToggle.IsCheckedChanged += (_, _) => engine.SoftwareMonitor = MonitorToggle.IsChecked == true;
         ToolTip.AddToolTipOpeningHandler(DspBox, (_, _) => ToolTip.SetTip(DspBox, DspTip()));
         InitComponents();
+        InitPanelLook();
     }
 
     /// <summary>The top bar's FFmpeg chip (only while it is missing) and the about box; null = not on the PATH.</summary>

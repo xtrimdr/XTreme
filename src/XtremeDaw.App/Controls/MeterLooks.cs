@@ -12,15 +12,18 @@ namespace XtremeDaw.App.Controls;
 /// The looks the level meters can take (asked by the user, picked in Configuración → Apariencia), the same for every
 /// <see cref="MixerMeter"/> and <see cref="StereoMeter"/> in the window. Kept in config.json ("meterLook"); an unknown id
 /// falls back to the first, which is the meter as it always was. A look only changes how the bar is painted: the
-/// colors, their thresholds, the clip lights, the peak hold and the scale stay each meter's. The pieces that cost
+/// colors (<see cref="MeterColors"/>), their thresholds, the clip lights, the peak hold and the scale stay each meter's. The pieces that cost
 /// something (the LEDs' clip geometry, the stereo gradient) are built once per size or accent, never per frame.
 /// </summary>
 public static class MeterLooks
 {
-    public const string Solid = "solid", Led = "led", Gradient = "gradient", Thin = "thin";
+    public const string Solid = "solid", Led = "led", Gradient = "gradient", Thin = "thin", Tron = "tron";
 
     /// <summary>In the picker's order; the first is the default.</summary>
-    public static readonly string[] All = [Solid, Led, Gradient, Thin];
+    public static readonly string[] All = [Solid, Led, Gradient, Thin, Tron];
+
+    /// <summary>The looks drawn in LEDs: <see cref="Led"/> and <see cref="Tron"/>.</summary>
+    public static bool Segmented(string look) => look is Led or Tron;
 
     const string ConfigKey = "meterLook";
 
@@ -36,7 +39,11 @@ public static class MeterLooks
     {
         try { if (AppConfig.Get(ConfigKey) is { } id && All.Contains(id)) Current = id; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* the default */ }
+        MeterColors.Load();
     }
+
+    /// <summary>Every meter redraws (the colors changed, <see cref="MeterColors"/>).</summary>
+    internal static void Redraw() => Changed?.Invoke();
 
     public static void Set(string look)
     {
@@ -58,6 +65,33 @@ public static class MeterLooks
     public const double GhostOpacity = 0.16;
     /// <summary>How much of a bar's thickness <see cref="Thin"/> lights.</summary>
     public const double ThinShare = 0.4;
+    /// <summary>
+    /// <see cref="Tron"/> (part of the Tron Legacy theme, #191): LEDs of light on black, the unlit ones still showing
+    /// their color this faintly, each bar edged by a line of the accent this strong.
+    /// </summary>
+    public const double TronGhost = 0.14, TronEdge = 0.55;
+
+    static IBrush? tronLevels;
+    static Color tronAccent, tronMute;
+
+    /// <summary>
+    /// <see cref="MixerMeter"/>'s colors in <see cref="Tron"/>: the accent's light up to the same thresholds as its green,
+    /// then amber and red, bottom to top; rebuilt only when the theme changes the accent or the amber.
+    /// </summary>
+    public static IBrush TronLevels()
+    {
+        if (MeterColors.Custom) return MeterColors.MixerLevels();
+        Color a = Palette.AccentColor, m = Palette.MuteColor;
+        if (tronLevels != null && a == tronAccent && m == tronMute) return tronLevels;
+        tronAccent = a;
+        tronMute = m;
+        return tronLevels = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            GradientStops = { new GradientStop(a, 0), new GradientStop(a, 0.7), new GradientStop(m, 0.84), new GradientStop(Palette.RecColor, 0.96) },
+        }.ToImmutable();
+    }
 
     /// <summary>
     /// The LEDs of <paramref name="area"/> as one clip geometry: stacked from the bottom (<paramref name="vertical"/>) or
@@ -85,23 +119,25 @@ public static class MeterLooks
     public static double SnapLed(double len) => Math.Round(len / SegStep) * SegStep;
 
     static IBrush? stereoGradient;
-    static Color gradAccent, gradMute;
+    static Color gradAccent, gradMute, gradClip;
 
     /// <summary>
     /// <see cref="StereoMeter"/>'s colors as one left-to-right gradient over the whole scale (accent, amber at −6 dB, red
-    /// at the top), rebuilt only when the theme changes the accent or the amber.
+    /// at the top, or the user's <see cref="MeterColors"/>), rebuilt only when one of the three changes.
     /// </summary>
     public static IBrush StereoGradient(double split)
     {
-        Color a = Palette.AccentColor, m = Palette.MuteColor;
-        if (stereoGradient != null && a == gradAccent && m == gradMute) return stereoGradient;
+        bool custom = MeterColors.Custom;
+        Color a = custom ? MeterColors.Low : Palette.AccentColor, m = custom ? MeterColors.Hot : Palette.MuteColor, r = custom ? MeterColors.Clip : Palette.RecColor;
+        if (stereoGradient != null && a == gradAccent && m == gradMute && r == gradClip) return stereoGradient;
         gradAccent = a;
         gradMute = m;
+        gradClip = r;
         return stereoGradient = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
             EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-            GradientStops = { new GradientStop(a, 0), new GradientStop(a, split * 0.7), new GradientStop(m, split), new GradientStop(Palette.RecColor, 1) },
+            GradientStops = { new GradientStop(a, 0), new GradientStop(a, split * 0.7), new GradientStop(m, split), new GradientStop(r, 1) },
         }.ToImmutable();
     }
 

@@ -7,7 +7,7 @@ namespace XtremeDaw.App.Controls;
 
 /// <summary>
 /// The Biblioteca's mini player wave: the take's peaks as thin bars, what was already heard in the accent and the rest
-/// faint, plus a hover line. Click or drag to jump. It only raises <see cref="SeekRequested"/> (a fraction 0..1);
+/// faint, plus a hover line; a MIDI file shows its notes instead (<see cref="SetNotes"/>). Click or drag to jump. It only raises <see cref="SeekRequested"/> (a fraction 0..1);
 /// the window moves the preview. Without peaks yet (they are read in the background) it shows a flat line.
 /// Dragging out of the wave, above or below, raises <see cref="CarryRequested"/> instead, so the window can carry the
 /// file to the timeline; sideways it keeps seeking.
@@ -18,7 +18,9 @@ public sealed class TakeScrubber : Control
     const double BarW = 2, Gap = 1;
     /// <summary>How far above or below the wave the pointer goes before a scrub turns into a drag out.</summary>
     const double CarryOut = 8;
-    float[]? peaks;
+    /// <summary>Thickest a note gets in the MIDI view, in px: few pitches would otherwise draw fat blocks.</summary>
+    const double MaxNoteH = 3;
+    float[]? peaks, notes;
     float peakMax = 1;
     double progress, hoverX = -1;
     bool dragging;
@@ -33,8 +35,20 @@ public sealed class TakeScrubber : Control
         Cursor = new Cursor(StandardCursorType.Hand);
     }
 
+    /// <summary>
+    /// A MIDI file instead of a wave: triples of start and end (0..1 of its length) and pitch (0..1 of its range), drawn as
+    /// a small piano roll. Null goes back to the wave.
+    /// </summary>
+    public void SetNotes(float[]? n)
+    {
+        notes = n;
+        if (n != null) peaks = null;
+        InvalidateVisual();
+    }
+
     public void SetPeaks(float[]? p)
     {
+        notes = null;
         peaks = p;
         peakMax = 0;
         if (p != null) foreach (var v in p) peakMax = Math.Max(peakMax, v);
@@ -58,7 +72,19 @@ public sealed class TakeScrubber : Control
         double playedX = progress * w;
         var played = Palette.Accent;
         var rest = Palette.Alpha(Palette.FaintColor, 0.7);
-        if (peaks is not { Length: > 0 } p)
+        if (notes is { Length: >= 3 } n)
+        {
+            // pitch 1 at the top; one row per pitch as far as the height allows
+            double nh = Math.Clamp((h - 2) / 24, 1, MaxNoteH);
+            var dim = Palette.Alpha(Palette.AccentColor, 0.75);
+            for (int i = 0; i + 2 < n.Length; i += 3)
+            {
+                double x0 = n[i] * w, x1 = Math.Max(x0 + 1, n[i + 1] * w);
+                double y = 1 + (1 - n[i + 2]) * (h - 2 - nh);
+                ctx.FillRectangle(x0 <= playedX && playedX > 0 ? played : dim, new Rect(x0, y, x1 - x0, nh));
+            }
+        }
+        else if (peaks is not { Length: > 0 } p)
         {
             ctx.FillRectangle(rest, new Rect(0, mid - 0.5, w, 1));
             ctx.FillRectangle(played, new Rect(0, mid - 0.5, playedX, 1));

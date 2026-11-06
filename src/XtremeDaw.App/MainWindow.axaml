@@ -21,7 +21,7 @@
          clips it with "card-clip" and draws its edge with "card-edge" on top: the edge of a clipping Border
          is drawn under its child, which would hide it at the corners -->
     <Style Selector="Border.card">
-      <Setter Property="Margin" Value="4" />
+      <Setter Property="Margin" Value="2" />
       <Setter Property="BorderBrush" Value="{StaticResource Line}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="10" />
@@ -129,11 +129,14 @@
 
   <!-- maximized, Windows pushes a window with our own title bar 8 px past each screen edge: OffScreenMargin
        says how much, so the content stays on screen -->
-  <Grid x:Name="Root" RowDefinitions="Auto,*,0,280,Auto,Auto" ColumnDefinitions="*,Auto" Margin="{Binding $parent[Window].OffScreenMargin}">
+  <!-- the cards keep 4 px from everything (asked by the user, #193): 2 of their own margin plus these 2 around the
+       area they live in; the bars (title, transport, keys) take them back with negative margins and stay edge to edge -->
+  <Panel Margin="{Binding $parent[Window].OffScreenMargin}">
+  <Grid x:Name="Root" RowDefinitions="Auto,*,0,280,Auto,Auto" ColumnDefinitions="*,Auto" Margin="2,0">
 
     <!-- top bar: two rows so everything fits in a window that is not maximized. The first is the window's title
          bar (the system buttons sit on its right); the second holds the project's tools, Exportar on the right -->
-    <Border x:Name="TitleBar" Grid.ColumnSpan="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
+    <Border x:Name="TitleBar" Grid.ColumnSpan="2" Margin="-2,0,-2,2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
       <Grid RowDefinitions="44,Auto">
         <Grid x:Name="TitleRow" ColumnDefinitions="Auto,*,Auto" Margin="12,0,150,0">
           <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -329,14 +332,14 @@
     <GridSplitter x:Name="BottomSplitter" Grid.Row="2" Background="Transparent" Margin="0,-4" ResizeDirection="Rows" />
 
     <!-- timeline, or the mixer in its place (X) -->
-    <Panel Grid.Row="3" x:Name="MixerHost" Classes="notips" IsVisible="False" Margin="4">
-      <Border Classes="card-clip" Background="{StaticResource App}">
+    <Panel Grid.Row="3" x:Name="MixerHost" Classes="notips" IsVisible="False" Margin="2">
+      <Border x:Name="MixerClip" Classes="card-clip" Background="{StaticResource App}">
         <DockPanel x:Name="MixerDock" />
       </Border>
-      <Border Classes="card-edge" />
+      <Border x:Name="MixerEdge" Classes="card-edge" />
     </Panel>
-    <Grid Grid.Row="3" x:Name="TimelineHost" Margin="4">
-      <Border Classes="card-clip">
+    <Grid Grid.Row="3" x:Name="TimelineHost" Margin="2">
+      <Border x:Name="TimelineClip" Classes="card-clip">
         <Grid>
           <c:TimelineView x:Name="Timeline" />
           <!-- the corner above the track headers: ruler mode, snap, fit and clearing mutes / solos -->
@@ -427,13 +430,13 @@
           </Border>
         </Grid>
       </Border>
-      <Border Classes="card-edge" />
+      <Border x:Name="TimelineEdge" Classes="card-edge" />
     </Grid>
 
     <!-- transport bar, always at the bottom (Fender Studio Pro style, asked by the user). The clock, the
          transport and the metronome share one dark box that stays centered on the window while the sides fit
          beside it (TransportPanel: it slides, and with no room the sides go down a row). -->
-    <Border Grid.Row="4" Grid.ColumnSpan="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="14,6">
+    <Border Grid.Row="4" Grid.ColumnSpan="2" x:Name="TransportBar" Margin="-2,2,-2,0" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="14,6">
       <c:TransportPanel>
         <!-- the input: its meter with the audio format under it, and software monitoring on / off, next to the transport -->
         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -577,7 +580,7 @@
 
     <!-- the "Proyectos" manager covers the whole window, like in the web app -->
     <!-- the virtual keyboard (Ctrl+K), under the transport -->
-    <Border Grid.Row="5" Grid.ColumnSpan="2" x:Name="VirtualKeysHost" IsVisible="False" Height="84" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="14,6" />
+    <Border Grid.Row="5" Grid.ColumnSpan="2" x:Name="VirtualKeysHost" Margin="-2,0" IsVisible="False" Height="84" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="14,6" />
 
     <!-- the line from the selected track's header to the inspector's (#180, MainWindow.InspectorPointer.cs): over the panels, under the dialogs -->
     <c:InspectorPointer Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="InspPointer" />
@@ -593,9 +596,11 @@
     <d:NewsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="News" IsVisible="False" />
     <d:UnsavedDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Unsaved" IsVisible="False" />
     <d:TempoDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="TempoAsk" IsVisible="False" />
+    <d:MidiImportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="MidiAsk" IsVisible="False" />
     <d:ImportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="ImportAsk" IsVisible="False" />
     <d:FeedbackDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Feedback" IsVisible="False" />
     <!-- toasts float over everything (the manager and the dialogs too), above the transport bar -->
-    <c:ToastHost Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Toasts" Margin="0,0,16,68" />
+    <c:ToastHost Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Toasts" Margin="0,0,14,68" />
   </Grid>
+  </Panel>
 </Window>

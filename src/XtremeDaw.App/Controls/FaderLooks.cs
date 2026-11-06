@@ -11,7 +11,8 @@ namespace XtremeDaw.App.Controls;
 
 /// <summary>
 /// The looks a fader can take (asked by the user, like <see cref="KnobLooks"/>: picked in Configuración → Apariencia),
-/// the same for every fader in the window and for the timeline's horizontal volume. Kept in config.json ("faderLook");
+/// the same for every fader in the window and for the timeline's horizontal volume; the last two are neumorphic, in the
+/// panels' colors (#191, <see cref="NeuLook"/>), and Tron, part of the Tron Legacy theme. Kept in config.json ("faderLook");
 /// an unknown id falls back to the first, the console cap the fader always had. Each look only paints the rail and
 /// the cap: geometry, dragging and the value stay <see cref="Fader"/>'s, and every cap fits in the same box, so the
 /// layout never changes with the look. Their greys don't follow the theme, the same as the knobs'; the lit rail and
@@ -21,10 +22,10 @@ namespace XtremeDaw.App.Controls;
 public static class FaderLooks
 {
     public const string Console = "console", Flat = "flat", Metal = "metal", Line = "line", Bakelite = "bakelite",
-        Glass = "glass", Led = "led", Ceramic = "ceramic";
+        Glass = "glass", Led = "led", Ceramic = "ceramic", Raised = "raised", RaisedGradient = "raisedGradient", Tron = "tron";
 
     /// <summary>In the picker's order; the first is the default.</summary>
-    public static readonly string[] All = [Console, Flat, Metal, Line, Bakelite, Glass, Led, Ceramic];
+    public static readonly string[] All = [Console, Flat, Metal, Line, Bakelite, Glass, Led, Ceramic, Raised, RaisedGradient, Tron];
 
     const string ConfigKey = "faderLook";
 
@@ -159,6 +160,14 @@ public static class FaderLooks
     static readonly IPen CeramicLine = P(Solid("#26262b"), 2);
     static readonly IBrush CeramicRail = Solid("#141417");
 
+    // Relieve (#191): the cap's corners, its shadows' offset and blur (px), and the sunk rail's width
+    const double NeuRadius = 6, NeuOffset = 2, NeuBlur = 5, NeuRail = 6, NeuSideOffset = 1, NeuSideBlur = 3;
+
+    // Tron (#191): the rail's line, the cap's corners and the opacities of its edge, its glow and the unlit rail
+    const double TronRail = 2, TronRadius = 3, TronEdge = 0.85, TronGlow = 0.35, TronBlur = 6, TronRailAlpha = 0.25;
+
+    static BoxShadows TronShadow(double blur) => new(new BoxShadow { Blur = blur, Color = Color.FromArgb((byte)(255 * TronGlow), Palette.AccentColor.R, Palette.AccentColor.G, Palette.AccentColor.B) });
+
     // --- drawing --------------------------------------------------------------------------------
 
     /// <summary>
@@ -245,6 +254,28 @@ public static class FaderLooks
                 ctx.DrawRectangle(CeramicDish, null, cap.Deflate(new Thickness(4, 7)), 4, 4);
                 ctx.DrawLine(CeramicLine, new Point(cap.Left + 2, capY), new Point(cap.Right - 2, capY));
                 break;
+            case Raised or RaisedGradient:
+            {
+                NeuLook.Ensure();
+                Rail(ctx, NeuLook.Slot, NeuLook.SlotEdge, cx, pad, travel, NeuRail, NeuRail / 2);
+                Lit(ctx, cx, bottom, travel * pos, 2, false);
+                Unity(ctx, w, cx, h, pad, travel, unity, NeuRail / 2 + 2);
+                var body = cap.Deflate(new Thickness(1, 4));
+                NeuLook.Raised(ctx, new RoundedRect(body, NeuRadius), look == RaisedGradient ? NeuLook.CapGradient : NeuLook.Cap, NeuOffset, NeuBlur);
+                ctx.DrawLine(Palette.Pen(Palette.Accent, 2), new Point(body.Left + 4, capY), new Point(body.Right - 4, capY));
+                break;
+            }
+            case Tron:
+            {
+                ctx.FillRectangle(Palette.Alpha(Palette.AccentColor, TronRailAlpha), new Rect(cx - TronRail / 2, pad - 4, TronRail, travel + 8));
+                Lit(ctx, cx, bottom, travel * pos, TronRail, true);
+                Unity(ctx, w, cx, h, pad, travel, unity, 4);
+                var body = cap.Deflate(new Thickness(1, 6));
+                ctx.DrawRectangle(Palette.App, Palette.Pen(Palette.Alpha(Palette.AccentColor, TronEdge)), new RoundedRect(body, TronRadius), TronShadow(TronBlur));
+                ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.3), 6), new Point(body.Left + 3, capY), new Point(body.Right - 3, capY));
+                ctx.DrawLine(Palette.Pen(Palette.Accent, 2), new Point(body.Left + 3, capY), new Point(body.Right - 3, capY));
+                break;
+            }
             default:
                 DrawConsole(ctx, w, h, pad, cx, travel, pos, unity, cap, capY);
                 break;
@@ -312,6 +343,16 @@ public static class FaderLooks
                 ctx.DrawRectangle(SoftShadow, null, cap.Translate(new Vector(0.5, 2)), 3, 3);
                 ctx.DrawRectangle(CeramicCap, CeramicEdge, cap.Deflate(0.5), 3, 3);
                 ctx.DrawLine(CeramicLine, a, b);
+                break;
+            case Raised or RaisedGradient:
+                NeuLook.Ensure();
+                NeuLook.Raised(ctx, new RoundedRect(cap.Deflate(0.5), 3), look == RaisedGradient ? NeuLook.CapGradient : NeuLook.Cap, NeuSideOffset, NeuSideBlur);
+                ctx.DrawLine(Palette.Pen(Palette.Accent, 2), a, b);
+                break;
+            case Tron:
+                ctx.DrawRectangle(Palette.App, Palette.Pen(Palette.Alpha(Palette.AccentColor, TronEdge)), new RoundedRect(cap.Deflate(0.5), 2), TronShadow(TronBlur / 2));
+                ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.3), 5), a, b);
+                ctx.DrawLine(Palette.Pen(Palette.Accent, 2), a, b);
                 break;
             default:
                 ctx.DrawRectangle(DropShadow, null, cap.Translate(new Vector(0, 1.5)), 3, 3);

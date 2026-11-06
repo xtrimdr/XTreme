@@ -372,6 +372,8 @@ public partial class MainWindow
             var lengths = LiveLengths();
             var loops = ClipLoops.Take(st.Project, lengths);
             string? selected = edit(st.Project);
+            // channels made from the mixer's menu go where it was clicked (#196)
+            PlaceNewInMixer(st.Project);
             ClipLoops.Keep(st.Project, loops, lengths);
             if (activity != null) st.Project.AddLog(activity);
             MarkDirty();
@@ -388,7 +390,9 @@ public partial class MainWindow
         finally
         {
             restoring = false;
-            Inspector.IsEnabled = sel != null || SelectedFolder != null;
+            Inspector.IsEnabled = sel != null || SelectedFolder != null || SelectedBus != null;
+            // the inspector filled while restoring (disabled): its name box and strip copy that state, so refresh them (#192)
+            RefreshInspectorText();
             // the mixer refreshed while restoring (disabled): bring it back, or it stays dead until the next refresh
             if (mixerView || MixerOut) RefreshMixer();
             MarkDirty();
@@ -810,6 +814,8 @@ public partial class MainWindow
     List<object>? NewTrackItems()
     {
         if (store == null || restoring) return null;
+        // another new-track menu forgets where the mixer's last one was opened (#196)
+        mixerNewAt = null;
         bool enabled = !store.ReadOnly;
         var list = new List<object>();
         string tip = Loc.T("menu.emptyTrack.hint");

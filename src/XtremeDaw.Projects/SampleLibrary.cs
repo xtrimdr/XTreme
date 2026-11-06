@@ -22,13 +22,16 @@ public sealed class SampleFile(string path, string root, long size, long ticks)
     public long Size { get; } = size;
     public long Ticks { get; } = ticks;
     public bool IsVideo { get; } = MediaDecoder.IsVideo(path);
+    /// <summary>A standard MIDI file: it has notes instead of sound, so it is not listened to and lands on a MIDI track.</summary>
+    public bool IsMidi { get; } = SampleLibrary.IsMidiFile(path);
     /// <summary>The path from the root, folded for searching (<see cref="SampleLibrary.Fold"/>).</summary>
     public string Search { get; } = SampleLibrary.Fold(System.IO.Path.GetRelativePath(root, path));
     /// <summary>0 = not analyzed yet; below 0 = no sound could be read from it.</summary>
     public volatile float DurationSecValue;
     public double DurationSec => DurationSecValue;
     public bool Broken => DurationSecValue < 0;
-    /// <summary>The row's wave (<see cref="SampleLibrary.PeakBins"/> values); null if not read yet or too long to read.</summary>
+    /// <summary>The row's wave (<see cref="SampleLibrary.PeakBins"/> values; of a MIDI file, its notes as a grid,
+    /// <see cref="SampleLibrary.MidiCols"/>); null if not read yet or too long to read.</summary>
     public volatile byte[]? Peaks;
 }
 
@@ -62,9 +65,15 @@ public sealed class SampleLibrary : IDisposable
     public const int PeakBins = 48;
     /// <summary>A file longer than this gets its length but no wave: decoding it for a row isn't worth it.</summary>
     public const double MaxWaveSec = 120;
-    const int IndexVersion = 1;
+    /// <summary>2: a MIDI file's wave became its note grid; the MIDI files of a version 1 index are analyzed again.</summary>
+    const int IndexVersion = 2;
     /// <summary>Changes in a folder usually come in bursts (a pack being unzipped): the rescan waits for this much quiet.</summary>
     const int ChangeQuietMs = 2000;
+    /// <summary>A MIDI file without its own tempo is timed at this one, as the import does with a project at its default.</summary>
+    const double MidiDefaultBpm = 120;
+    static readonly string[] MidiExtensions = [".mid", ".midi"];
+
+    public static bool IsMidiFile(string path) => MidiExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
 
     readonly object gate = new();
     readonly Dictionary<string, FileSystemWatcher> watchers = new(StringComparer.OrdinalIgnoreCase);
@@ -204,7 +213,7 @@ public sealed class SampleLibrary : IDisposable
         var info = new DirectoryInfo(root);
         foreach (var f in info.EnumerateFiles("*", options))
         {
-            if (!MediaDecoder.IsMedia(f.FullName)) continue;
+            if (!MediaDecoder.IsMedia(f.FullName) && !IsMidiFile(f.FullName)) continue;
             long ticks = f.LastWriteTimeUtc.Ticks;
             if (known != null && known.TryGetValue(f.FullName, out var had) && had.Size == f.Length && had.Ticks == ticks) yield return had;
             else yield return new SampleFile(f.FullName, root, f.Length, ticks);
@@ -343,6 +352,11 @@ public sealed class SampleLibrary : IDisposable
     /// <summary>Learns a file's length and wave. Never throws: a file that can't be read is marked and stays listed.</summary>
     public static void AnalyzeOne(SampleFile f)
     {
+        if (f.IsMidi)
+        {
+            AnalyzeMidi(f);
+            return;
+        }
         try
         {
             double sec = MediaDecoder.Duration(f.Path);
@@ -356,6 +370,52 @@ public sealed class SampleLibrary : IDisposable
             f.DurationSecValue = (float)audio.DurationSec;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or OutOfMemoryException or OverflowException)
+        {
+            f.DurationSecValue = -1;
+        }
+    }
+
+    /// <summary>
+    /// A MIDI file's row shows its notes, not a wave: its <see cref="SampleFile.Peaks"/> are a grid of this many columns
+    /// (time) by rows (pitch, lowest first), one bit per cell, column after column. It fills exactly the
+    /// <see cref="PeakBins"/> bytes of the index.
+    /// </summary>
+    public const int MidiCols = 24, MidiRows = 16;
+
+    /// <summary>Whether a note sounds in that cell of a MIDI file's grid (<see cref="MidiCols"/>).</summary>
+    public static bool MidiCell(byte[] grid, int col, int row) => (grid[col * (MidiRows / 8) + row / 8] & (1 << (row % 8))) != 0;
+
+    /// <summary>A MIDI file's length at its own tempo, and its notes as a small piano roll (<see cref="MidiCols"/>).</summary>
+    static void AnalyzeMidi(SampleFile f)
+    {
+        try
+        {
+            var data = MidiFiles.Read(f.Path);
+            double beats = data.Tracks.Count == 0 ? 0 : data.Tracks.Max(t => t.LengthBeats);
+            if (beats <= 0)
+            {
+                f.DurationSecValue = -1; // no notes: nothing to bring
+                return;
+            }
+            var notes = data.Tracks.SelectMany(t => t.Notes).ToList();
+            var grid = new byte[PeakBins];
+            if (notes.Count > 0)
+            {
+                int lo = notes.Min(n => n.Pitch), hi = notes.Max(n => n.Pitch), range = hi - lo + 1;
+                // a narrow file keeps a semitone per row, centered; a wide one is squeezed into the rows
+                int bottom = lo - Math.Max(0, (MidiRows - range) / 2);
+                foreach (var n in notes)
+                {
+                    int row = range <= MidiRows ? n.Pitch - bottom : (n.Pitch - lo) * MidiRows / range;
+                    int a = Math.Clamp((int)(n.Beat / beats * MidiCols), 0, MidiCols - 1);
+                    int b = Math.Clamp((int)Math.Ceiling((n.Beat + n.Beats) / beats * MidiCols), a + 1, MidiCols);
+                    for (int c = a; c < b; c++) grid[c * (MidiRows / 8) + row / 8] |= (byte)(1 << (row % 8));
+                }
+            }
+            f.Peaks = grid;
+            f.DurationSecValue = (float)(beats * 60 / (data.Bpm ?? MidiDefaultBpm));
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException or OutOfMemoryException)
         {
             f.DurationSecValue = -1;
         }
@@ -431,7 +491,8 @@ public sealed class SampleLibrary : IDisposable
         try
         {
             using var r = new BinaryReader(new FileStream(IndexPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.SequentialScan), Encoding.UTF8);
-            if (r.ReadInt32() != IndexVersion) return [];
+            int version = r.ReadInt32();
+            if (version is < 1 or > IndexVersion) return [];
             int count = r.ReadInt32();
             var list = new List<SampleFile>(count);
             for (int i = 0; i < count; i++)
@@ -442,7 +503,9 @@ public sealed class SampleLibrary : IDisposable
                 bool wave = r.ReadBoolean();
                 var peaks = wave ? r.ReadBytes(PeakBins) : null;
                 if (!roots.Any(f => Same(f.Path, root))) continue;
-                list.Add(new SampleFile(path, root, size, ticks) { DurationSecValue = sec, Peaks = peaks });
+                var file = new SampleFile(path, root, size, ticks) { DurationSecValue = sec, Peaks = peaks };
+                if (version < 2 && file.IsMidi) (file.DurationSecValue, file.Peaks) = (0, null); // a density wave: read it again
+                list.Add(file);
             }
             return [.. list];
         }

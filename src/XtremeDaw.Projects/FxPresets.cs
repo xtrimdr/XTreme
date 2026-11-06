@@ -115,6 +115,7 @@ public static class FxPresets
         target.Delay = src.Delay;
         target.Gate = src.Gate;
         target.Stage = src.Stage;
+        target.Tonal = src.Tonal;
         target.Wet = src.Wet;
         target.Dry = src.Dry;
         target.OutputDb = src.OutputDb;

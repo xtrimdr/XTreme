@@ -566,6 +566,21 @@ public sealed class LiveTrack
         }
     }
 
+    /// <summary>The native General MIDI instrument, if that is the track's instrument. Setting null takes away only that one.</summary>
+    public GmSynth? Gm
+    {
+        get => native as GmSynth;
+        set
+        {
+            if (value != null)
+            {
+                value.Notes = notes;
+                native = value;
+            }
+            else if (native is GmSynth) native = null;
+        }
+    }
+
     volatile InstrumentPlayer? instrument;
     /// <summary>
     /// The instrument plugin that plays the notes instead of the test tone (<see cref="InstrumentPlayer"/>), set by the

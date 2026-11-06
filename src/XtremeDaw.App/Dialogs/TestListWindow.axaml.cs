@@ -124,6 +124,8 @@ public sealed partial class TestListWindow : Window
     readonly HashSet<string> folded = [.. (AppConfig.Get(FoldedKey) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)];
     /// <summary>The words in the search box, each one has to be in the ticket (empty = no search).</summary>
     string[] search = [];
+    /// <summary>The tickets unfolded in the list to read their conversation in place (#197), for this run only.</summary>
+    readonly HashSet<int> expanded = [];
     /// <summary>The end of the writes in order: a reply saved by losing the focus cannot land after the click that took it.</summary>
     Task<bool> writes = Task.FromResult(true);
 
@@ -281,7 +283,7 @@ public sealed partial class TestListWindow : Window
             else if (e.Key == Key.Enter && search.Length > 0)
             {
                 // Enter opens the first match, as when the search was for its number
-                var first = current == null ? null : Tree(current).SelectMany(t => t.Sections).SelectMany(x => x.Groups).SelectMany(g => g.Items).FirstOrDefault();
+                var first = current == null ? null : Shown(current).FirstOrDefault();
                 if (first != null) OpenTicket(first.Id);
                 e.Handled = true;
             }
@@ -480,6 +482,9 @@ public sealed partial class TestListWindow : Window
         Scroller.Offset = default;
     }
 
+    /// <summary>Opens a ticket asked from outside: XTreme's "give the verdict" on the copy being tried (#198).</summary>
+    public void ShowTicket(int id) => OpenTicket(id);
+
     void CloseTicket()
     {
         HoldReply(0);
@@ -567,33 +572,79 @@ public sealed partial class TestListWindow : Window
         foreach (var (topic, sections) in Tree(data))
         {
             string node = topic ?? NoTopic;
-            // a search opens every topic and section, so what it found is in sight
+            // a search opens every topic, so what it found is in sight
             bool shut = search.Length == 0 && folded.Contains(node);
-            Rows.Children.Add(TopicHead(topic, sections.SelectMany(x => x.Groups).SelectMany(g => g.Items).ToList(), shut));
+            var items = sections.SelectMany(x => x.Groups).SelectMany(g => g.Items).ToList();
+            Rows.Children.Add(TopicHead(topic, items, shut));
             if (shut) continue;
-            var inner = new StackPanel { Spacing = 8, Margin = new(14, 0, 0, 4) };
-            foreach (var (section, groups) in sections)
+            var inner = new StackPanel { Spacing = 4, Margin = new(14, 0, 0, 6) };
+            // no section or group heads (asked by the user, #197: too much clutter): each line says its state in its chip
+            foreach (var i in Ranked(items.Where(i => SectionOf(i) != DoneTabIndex))) inner.Children.Add(Line(i));
+            var done = items.Where(i => SectionOf(i) == DoneTabIndex).ToList();
+            if (done.Count > 0)
             {
-                var items = groups.SelectMany(g => g.Items).ToList();
-                bool closed = search.Length == 0 && SectionShut(node, section);
-                inner.Children.Add(SectionHead(node, section, items, closed));
-                if (closed) continue;
-                foreach (var (key, list) in groups)
-                {
-                    if (key != "")
-                    {
-                        var c = StateColor(list[0].State) ?? TabColor(section);
-                        var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new(2, 2, 0, 0) };
-                        head.Children.Add(Dot(c));
-                        head.Children.Add(new TextBlock { Classes = { "label" }, Text = $"{Loc.T(key)} · {list.Count}", Foreground = Palette.Alpha(c, 1), VerticalAlignment = VerticalAlignment.Center });
-                        inner.Children.Add(head);
-                    }
-                    foreach (var i in list) inner.Children.Add(Line(i));
-                }
+                bool closed = search.Length == 0 && SectionShut(node, DoneTabIndex);
+                inner.Children.Add(DoneHead(node, done.Count, closed));
+                if (!closed) foreach (var i in Ordered(done)) inner.Children.Add(Line(i));
             }
             Rows.Children.Add(inner);
         }
         if (Rows.Children.Count == 0) Rows.Children.Add(Empty());
+    }
+
+    /// <summary>
+    /// The open tickets of a topic in one list (#197): what an agent just said first, then what needs work (No anda,
+    /// Anda mal, A mejorar, the requests), then what waits to be tried, the ones back from a fix before the new ones.
+    /// </summary>
+    static IEnumerable<TestItem> Ranked(IEnumerable<TestItem> items) =>
+        items.OrderByDescending(i => i.Unseen).ThenBy(Rank).ThenBy(i => i.Id);
+
+    static int Rank(TestItem i) => i.State switch
+    {
+        TestItem.Fails => 0,
+        TestItem.WorksBadly => 1,
+        TestItem.Improve => 2,
+        TestItem.Request => 3,
+        _ when TestList.Back(i) => 4,
+        TestItem.Pending => 5,
+        _ => 6,
+    };
+
+    /// <summary>The tickets as the list shows them, top to bottom (Enter in the search opens the first).</summary>
+    IEnumerable<TestItem> Shown(TestListData data) => Tree(data).SelectMany(t =>
+    {
+        var items = t.Sections.SelectMany(x => x.Groups).SelectMany(g => g.Items).ToList();
+        return Ranked(items.Where(i => SectionOf(i) != DoneTabIndex)).Concat(Ordered(items.Where(i => SectionOf(i) == DoneTabIndex)));
+    });
+
+    /// <summary>What a ticket's chip says and its color: its verdict, "Para probar", or a request's kind.</summary>
+    static (string Text, Color Color) StateChip(TestItem i) => i.State switch
+    {
+        TestItem.Request => i.Kind is { } k ? (Loc.T("test.list.kind." + k), KindColor(k)) : (Loc.T("test.list.request.chip"), VioletKind),
+        TestItem.Pending => (Loc.T("test.list.totest"), Palette.AccentColor),
+        _ => (StateName(i.State), StateColor(i.State) ?? Palette.AccentColor),
+    };
+
+    /// <summary>The fold of a topic's resolved tickets, under the rest: a green check, "Resuelto" and how many. Starts folded.</summary>
+    Control DoneHead(string node, int count, bool shut)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        row.Children.Add(new TextBlock
+        {
+            Classes = { "icon" }, Text = shut ? FoldedGlyph : UnfoldedGlyph, FontSize = 9, Width = 12,
+            Foreground = Palette.Alpha(Palette.DimColor, 1), VerticalAlignment = VerticalAlignment.Center,
+        });
+        row.Children.Add(new TextBlock { Classes = { "icon" }, Text = CheckGlyph, FontSize = 11, Foreground = Palette.Alpha(GreenState, 1), VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Classes = { "dim" }, Text = Loc.T("test.list.done"), VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = count.ToString(CultureInfo.CurrentCulture), VerticalAlignment = VerticalAlignment.Center });
+        var b = new Button
+        {
+            Classes = { "rowmain" }, Content = row, HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left, Padding = new(2, 2), Background = Brushes.Transparent,
+        };
+        AutomationProperties.SetName(b, Loc.T("test.list.done"));
+        b.Click += (_, _) => ToggleFold(SectionNode(node, DoneTabIndex));
+        return b;
     }
 
     /// <summary>The section a ticket is in (an index of <see cref="TabList"/>), or -1.</summary>
@@ -681,40 +732,9 @@ public sealed partial class TestListWindow : Window
     }
 
     /// <summary>
-    /// A section inside a topic: its arrow, dot and name in its color, how many and whether something in it is new; a
-    /// click folds it. In A arreglar and Pedidos, "Revisar" on the right sends its tickets to the agents by number.
-    /// </summary>
-    Control SectionHead(string node, int section, List<TestItem> items, bool shut)
-    {
-        var c = TabColor(section);
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        row.Children.Add(new TextBlock
-        {
-            Classes = { "icon" }, Text = shut ? FoldedGlyph : UnfoldedGlyph, FontSize = 9, Width = 12,
-            Foreground = Palette.Alpha(Palette.DimColor, 1), VerticalAlignment = VerticalAlignment.Center,
-        });
-        row.Children.Add(Dot(c));
-        row.Children.Add(new TextBlock { Text = Loc.T(TabList[section].Key), Foreground = Palette.Alpha(c, 1), VerticalAlignment = VerticalAlignment.Center });
-        row.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = items.Count.ToString(CultureInfo.CurrentCulture), VerticalAlignment = VerticalAlignment.Center });
-        if (items.Any(i => i.Unseen)) row.Children.Add(Badge(Loc.T("test.list.new"), false, Palette.AccentColor, strong: true));
-        var b = new Button
-        {
-            Classes = { "rowmain" }, Content = row, HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left, Padding = new(2, 2), Background = Brushes.Transparent,
-        };
-        AutomationProperties.SetName(b, Loc.T(TabList[section].Key));
-        b.Click += (_, _) => ToggleFold(SectionNode(node, section));
-        if (TabReview(section) == null || root == null) return b;
-        var grid = new Grid { ColumnDefinitions = new("*,Auto") };
-        grid.Children.Add(b);
-        var review = ReviewLink(items, c);
-        Grid.SetColumn(review, 1);
-        grid.Children.Add(review);
-        return grid;
-    }
-
-    /// <summary>
-    /// A topic's node in the tree: its arrow, name, how many and whether something in it is new; a click folds it.
+    /// A topic's node in the list: its arrow and name, then how its tickets stand, a colored dot and a count per state
+    /// (asked by the user, #197: the state at a glance, folded or not), "Nuevo", how many are in progress, and on the
+    /// right Revisar for its requests and fixes. A click folds it.
     /// </summary>
     Control TopicHead(string? topic, List<TestItem> items, bool shut)
     {
@@ -727,7 +747,21 @@ public sealed partial class TestListWindow : Window
         var name = new TextBlock { Text = TopicName(topic), FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
         if (topic == null) name.Foreground = Palette.Alpha(Palette.FaintColor, 1);
         row.Children.Add(name);
-        row.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = items.Count.ToString(CultureInfo.CurrentCulture), VerticalAlignment = VerticalAlignment.Center });
+        var counts = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 9, Margin = new(3, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        foreach (var (state, c, key) in (ReadOnlySpan<(string, Color, string)>)[
+                     (TestItem.Fails, Palette.RecColor, "test.list.fail"), (TestItem.WorksBadly, YellowState, "test.list.bad"),
+                     (TestItem.Improve, BlueState, "test.list.improve"), (TestItem.Request, VioletKind, "test.list.requests"),
+                     (TestItem.Pending, Palette.AccentColor, "test.list.totest"), (TestItem.Works, GreenState, "test.list.done")])
+        {
+            int n = items.Count(i => i.State == state);
+            if (n == 0) continue;
+            var cell = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            cell.Children.Add(Dot(c));
+            cell.Children.Add(new TextBlock { Classes = { "mono" }, FontSize = 11, Text = n.ToString(CultureInfo.CurrentCulture), Foreground = Palette.Alpha(c, 1), VerticalAlignment = VerticalAlignment.Center });
+            ToolTip.SetTip(cell, Loc.T(key));
+            counts.Children.Add(cell);
+        }
+        row.Children.Add(counts);
         if (items.Any(i => i.Unseen)) row.Children.Add(Badge(Loc.T("test.list.new"), false, Palette.AccentColor, strong: true));
         // how many an agent is working on, with the same spinner as each ticket (asked by the user, #123)
         int busy = items.Count(i => TestList.Held(i, sessions));
@@ -749,68 +783,175 @@ public sealed partial class TestListWindow : Window
         AutomationProperties.SetName(b, TopicName(topic));
         string node = topic ?? NoTopic;
         b.Click += (_, _) => ToggleFold(node);
-        return b;
+        var work = items.Where(i => TabReview(SectionOf(i)) != null).ToList();
+        if (work.Count == 0 || root == null) return b;
+        var grid = new Grid { ColumnDefinitions = new("*,Auto") };
+        grid.Children.Add(b);
+        var review = ReviewLink(work, Palette.AccentColor);
+        Grid.SetColumn(review, 1);
+        grid.Children.Add(review);
+        return grid;
     }
 
     /// <summary>
-    /// A ticket in the list: one line with its number, "Nuevo", kind, subject and the last thing said, and on the right
-    /// its attempt. The whole line opens it.
+    /// A ticket in the list, in two lines (asked by the user, #204): on top its number, its kind and its title, which get
+    /// the line to themselves; under them a chip with its state in its color (the verdict, "Para probar" or "Pedido"),
+    /// "Nuevo" or "Tomado", and on the right its attempt or when, beside Probar or the console. Only a "Nuevo" one adds a
+    /// third line with what was just said; the rest is in the tooltip. The whole card opens it.
     /// </summary>
     Control Line(TestItem item)
     {
-        var grid = new Grid { ColumnDefinitions = new("*,Auto") };
-        var left = new StackPanel { Spacing = 3 };
-        var top = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        top.Children.Add(Badge($"#{item.Id}", true, Palette.AccentColor));
-        if (item.Unseen) top.Children.Add(Badge(Loc.T("test.list.new"), false, Palette.AccentColor, strong: true));
-        if (item.Kind is { } k) top.Children.Add(Badge(Loc.T("test.list.kind." + k), false, KindColor(k)));
-        if (Starting(item)) top.Children.Add(StartingBadge());
-        else if (TestList.Held(item, sessions)) top.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy)));
-        left.Children.Add(top);
-        left.Children.Add(new TextBlock { Text = item.Title ?? item.Text, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 2, TextWrapping = TextWrapping.Wrap, LineHeight = 18 });
-        if (LastSaid(item) is { } m)
-            left.Children.Add(new TextBlock
-            {
-                Classes = { "dim" }, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis,
-                Text = $"{RoleName(m.Who)} · {MessageLabel(m)}{(m.Text is { } t ? ": " + t : "")}",
-            });
-        // nothing said after it opened: who opened it (asked by the user, #157)
-        else if (Creator(item) is { } c)
-            left.Children.Add(new TextBlock
-            {
-                Classes = { "dim" }, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis,
-                Text = Loc.T("test.list.creator", WhoName(c.Who)),
-            });
-        grid.Children.Add(left);
-        var right = new TextBlock
+        var top = new Grid { ColumnDefinitions = new("Auto,Auto,*") };
+        top.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, MinWidth = LineIdWidth, Text = $"#{item.Id}", VerticalAlignment = VerticalAlignment.Center });
+        if (item.Kind is { } k)
         {
-            Classes = { "dim", "mono" }, FontSize = 11, VerticalAlignment = VerticalAlignment.Top, Margin = new(10, 2, 0, 0),
+            var kind = Badge(Loc.T("test.list.kind." + k), false, KindColor(k));
+            kind.Margin = new(4, 0, 8, 0);
+            Grid.SetColumn(kind, 1);
+            top.Children.Add(kind);
+        }
+        var subject = new TextBlock
+        {
+            Text = Subject(item), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+            FontWeight = FontWeight.SemiBold, Margin = new(item.Kind == null ? 4 : 0, 0, 0, 0),
+        };
+        Grid.SetColumn(subject, 2);
+        top.Children.Add(subject);
+
+        var under = new Grid { ColumnDefinitions = new("Auto,*,Auto"), Margin = new(LineIdWidth + 4, 0, 0, 0) };
+        var (chip, chipColor) = item.State == TestItem.Request ? (Loc.T("test.list.request.chip"), VioletKind) : StateChip(item);
+        var stateChip = Badge(chip, false, chipColor);
+        // a little taller than the other badges (asked by the user, #197: too small to read at a glance)
+        stateChip.Padding = new(8, 3);
+        under.Children.Add(stateChip);
+        var marks = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        if (item.Unseen) marks.Children.Add(Badge(Loc.T("test.list.new"), false, Palette.AccentColor, strong: true));
+        if (Starting(item)) marks.Children.Add(StartingBadge());
+        else if (TestList.Held(item, sessions)) marks.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy)));
+        Grid.SetColumn(marks, 1);
+        under.Children.Add(marks);
+        var when = new TextBlock
+        {
+            Classes = { "dim", "mono" }, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new(10, 0, 0, 0),
             Text = item.Tries > 1 ? Loc.T("test.list.try", item.Tries) : When(item.At),
         };
-        Grid.SetColumn(right, 1);
-        grid.Children.Add(right);
+        Grid.SetColumn(when, 2);
+        under.Children.Add(when);
+
+        var lines = new StackPanel { Spacing = 5 };
+        lines.Children.Add(top);
+        lines.Children.Add(under);
+        Control content = lines;
+        bool open = expanded.Contains(item.Id);
+        // what is new is worth reading before opening it; the rest stays in two lines
+        if (!open && item.Unseen && LastSaid(item) is { } m)
+            lines.Children.Add(new TextBlock
+            {
+                Classes = { "dim" }, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new(LineIdWidth + 4, 0, 0, 0),
+                Text = Said(m),
+            });
         var b = new Button
         {
-            Classes = { "rowmain" }, Content = grid, HorizontalAlignment = HorizontalAlignment.Stretch,
+            Classes = { "rowmain" }, Content = content, HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new(0), Background = Brushes.Transparent,
         };
-        AutomationProperties.SetName(b, $"#{item.Id} {item.Title ?? item.Text}");
+        AutomationProperties.SetName(b, $"#{item.Id} {Subject(item)} · {chip}");
+        // the last thing said, or who opened it (#157), without opening it; unfolded, it is all in sight
+        if (!open && LastSaid(item) is { } last) ToolTip.SetTip(b, Said(last));
+        else if (!open && Creator(item) is { } c) ToolTip.SetTip(b, Loc.T("test.list.creator", WhoName(c.Who)));
         b.Click += (_, _) => OpenTicket(item.Id);
-        Control body = b;
+        // the arrow unfolds the conversation under the line, to read it without opening the ticket (asked by the user, #197)
+        var fold = new Button
+        {
+            Classes = { "ghost" }, Width = 24, Height = 24, Padding = new(0), Margin = new(0, 0, 4, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = new TextBlock
+            {
+                Classes = { "icon" }, Text = open ? UnfoldedGlyph : FoldedGlyph, FontSize = 9,
+                Foreground = Palette.Alpha(Palette.DimColor, 1), HorizontalAlignment = HorizontalAlignment.Center,
+            },
+        };
+        string foldTip = Loc.T(open ? "test.list.line.collapse" : "test.list.line.expand");
+        ToolTip.SetTip(fold, foldTip);
+        AutomationProperties.SetName(fold, foldTip);
+        fold.Click += (_, _) =>
+        {
+            if (!expanded.Remove(item.Id)) expanded.Add(item.Id);
+            Refill();
+        };
+        var row = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
+        row.Children.Add(fold);
+        Grid.SetColumn(b, 1);
+        row.Children.Add(b);
         // Probar, or Ver consola while an agent is on it (#172), beside the line, not inside it: the line's own click
         // opens the ticket
         if ((SessionButton(item) ?? TryButton(item)) is { } side)
         {
-            var withTry = new Grid { ColumnDefinitions = new("*,Auto") };
-            withTry.Children.Add(b);
+            // with the state, time and the rest of the second line (#204)
             side.Margin = new(8, 0, 0, 0);
-            side.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(side, 1);
-            withTry.Children.Add(side);
-            body = withTry;
+            side.VerticalAlignment = lines.Children.Count > 2 ? VerticalAlignment.Center : VerticalAlignment.Bottom;
+            Grid.SetColumn(side, 2);
+            row.Children.Add(side);
         }
-        return Card(body, item.State == TestItem.Request ? item.Kind is { } kc ? KindColor(kc) : null : StateColor(item.State),
-            item.Unseen || Busy(item));
+        Control body = row;
+        if (open)
+        {
+            var whole = new StackPanel { Spacing = 8 };
+            whole.Children.Add(row);
+            whole.Children.Add(Unfolded(item));
+            body = whole;
+        }
+        return Card(body, StateChip(item).Color, item.Unseen || Busy(item), compact: true);
+    }
+
+    /// <summary>
+    /// A ticket summed up under its line (#197: a summary to read in place, not the whole conversation): what was asked,
+    /// the latest agent's message and the latest word of the person after it, a couple of lines each. The rest of the
+    /// conversation, writing and the verdicts stay in the open ticket.
+    /// </summary>
+    static Control Unfolded(TestItem item)
+    {
+        var list = new StackPanel { Spacing = 5, Margin = new(28 + LineIdWidth, 0, 4, 2) };
+        void Row(string label, string? text, IBrush tint)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            var t = new TextBlock { TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = SummaryLines };
+            t.Inlines!.Add(new Avalonia.Controls.Documents.Run(label + "  ") { Foreground = tint, FontSize = 11, FontWeight = FontWeight.SemiBold });
+            // one paragraph: the line breaks of a long note would eat the few lines there are
+            t.Inlines.Add(new Avalonia.Controls.Documents.Run(string.Join(" ", text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))));
+            list.Children.Add(t);
+        }
+        var shown = new List<TestMessage>();
+        if (Creator(item) is { } open) shown.Add(open);
+        int agent = item.Thread.FindLastIndex(m => m.Who != TestList.User && m.Kind != TestMessage.Open);
+        if (agent >= 0) shown.Add(item.Thread[agent]);
+        int user = item.Thread.FindLastIndex(m => m.Who == TestList.User && m.Kind != TestMessage.Open);
+        if (user > agent) shown.Add(item.Thread[user]);
+        if (shown.Count == 0) Row(Loc.T("test.list.msg.open"), item.Text, Palette.Dim);
+        foreach (var m in shown)
+            Row(m.Who == TestList.User ? MessageLabel(m) : $"{RoleName(m.Who)} · {MessageLabel(m)}", m.Text, m.Who == TestList.User ? Palette.Dim : Palette.Accent);
+        int rest = item.Thread.Count - shown.Count;
+        if (rest > 0)
+            list.Children.Add(new TextBlock { Classes = { "dim" }, FontSize = 11, Foreground = Palette.Faint, Text = Loc.T("test.list.line.more", rest) });
+        return list;
+    }
+
+    /// <summary>Lines each message gets in a ticket's summary: enough to know where it stands, not to read it all.</summary>
+    const int SummaryLines = 2;
+
+    /// <summary>Room for the number at the start of a line, so the chips line up.</summary>
+    const double LineIdWidth = 34;
+
+    /// <summary>A message in one line: who, what, and its text.</summary>
+    static string Said(TestMessage m) => $"{RoleName(m.Who)} · {MessageLabel(m)}{(m.Text is { } t ? ": " + t : "")}";
+
+    /// <summary>What a ticket is about in a line: its title, or the first line of its text while it has none.</summary>
+    static string Subject(TestItem i)
+    {
+        if (!string.IsNullOrWhiteSpace(i.Title)) return i.Title;
+        string t = i.Text.Trim();
+        int nl = t.IndexOfAny(['\r', '\n']);
+        return nl < 0 ? t : t[..nl];
     }
 
     /// <summary>
@@ -1280,11 +1421,11 @@ public sealed partial class TestListWindow : Window
         }
         var top = arrived[0];
         newsTarget = top.Id;
-        string said = LastSaid(top) is { Kind: TestMessage.Comment, Text: { } t } ? t : top.Text;
+        // the ticket's title, not what was said (asked by the user, #197: short; the ticket has the rest)
         NewsText.Text = arrived.Count == 1
-            ? Loc.T("test.list.news.one", top.Id, said)
-            : Loc.T("test.list.news.many", arrived.Count, top.Id, said);
-        ToolTip.SetTip(NewsText, string.Join("\n", arrived.Select(i => $"#{i.Id} · {i.Text}")));
+            ? Loc.T("test.list.news.one", top.Id, Subject(top))
+            : Loc.T("test.list.news.many", arrived.Count, top.Id, Subject(top));
+        ToolTip.SetTip(NewsText, string.Join("\n", arrived.Select(i => $"#{i.Id} · {Subject(i)}")));
         NewsBar.IsVisible = true;
         // only what arrives while open: a bench that moves to a newer copy starts over and would blink at every build
         if (!IsActive && !first) Flash();
@@ -1949,7 +2090,7 @@ public sealed partial class TestListWindow : Window
     /// Each ticket in its own box, so it is clear where one ends (asked by the user). Drawn here: <c>Border.section</c>
     /// lives in the main window's styles and does not reach this window. A strong one (taken, or new) has the accent edge.
     /// </summary>
-    static Border Card(Control body, Color? state = null, bool strong = false)
+    static Border Card(Control body, Color? state = null, bool strong = false, bool compact = false)
     {
         var c = state ?? Palette.AccentColor;
         var grid = new Grid { ColumnDefinitions = new("Auto,*") };
@@ -1963,7 +2104,8 @@ public sealed partial class TestListWindow : Window
             Width = CardStripe, Margin = new(CardStripeInset, CardStripeInset, 0, CardStripeInset), CornerRadius = new(CardStripe / 2),
             Background = Palette.Alpha(c, state == null ? 0.35 : 1),
         });
-        var inner = new Border { Padding = new(9, 10, 12, 10), Child = body };
+        // a line of the list is lower than the open ticket (#197)
+        var inner = new Border { Padding = compact ? new(6, 9, 10, 9) : new(9, 10, 12, 10), Child = body };
         Grid.SetColumn(inner, 1);
         grid.Children.Add(inner);
         return new()

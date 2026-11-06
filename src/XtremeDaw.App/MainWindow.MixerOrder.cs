@@ -347,26 +347,70 @@ public partial class MainWindow
         string? keep = sel?.Track.Id;
         await EditTimeline(p =>
         {
-            if (item is Folder folder)
-            {
-                if (p.Folders.Find(f => f.Id == folder.Id) is not { } f) return keep;
-                var seq = TrackFolders.Sequence(p);
-                seq.RemoveAll(x => x == f || x is Track t && t.FolderId == f.Id);
-                if (Place(p, seq, slot) is { } at) TrackFolders.MoveFolder(p, f.Id, at);
-                f.MixerSide = slot.Right ? MixerSides.Right : null;
-            }
-            else if (item is Track track && p.Tracks.Find(t => t.Id == track.Id) is { } t)
-            {
-                var seq = TrackFolders.Sequence(p);
-                seq.Remove(t);
-                int? at = slot.Folder is { } fid && slot.Next == null && slot.Prev == null
-                    ? seq.FindIndex(x => x is Folder f && f.Id == fid) + 1
-                    : Place(p, seq, slot);
-                if (at is { } pos) TrackFolders.Move(p, [t.Id], pos, slot.Folder);
-                if (slot.Folder == null) t.MixerSide = slot.Right ? MixerSides.Right : null;
-            }
+            MoveToSlot(p, item, slot);
             return keep;
         }, "tracks-reordered");
+    }
+
+    /// <summary>Moves a track or folder (with its tracks) of <paramref name="p"/> to the slot's place, side and folder.</summary>
+    static void MoveToSlot(Project p, object item, MixerSlot slot)
+    {
+        if (item is Folder folder)
+        {
+            if (p.Folders.Find(f => f.Id == folder.Id) is not { } f) return;
+            var seq = TrackFolders.Sequence(p);
+            seq.RemoveAll(x => x == f || x is Track t && t.FolderId == f.Id);
+            if (Place(p, seq, slot) is { } at) TrackFolders.MoveFolder(p, f.Id, at);
+            f.MixerSide = slot.Right ? MixerSides.Right : null;
+        }
+        else if (item is Track track && p.Tracks.Find(t => t.Id == track.Id) is { } t)
+        {
+            var seq = TrackFolders.Sequence(p);
+            seq.Remove(t);
+            int? at = slot.Folder is { } fid && slot.Next == null && slot.Prev == null
+                ? seq.FindIndex(x => x is Folder f && f.Id == fid) + 1
+                : Place(p, seq, slot);
+            if (at is { } pos) TrackFolders.Move(p, [t.Id], pos, slot.Folder);
+            if (slot.Folder == null) t.MixerSide = slot.Right ? MixerSides.Right : null;
+        }
+    }
+
+    /// <summary>
+    /// Where the channels made from the mixer's right-click menu go (asked by the user, #196: like its separators, at the
+    /// gap where the click was): the slot, the project, and the ids that were there before, so the next timeline edit
+    /// can tell what it made. Set when the menu opens; dropped when it closes without a pick, when another new-track menu
+    /// opens, or by the first edit that runs.
+    /// </summary>
+    sealed record MixerNewAt(Project Project, MixerSlot Slot, HashSet<string> Before);
+
+    MixerNewAt? mixerNewAt;
+
+    /// <summary>Called by <see cref="EditTimeline"/> inside its undo step: what the edit made moves to the pending mixer slot.</summary>
+    void PlaceNewInMixer(Project p)
+    {
+        if (mixerNewAt is not { } at) return;
+        mixerNewAt = null;
+        if (at.Project != p) return;
+        var seq = TrackFolders.Sequence(p);
+        // new folders carry their tracks along; a new track goes alone
+        var made = seq.Where(x => x is Folder f ? !at.Before.Contains(f.Id)
+            : x is Track t && !at.Before.Contains(t.Id) && (t.FolderId == null || at.Before.Contains(t.FolderId))).ToList();
+        if (made.Count == 0) return;
+        // each one goes before the strip after the slot (keeps their order), or after the one before it (reversed to keep it)
+        if (!(at.Slot.Next != null && seq.Contains(at.Slot.Next))) made.Reverse();
+        foreach (var x in made) MoveToSlot(p, x, at.Slot);
+    }
+
+    /// <summary>Every item of a menu with no submenu, at any depth.</summary>
+    static IEnumerable<MenuItem> MenuLeaves(IEnumerable<object>? items)
+    {
+        foreach (var o in items ?? [])
+        {
+            if (o is not MenuItem m) continue;
+            var sub = (m.ItemsSource ?? m.Items).Cast<object>().ToList();
+            if (sub.Count == 0) yield return m;
+            else foreach (var leaf in MenuLeaves(sub)) yield return leaf;
+        }
     }
 
     /// <summary>
@@ -426,20 +470,80 @@ public partial class MainWindow
             ToolTip.SetTip(eye, Loc.T(s.HiddenInTimeline ? "separator.show.tip" : "separator.hide.tip"));
         });
         void Menu() { if (FolderById(id) is { } s) OpenAnchoredMenu(Popup(SeparatorMenu(s, box, null), 240), box); }
+        // a left click opens the menu once it is clear it isn't the first half of a double click, which goes straight to
+        // the color (asked by the user, #194)
+        var later = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SeparatorClickWait) };
+        later.Tick += (_, _) => { later.Stop(); Menu(); };
+        bool second = false;
+        box.PointerPressed += (_, e) =>
+        {
+            if (e.ClickCount != 2 || !e.GetCurrentPoint(box).Properties.IsLeftButtonPressed) return;
+            later.Stop();
+            second = true;
+            timelineMenu?.Close();
+            if (FolderById(id) is not { } s) return;
+            // on its name it renames (asked by the user, #194); anywhere else, the color
+            var at = e.GetPosition(rotated);
+            if (at.X >= 0 && at.Y >= 0 && at.X <= rotated.Bounds.Width && at.Y <= rotated.Bounds.Height && store is { ReadOnly: false } && !restoring)
+                AskName(box, null, Loc.T("separator.rename"), s.Name, Loc.T("common.ok"), n => { if (FolderById(id) is { } x) FolderEdit(x, y => y.Name = n.Trim(), "name"); });
+            else ShowFolderLook(s, box);
+        };
         box.PointerReleased += (_, e) =>
         {
+            if (second && e.InitialPressMouseButton == MouseButton.Left) { second = false; e.Handled = true; return; }
             // a click, not the end of a drag (this runs before the drag's own release, which drops it)
-            if (e.InitialPressMouseButton == MouseButton.Right || e.InitialPressMouseButton == MouseButton.Left && mixerDragCard == box && !mixerDragging)
-            {
-                Menu();
-                e.Handled = true; // not the mixer's own menu too
-            }
+            if (e.InitialPressMouseButton == MouseButton.Right) { later.Stop(); Menu(); e.Handled = true; } // not the mixer's own menu too
+            else if (e.InitialPressMouseButton == MouseButton.Left && mixerDragCard == box && !mixerDragging) { later.Start(); e.Handled = true; }
         };
         return box;
     }
 
+    /// <summary>Ms a left click on a separator waits for a second one (a double click opens its color) before opening its menu.</summary>
+    const int SeparatorClickWait = 280;
+
     /// <summary>
-    /// The mixer's right-click menu (asked by the user, in place of a "+ Bus" column): a new empty bus or FX channel (its
+    /// A new separator in the mixer where it was asked for (asked by the user, #194: it always went to the end): at the gap
+    /// between strips nearest <paramref name="x"/> (a right click on the mixer, in the layout's coordinates), else right
+    /// after the selected track or folder, on its side; with neither, at the end of the left side. It starts hidden in the
+    /// timeline, like every separator made in the mixer.
+    /// </summary>
+    async Task NewMixerSeparator(double? x)
+    {
+        if (store == null || store.ReadOnly || restoring || mixerDragging) return;
+        MixerSlot? slot = null;
+        if (x is { } at)
+        {
+            MeasureMixerSlots();
+            slot = MixerDropAt(at);
+            mixerSlots.Clear();
+        }
+        string? keep = sel?.Track.Id, folderId = SelectedFolder?.Id;
+        await EditTimeline(p =>
+        {
+            var seq = TrackFolders.Sequence(p);
+            int? pos = null;
+            bool right = false;
+            if (slot is { } s)
+            {
+                pos = Place(p, seq, s);
+                right = s.Right;
+            }
+            else if (((object?)p.Folders.Find(f => f.Id == folderId && !f.Separator) ?? p.Tracks.Find(t => t.Id == keep)) is { } picked)
+            {
+                // a track in a folder puts it after the whole folder (AddSeparator never goes inside one)
+                pos = seq.IndexOf(picked) + 1;
+                var owner = picked is Track t ? (object?)TrackFolders.Of(p, t) ?? t : picked;
+                right = owner is Folder of ? MixerSides.IsRight(of) : MixerSides.IsRight((Track)owner);
+            }
+            string id = TrackFolders.AddSeparator(p, null, pos);
+            if (right && p.Folders.Find(f => f.Id == id) is { } sep) sep.MixerSide = MixerSides.Right;
+            return keep;
+        }, "separator-added");
+    }
+
+    /// <summary>
+    /// The mixer's right-click menu (asked by the user, in place of a "+ Bus" column): the new tracks of the timeline's +
+    /// (audio, MIDI, instrument, folder, templates, import; #196), a new empty bus or FX channel (its
     /// effect goes in afterwards with "+ Efecto") and a new separator. A right click a strip handles itself doesn't reach it.
     /// The background is transparent, not empty, so the dark space between and around the strips takes the click too, and
     /// a left press there deselects everything (asked by the user).
@@ -457,20 +561,48 @@ public partial class MainWindow
             if (e.Handled || e.InitialPressMouseButton != MouseButton.Right || store == null || restoring) return;
             e.Handled = true;
             bool enabled = !store.ReadOnly;
-            OpenAnchoredMenu(Popup(
+            double x = e.GetPosition(mx.Strips).X;
+            // the new channels of the timeline's + first (asked by the user, #196), then what only the mixer adds
+            var items = NewTrackItems() ?? [];
+            // and they land where the click was, like the separators (#196)
+            if (enabled && !mixerDragging && items.Count > 0)
+            {
+                MeasureMixerSlots();
+                var slot = MixerDropAt(x);
+                mixerSlots.Clear();
+                if (slot is { } s)
+                {
+                    var p = store.Project;
+                    var made = new MixerNewAt(p, s, [.. p.Tracks.Select(t => t.Id), .. p.Folders.Select(f => f.Id)]);
+                    mixerNewAt = made;
+                    var picks = MenuLeaves(items).ToList();
+                    bool picked = false;
+                    foreach (var m in picks) m.Click += (_, _) => picked = true;
+                    pendingMixerMenuClosed = () => { if (!picked && mixerNewAt == made) mixerNewAt = null; };
+                }
+            }
+            if (items.Count > 0) items.Add(new Separator());
+            items.AddRange(
             [
                 MenuAction(Loc.T("mixer.menu.newBus"), () => { BusesEdit(p => ProjectBuses.Add(p) != null); return Task.CompletedTask; }, enabled: enabled, icon: "",
                     tip: Loc.T("mixer.menu.newBus.tip")),
-                MenuAction(Loc.T("mixer.menu.newSeparator"), async () =>
-                {
-                    string? keep = sel?.Track.Id;
-                    await EditTimeline(p => { TrackFolders.AddSeparator(p); return keep; }, "separator-added");
-                }, enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")),
-            ], 240), mixerStrips);
+                MenuAction(Loc.T("mixer.menu.newSeparator"), () => NewMixerSeparator(x), enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")),
+            ]);
+            var menu = Popup(items, 240);
+            if (pendingMixerMenuClosed is { } closed)
+            {
+                pendingMixerMenuClosed = null;
+                // after the click handlers: a pick raises Click before the menu closes
+                menu.Closed += (_, _) => Dispatcher.UIThread.Post(closed);
+            }
+            OpenAnchoredMenu(menu, mixerStrips);
         };
     }
 
-    /// <summary>"+ Separador" in the mixer's header: a new separator at the end of the left side, to drag where it goes.</summary>
+    /// <summary>Hands the mixer menu its "closed without a pick" check (built with the menu's items, attached once it exists).</summary>
+    Action? pendingMixerMenuClosed;
+
+    /// <summary>"+ Separador" in the mixer's header: a new separator right after the selected channel (<see cref="NewMixerSeparator"/>).</summary>
     Button AddSeparatorButton()
     {
         var b = new Button { Classes = { "chip" }, Height = 28, MinHeight = 28, Padding = new Thickness(10, 0),
@@ -480,12 +612,7 @@ public partial class MainWindow
                 new TextBlock { Text = Loc.T("separator.add"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
             } } };
         ToolTip.SetTip(b, Loc.T("separator.add.tip"));
-        b.Click += async (_, _) =>
-        {
-            if (store == null || store.ReadOnly || restoring) return;
-            string? keep = sel?.Track.Id;
-            await EditTimeline(p => { TrackFolders.AddSeparator(p); return keep; }, "separator-added");
-        };
+        b.Click += async (_, _) => await NewMixerSeparator(null);
         headerRefresh.Add(() => b.IsEnabled = store != null && !store.ReadOnly && !restoring);
         return b;
     }

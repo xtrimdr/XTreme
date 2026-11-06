@@ -30,7 +30,8 @@ más. `TrackDspChain.SetInserts` reusa el efecto de cada slot por su id (no pier
 lista, el hilo de audio funde 5 ms de salida y 5 ms de entrada. La conversión canal → motor es una sola,
 `ChannelDsp.Specs` (en vivo, exportación y xtlab); las ediciones de la lista, `ChannelInserts`. Todo nativo va dentro de
 un `FxShell` (Dry, Wet, salida, fundido al prender y apagar; con Wet 100 %, Dry 0 % y 0 dB pasa bit a bit), salvo el Limitador,
-que tiene latencia propia, la declara y atrasa su Dry lo mismo. Un efecto nativo nuevo es una clase en `TrackInserts`/`MasterInserts` y su lista en
+que tiene latencia propia, la declara y atrasa su Dry lo mismo, y el Balance tonal (`TonalInsert`, `TrackInserts.IsMeter`), que solo
+copia lo que pasa a un anillo (`TonalTap`) y nunca cambia el sonido (en el master corre después de Salida, `InsertRack.Analyze`: lee lo que sale); su análisis (`TonalAnalyzer`) corre en el hilo de la ventana. Un efecto nativo nuevo es una clase en `TrackInserts`/`MasterInserts` y su lista en
 `FxDefs`, que da el panel en todos los lugares (`FxBody`), y entra en su grupo del menú (`FxGroups`); nunca una interfaz aparte.
 La modulación (`ModInserts.cs`) sale sin lo directo: Dry y Wet arman el efecto contra la señal seca, por eso arranca al 50 % (`FxDefs.StartMix`).
 Una banda dinámica del EQ (`EqDynamics`) suma `k × filtro` a la señal: nunca calcula coeficientes en el hilo de audio. Las etapas del master son slots

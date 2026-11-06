@@ -18,7 +18,7 @@ static class FxPresetChecks
         InsertSlot.SatKind, InsertSlot.CompKind, InsertSlot.EqKind, InsertSlot.ReverbKind, InsertSlot.DelayKind, InsertSlot.GateKind,
         TrackInserts.Clean, TrackInserts.Bands, TrackInserts.Color, TrackInserts.Tape, TrackInserts.Width, TrackInserts.Clip, TrackInserts.Limit,
         TrackInserts.Chorus, TrackInserts.Flanger, TrackInserts.Phaser, TrackInserts.Tremolo,
-        TrackInserts.Fet, TrackInserts.Opto, TrackInserts.BusComp, TrackInserts.Vca, TrackInserts.VariMu, TrackInserts.Pump,
+        TrackInserts.Fet, TrackInserts.Opto, TrackInserts.BusComp, TrackInserts.Vca, TrackInserts.VariMu, TrackInserts.Pump, TrackInserts.Tonal,
     ];
 
     /// <summary>Prints its rows; true when all of them pass.</summary>

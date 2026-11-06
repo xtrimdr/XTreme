@@ -17,10 +17,13 @@ public partial class App : Application
         SaveMode.Load();
         ImportMode.Load();
         TrackKnobs.Load();
+        MixerOptions.Load();
         Controls.KnobLooks.Load();
         Controls.FaderLooks.Load();
         Controls.MeterLooks.Load();
         Controls.WaveLooks.Load();
+        Controls.PanelLooks.Load();
+        Controls.ThemePicker.Presets = Controls.TronLegacy.Tile;
         Controls.TrackColorLooks.Load();
         NoteNames.Load();
         Controls.UiFonts.Load();

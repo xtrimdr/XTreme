@@ -125,11 +125,13 @@ public partial class MainWindow
             if (enabled != null) { bool e = enabled(); knob.IsEnabled = e; cell.Opacity = e ? 1 : 0.4; }
             if (shown != null) cell.IsVisible = shown();
         });
-        AutomateOn(cell, () => TrackOf(o), AutoTarget.Fx(id, p.Id), k =>
-        {
-            knob.Value = k;
-            value.Text = FxText(p, p.FromKnob(k));
-        });
+        // an analyzer's knobs only change how it reads: no lanes (FxDefs.Automatable)
+        if (!TrackInserts.IsMeter(o.Slot(id)?.Type))
+            AutomateOn(cell, () => TrackOf(o), AutoTarget.Fx(id, p.Id), k =>
+            {
+                knob.Value = k;
+                value.Text = FxText(p, p.FromKnob(k));
+            });
         return (cell, knob);
     }
 
@@ -209,6 +211,11 @@ public partial class MainWindow
                 refresh.Add(() => eq.Set(o.Slot(id)?.Eq ?? GoneEq));
                 body.Children.Add(eq);
                 break;
+            case TrackInserts.Tonal:
+                // an analyzer has no fine controls: its compact or full view everywhere, the full one in Mastering (#210)
+                TonalChoices(body, o, id, refresh);
+                FxSized(body, o, id, kind, refresh, FxDefs.Layout(kind)!, full ?? true);
+                return;
             default:
                 body.Children.Add(PresetBar(o, id, kind, refresh, []));
                 break;
@@ -296,12 +303,13 @@ public partial class MainWindow
             FxDefs.GraphPart when TrackInserts.HasCompGraph(kind) => CompGraphOf(o, id, refresh),
             FxDefs.KeyPart when TrackInserts.TakesKey(kind) => KeyChoice(o, id, refresh, labeled: false),
             FxDefs.ScopePart when FxScope.Has(kind) => ScopeOf(o, id, kind, scopeH, tint ?? Palette.AccentColor, refresh),
+            FxDefs.TonalPart when kind == TrackInserts.Tonal => TonalOf(o, id, full, tint ?? Palette.AccentColor, refresh),
             _ => null,
         };
 
         if (!full)
         {
-            if ((Part(FxDefs.GraphPart, 0) ?? Part(FxDefs.ScopePart, FxScopeCompactH)) is { } graph) body.Children.Add(graph);
+            if ((Part(FxDefs.GraphPart, 0) ?? Part(FxDefs.ScopePart, FxScopeCompactH) ?? Part(FxDefs.TonalPart, 0)) is { } graph) body.Children.Add(graph);
             body.Children.Add(Knobs(layout.Compact, 2));
             return;
         }

@@ -131,7 +131,7 @@ public sealed partial class PianoRollView
         if (at >= clipBeats) return;
         int pitch = (modifiers & KeyModifiers.Shift) != 0 ? PitchAt(down.Y) : WritePitch(p.Y);
         if (notes.Any(n => n.Pitch == pitch && Math.Abs(n.Beat - at) < 1e-6)) return;
-        var note = new MidiNote { Pitch = pitch, Beat = at, Beats = step, Velocity = lastVelocity };
+        var note = new MidiNote { Pitch = pitch, Beat = at, Beats = NoteLength == "last" ? step : WriteBeats, Velocity = lastVelocity };
         notes.Add(note);
         selected.Add(note);
         changed = true;

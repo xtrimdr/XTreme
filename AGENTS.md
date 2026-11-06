@@ -61,7 +61,7 @@ src/
   XtremeDaw.Lab        xtlab.exe: consola para probar audio, DSP y proyectos sin la ventana.
   XtremeDaw.Bench      xtbench.exe, XT-WorkBench (el Banco de pruebas): enlaza su ventana y estilos de App, sin depender de XTreme.dll.
   XtremeDaw.VstHost    xtvsthost.exe (C++, SDK de VST3): abre un plugin en su propio proceso. Lo compila el build de Audio.
-tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que dibuja tools/icon/Vinilo.cs píxel a píxel, cada tamaño a su resolución; no necesita nada instalado; hasta 96 px, una versión plana; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador), bloqueos.ps1 (hook: un archivo, una sesión a la vez)
+tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que dibuja tools/icon/Vinilo.cs píxel a píxel, cada tamaño a su resolución; no necesita nada instalado; hasta 96 px, una versión plana; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-gm.ps1 (baja el banco General MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador), bloqueos.ps1 (hook: un archivo, una sesión a la vez)
 .github/workflows/instalador.yml   arma el instalador en GitHub Actions (un tag vX.Y.Z → release en borrador; firma con SignPath)
 ```
 
@@ -75,7 +75,7 @@ tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba
 - Sin MVVM ni bindings: code-behind con controles con nombre. No metas un framework sin que el usuario lo pida.
 - Sin dependencias nuevas de NuGet sin preguntar. Hoy: Avalonia 11.3, NAudio 2.2, FFmpeg.AutoGen 9.0 y ONNX Runtime
   con DirectML (`Microsoft.ML.OnnxRuntime.DirectML`, decisión del usuario: sus versiones van atrás de las del paquete común; para Extraer MIDI, con el modelo de Basic Pitch de Spotify, Apache 2.0, `lib\basic-pitch`,
-  `tools\get-basic-pitch.ps1`: decisión del usuario). Fuera de NuGet, el
+  `tools\get-basic-pitch.ps1`: decisión del usuario). El banco General MIDI es GeneralUser GS (uso y redistribución libres, `lib\gm`, `tools\get-gm.ps1`, va en el instalador; decisión del usuario, #200: un reproductor de SF2 propio, sin NuGet). Fuera de NuGet, el
   SDK de VST3 de Steinberg (MIT, `lib\vst3sdk`, `tools\get-vst3sdk.ps1`) para `xtvsthost.exe` (decisión del usuario).
 - **Los detalles de cada parte están en su guía** (lista de arriba): se cargan solas al leer un archivo de esa carpeta.
   La ventana usa el modelo y el motor todo el tiempo: si tu cambio los toca desde `App`, leé antes el apartado que

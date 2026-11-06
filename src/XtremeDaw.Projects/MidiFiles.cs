@@ -6,8 +6,11 @@ namespace XtremeDaw.Projects;
 /// <summary>A standard MIDI file as the project takes it: its first tempo (null = it has none) and its tracks with notes.</summary>
 public sealed record MidiFileData(double? Bpm, List<MidiFileTrack> Tracks);
 
-/// <summary>A track of a MIDI file: notes in beats from its start, and its length in whole bars.</summary>
-public sealed record MidiFileTrack(string Name, List<MidiNote> Notes, double LengthBeats);
+/// <summary>
+/// A track of a MIDI file: notes in beats from its start, its length in whole bars, the GM program its channel asks for
+/// (null = none said) and whether it is on channel 10, the drums.
+/// </summary>
+public sealed record MidiFileTrack(string Name, List<MidiNote> Notes, double LengthBeats, int? Program = null, bool Drums = false);
 
 /// <summary>
 /// Standard MIDI files in and out, through NAudio. Notes are kept in beats (ticks over ticks per quarter), never in
@@ -33,16 +36,18 @@ public static class MidiFiles
             string baseName = Path.GetFileNameWithoutExtension(path);
             var tracks = new List<MidiFileTrack>();
             double? bpm = null;
+            var programs = Programs(file);
             for (int i = 0; i < file.Events.Tracks; i++)
             {
                 var events = file.Events[i];
                 bpm ??= events.OfType<TempoEvent>().FirstOrDefault() is { MicrosecondsPerQuarterNote: > 0 } t ? Math.Round(60_000_000.0 / t.MicrosecondsPerQuarterNote, 3) : null;
-                if (file.FileFormat == 0) AddChannels(tracks, events, ppq, baseName);
-                else if (Notes(events, ppq, null) is { Count: > 0 } notes) tracks.Add(Track(TrackName(events), notes));
+                if (file.FileFormat == 0) AddChannels(tracks, events, ppq, baseName, programs);
+                else if (Notes(events, ppq, null) is { Count: > 0 } notes)
+                    tracks.Add(Track(TrackName(events), notes, events.OfType<NoteEvent>().First().Channel, programs));
             }
             for (int i = 0; i < tracks.Count; i++)
                 if (tracks[i].Name.Length == 0)
-                    tracks[i] = tracks[i] with { Name = tracks.Count == 1 ? baseName : Texts.T("midi.file.track", "Pista {0}", i + 1) };
+                    tracks[i] = tracks[i] with { Name = tracks.Count == 1 ? baseName : GmName(tracks[i]) ?? Texts.T("midi.file.track", "Pista {0}", i + 1) };
             return new MidiFileData(bpm, tracks);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or ArgumentException or InvalidOperationException or IndexOutOfRangeException or OverflowException)
@@ -52,7 +57,7 @@ public static class MidiFiles
     }
 
     /// <summary>A type-0 file holds everything on one track: each channel becomes a track.</summary>
-    static void AddChannels(List<MidiFileTrack> tracks, IList<MidiEvent> events, int ppq, string baseName)
+    static void AddChannels(List<MidiFileTrack> tracks, IList<MidiEvent> events, int ppq, string baseName, Dictionary<int, int> programs)
     {
         var channels = events.OfType<NoteEvent>().Select(e => e.Channel).Distinct().Order().ToList();
         string name = TrackName(events);
@@ -60,15 +65,43 @@ public static class MidiFiles
         {
             var notes = Notes(events, ppq, channel);
             if (notes.Count == 0) continue;
-            string shown = channels.Count > 1 ? Texts.T("midi.file.channel", "Canal {0}", channel) : name.Length > 0 ? name : baseName;
-            tracks.Add(Track(shown, notes));
+            var track = Track("", notes, channel, programs);
+            string shown = channels.Count > 1 ? GmName(track) ?? Texts.T("midi.file.channel", "Canal {0}", channel) : name.Length > 0 ? name : baseName;
+            tracks.Add(track with { Name = shown });
         }
     }
 
-    static MidiFileTrack Track(string name, List<MidiNote> notes)
+    /// <summary>The GM channel of the drums (10, counted from 1 as NAudio does).</summary>
+    const int DrumChannel = 10;
+
+    static MidiFileTrack Track(string name, List<MidiNote> notes, int channel, Dictionary<int, int> programs)
     {
         double end = notes.Max(n => n.EndBeat);
-        return new MidiFileTrack(name, notes, Math.Max(1, Math.Ceiling(end / BeatsPerBar - BeatEpsilon)) * BeatsPerBar);
+        return new MidiFileTrack(name, notes, Math.Max(1, Math.Ceiling(end / BeatsPerBar - BeatEpsilon)) * BeatsPerBar,
+            programs.TryGetValue(channel, out int program) ? program : null, channel == DrumChannel);
+    }
+
+    /// <summary>The first program change of each channel, wherever the file has it (often on a track of its own).</summary>
+    static Dictionary<int, int> Programs(MidiFile file)
+    {
+        var first = new Dictionary<int, (long At, int Program)>();
+        for (int i = 0; i < file.Events.Tracks; i++)
+            foreach (var e in file.Events[i].OfType<PatchChangeEvent>())
+                if (!first.TryGetValue(e.Channel, out var had) || e.AbsoluteTime < had.At) first[e.Channel] = (e.AbsoluteTime, e.Patch);
+        return first.ToDictionary(p => p.Key, p => Math.Clamp(p.Value.Program, 0, 127));
+    }
+
+    /// <summary>A track with no name of its own takes the GM instrument it asks for; null when it asks for none.</summary>
+    static string? GmName(MidiFileTrack t) => t.Drums ? GmNames.Kit(t.Program ?? 0) : t.Program is { } p ? GmNames.Program(p) : null;
+
+    /// <summary>The GM instrument a track of a file plays with when it comes in as a new track: what its channel asked for, the piano if nothing.</summary>
+    public static GmSettings GmOf(MidiFileTrack t) => new() { Program = t.Program ?? 0, Drums = t.Drums };
+
+    /// <summary>The GM names of the keys a drum track plays, for its piano roll; null when none is on the map.</summary>
+    static Dictionary<int, string>? DrumKeyNames(List<MidiNote> notes)
+    {
+        var names = notes.Select(n => n.Pitch).Distinct().Select(k => (k, GmNames.DrumKey(k))).Where(x => x.Item2 != null).ToDictionary(x => x.k, x => x.Item2!);
+        return names.Count > 0 ? names : null;
     }
 
     static string TrackName(IList<MidiEvent> events) =>
@@ -178,21 +211,28 @@ public static class MidiFiles
     /// <summary>
     /// Brings a file into the project at <paramref name="atSec"/>. On a MIDI track (<paramref name="trackId"/>) all its
     /// notes make one clip; otherwise each of its tracks becomes a new MIDI track with its name and its clip. Returns the
-    /// clips' ids.
+    /// clips' ids. Each new track plays with the GM instrument its channel asks for (asked by the user, #200); a target
+    /// track that only has the test tone takes the first one's. <paramref name="pick"/> says which of the file's tracks
+    /// come in, by index (null = all).
     /// </summary>
-    public static List<string> Import(Project p, MidiFileData data, string? trackId, double atSec)
+    public static List<string> Import(Project p, MidiFileData data, string? trackId, double atSec, IReadOnlyCollection<int>? pick = null)
     {
-        if (data.Tracks.Count == 0) return [];
+        var chosen = data.Tracks.Where((_, i) => pick == null || pick.Contains(i)).ToList();
+        if (chosen.Count == 0) return [];
         if (p.Tracks.Find(t => t.Id == trackId) is { IsMidi: true } target)
         {
-            var notes = data.Tracks.SelectMany(t => t.Notes);
-            return [AddClip(p, target.Id, atSec, data.Tracks.Max(t => t.LengthBeats), notes)];
+            var notes = chosen.SelectMany(t => t.Notes);
+            if (target is { Instrument: null, Sampler: null, Granular: null, Gm: null }) target.Gm = GmOf(chosen[0]);
+            return [AddClip(p, target.Id, atSec, chosen.Max(t => t.LengthBeats), notes)];
         }
         var ids = new List<string>();
-        foreach (var t in data.Tracks)
+        foreach (var t in chosen)
         {
             string id = MidiEditing.AddTrack(p);
-            p.Tracks.Find(x => x.Id == id)!.Name = t.Name;
+            var track = p.Tracks.Find(x => x.Id == id)!;
+            track.Name = t.Name;
+            track.Gm = GmOf(t);
+            if (t.Drums) track.KeyNames = DrumKeyNames(t.Notes);
             ids.Add(AddClip(p, id, atSec, t.LengthBeats, t.Notes));
         }
         return ids;

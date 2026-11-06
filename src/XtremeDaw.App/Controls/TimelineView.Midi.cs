@@ -73,7 +73,7 @@ public sealed partial class TimelineView
     }
 
     InstrumentState StateOf(LiveTrack t) =>
-        InstrumentStateOf?.Invoke(t.Track.Id) ?? (t.Track.Instrument == null && t.Track.Sampler == null && t.Track.Granular == null ? InstrumentState.TestTone : InstrumentState.Loading);
+        InstrumentStateOf?.Invoke(t.Track.Id) ?? (t.Track.Instrument == null && t.Track.Sampler == null && t.Track.Granular == null && t.Track.Gm == null ? InstrumentState.TestTone : InstrumentState.Loading);
 
     /// <summary>The chip: the plugin's name (accent once it plays, dim while it loads, amber when it couldn't open) or "Tono de prueba", and its arrow.</summary>
     void DrawInstrumentChip(DrawingContext ctx, int i)
@@ -95,7 +95,7 @@ public sealed partial class TimelineView
             InstrumentState.Ready => Palette.Accent, InstrumentState.Loading => Palette.Dim,
             InstrumentState.Failed => Palette.Mute, _ => Palette.Faint,
         };
-        string name = t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Granular != null ? Loc.T("granular.name") : t.Track.Instrument?.Name ?? Loc.T("vst.testTone");
+        string name = t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Granular != null ? Loc.T("granular.name") : t.Track.Instrument?.Name ?? t.Track.Gm?.Name ?? Loc.T("vst.testTone");
         ctx.DrawText(name, 11, brush, new Point(r.X + 8, r.Center.Y - 7), ready ? Palette.UiBold : Palette.Ui, Math.Max(0, r.Width - ChipArrowW - 10));
         double ax = r.Right - ChipArrowW;
         ctx.DrawLine(Palette.Pen(ready ? Palette.Alpha(Palette.AccentColor, 0.3) : Palette.Line), new Point(ax + 0.5, r.Y + 5), new Point(ax + 0.5, r.Bottom - 5));

@@ -179,7 +179,7 @@ public static class EditSteps
                 Add("lock", "track-lock", P(Bool(t, "locked") ? T("step.lockTrack", "Bloqueaste ") : T("step.unlockTrack", "Desbloqueaste ")), Q(name));
             if (!Same(old, t, "input") || !Same(old, t, "midiInput") || !Same(old, t, "midiChannel"))
                 Add("edit", "track-input", P(T("step.input", "Entrada de ")), Q(name));
-            if (!Same(old, t, "instrument") || (old["sampler"] == null) != (t["sampler"] == null) || (old["granular"] == null) != (t["granular"] == null))
+            if (!Same(old, t, "instrument") || (old["sampler"] == null) != (t["sampler"] == null) || (old["granular"] == null) != (t["granular"] == null) || !Same(old, t, "gm"))
                 Add("fx", "track-instrument", P(T("step.instrument", "Instrumento de ")), Q(name));
             else if (!Same(old, t, "sampler")) Add("fx", "track-sampler", P(T("step.sampler", "Sampler de ")), Q(name));
             else if (!Same(old, t, "granular")) Add("fx", "track-granular", P(T("step.granular", "Granular de ")), Q(name));

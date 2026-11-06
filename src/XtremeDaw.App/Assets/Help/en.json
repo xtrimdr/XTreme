@@ -391,6 +391,7 @@
           "steps": [
             "Drag the file onto the timeline, or click **New track → Import audio…**.",
             "For your sound folders, open **Library → Samples** and add a folder.",
+            "Above the list, **All**, **Audio**, **Video**, **MIDI** and **Favorites** show only that type, without folders, and work together with the search. A **.mid** isn't auditioned: bringing it in puts it on the selected MIDI track or on new MIDI tracks, like **Import .mid…**.",
             "Listen with the play button or with **Auto** on (it plays when picked), and drag the sample onto a track, from the list or from the player: its name, or the wave pulled up or down.",
             "To bring several, pick them with **Ctrl** or **Shift** and drag them together: they land one under the other, on new tracks when there are no free ones.",
             "Choose **Copy to project** or **Link**. **Don't show again** keeps that choice; change it in **Settings → Save and export**."
@@ -498,7 +499,8 @@
             "Click its badge to choose color and icon. In the inspector, the square next to the name changes the color; on a folder, the button next to it gives that color to its tracks.",
             "Drag a track by its handle to move it.",
             "**New track → Folder** groups tracks: drag them in by their handle.",
-            "Right-click the track → **Duplicate track** ({key:duplicateTrack}) copies it below with everything; **Duplicate without content**, only its sound."
+            "Right-click the track → **Duplicate track** ({key:duplicateTrack}) copies it below with everything; **Duplicate without content**, only its sound.",
+            "In the mixer, right-click the empty space → **New separator** puts one where you clicked; **Separator** in the header puts it after the selected channel. Double-click a separator to pick its color, or its name to rename it."
           ],
           "notes": [
             "A folder is a channel too: its effects, pan and fader work on its tracks' sum, and its **S** plays only its tracks.",
@@ -574,7 +576,7 @@
             "Watch the master meter: the red light on top means the level went over."
           ],
           "notes": [
-            "{wheel:wheelZoom} over the mixer changes the channel width.",
+            "{wheel:wheelZoom} over the mixer changes the channel width, also over a knob or a fader: with that key held no value changes.",
             "**Effects** and **Sends**, at the top, show or hide that section on every strip. Drag the line under a list to make it taller or shorter; a double click fits it to the longest list. Right-click the button: the same fit or the default height.",
             "**MONO**, on the master, lets you check the mix in mono.",
             "Right-click a strip: the same actions as on the track header."
@@ -646,6 +648,31 @@
             "The strip's reduction meter shows how far it drops."
           ],
           "see": ["sidechain", "add-fx", "comp-presets"]
+        },
+        {
+          "id": "tonal",
+          "icon": "E9D2",
+          "title": "Tonal balance",
+          "keywords": "tonal balance spectrum mastering reference lows highs punch mid side",
+          "intro": "**Tonal balance** compares the mix's frequency balance with a target. It doesn't change the sound.",
+          "steps": [
+            "On the master or on any track or bus, click **+ Effect** → **Analysis** → **Tonal balance**. On the master it always goes last, after **Output**: it reads what goes out, limiter included.",
+            "Choose the **target**: a genre, or **Reference…** to build it from one or more of your songs.",
+            "Play the mix: each band (**Lows**, **Low mids**, **High mids**, **Highs**) shows the target's range and where the mix is; when it falls outside, the mark changes color.",
+            "**Punch** is the low end's impact (crest factor under 120 Hz) against the target's range."
+          ],
+          "notes": [
+            "The full view adds the mix's spectrum over the target's band.",
+            "**Stereo / Mid / Side**: both sides, only the center or only the sides.",
+            "**Response** is how long it averages (1 to 10 s). The reload button restarts the reading.",
+            "It compares shape, not level: turning the mix up or down doesn't change the reading.",
+            "The reference is saved in the project: the files are no longer needed.",
+            "It analyzes while its panel is on screen."
+          ],
+          "see": [
+            "add-fx",
+            "pump"
+          ]
         },
         {
           "id": "sidechain",
@@ -783,7 +810,7 @@
           "icon": "E8AB",
           "title": "Compare two mixes",
           "keywords": "a b ab before after mix versions",
-          "intro": "**A | B**, in the mixer bar, keeps two mixes of the same song.",
+          "intro": "**A | B**, in the mixer bar, keeps two mixes of the same song. It comes hidden: show it in **Settings → Appearance → Mixer**.",
           "steps": [
             "Make a mix in **A**.",
             "Click **B**: it starts as a copy of A.",
@@ -878,7 +905,7 @@
           "id": "export-audio",
           "icon": "E8D6",
           "title": "Export audio",
-          "keywords": "wav mp3 save bounce final mix file render",
+          "keywords": "wav mp3 flac aiff ogg save bounce final mix file render advanced bits sample rate dither mono tail normalize",
           "intro": "Renders the mix to a file.",
           "steps": [
             "In an **Audio only** project, click **Export audio**, at the top right.",
@@ -886,7 +913,9 @@
             "Click export. When it's done, a notice lets you open the file in Explorer."
           ],
           "notes": [
-            "Files go to the project's **exports** folder. MP3 needs FFmpeg."
+            "Files go to the project's **exports** folder. MP3 needs FFmpeg.",
+            "**Advanced**, below Quality, adds FLAC, AIFF and OGG, the bit depth (16, 24 or 32-bit float) with dither, the bitrate or VBR, the sample rate (44.1, 48 or 96 kHz), mono, a fixed tail in seconds, peak normalization (dBTP) and which tracks, folders or buses get a stem. Folded, it shows what you changed; left alone, the export is the same as always.",
+            "What you choose in Advanced is saved in the project for the next export."
           ],
           "see": ["export-range", "export-stems", "no-ffmpeg"]
         },
@@ -1042,7 +1071,7 @@
           "keywords": "piano roll notes drums beat compose draw",
           "intro": "A MIDI track keeps notes and plays them with an instrument.",
           "steps": [
-            "**New track → MIDI track**. Or **MIDI track with instrument** and pick one: the track already plays with it.",
+            "**New track → MIDI track**. Or **MIDI track with instrument** and pick one: the track already plays with it. In the mixer, the same with a right click on the empty space.",
             "Double-click an empty spot on the track: it creates a clip and opens the **Piano roll**.",
             "Click on the grid to write a note. Drag to move it; its right edge lengthens it.",
             "Right-click deletes.",
@@ -1081,14 +1110,35 @@
           "icon": "E7F5",
           "title": "Choose a VST instrument",
           "keywords": "plugin sound piano synth kontakt sampler no sound test tone",
-          "intro": "Without an instrument, the track plays a test tone.",
+          "intro": "Without an instrument, the track plays a test tone. Choose the **Sampler**, the **Granular**, a **General MIDI** instrument or a plugin.",
           "steps": [
             "Select the MIDI track.",
             "On the channel, open the **Instrument** dropdown, or right-click the track → **Instrument**.",
             "Choose one from the list. The first time, installed plugins are scanned.",
             "**Open its window** shows the plugin."
           ],
-          "see": ["sampler", "granular", "plugins", "plugin-fail"]
+          "see": ["general-midi", "sampler", "granular", "plugins", "plugin-fail"]
+        },
+        {
+          "id": "general-midi",
+          "icon": "E8D6",
+          "title": "General MIDI instruments",
+          "keywords": "general midi gm soundfont sf2 piano drums bass strings program native instrument import mid song tracks channel 10 generaluser envelope attack release filter brightness resonance sensitivity velocity transpose tune mono glide",
+          "intro": "The 128 General MIDI instruments and the drum kits, with nothing to install.",
+          "steps": [
+            "Under **Instrument**, open **General MIDI**: each family (Pianos, Guitars, Basses…) has its 8 instruments, and **Drums** has the kits.",
+            "**Open its window** (in the inspector or the piano roll) shows the instrument's window: the families and kits on the left, their instruments on the right (a click picks one) and a keyboard to try it.",
+            "Below, the knobs change the sound over the bank's: **Envelope** (Attack, Decay, Sustain, Release), **Filter** (Brightness, Resonance, Vel. bright) and **Play** (Sensitivity, Transpose, Fine tune and, in **Mono**, Glide). At the centre it sounds as the bank does; a double click goes back there and **Reset** brings them all back.",
+            "When you import a **.mid** to new tracks, each track takes the instrument the file asks for; the one on channel 10 takes the drums, with each key named in the piano roll.",
+            "If the file has more than one track, **Import MIDI** asks which ones to bring. **All** and **None** tick or clear the list.",
+            "Each track takes the name it has in the file; without one, its instrument's."
+          ],
+          "notes": [
+            "The sound is the **GeneralUser GS** bank, which comes with the app.",
+            "Changing the instrument keeps the knobs as they were. Transpose doesn't apply to drums.",
+            "Importing onto a selected MIDI track puts the ticked tracks in a single clip. If that track plays the test tone, it takes the first one's instrument."
+          ],
+          "see": ["instrument", "midi-track"]
         },
         {
           "id": "sampler",
@@ -1165,7 +1215,7 @@
             "Select notes (with none selected, the tool takes the whole clip) and open **Tools** in the piano roll's header.",
             "A tool with settings opens a panel at the side: move the values and hear the result while it plays.",
             "**Enter** applies and **Esc** cancels. A click on the notes applies too. Each apply is one undo step.",
-            "**Draw**, **Paint** and **Slice** change what a click on the grid does. Ctrl+Alt and drag selects with a lasso.",
+            "**Draw**, **Paint** and **Slice** change what a click on the grid does. Ctrl+Alt and drag selects with a lasso. **Length** beside them sets how long new notes are: the last note touched, the same as snap, or a fixed value.",
             "Double-click a note to open its card: velocity, pan, release, modulation, color, slide and portamento.",
             "**Expression**, on the bottom bar, shows or hides the lower lane, and its dropdown picks what it shows: velocity, mod X, mod Y, pan or release. **View** shows other tracks in grey and puts a waveform behind the notes. Right-click a key to name it.",
             "In **Scale**, **MIDI keyboard to scale** lands what you play on the scale. **Arpeggiator**, in Tools, arpeggiates the keyboard and records what sounds."
@@ -1223,6 +1273,7 @@
           "intro": "Linked clips: editing one changes them all.",
           "steps": [
             "Press **Convert to pattern** at the top of the piano roll, or right-click a MIDI clip → **Convert to pattern**.",
+            "With several MIDI clips selected, right-click one: **Convert to one pattern** makes a single pattern as long as all of them together (each track, an instrument); **Convert to separate patterns**, one per clip.",
             "Duplicate or copy the clip: the copy stays linked. Its clips carry the chain icon, and pointing at one marks them all.",
             "Stretch a clip by its right edge to repeat the loop.",
             "**Several instruments**: in the piano roll, **Pattern** → **Add instrument**. Each one goes on its own track, with its own notes, and a line joins the clips that play together.",
@@ -1396,14 +1447,14 @@
           "id": "look",
           "icon": "E771",
           "title": "Change the color and layout",
-          "keywords": "theme accent appearance vertical panels hide full screen knobs style neumorphic faders meters waveforms font typeface numbers digital segment lcd orbitron reset factory size scale zoom",
+          "keywords": "theme accent appearance vertical panels hide full screen knobs style neumorphic faders meters waveforms font typeface numbers digital segment lcd orbitron tron legacy whole theme colors gradient custom surprise reset factory size scale zoom",
           "intro": "Most of it is in the title bar.",
           "steps": [
-            "The theme picker chooses the accent color and background.",
+            "The theme picker chooses the accent color and background. **Tron Legacy**, under Whole themes, changes everything at once: background, accent, panels, knobs, faders, meters, waves and numbers; each part can be changed afterwards.",
             "The layout button {icon:E80A} switches between **Classic** and **Vertical**.",
             "The two panel buttons hide the sides.",
             "{key:fullScreen} goes full screen.",
-            "In **Settings → Appearance** pick the style of knobs, faders, meters and waveforms, how each track's color shows in the timeline (soft, solid, wave-only or title-bar clips; a stripe or tint on the header, a tinted lane and the selection in its color) and in the inspector (rule and tint, rule only, filled or no color; a stripe along the edge, tinted sections and section icons in its color), the interface's font, the numbers' font (values, times and the clock; also a 14-segment digital one and Orbitron) and the size, in px (also with **Ctrl +** and **Ctrl −**; **Ctrl 0** goes back to 100 %). **Reset**, above each one, takes it back to the factory setting."
+            "In **Settings → Appearance** pick the style of the window's panels (flat, raised or raised with a gradient), of knobs, faders, meters and waveforms, how each track's color shows in the timeline (soft, solid, wave-only or title-bar clips; a stripe or tint on the header, a tinted lane and the selection in its color) and in the inspector (rule and tint, rule only, filled or no color; a stripe along the edge, tinted sections and section icons in its color), the interface's font, the numbers' font (values, times and the clock; also a 14-segment digital one and Orbitron) the **meter colors** (**Default**, or **Custom**: pick Low, Hot and Clip, or hit **Surprise me** to draw three that go together; they apply to every meter and look, and the thresholds stay the same) and the size, in px (also with **Ctrl +** and **Ctrl −**; **Ctrl 0** goes back to 100 %). **Reset**, above each one, takes it back to the factory setting."
           ],
           "settings": "view"
         },

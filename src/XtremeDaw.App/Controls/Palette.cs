@@ -49,6 +49,7 @@ static class Palette
     public static IBrush Mute => mute;
     static readonly SolidColorBrush mute = new(Color.Parse("#f59e0b")), inTune = new(Color.Parse("#22c55e"));
     public static Color AppColor => app.Color;
+    public static Color PanelColor => panel.Color;
     public static Color RaisedColor => raised.Color;
     public static Color HoverColor => hover.Color;
     public static Color LineColor => line.Color;

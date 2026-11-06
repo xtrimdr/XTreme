@@ -639,11 +639,13 @@ static class DspCommands
         allOk &= FxPresetChecks.Check();
         allOk &= ModChecks.Check();
         allOk &= PumpChecks.Check();
+        allOk &= TonalChecks.Check();
         allOk &= SidechainChecks.Check();
         allOk &= CompModelChecks.Check();
         allOk &= PdcChecks.Check();
         allOk &= AutomationChecks.Check();
         allOk &= RangeChecks.Check();
+        allOk &= ExportAudioChecks.Check();
         allOk &= BusCommands.Check();
         allOk &= MeterChecks.Check();
         allOk &= MidiCommands.Check();
@@ -654,6 +656,7 @@ static class DspCommands
         allOk &= SampleChecks.Check();
         allOk &= SamplerChecks.Check();
         allOk &= GranularChecks.Check();
+        allOk &= GmChecks.Check();
         try { Directory.Delete(tmp, true); } catch (IOException) { }
 
         Console.WriteLine();
@@ -815,14 +818,14 @@ static class DspCommands
     }
 
     /// <summary>--stems: one WAV per track that sounds, next to the export, like the window's "Stems" option.</summary>
-    static void ExportStems(ExportJobSpec job, string exportPath, double durationSec)
+    static void ExportStems(ExportJobSpec job, string exportPath, double durationSec, IReadOnlyList<int>? buses = null, int? sampleRate = null)
     {
         string last = "";
         var (folder, count) = AudioExporter.ExportStemsAsync(job, exportPath, f =>
         {
             string line = $"  [Stems] {Math.Floor(f * 10) * 10:0}%";
             if (line != last) Console.WriteLine(last = line);
-        }, durationSec: durationSec).GetAwaiter().GetResult();
+        }, durationSec: durationSec, nodes: buses, sampleRate: sampleRate).GetAwaiter().GetResult();
         Console.WriteLine($"Stems: {count} en {folder}");
         foreach (var f in Directory.GetFiles(folder, "*.wav").Order()) Console.WriteLine($"  {Path.GetFileName(f)}");
     }
@@ -1017,15 +1020,33 @@ static class DspCommands
             if (a.Get("audio") is { } fmtArg || p.Settings.AudioOnly)
             {
                 var fmt = AudioExporter.ParseFormat(a.Get("audio") ?? p.Settings.Export.AudioFormat);
+                // the window's "Avanzado" (#208): the project's last choice, each option overriding it
+                var ex = p.Settings.Export.AudioSettings() with { Format = fmt };
+                if (a.Get("bits") != null) ex = ex with { BitDepth = (int)a.Double("bits", 24) };
+                if (a.Get("frecuencia") != null) ex = ex with { SampleRate = (int)a.Double("frecuencia", 48000) };
+                if (a.Flag("sin-dither")) ex = ex with { Dither = false };
+                if (a.Get("kbps") is { } kb) ex = ex with { Kbps = kb == "vbr" ? null : (int)a.Double("kbps", 320) };
+                if (a.Get("cola-fija") != null) ex = ex with { TailSec = a.Double("cola-fija", 0) };
+                if (a.Get("normalizar") != null) ex = ex with { NormalizeDbtp = a.Double("normalizar", -1) };
+                if (a.Flag("mono")) ex = ex with { Mono = true };
+                ex = ex.Normalized();
+                Console.WriteLine($"Audio: {AudioExporter.Describe(ex)}{(ex.TailSec is { } ft ? $", cola fija {ft:0.0} s" : "")}{(ex.NormalizeDbtp is { } nd ? $", normalizado a {nd:0.0} dBTP" : "")}");
                 string last = "";
-                var ares = AudioExporter.ExportAsync(job, fmt, prog =>
+                var ares = AudioExporter.ExportAsync(job, ex, prog =>
                 {
                     string line = $"  [{prog.Stage}] {Math.Floor(prog.Fraction * 10) * 10:0}%";
                     if (line != last) Console.WriteLine(last = line);
                 }).GetAwaiter().GetResult();
                 Console.WriteLine($"Exportado: {ares.FullPath} ({Mp4Exporter.FormatBytes(ares.Bytes)}, {ares.DurationSec:0.0} s en {ares.ElapsedSec:0.0} s)");
                 Console.WriteLine(Loudness(ares));
-                if (a.Flag("stems")) ExportStems(job, ares.FullPath, ares.DurationSec);
+                if (a.Flag("stems"))
+                {
+                    // --stems-buses Reverb,Delay: those folders or buses get a stem too (by name)
+                    var nodes = ChannelDsp.Nodes(p);
+                    var names = (a.Get("stems-buses") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    List<int> buses = [.. job.MixBus.Nodes.Select((n, i) => (n, i)).Where(x => names.Contains(x.n.Name, StringComparer.OrdinalIgnoreCase)).Select(x => x.i)];
+                    ExportStems(job, ares.FullPath, ares.DurationSec, buses, ex.SampleRate);
+                }
                 return 0;
             }
             var res = Mp4Exporter.ExportAsync(job, prog =>
