@@ -39,6 +39,7 @@ public partial class MainWindow
         InitBusInspector();
         InitNameEditor();
         Timeline.RowHeightRequested += SetRowHeight;
+        InitBusRows();
         ResetHeightsButton.Click += (_, _) => ResetRowHeights();
         SplitAllButton.Click += (_, _) => SplitAllWaves();
     }
@@ -88,7 +89,8 @@ public partial class MainWindow
         if (FolderById(id) is { Collapsed: true } folded) folded.HeightScale = h / Timeline.TrackHeight;
         else if (FolderById(id) is { } f) f.Height = h is { } px ? Timeline.FolderUnzoomed(px) : null;
         else if (tracks.Find(t => t.Track.Id == id) is { } t) t.Track.HeightScale = Scale(h);
-        else if (tracks.Select(x => Automations.ById(x.Track, id)).Concat(store.Project.Folders.Select(x => Automations.ById(x, id))).FirstOrDefault(l => l != null) is { } lane)
+        else if (tracks.Select(x => Automations.ById(x.Track, id)).Concat(store.Project.Folders.Select(x => Automations.ById(x, id)))
+            .Concat(store.Project.Settings.Buses.Select(x => Automations.ById(x, id))).FirstOrDefault(l => l != null) is { } lane)
             lane.HeightScale = h / Timeline.AutoBaseH;
         else return;
         RowHeightsChanged();
@@ -213,6 +215,21 @@ public partial class MainWindow
 
     Task NewFolder(IReadOnlyCollection<string>? trackIds = null) => EditTimeline(p => TrackFolders.Add(p, null, trackIds), "folder-added");
 
+    /// <summary>Ctrl+G (#252): a new folder with what is picked in the timeline, the picked tracks and those of the boxed
+    /// clips, in their order; with nothing picked, the selected track.</summary>
+    Task GroupInFolderShortcut()
+    {
+        if (store == null || restoring || store.ReadOnly) return Task.CompletedTask;
+        var p = store.Project;
+        var ids = Timeline.PickedTrackIds.ToHashSet();
+        foreach (var clipId in Timeline.BoxedClipIds)
+            if (p.Tracks.FirstOrDefault(t => t.Clips.Any(c => c.Id == clipId) || (t.MidiClips?.Any(c => c.Id == clipId) ?? false)) is { } owner)
+                ids.Add(owner.Id);
+        if (ids.Count == 0) return Task.CompletedTask;
+        var group = TrackFolders.Sequence(p).OfType<XtremeDaw.Projects.Track>().Where(t => ids.Contains(t.Id)).Select(t => t.Id).ToList();
+        return NewFolder(group);
+    }
+
     void RenameFolder(Folder f, Control anchor, Point? at) =>
         AskName(anchor, at, Loc.T("folder.rename"), f.Name, Loc.T("common.ok"), name => FolderEdit(f, x => x.Name = name, "name"));
 
@@ -305,7 +322,7 @@ public partial class MainWindow
             if (point is { } at) RenameInPlace(f.Id, () => RenameFolder(f, anchor, at));
             else RenameFolder(f, anchor, null);
             return Task.CompletedTask;
-        }, enabled: enabled, icon: ""));
+        }, Shortcuts.Label("renameClip"), enabled: enabled, icon: ""));
         var color = new MenuItem { Header = MenuHeader(Loc.T("look.color.more"), Swatch(f.Color)), IsEnabled = enabled };
         color.Click += (_, _) => ShowFolderLook(f, anchor, point);
         list.Add(color);
@@ -405,7 +422,7 @@ public partial class MainWindow
             item.Click += async (_, _) => await MoveGroup(x => { foreach (var t in group) TrackFolders.MoveInto(x, t, id); });
             items.Add(item);
         }
-        yield return MenuAction(group.Count > 1 ? Loc.T("folder.group") : Loc.T("folder.newWith"), () => NewFolder(group), enabled: enabled, icon: "");
+        yield return MenuAction(group.Count > 1 ? Loc.T("folder.group") : Loc.T("folder.newWith"), () => NewFolder(group), Shortcuts.Label("folderGroup"), enabled, icon: "");
         if (items.Count > 0)
             yield return new MenuItem { Header = MenuHeader(Loc.T("folder.menu"), new TextBlock { Text = "", Classes = { "icon" }, FontSize = 12 }), ItemsSource = items, IsEnabled = enabled };
     }
@@ -476,7 +493,10 @@ public partial class MainWindow
             FolderEdit(F(), x => x.MixerCollapsed = !x.MixerCollapsed, "mixerFold", undoable: false);
         };
         var band = new NoWidth { Child = hit };
-        var decor = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Margin = new Thickness(1, 2, 1, StripGap / 2), IsHitTestVisible = false };
+        // joined strips (#250) leave the group's frame no room: just its tint, under the band
+        var decor = MixerLooks.Joined
+            ? new Border { IsHitTestVisible = false }
+            : new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), Margin = new Thickness(1, 2, 1, StripGap / 2), IsHitTestVisible = false };
         mx.Refresh.Add(() =>
         {
             var f = F();
@@ -504,6 +524,7 @@ public partial class MainWindow
         var box = StripCard(width);
         mx.Boxes.Add(box);
         // a click on the folder's strip selects the folder, like a track's strip selects its track
+        mx.Cards[id] = box;
         var top = StripCardLook(box, () => Timeline.SelectedFolderId == id, () => false, () => TimelineView.FolderColor(F()), () => Timeline.SelectFolder(id));
         // its own menu, the timeline's (without it, the right click reached the mixer's background menu)
         box.PointerReleased += (_, e) =>

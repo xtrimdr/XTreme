@@ -16,11 +16,12 @@ static class GmChecks
 {
     const int Sr = 48000;
 
-    /// <summary><c>gm [presets] [--programa 0] [--bateria] [--nota 60] [--segundos 2] [--salida x.wav]</c>: lists the bank, or plays a note of it to a WAV.</summary>
+    /// <summary><c>gm [presets] [--banco musescore|fluidr3|archivo.sf2] [--programa 0] [--bateria] [--nota 60] [--segundos 2] [--salida x.wav]</c>: lists the bank, or plays a note of it to a WAV.</summary>
     public static int Run(Args a)
     {
         if (a.Positional.FirstOrDefault() == "comprobar") return Check() ? 0 : 1;
-        var font = GmBank.Load() ?? throw new ArgumentException($"No está el banco GM: {GmBank.Path} (corré tools\\get-gm.ps1 y compilá).");
+        string? bank = a.Get("banco");
+        var font = GmBank.Load(bank) ?? throw new ArgumentException($"No está el banco GM: {GmBank.PathOf(bank) ?? bank} (corré tools\\get-gm.ps1 y compilá, o bajalo en Complementos).");
         if (a.Positional.FirstOrDefault() == "presets")
         {
             Console.WriteLine($"{font.Name} · {font.Data.Length / 1_000_000.0:0.0} M muestras");
@@ -31,6 +32,15 @@ static class GmChecks
         bool drums = a.Flag("bateria");
         double sec = a.Double("segundos", 2);
         var preset = font.Find(program, drums) ?? throw new ArgumentException("El banco no tiene ese programa.");
+        if (a.Positional.FirstOrDefault() == "zonas")
+        {
+            int vel = (int)a.Double("velocidad", 100);
+            foreach (var z in preset.Regions.Where(z => z.Covers(note, vel)))
+                Console.WriteLine($"teclas {z.KeyLo}-{z.KeyHi} vel {z.VelLo}-{z.VelHi}  raíz {z.Root}  ganancia {z.Gain:0.000}  pan {z.Pan:0.00}  " +
+                    $"ataque {z.Attack:0.000} decay {z.Decay:0.00} sustain {z.SustainCb:0} cB  corte {z.Cutoff:0} env {z.ModEnvToCutoff:0} (A {z.ModAttack:0.000} D {z.ModDecay:0.00} S {z.ModSustain:0.00})  " +
+                    $"muestras {z.End - z.Start}  pico {font.Data.AsSpan(z.Start, Math.Max(0, z.End - z.Start)).ToArray().Max(Math.Abs):0.000}");
+            return 0;
+        }
         var (l, r) = Render(font, preset, [On(0, (long)(sec * Sr), note, 100)], (int)((sec + 2) * Sr));
         Console.WriteLine($"{preset.Name} · pico {l.Concat(r).Max(Math.Abs):0.000}");
         if (a.Get("salida") is { } path) Wav.Write(path, l, r, Sr);
@@ -48,8 +58,10 @@ static class GmChecks
         ok &= CheckBlocks(font);
         ok &= CheckExclusive(font);
         ok &= CheckTone(font);
+        ok &= CheckMods(font);
         ok &= CheckFile();
         ok &= CheckBank();
+        ok &= CheckBankChoice();
         return ok;
     }
 
@@ -208,6 +220,38 @@ static class GmChecks
     }
 
     /// <summary>The tone over the preset (#200): transpose, velocity, release, filter, Mono and its glide, in any block.</summary>
+    /// <summary>
+    /// The bank's note modulators (#212): the SF2 curves give their ends, and a velocity that opens the filter (what
+    /// MuseScore General's pianos do) makes a hard note through a nearly closed filter sound, and a soft one not.
+    /// </summary>
+    static bool CheckMods(SoundFont font)
+    {
+        // 0x0102 velocity, negative linear; 0x0203 key, bipolar; 0x0502 velocity, negative concave
+        var velDown = new SfMod(0x0102, 0, 8, -2400);
+        var keyBi = new SfMod(0x0203, 0, 8, 1929);
+        var concave = new SfMod(0x0502, 0, 8, 960);
+        bool curves = Math.Abs(velDown.At(60, 127)) < 1e-9 && Math.Abs(velDown.At(60, 0) + 2400) < 1e-9
+            && Math.Abs(keyBi.At(127, 100) - 1929) < 1e-9 && Math.Abs(keyBi.At(0, 100) + 1929) < 1e-9
+            && Math.Abs(concave.At(60, 127)) < 1e-9 && Math.Abs(concave.At(60, 0) - 960) < 1e-9 && concave.At(60, 64) is > 100 and < 140;
+        bool ok = Row("GM moduladores: curvas del SF2", curves ? "ok" : "mal", "ok", curves);
+
+        var sine = font.Find(0, false)!;
+        SfPreset With(params SfMod[] mods) => new(sine.Name, sine.Bank, sine.Program, [.. sine.Regions.Select(r =>
+        {
+            var c = new SfRegion();
+            foreach (var f in typeof(SfRegion).GetFields()) f.SetValue(c, f.GetValue(r));
+            c.Cutoff = 3000;
+            c.Mods = mods;
+            return c;
+        })]);
+        var closed = With();
+        var opened = With(new SfMod(0x0002, 0, 8, 10000));
+        double Level(SfPreset p, int vel) => Rms(Render(font, p, [On(0, Sr, 69, vel)], Sr, tone: new GmTone { Velocity = 0 }).L, Sr / 2, Sr);
+        double shut = Level(closed, 127), hard = Level(opened, 127), soft = Level(opened, 10);
+        bool opens = hard > 10 * shut && soft < 4 * shut;
+        return Row("GM moduladores: la velocidad abre el filtro", $"{hard / shut:0} / {soft / shut:0.0}", "> 10 / < 4", opens) & ok;
+    }
+
     static bool CheckTone(SoundFont font)
     {
         var sine = font.Find(0, false)!;
@@ -249,6 +293,16 @@ static class GmChecks
         var (b, _) = Render(font, sine, tied, 2 * Sr, 509, glide);
         bool same = a.AsSpan().SequenceEqual(b);
         ok &= Row("GM tono: glide en cualquier bloque", same ? "igual" : "distinto", "igual", same);
+
+        // the instrument's volume (#212): -6 dB is half the level, in any block, and the bottom is silence
+        var (full, _) = Render(font, sine, [On(0, Sr, 69)], Sr);
+        var (half, _) = Render(font, sine, [On(0, Sr, 69)], Sr, 64, new GmTone { VolumeDb = -20 * Math.Log10(2) });
+        var (half2, _) = Render(font, sine, [On(0, Sr, 69)], Sr, 509, new GmTone { VolumeDb = -20 * Math.Log10(2) });
+        double vr = Rms(half, Sr / 2, Sr) / Rms(full, Sr / 2, Sr);
+        ok &= Row("GM volumen: -6 dB a la mitad", $"{vr:0.000}", "0.500", Math.Abs(vr - 0.5) < 1e-3 && half.AsSpan().SequenceEqual(half2));
+        var (mute, _) = Render(font, sine, [On(0, Sr, 69)], Sr, tone: new GmTone { VolumeDb = GmTone.MinVolumeDb });
+        double left = Rms(mute, 0, Sr);
+        ok &= Row("GM volumen: abajo de todo calla", $"{left:0.000000}", "0", left == 0);
         return ok;
     }
 
@@ -343,5 +397,37 @@ static class GmChecks
         double p = pl.Max(Math.Abs), k = kl.Max(Math.Abs);
         bool ok = p is > 0.02 and < 1 && k is > 0.02 and < 1;
         return Row("GM: banco de la app (piano y batería)", $"{p:0.00} / {k:0.00}", "sonando", ok) & quiet;
+    }
+
+    /// <summary>
+    /// The bank a track picks (#212): it keeps one name per bank, a download lives in the app's folder, and one that isn't
+    /// on this PC plays the shipped bank (in the export too) without losing the choice.
+    /// </summary>
+    static bool CheckBankChoice()
+    {
+        var g = new GmSettings { Bank = "GeneralUser" };
+        g.Normalize();
+        var m = new GmSettings { Bank = " MuseScore " };
+        m.Normalize();
+        bool names = g.Bank == null && m.Bank == "musescore" && GmBank.PathOf("musescore") == Path.Combine(GmBank.DownloadDir, "MuseScore_General.sf2")
+            && GmBank.PathOf("otro") == null && GmBank.NameOf(@"D:\Bancos\Mi Piano.sf2") == "Mi Piano";
+        bool ok = Row("GM: banco elegido (nombres y lugar)", names ? "ok" : "mal", "ok", names);
+        string gone = Path.Combine(Path.GetTempPath(), "xtlab-no-esta.sf2");
+        var lost = new GmSettings { Bank = gone, Program = 0 };
+        lost.Normalize();
+        var rig = lost.Rig();
+        bool fallback = lost.Bank == gone && (GmBank.Load() is not { } shipped ? rig == null : rig?.Font == shipped);
+        ok &= Row("GM: banco que falta suena con el de la app", fallback ? "ok" : "mal", "ok", fallback);
+        if (GmBank.Available(null))
+        {
+            // the shipped file by its path: another bank to the cache, read on its own
+            var own = new GmSettings { Bank = GmBank.Path };
+            own.Normalize();
+            var r = own.Rig();
+            bool read = r != null && r.Font != GmBank.Load() && r.Font.Data.Length == GmBank.Load()!.Data.Length;
+            GmBank.Keep([]);
+            ok &= Row("GM: .sf2 propio por su ruta", read ? "leído" : "no", "leído", read && !GmBank.IsLoaded(GmBank.Path) && GmBank.Loaded);
+        }
+        return ok;
     }
 }

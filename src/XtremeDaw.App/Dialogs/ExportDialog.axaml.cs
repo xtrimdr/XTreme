@@ -1468,6 +1468,12 @@ public sealed partial class ExportDialog : UserControl
         foreach (var trk in p.Tracks)
         {
             var lt = liveTracks?.FirstOrDefault(x => x.Track.Id == trk.Id);
+            // a frozen track plays its render (#240); without its file it plays live, like in the window
+            if (trk.Freeze is { } freeze && (lt?.FrozenSound is { } fs ? (fs.L, fs.R) : Freezing.Load(store.Dir, freeze, sampleRate)) is ({ } fl, { } fr))
+            {
+                mixTracks.Add(ChannelDsp.Track(p, nodes, trk, [Freezing.Clip(fl, fr, freeze.AtSec, sampleRate)], -24, frozen: true));
+                continue;
+            }
             var mixClips = new List<MixClipSpec>();
             double? firstRmsDb = lt?.RmsDb;
 

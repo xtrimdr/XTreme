@@ -20,7 +20,7 @@ namespace XtremeDaw.App.Controls;
 /// a point edited in any repeat changes them all. They fold with the
 /// track's chevron, go with their track when it folds into a folder, and a dragged track carries them folded. A folder's
 /// lanes (#136) are the same rows under the folder's row, above its tracks: they hide when the folder folds (the user's
-/// call) and fold from its menu or its own chevron, which (like a track's) carries the automation glyph over it (#159). The owner of a lane is an <see cref="IAutomated"/>, the track or the folder. Like the
+/// call) and fold from its menu or its own chevron, which (like a track's) carries the automation glyph over it (#159). A bus's lanes (#267) go under its row, at the end of the timeline (<c>TimelineView.Buses.cs</c>). The owner of a lane is an <see cref="IAutomated"/>, the track, the folder or the bus. Like the
 /// rest of the control it only raises events: the window edits the project.
 /// </summary>
 public sealed partial class TimelineView
@@ -47,6 +47,8 @@ public sealed partial class TimelineView
     public event Action<IAutomated, string, Point>? AutomationAsked;
     /// <summary>A lane's trash can: the window asks there (the point) before removing it.</summary>
     public event Action<IAutomated, AutomationLane, Point>? AutomationRemoveRequested;
+    /// <summary>A right drag erased blocks of a lane (by id), as it erases clips: the lane's owner, its id and the blocks.</summary>
+    public event Action<IAutomated, string, IReadOnlyList<string>>? AutomationBlocksErased;
 
     /// <summary>The block picked last, for the shortcuts: its lane's owner (a track or a folder) and lane; null = none.</summary>
     public (IAutomated Owner, AutomationLane Lane, AutomationBlock Block)? SelectedBlock
@@ -60,6 +62,9 @@ public sealed partial class TimelineView
             foreach (var f in folders)
                 foreach (var l in f.Automation ?? [])
                     if (Automations.BlockById(l, selectedBlock) is { } b) return (f, l, b);
+            foreach (var x in busRows)
+                foreach (var l in x.Automation ?? [])
+                    if (Automations.BlockById(l, selectedBlock) is { } b) return (x, l, b);
             return null;
         }
     }
@@ -98,16 +103,20 @@ public sealed partial class TimelineView
     double autoPen, autoFrom, autoTension;
     // where the pass being edited starts in the block (relative): a looped block's points are its first pass's
     double autoPassAt;
+    // a right drag on a lane (#268): its lane and owner and the blocks (by id) it went over, hidden until release
+    AutomationLane? autoEraseLane;
+    IAutomated? autoEraseOwner;
+    readonly HashSet<string> autoErasing = [];
 
     /// <summary>A track's or a folder's lanes on screen: none folded, none while it is carried, none in a folded folder.</summary>
     IEnumerable<AutomationLane> LanesOf(IAutomated t) => t.Automation is not { } list || t.AutomationFolded || IsDragged(t.Id)
         || t is Folder { Collapsed: true } or Folder { Separator: true } ? [] : list.Where(l => !l.Hidden);
 
     /// <summary>Whose a lane row is: its track or its folder.</summary>
-    IAutomated OwnerOf(Row r) => r.Folder ?? (IAutomated)tracks[r.Track].Track;
+    IAutomated OwnerOf(Row r) => r.Folder ?? r.Bus ?? (IAutomated)tracks[r.Track].Track;
 
     /// <summary>The color a lane is drawn in: its track's or its folder's.</summary>
-    Color LaneTint(Row r) => r.Folder is { } f ? FolderColor(f) : TrackIcons.ColorOf(tracks[r.Track].Track) ?? Palette.AccentColor;
+    Color LaneTint(Row r) => r.Folder is { } f ? FolderColor(f) : r.Bus is { } b ? BusColor(b) : TrackIcons.ColorOf(tracks[r.Track].Track) ?? Palette.AccentColor;
 
     /// <summary>A lane's usual height at the current vertical zoom: it scales with the tracks (#174: a fixed one stayed
     /// tall over zoomed-out tracks), its own <see cref="AutomationLane.HeightScale"/> a multiple of this.</summary>
@@ -131,6 +140,7 @@ public sealed partial class TimelineView
     /// <summary>The lane's blocks as they are drawn: during a gesture, with the one going.</summary>
     IEnumerable<AutomationBlock> BlocksOf(AutomationLane l)
     {
+        if (autoErasing.Count > 0 && l == autoEraseLane) return l.Blocks.Where(b => !autoErasing.Contains(b.Id));
         if (autoDraft == null || l != DraftLane) return l.Blocks;
         return autoCopy ? l.Blocks.Append(autoDraft) : l.Blocks.Select(b => b == autoBlock ? autoDraft : b);
     }
@@ -294,7 +304,7 @@ public sealed partial class TimelineView
         // the track's clips under it (a folder's: its tracks'), so the blocks are placed against the music
         for (int i = 0; i < tracks.Count; i++)
         {
-            if (r.Folder is { } f ? tracks[i].Track.FolderId != f.Id : i != r.Track) continue;
+            if (r.Bus != null || (r.Folder is { } f ? tracks[i].Track.FolderId != f.Id : i != r.Track)) continue;
             foreach (var c in tracks[i].Clips)
             {
                 double x0 = X(c.ClipStartSec), x1 = X(c.ClipEndSec);
@@ -303,7 +313,8 @@ public sealed partial class TimelineView
         }
         var blocks = BlocksOf(lane).ToList();
         foreach (var b in blocks) DrawAutoBlock(ctx, b, y, h, W, tint);
-        var flat = lane == DraftLane && autoDraft != null ?AutomationLane.Flatten(blocks, stepped) : lane.Flat(stepped);
+        bool reshaped = lane == DraftLane && autoDraft != null || lane == autoEraseLane && autoErasing.Count > 0;
+        var flat = reshaped ? AutomationLane.Flatten(blocks, stepped) : lane.Flat(stepped);
         if (flat.Count > 0)
         {
             var line = new StreamGeometry();
@@ -313,7 +324,7 @@ public sealed partial class TimelineView
         if (autoDrag != AutoDrag.Draw || lane != autoLane)
             foreach (var b in blocks) DrawAutoPoints(ctx, r, b, y, h, W, tint, live, stepped);
         foreach (var b in blocks) DrawAutoHandles(ctx, r, b, y, h, W);
-        ctx.DrawLine(Palette.Pen(Palette.Line), new Point(HeaderW, y + h - 0.5), new Point(W, y + h - 0.5));
+        DrawRowBottom(ctx, lane.Id, HeaderW, W, y + h);
     }
 
     void DrawAutoBlock(DrawingContext ctx, AutomationBlock b, double y, double h, double W, Color tint)
@@ -333,7 +344,7 @@ public sealed partial class TimelineView
             double px = Math.Round(x0 + k * passPx) + 0.5;
             if (px > W) break;
             ctx.DrawLine(seam, new Point(px, box.Top), new Point(px, box.Bottom));
-            if (passPx >= 14) ctx.DrawText(ToolCursors.LoopGlyph, 8, Palette.Alpha(tint, 0.95), new Point(px + 3, box.Y), Icons);
+            if (passPx >= 14) DrawLoopGlyph(ctx, 8, Palette.Alpha(tint, 0.95), new Point(px + 3, box.Y));
         }
     }
 
@@ -356,7 +367,7 @@ public sealed partial class TimelineView
         if (box.Width >= 3 * AutoLoopGrab)
         {
             var color = lit == AutoDrag.Loop ? Palette.Accent : Palette.Alpha(Palette.FgColor, 0.7);
-            ctx.DrawText(ToolCursors.LoopGlyph, 8, color, new Point(box.Right - AutoLoopGrab, box.Y), Icons);
+            DrawLoopGlyph(ctx, 8, color, new Point(box.Right - AutoLoopGrab, box.Y));
         }
         if (box.Width < 4 * AutoEdge) return;
         double cy = (box.Top + AutoStrip + box.Bottom) / 2, th = Math.Round(Math.Min(16, (box.Height - AutoStrip) / 2));
@@ -456,6 +467,7 @@ public sealed partial class TimelineView
             if (r.Lane != null) DrawAutoHeader(ctx, r);
         for (int i = 0; i < tracks.Count; i++) DrawAutoFold(ctx, AutoFoldRect(i), tracks[i].Track.AutomationFolded);
         foreach (var f in folders) DrawAutoFold(ctx, FolderAutoFoldRect(f), f.AutomationFolded);
+        for (int k = 0; k < busRows.Count; k++) DrawAutoFold(ctx, BusAutoFoldRect(busRows[k]), busRows[k].AutomationFolded);
     }
 
     void DrawAutoHeader(DrawingContext ctx, Row r)
@@ -467,7 +479,7 @@ public sealed partial class TimelineView
         var tint = LaneTint(r);
         ctx.FillRectangle(Palette.Panel, new Rect(0, y, HeaderW, h));
         // a folder's lanes sit where its tracks do, one step in
-        double ind = r.Folder != null ? Compact ? CompactIndent : FolderIndent : Indent(r.Track), x = 12 + ind;
+        double ind = r.Folder != null || r.Bus != null ? Compact ? CompactIndent : FolderIndent : Indent(r.Track), x = 12 + ind;
         // the branch from the track: it says whose child this is
         var branch = Palette.Pen(Palette.Alpha(tint, 0.6), 1.5);
         ctx.DrawLine(branch, new Point(x, y), new Point(x, y + 14));
@@ -482,7 +494,7 @@ public sealed partial class TimelineView
         ctx.DrawRectangle(lane.On ? Palette.AccentSoft : hot ? Palette.Hover : null, Palette.Pen(lane.On ? Palette.Alpha(Palette.AccentColor, 0.4) : Palette.Line), chip, 4, 4);
         var text = Palette.Text("ON", 9.5, lane.On ? Palette.Accent : Palette.Faint, Palette.Mono);
         ctx.DrawText(text, new Point(chip.Center.X - text.Width / 2, chip.Center.Y - text.Height / 2));
-        ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, y + h - 0.5), new Point(HeaderW, y + h - 0.5));
+        DrawRowBottom(ctx, lane.Id, 0, HeaderW, y + h);
     }
 
     /// <summary>A fold column (<see cref="AutoFoldColumn"/>): the glyph, if it has room, over the chevron, both one button.</summary>
@@ -494,26 +506,35 @@ public sealed partial class TimelineView
         ctx.DrawText(folded ? "" : "", 9, brush, new Point(r.X + 3, r.Bottom - AutoCaretH + 3), Icons);
     }
 
-    /// <summary>Right click: a lane's menu, or a header control asking for its lane. True when it took the click.</summary>
-    bool AutoRightPressed(Row? row, int i, Point p)
+    /// <summary>
+    /// Right press: on a lane's curves, as on the clips' lanes (#268), a drag erases the blocks it goes over and a click
+    /// opens the lane's menu on release; on its header the menu opens at once; a header control asks for its lane.
+    /// True when it took the press.
+    /// </summary>
+    bool AutoRightPressed(Row? row, int i, Point p, PointerPressedEventArgs e)
     {
         if (row is { Lane: { } lane } r)
         {
+            var owner = OwnerOf(r);
             var block = p.X >= HeaderW ? AutoBlockAt(lane, Sec(p.X)) : null;
             selectedBlock = block?.Id;
+            Action menu = () => AutomationContextRequested?.Invoke(owner, lane, block, block == null ? -1 : AutoPointAt(r, block, p), SnapAt(Math.Max(p.X, HeaderW)), p);
             // on the curve, its shape and nothing else (asked by the user): a point's is the stretch coming into it
             if (block != null && !AutoStepped(r))
             {
                 int point = AutoPointAt(r, block, p);
                 int stretch = point >= 0 ? -1 : AutoHandleAt(r, block, p) is var k and >= 0 ? k : AutoStretchAt(r, block, p);
                 if (point >= 0 && block.Points.Count > 1) stretch = Math.Max(0, point - 1);
-                if (stretch >= 0)
-                {
-                    AutomationShapeRequested?.Invoke(OwnerOf(r), lane, block, stretch, point >= 0, p);
-                    return true;
-                }
+                if (stretch >= 0) menu = () => AutomationShapeRequested?.Invoke(owner, lane, block, stretch, point >= 0, p);
             }
-            AutomationContextRequested?.Invoke(OwnerOf(r), lane, block, block == null ? -1 : AutoPointAt(r, block, p), SnapAt(Math.Max(p.X, HeaderW)), p);
+            if (p.X < HeaderW) menu();
+            else
+            {
+                autoEraseLane = lane;
+                autoEraseOwner = owner;
+                erasePrev = p;
+                StartRightErase(e, menu);
+            }
             return true;
         }
         if (row is { Folder: { Separator: false } folder } && p.X < HeaderW)
@@ -544,6 +565,7 @@ public sealed partial class TimelineView
         var lane = r.Lane!;
         var t = OwnerOf(r);
         if (r.Folder is { } f) SelectFolder(f.Id);
+        else if (r.Bus is { } bus) BusRowSelected?.Invoke(bus.Id);
         else if (Selected != r.Track) Select(r.Track);
         if (p.X < HeaderW)
         {
@@ -603,6 +625,35 @@ public sealed partial class TimelineView
         autoTension = bend >= 0 ? autoDraft.Points[bend].Tension : 0;
         StartGesture("auto", e);
         moved = added; // a new point is an edit even if it does not move
+    }
+
+    /// <summary>
+    /// The right drag on a lane, as on the clips' lanes (#268: the user wants the blocks gone, not their points): every
+    /// block the pointer went over since the last move (the whole stretch between both, so a fast drag skips none) is
+    /// marked to go. A single point still goes with a double click.
+    /// </summary>
+    void DragAutoErase()
+    {
+        var lane = autoEraseLane!;
+        double lo = Sec(Math.Max(HeaderW, Math.Min(erasePrev.X, lastPointer.X)));
+        double hi = Sec(Math.Max(HeaderW, Math.Max(erasePrev.X, lastPointer.X)));
+        erasePrev = lastPointer;
+        bool any = false;
+        foreach (var block in lane.Blocks)
+            if (block.AtSec <= hi && block.EndSec >= lo && autoErasing.Add(block.Id)) any = true;
+        if (any) InvalidateVisual();
+    }
+
+    /// <summary>The right drag ends: the blocks it went over go, in one undo step.</summary>
+    void EndAutoErase(bool changed)
+    {
+        var lane = autoEraseLane;
+        var owner = autoEraseOwner;
+        autoEraseLane = null;
+        autoEraseOwner = null;
+        List<string> gone = [.. autoErasing];
+        autoErasing.Clear();
+        if (changed && lane != null && owner != null && gone.Count > 0) AutomationBlocksErased?.Invoke(owner, lane.Id, gone);
     }
 
     /// <summary>A block to work on: the same id and points, none of them the project's.</summary>

@@ -17,7 +17,7 @@ public sealed partial class ComponentsDialog : UserControl
         SkipButton.Click += (_, _) => Skip();
         ComponentInstall.Changed += () =>
         {
-            if (IsVisible && Components.All.All(c => c.Ready)) IsVisible = false;
+            if (IsVisible && Components.All.All(c => c.Ready || !c.AskAtStart)) IsVisible = false;
         };
     }
 

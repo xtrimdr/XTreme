@@ -29,7 +29,7 @@ public static class TakeRecording
     public static Track? PickTarget(Project p, string? selectedTrackId)
     {
         int sel = p.Tracks.FindIndex(t => t.Id == selectedTrackId);
-        static bool Free(Track t) => t.Clips.Count == 0 && !t.IsMidi && !t.Locked;
+        static bool Free(Track t) => t.Clips.Count == 0 && !t.IsMidi && !t.EditLocked;
         if (sel >= 0 && Free(p.Tracks[sel])) return p.Tracks[sel];
         return p.Tracks.Where((t, i) => i > sel && Free(t)).FirstOrDefault() ?? p.Tracks.Find(Free);
     }

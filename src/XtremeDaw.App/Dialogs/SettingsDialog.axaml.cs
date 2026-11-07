@@ -44,7 +44,7 @@ public sealed partial class SettingsDialog : UserControl
     bool reopening;
     bool filling;
 
-    readonly StackPanel audioPage = new(), cameraPage = new(), syncPage = new(), shortcutsPage = new(), languagePage = new(), savePage = new(), viewPage = new();
+    readonly StackPanel audioPage = new(), cameraPage = new(), syncPage = new(), shortcutsPage = new(), languagePage = new(), savePage = new(), viewPage = new(), filesPage = new();
     /// <summary>The action waiting for a key in "Atajos de teclado", and what the last change took from another one.</summary>
     string? capturing, capturingWheel;
     string? shortcutNote;
@@ -99,6 +99,7 @@ public sealed partial class SettingsDialog : UserControl
         LanguageTab.Click += (_, _) => ShowTab("language");
         SaveTab.Click += (_, _) => ShowTab("save");
         ViewTab.Click += (_, _) => ShowTab("view");
+        FilesTab.Click += (_, _) => ShowTab("files");
         PluginsTab.Click += (_, _) => ShowTab("plugins");
         ComponentsTab.Click += (_, _) => ShowTab("components");
         BuildLanguage();
@@ -430,15 +431,17 @@ public sealed partial class SettingsDialog : UserControl
         LanguageTab.Classes.Set("active", id == "language");
         SaveTab.Classes.Set("active", id == "save");
         ViewTab.Classes.Set("active", id == "view");
+        FilesTab.Classes.Set("active", id == "files");
         PluginsTab.Classes.Set("active", id == "plugins");
         ComponentsTab.Classes.Set("active", id == "components");
         MidiTab.Classes.Set("active", id == "midi");
         StopCapture();
         StopMidi();
         if (id == "save") { RefreshSave(); RefreshEncoder(); RefreshImport(); }
+        if (id == "files") RefreshAssociation();
         if (id == "shortcuts") { shortcutNote = null; BuildShortcuts(); }
         if (id == "plugins") RefreshPlugins();
-        Body.Content = id switch { "components" => componentsPage, "midi" => midiPage, "plugins" => pluginsPage, "camera" => cameraPage, "sync" => syncPage, "shortcuts" => shortcutsPage, "language" => languagePage, "save" => savePage, "view" => viewPage, _ => audioPage };
+        Body.Content = id switch { "components" => componentsPage, "midi" => midiPage, "plugins" => pluginsPage, "camera" => cameraPage, "sync" => syncPage, "shortcuts" => shortcutsPage, "language" => languagePage, "save" => savePage, "view" => viewPage, "files" => filesPage, _ => audioPage };
         if (id == "midi") RefreshMidi();
         Refresh();
     }
@@ -738,6 +741,7 @@ public sealed partial class SettingsDialog : UserControl
         BuildStartup();
         BuildImport();
         BuildEncoder();
+        BuildAssociation();
         return minutes;
     }
 
@@ -847,6 +851,37 @@ public sealed partial class SettingsDialog : UserControl
             : Loc.T("set.encoder.none");
     }
 
+    readonly TextBlock associationHelp = Help("");
+    readonly Button associationButton = new() { Classes = { "btn", "outline" }, Height = 28, Padding = new Thickness(10, 0), FontSize = 12, Content = Loc.T("set.assoc.button") };
+
+    /// <summary>"Asociación de archivos", its own tab (#254): what a double click on a .xtp opens, and the button that
+    /// makes it this XTreme (<see cref="FileAssociation"/>).</summary>
+    void BuildAssociation()
+    {
+        associationButton.Click += (_, _) =>
+        {
+            if (!FileAssociation.Register(out string? error)) associationHelp.Text = Loc.T("set.assoc.fail", error ?? "");
+            else RefreshAssociation();
+        };
+        var s = Section(Loc.T("set.assoc.section"));
+        s.Children.Add(Row(associationHelp, associationButton));
+        filesPage.Children.Add(Card(s));
+        RefreshAssociation();
+    }
+
+    void RefreshAssociation()
+    {
+        var (state, exe) = FileAssociation.Read();
+        associationHelp.Text = state switch
+        {
+            FileAssociation.State.This => Loc.T("set.assoc.this"),
+            FileAssociation.State.Other => Loc.T("set.assoc.other", exe ?? ""),
+            FileAssociation.State.Chosen => Loc.T("set.assoc.chosen", exe is { } e ? Path.GetFileNameWithoutExtension(e) : "?"),
+            _ => Loc.T("set.assoc.none"),
+        };
+        associationButton.IsEnabled = state != FileAssociation.State.This;
+    }
+
     /// <summary>"Apariencia" (native only): the knobs' look, each shown as a sample (<see cref="KnobLooks"/>), and which
     /// effect knobs the timeline's track headers show (<see cref="TrackKnobs"/>); all applied at once.</summary>
     void BuildView()
@@ -890,6 +925,8 @@ public sealed partial class SettingsDialog : UserControl
             TrackColorLooks.Reset, h => TrackColorLooks.Changed += h, h => TrackColorLooks.Changed -= h));
         viewPage.Children.Add(LookCard("trackColorInspector", TrackColorLooks.InspectorPicker(), () => TrackColorLooks.InspectorIsDefault,
             TrackColorLooks.ResetInspector, h => TrackColorLooks.Changed += h, h => TrackColorLooks.Changed -= h));
+        viewPage.Children.Add(LookCard("mixerStrips", MixerLooks.Picker(), () => MixerLooks.IsDefault,
+            MixerLooks.Reset, h => MixerLooks.Changed += h, h => MixerLooks.Changed -= h));
         viewPage.Children.Add(LookCard("font", UiFonts.FontPicker(), () => UiFonts.FontIsDefault,
             () => UiFonts.SetFont(UiFonts.Default), h => UiFonts.Changed += h, h => UiFonts.Changed -= h));
         viewPage.Children.Add(LookCard("numbers", UiFonts.NumberPicker(), () => UiFonts.NumbersAreDefault,

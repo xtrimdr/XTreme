@@ -169,7 +169,7 @@ static class BusCommands
         {
             var bus = ProjectBuses.Find(p, target) ?? throw new ArgumentException($"envios: no hay un bus «{target}» (ver «proyecto buses»).");
             if (!ProjectBuses.CanFeed(p, r, bus.Id))
-                throw new ArgumentException($"envios: {name} no puede mandar a {bus.Name}: un bus sale solo al master.");
+                throw new ArgumentException($"envios: {name} no puede mandar a {bus.Name}: es el mismo bus o cerraría un bucle.");
             if (a.Flag("quitar") || a.Flag("sumar")) ProjectBuses.ShowSend(p, r, bus.Id, a.Flag("sumar"));
             if (level != null || on != null || pre != null) ProjectBuses.SetSend(p, r, bus.Id, level, on, pre);
             changed = true;
@@ -178,7 +178,7 @@ static class BusCommands
         {
             string? id = outTo.Equals("master", StringComparison.OrdinalIgnoreCase) ? null
                 : ProjectBuses.Find(p, outTo)?.Id ?? throw new ArgumentException($"envios: no hay un bus «{outTo}».");
-            if (id != null && !ProjectBuses.CanFeed(p, r, id))
+            if (id != null && !ProjectBuses.CanOutput(p, r, id))
                 throw new ArgumentException($"envios: {name} no puede salir a ese bus: un bus sale solo al master.");
             changed |= ProjectBuses.SetOutput(p, r, id);
         }
@@ -383,14 +383,26 @@ static class BusCommands
         var r2 = ProjectBuses.Add(p, InsertSlot.ReverbKind)!;
         bool adds = g is { Name: "Bus", Inserts: [] } && r2 is { Name: "Reverb 2", Inserts: [{ Type: InsertSlot.ReverbKind, On: true }] } && ProjectBuses.Add(p, InsertSlot.EqKind) == null;
         var ch = p.Tracks[0].Channel;
-        // a bus goes to the master only: it can't go to another bus nor send to one (or to itself); a track can
-        bool loops = !ProjectBuses.SetOutput(p, g, r2.Id) && ProjectBuses.SetSend(p, r2, g.Id, 0.5) == null
-            && ProjectBuses.SetSend(p, g, g.Id, 0.5) == null && ProjectBuses.SetOutput(p, ch, g.Id) && ProjectBuses.SetSend(p, ch, r2.Id, 0.3, pre: true) != null;
+        // a bus's output goes to the master only, but it sends to another bus (#264) unless that closes a loop (or is
+        // itself); a track can do both
+        bool loops = !ProjectBuses.SetOutput(p, g, r2.Id) && ProjectBuses.SetSend(p, r2, g.Id, 0.5) != null
+            && ProjectBuses.SetSend(p, g, g.Id, 0.5) == null && ProjectBuses.SetSend(p, g, r2.Id, 0.5) == null
+            && !ProjectBuses.ShowSend(p, g, r2.Id, true) && ProjectBuses.Shown(p, g).All(b => b.Id != r2.Id && b.Id != g.Id)
+            && ProjectBuses.SetOutput(p, ch, g.Id) && ProjectBuses.SetSend(p, ch, r2.Id, 0.3, pre: true) != null;
+        // a chain of three: Delay → Reverb 2 → Bus; Bus can't send back to Delay through it
+        bool chain = ProjectBuses.SetSend(p, p.Settings.Buses[1], r2.Id, 0.2) != null && !ProjectBuses.CanFeed(p, g, ProjectBuses.DelayId)
+            && ProjectBuses.CanFeed(p, g, ProjectBuses.ReverbId);
+        // a send taken out of its list carries nothing: the other way can be added, and then it can't come back
+        bool hiddenWay = ProjectBuses.ShowSend(p, p.Settings.Buses[1], r2.Id, false) && ProjectBuses.SetSend(p, r2, ProjectBuses.DelayId, 0.1) != null
+            && !ProjectBuses.ShowSend(p, p.Settings.Buses[1], r2.Id, true) && ProjectBuses.ShowSend(p, r2, ProjectBuses.DelayId, false)
+            && ProjectBuses.ShowSend(p, p.Settings.Buses[1], r2.Id, true);
+        loops &= chain && hiddenWay;
         var order = ProjectBuses.Order(p);
-        bool ordered = order.IndexOf(g) < order.IndexOf(r2);
+        bool ordered = order.IndexOf(p.Settings.Buses[1]) < order.IndexOf(r2) && order.IndexOf(r2) < order.IndexOf(g);
         var nodeIds = ChannelDsp.Nodes(p);
         var spec = ChannelDsp.Bus(p);
         bool specs = spec.Nodes.Count == 4 && spec.Nodes[nodeIds.IndexOf(g.Id)].Output == spec.Nodes[nodeIds.IndexOf(ProjectBuses.ReverbId)].Output
+            && spec.Nodes[nodeIds.IndexOf(r2.Id)].Sends.Where(s => s.On).ToList() is [{ Level: 0.5 } s2] && s2.To == nodeIds.IndexOf(g.Id)
             && ChannelDsp.Track(p, nodeIds, p.Tracks[0], [], -24) is { Output: var o, Sends: [{ Pre: true }] } && o == nodeIds.IndexOf(g.Id);
         bool removed = ProjectBuses.Remove(p, r2.Id) && g.Output == null && ch.SendTo(r2.Id) == null && !ProjectBuses.Remove(p, r2.Id);
         // a track's list holds only the buses added to it; taking one out keeps its level, off; adding it back turns it
@@ -413,15 +425,18 @@ static class BusCommands
         p.Normalize();
         folderPost &= folder.Sends.Find(s => s.BusId == ProjectBuses.DelayId) is { Pre: true } &&ChannelDsp.Sends(ChannelDsp.Nodes(p), folder) is [{ Pre: true }];
 
-        // a file with buses fed by buses (they go: a bus goes to the master), a send to nowhere and repeated ids is put right
+        // a file with a bus routed to a bus (it goes: a bus's output goes to the master), a send to itself, a loop of
+        // sends (the one that closes it goes), a send to nowhere and repeated ids is put right
         const string loopJson = """
-            {"version":3,"settings":{"buses":[{"id":"bus-a","name":"A","output":"bus-b"},{"id":"bus-b","name":"B","sends":[{"busId":"bus-a","level":0.5}]},
+            {"version":3,"settings":{"buses":[{"id":"bus-a","name":"A","output":"bus-b","sends":[{"busId":"bus-b","level":0.3},{"busId":"bus-a","level":1}]},
+              {"id":"bus-b","name":"B","sends":[{"busId":"bus-a","level":0.5}]},
               {"id":"bus-a","name":"Copia","output":"bus-x"}]},
              "tracks":[{"id":"trk-1","channel":{"output":"bus-x","sends":[{"busId":"bus-b","level":2},{"busId":"bus-b","level":0.1},{"busId":"bus-y","level":1}]}}]}
             """;
         var lp = ProjectStore.Parse(loopJson);
         var lch = lp.Tracks[0].Channel;
-        bool fixedUp = lp.Settings.Buses.Select(b => b.Id).Distinct().Count() == 3 && lp.Settings.Buses.All(b => b.Output == null && b.Sends.Count == 0)
+        bool fixedUp = lp.Settings.Buses.Select(b => b.Id).Distinct().Count() == 3 && lp.Settings.Buses.All(b => b.Output == null)
+            && lp.Settings.Buses[0].Sends is [{ BusId: "bus-b", Level: 0.3 }] && lp.Settings.Buses[1].Sends.Count == 0 && lp.Settings.Buses[2].Sends.Count == 0
             && lch.Output == null && lch.Sends is [{ BusId: "bus-b", Level: 1 }];
 
         // version 2: the fixed reverb and delay and the extra returns become buses, the sends follow them
@@ -455,7 +470,7 @@ static class BusCommands
         ProjectBuses.SetSend(p, p.Tracks[1].Channel, temp.Id, 0.4);
         bool undone = undo.Undo(p) && p.Settings.Buses.Count == count && p.Tracks[1].Channel.Sends.Count == 0
             && undo.Redo(p) && p.Settings.Buses.Count == count + 1 && p.Tracks[1].Channel.SendTo(temp.Id) is { Level: 0.4 };
-        Line("Buses: modelo, solo al master y versión 2", defaults && adds && loops && hides && ordered && specs && removed && folderPost && fixedUp && converted && clean && roundTrip && undone ? 0 : 1, 0, "bien");
+        Line("Buses: modelo, envíos entre buses, v2", defaults && adds && loops && hides && ordered && specs && removed && folderPost && fixedUp && converted && clean && roundTrip && undone ? 0 : 1, 0, "bien");
         return allOk;
     }
 

@@ -7,7 +7,7 @@ namespace XtremeDaw.App;
 /// <summary>
 /// The A–B loop range, the song's markers and the chords (native only, asked by the user), each on its strip over the
 /// ruler (<see cref="Controls.TimelineView"/>). Chords come from Detectar escala or are written by hand. Markers are edits of the project, one undo step each; the range is transport
-/// state like the tempo (saved, outside undo) and turns the loop on when it is drawn or set. The keys work on the
+/// state (saved, outside undo) and turns the loop on when it is drawn or set. The keys work on the
 /// playhead, so the guitar never has to leave the hands: I and O set A and B, K drops a marker, comma and period jump.
 /// </summary>
 public partial class MainWindow
@@ -27,6 +27,11 @@ public partial class MainWindow
         Timeline.LoopClearRequested += ClearLoopRange;
         Timeline.RangeContextRequested += ShowRangeMenu;
         Timeline.ChordContextRequested += ShowChordMenu;
+        Timeline.MarkersErased += ids => MarkerEdit(p =>
+        {
+            foreach (var id in ids) ProjectMarkers.Remove(p, id);
+        });
+        Timeline.ChordsErased += ids => RemoveChords(ids);
         Timeline.ChordAddRequested += BeginChordEntry;
         Timeline.ChordRenameRequested += BeginNameEdit;
         Timeline.ChordTimesRequested += times => MarkerEdit(p => ProjectMarkers.SetChordTimes(p, times));
@@ -90,8 +95,13 @@ public partial class MainWindow
         Status(Loc.T("loop.cleared"));
     }
 
-    /// <summary>One bar at the project's tempo: the B a lone A gets when the song has nothing after it.</summary>
-    double BarSec => 4 * 60 / engine.Bpm;
+    /// <summary>The bar that starts at <paramref name="sec"/>, in seconds, on the tempo map: the B a lone A gets when the song has nothing after it.</summary>
+    double BarSec(double sec)
+    {
+        var map = store?.Project.Settings.TempoMap ?? engine.Tempo;
+        double beat = map.BeatAt(Math.Max(0, sec));
+        return map.SecAt(beat + map.BarBeats(map.BarAt(beat))) - map.SecAt(beat);
+    }
 
     /// <summary>I: A at the playhead; B stays if it is after it, else the song's end (or a bar later).</summary>
     void SetLoopStartHere()
@@ -99,7 +109,7 @@ public partial class MainWindow
         if (store == null) return;
         double at = engine.PositionSec;
         double end = ProjectMarkers.Loop(store.Project.Settings) is { } r && r.End - at >= ProjectMarkers.MinLoopSec ? r.End
-            : engine.LengthSec - at >= ProjectMarkers.MinLoopSec ? engine.LengthSec : at + BarSec;
+            : engine.LengthSec - at >= ProjectMarkers.MinLoopSec ? engine.LengthSec : at + BarSec(at);
         SetLoopRange(at, end);
     }
 
@@ -232,7 +242,7 @@ public partial class MainWindow
         {
             MenuAction(Loc.T("loop.startHere"), () =>
             {
-                double end = loop is { } r && r.End - sec >= ProjectMarkers.MinLoopSec ? r.End : Math.Max(engine.LengthSec, sec + BarSec);
+                double end = loop is { } r && r.End - sec >= ProjectMarkers.MinLoopSec ? r.End : Math.Max(engine.LengthSec, sec + BarSec(sec));
                 SetLoopRange(sec, end);
                 return Task.CompletedTask;
             }, MenuKey("loopIn"), icon: ""),

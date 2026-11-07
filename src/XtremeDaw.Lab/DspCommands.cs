@@ -645,11 +645,13 @@ static class DspCommands
         allOk &= PdcChecks.Check();
         allOk &= AutomationChecks.Check();
         allOk &= RangeChecks.Check();
+        allOk &= FreezeChecks.Check();
         allOk &= ExportAudioChecks.Check();
         allOk &= BusCommands.Check();
         allOk &= MeterChecks.Check();
         allOk &= MidiCommands.Check();
         allOk &= TempoChecks.Check();
+        allOk &= TempoMapChecks.Check();
         allOk &= ScaleChecks.Check();
         allOk &= ToMidiChecks.Check();
         allOk &= StemChecks.Check();

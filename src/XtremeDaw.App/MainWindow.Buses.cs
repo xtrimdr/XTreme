@@ -48,9 +48,50 @@ public partial class MainWindow
         UpdateUndoButtons();
         RefreshInspectorText();
         RefreshMixer();
-        // the headers show a knob per bus (its name and icon too)
+        // the headers show a knob per bus (its name and icon too), and the buses have their rows (#267)
+        SyncBusRows();
         Timeline.InvalidateVisual();
     }
+
+    // --- the buses' rows in the timeline (#267) ---------------------------------------------------------
+
+    void InitBusRows()
+    {
+        Timeline.SelectedBusId = () => selBusId;
+        Timeline.BusRowSelected += SelectBus;
+        Timeline.BusMuteRequested += id => BusEdit(id, b => b.Muted = !b.Muted, "muted");
+        Timeline.BusRowContextRequested += (b, at) =>
+        {
+            if (store == null || restoring) return;
+            string id = b.Id;
+            bool enabled = !store.ReadOnly;
+            var refresh = new List<Action>();
+            var list = new List<object>
+            {
+                new MenuItem { Header = b.Name, IsEnabled = false, FontSize = 11 },
+                // a bus is a channel: its lanes, like a folder's
+                new MenuItem { Header = MenuHeader(Loc.T("auto.menu"), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }), ItemsSource = AutomationItems(b), IsEnabled = enabled },
+            };
+            if (b.Automation is { Count: > 0 })
+                list.Add(MenuCheck(Loc.T("folder.lanes"), () => BusById(id) is { AutomationFolded: false }, () => { if (BusById(id) is { } x) FoldLanes(x); }, refresh,
+                    tip: Loc.T("bus.lanes.tip"), enabled: enabled));
+            list.Add(new Separator());
+            list.Add(BusRowsItem());
+            OpenTimelineMenu(Popup(list, 240), at, MenuHeight(list));
+        };
+    }
+
+    /// <summary>The buses' rows at the end of the timeline, or none while the project hides them.</summary>
+    void SyncBusRows() => Timeline.SetBusRows(store is { } st && !st.Project.Settings.BusRowsHidden ? st.Project.Settings.Buses : []);
+
+    /// <summary>Shows or hides the buses' rows (a view setting of the project: saved, without undo; their lanes keep playing).</summary>
+    MenuItem BusRowsItem() => MenuCheck(Loc.T("timeline.busRows"), () => store?.Project.Settings.BusRowsHidden == false, () =>
+    {
+        if (store == null || store.ReadOnly) return;
+        store.Project.Settings.BusRowsHidden = !store.Project.Settings.BusRowsHidden;
+        MarkDirty();
+        SyncBusRows();
+    }, [], tip: Loc.T("timeline.busRows.tip"), enabled: store is { ReadOnly: false });
 
     /// <summary>Hands the engine the folders and buses and every track its output and sends (<see cref="Audio.PlaybackEngine.SetBuses"/>).</summary>
     void ApplyRouting(Project p, IReadOnlyList<LiveTrack> list) => engine.SetBuses(p, list);
@@ -69,7 +110,7 @@ public partial class MainWindow
         public string? BusId { get; init; }
         /// <summary>The track it is, when it is one.</summary>
         public LiveTrack? Track { get; init; }
-        /// <summary>Whose sends have lanes: the track or the folder (a bus's have none).</summary>
+        /// <summary>Whose sends have lanes: the track, the folder or the bus (#267).</summary>
         public IAutomated? Lanes { get; init; }
         /// <summary>Several picked tracks edited as one (<see cref="GroupRouter"/>): their channels; null = just this one.</summary>
         public Func<IReadOnlyList<IRouted>>? Group { get; init; }
@@ -106,7 +147,8 @@ public partial class MainWindow
     Router RouterOf(Bus bus)
     {
         string id = bus.Id;
-        return new() { Get = () => BusById(id), Edit = (change, key) => BusEdit(id, b => change(store!.Project, b), key), BusId = id };
+        // its sends carry lanes like a track's (#267)
+        return new() { Lanes = bus, Get = () => BusById(id), Edit = (change, key) => BusEdit(id, b => change(store!.Project, b), key), BusId = id };
     }
 
     /// <summary>A bus's slots, for the panels (<see cref="SlotPanel"/>).</summary>
@@ -300,7 +342,8 @@ public partial class MainWindow
             ids.Clear();
             ids.Add(null);
             var names = new List<string> { Loc.T("route.master") };
-            foreach (var b in Targets(r)) { ids.Add(b.Id); names.Add(b.Name); }
+            foreach (var b in Targets(r))
+                if (r.Get() is { } x && ProjectBuses.CanOutput(store!.Project, x, b.Id)) { ids.Add(b.Id); names.Add(b.Name); }
             select.SetItems([.. names]);
             if (r.Group?.Invoke().Any(x => x.Output != r.Get()?.Output) == true) select.ShowNone(Loc.T("insp.mixed"));
             else select.SelectedIndex = Math.Max(0, ids.IndexOf(r.Get()?.Output));
@@ -322,6 +365,7 @@ public partial class MainWindow
         Bus B() => BusById(id) ?? bus;
         var box = StripCard(width);
         mx.Boxes.Add(box);
+        mx.Cards[id] = box;
         var top = StripCardLook(box, () => selBusId == id, () => false, () => TrackIcons.ColorOf(B().Color), () => SelectBus(id));
         box.PointerReleased += (_, e) =>
         {
@@ -347,15 +391,18 @@ public partial class MainWindow
         fader.Changed += v => BusEdit(id, b => b.Volume = v, "volume");
         var db = new TextBlock { Classes = { "mono" }, FontSize = 10, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
         mx.Refresh.Add(() => { fader.Value = B().Volume; db.Text = ValueFormat.Db(B().Volume); });
+        // its lanes (#267): a right click offers one, and the fader follows it while it plays
+        AutomateOn(fader, () => BusById(id), AutoTarget.Volume, k => { fader.Value = Fader.ToVol(k); db.Text = ValueFormat.Db(Fader.ToVol(k)); });
         var meter = new MixerMeter();
         var faders = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { fader, meter } };
 
         var tag = new TextBlock { Text = Loc.T("mixer.busTag"), FontSize = 9, LetterSpacing = 0.8, Foreground = Palette.Faint };
         ToolTip.SetTip(tag, Loc.T("mixer.busTag.tip"));
         var head = StripHead(badge, name, tag);
-        // a bus goes to the master: its sends section stays empty
-        var (controls, gr) = CompactChain(SlotsOf(bus), null, () => B().Pan, v => BusEdit(id, b => b.Pan = v, "pan"),
-            StripToggle("M", Loc.T("mix.bus.mute"), 26, () => B().Muted, true, () => BusEdit(id, b => b.Muted = !b.Muted, "muted")));
+        // a bus's output goes to the master, but it sends to other buses like a track (#264)
+        var busMute = StripToggle("M", Loc.T("mix.bus.mute"), 26, () => B().Muted, true, () => BusEdit(id, b => b.Muted = !b.Muted, "muted"));
+        AutomateOn(busMute, () => BusById(id), AutoTarget.Mute);
+        var (controls, gr) = CompactChain(SlotsOf(bus), RouterOf(bus), () => B().Pan, v => BusEdit(id, b => b.Pan = v, "pan"), busMute);
         mx.NodeMeters.Add((id, meter, gr));
         var content = new Grid();
         var layout = StripLayout(head, controls, faders, db);
@@ -525,6 +572,10 @@ public partial class MainWindow
     void RebuildInspectorSends(Folder f) =>
         RebuildStripSends(RouterOf(f), $"folder:{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(f)}|{f.Id}", null, null);
 
+    /// <summary>A bus's sends in the strip, the same rows as a track's (#264); its output is the master's (<see cref="ProjectBuses.CanOutput"/>).</summary>
+    void RebuildInspectorSends(Bus b) =>
+        RebuildStripSends(RouterOf(b), $"bus:{b.Id}", null, null);
+
     void RebuildStripSends(Router router, string owner, LiveTrack? t, Router? group)
     {
         var targets = SendTargets(router);
@@ -569,6 +620,9 @@ public partial class MainWindow
             ToolTip.SetTip(through, Loc.T("route.throughFolder.tip"));
             output = through;
         }
+        else if (router.BusId != null)
+            // a bus's output goes to the master only
+            output = new TextBlock { Text = Loc.T("route.master"), Classes = { "dim" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
         else if (group == null || PickedGroup()?.All(x => x.Track.FolderId == null) == true) output = OutputSelect(router, sendRefresh);
         stripOutput.Child = output == null ? null : StripOutputRow(output);
     }

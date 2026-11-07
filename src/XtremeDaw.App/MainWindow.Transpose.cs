@@ -69,7 +69,8 @@ public partial class MainWindow
         if (sel == null) return;
         if (PickedGroup() == null) { SetTranspose(sel, semis); return; }
         semis = Math.Clamp(Math.Round(semis), -PitchShifter.MaxSemitones, PitchShifter.MaxSemitones);
-        var list = PickTargets();
+        // a frozen track's pitch is in its render (#240)
+        var list = PickTargets().Where(t => !t.Track.Frozen).ToList();
         if (list.All(t => t.Track.Transpose == semis)) return;
         EditTracks(list, t => t.Track.Transpose = semis, "transpose");
         RefreshTranspose();
@@ -81,6 +82,11 @@ public partial class MainWindow
     {
         semis = Math.Clamp(Math.Round(semis), -PitchShifter.MaxSemitones, PitchShifter.MaxSemitones);
         if (semis == track.Track.Transpose) return;
+        if (track.Track.Frozen)
+        {
+            ToastLocked(track.Track);
+            return;
+        }
         EditTrack(track, t => t.Track.Transpose = semis, "transpose");
         RefreshTranspose();
         RefreshMixer();
@@ -158,7 +164,7 @@ public partial class MainWindow
         foreach (var lt in tracks)
         {
             // a MIDI track's notes just play higher or lower: nothing to render
-            if (lt.Track.IsMidi) lt.SetMidi(st.Project.Settings.Bpm);
+            if (lt.Track.IsMidi) lt.SetMidi(st.Project.Settings.TempoMap);
             foreach (var lc in lt.Clips)
             {
                 if (lc.Audio is not { } audio || lc.Media is not { } media) continue;

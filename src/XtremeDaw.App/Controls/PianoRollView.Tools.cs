@@ -76,11 +76,11 @@ public sealed partial class PianoRollView
 
     // --- other tracks, in grey ---------------------------------------------------------------------
 
-    (MidiClip Clip, double Bpm)[] shadows = [];
+    MidiClip[] shadows = [];
     /// <summary>Clips of other MIDI tracks, shown as grey notes to write against.</summary>
     public void SetShadows(IEnumerable<MidiClip> clips)
     {
-        shadows = [.. clips.Select(c => (c, bpm))];
+        shadows = [.. clips];
         InvalidateVisual();
     }
 
@@ -88,7 +88,7 @@ public sealed partial class PianoRollView
     {
         if (patternId != null) return;
         var fill = Palette.Alpha(Palette.FgColor, 0.12);
-        foreach (var (c, _) in shadows) DrawFaintNotes(ctx, c.Notes, StartBeat(c, bpm), c.CellBeats, c.LengthBeats, W, gb, fill);
+        foreach (var c in shadows) DrawFaintNotes(ctx, c.Notes, StartBeat(c), c.CellBeats, c.LengthBeats, W, gb, fill);
     }
 
     BackWave[] waves = [];
@@ -106,11 +106,10 @@ public sealed partial class PianoRollView
         var pen = Palette.Pen(Palette.Alpha(Palette.FgColor, 0.1));
         foreach (var w in waves)
         {
-            double perBeat = 60 / bpm;
-            double from = Math.Max(KeyW, XA(w.AtSec / perBeat)), to = Math.Min(W, XA((w.AtSec + w.LengthSec) / perBeat));
+            double from = Math.Max(KeyW, XA(map.BeatAt(w.AtSec))), to = Math.Min(W, XA(map.BeatAt(w.AtSec + w.LengthSec)));
             for (double x = from; x < to; x++)
             {
-                double sec = BeatA(x) * perBeat - w.AtSec + w.FromSec;
+                double sec = map.SecAt(BeatA(x)) - w.AtSec + w.FromSec;
                 int i = (int)(sec * w.PeaksPerSec);
                 if (i < 0 || i >= w.Min.Length) continue;
                 ctx.DrawLine(pen, new Point(x + 0.5, mid - w.Max[i] * h), new Point(x + 0.5, mid - w.Min[i] * h));
@@ -127,7 +126,7 @@ public sealed partial class PianoRollView
     void PaintAt(Point p)
     {
         double step = SnapBeats > 0 ? SnapBeats : 0.25;
-        double at = Math.Max(0, ClipEditing.Snap(Origin + Math.Max(0, Beat(p.X)), new SnapGrid(step, true, Subdivisions.BarBeats), false) - Origin);
+        double at = Math.Max(0, bars.SnapBeat(Origin + Math.Max(0, Beat(p.X)), step, true) - Origin);
         if (at >= clipBeats) return;
         int pitch = (modifiers & KeyModifiers.Shift) != 0 ? PitchAt(down.Y) : WritePitch(p.Y);
         if (notes.Any(n => n.Pitch == pitch && Math.Abs(n.Beat - at) < 1e-6)) return;
@@ -228,7 +227,7 @@ public sealed partial class PianoRollView
         var run = new ToolRun
         {
             Notes = notes, Targets = [.. toolTargets.Select(i => notes[i])], Values = new(values), Words = words,
-            ClipBeats = clipBeats, OriginBeats = Origin, SnapBeats = SnapBeats, Bpm = bpm, Scale = scale, Copied = clipboard,
+            ClipBeats = clipBeats, OriginBeats = Origin, SnapBeats = SnapBeats, Bpm = map.BpmAt(Origin), Scale = scale, Copied = clipboard,
             PlayBeat = Math.Max(0, PlayBeat(playheadSec) - Origin),
         };
         var result = MidiTools.Apply(tool, run);

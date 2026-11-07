@@ -172,6 +172,7 @@ static class StretchChecks
         var history = new UndoManager();
         history.Checkpoint(p, "gain");
         clip.GainDb = -2;
+        history.Checkpoint(p, "tempo"); // the window makes the tempo its own step (#262)
         TempoFollow.SetBpm(p, 100);
         const double f = 1.2;
         var w = ClipEditing.Window(clip, media);
@@ -182,8 +183,11 @@ static class StretchChecks
 
         history.Undo(p);
         var undone = p.Tracks[0].Clips[0];
-        bool undo = p.Settings.Bpm == 100 && undone.GainDb == 0 && Near(undone.AtSec, 2 * f) && Near(undone.Stretch, f) && Near(p.Markers[0].Sec, 8 * f);
-        TransposeCommands.Row("Deshacer vuelve al tempo actual", undo ? "igual" : "distinto", "igual", undo);
+        bool undo = Near(p.Settings.Bpm, 120) && undone.GainDb == -2 && Near(undone.AtSec, 2) && Near(undone.Stretch, 1) && Near(p.Markers[0].Sec, 8)
+            && Near(p.Settings.LoopEndSec!.Value, 8);
+        history.Undo(p);
+        undo &= Near(p.Settings.Bpm, 120) && p.Tracks[0].Clips[0].GainDb == 0;
+        TransposeCommands.Row("Deshacer el tempo vuelve todo", undo ? "igual" : "distinto", "igual", undo);
 
         TempoFollow.SetBpm(p, 137.3);
         TempoFollow.SetBpm(p, 120);

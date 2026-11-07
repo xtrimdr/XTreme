@@ -31,19 +31,25 @@ ChangesAssociations=yes
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+spanish.AssocXtp=Asociar archivos .xtp a XTreme
+english.AssocXtp=Associate .xtp files with XTreme
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
+; checked by default (#254); unchecked leaves .xtp files with whatever opens them today
+Name: "xtpassoc"; Description: "{cm:AssocXtp}"
 
 [Files]
 Source: "..\artifacts\publish\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs
 
 [Registry]
 ; HKA: the machine's classes in an admin install, the user's otherwise
-Root: HKA; Subkey: "Software\Classes\.xtp"; ValueType: string; ValueName: ""; ValueData: "XTreme.Project"; Flags: uninsdeletevalue
-Root: HKA; Subkey: "Software\Classes\.xtp\OpenWithProgids"; ValueType: string; ValueName: "XTreme.Project"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKA; Subkey: "Software\Classes\XTreme.Project"; ValueType: string; ValueName: ""; ValueData: "XTreme Project"; Flags: uninsdeletekey
-Root: HKA; Subkey: "Software\Classes\XTreme.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\XTreme.exe,0"
-Root: HKA; Subkey: "Software\Classes\XTreme.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\XTreme.exe"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\.xtp"; ValueType: string; ValueName: ""; ValueData: "XTreme.Project"; Flags: uninsdeletevalue; Tasks: xtpassoc
+Root: HKA; Subkey: "Software\Classes\.xtp\OpenWithProgids"; ValueType: string; ValueName: "XTreme.Project"; ValueData: ""; Flags: uninsdeletevalue; Tasks: xtpassoc
+Root: HKA; Subkey: "Software\Classes\XTreme.Project"; ValueType: string; ValueName: ""; ValueData: "XTreme Project"; Flags: uninsdeletekey; Tasks: xtpassoc
+Root: HKA; Subkey: "Software\Classes\XTreme.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\XTreme.exe,0"; Tasks: xtpassoc
+Root: HKA; Subkey: "Software\Classes\XTreme.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\XTreme.exe"" ""%1"""; Tasks: xtpassoc
 
 [Icons]
 Name: "{group}\XTreme"; Filename: "{app}\XTreme.exe"

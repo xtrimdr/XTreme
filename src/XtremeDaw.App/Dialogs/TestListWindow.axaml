@@ -6,7 +6,7 @@
         ShowInTaskbar="True" ShowActivated="False" WindowStartupLocation="Manual"
         Background="{StaticResource App}" ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="44">
 
-  <Grid RowDefinitions="44,*,Auto">
+  <Grid x:Name="Shell" RowDefinitions="44,*,Auto">
     <!-- The accent line under the title gives the window its own face next to the app. -->
     <Border x:Name="Header" Background="{StaticResource Panel}" BorderBrush="{StaticResource Accent40}" BorderThickness="0,0,0,2">
       <Grid ColumnDefinitions="*,Auto">
@@ -22,6 +22,17 @@
         </StackPanel>
         <!-- The window's own buttons, left of the system's (minimize, maximize, close take ~138 px). -->
         <StackPanel x:Name="HeaderButtons" Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="8,0,142,0" VerticalAlignment="Center">
+          <!-- The bell (asked by the user, #260): how many tickets are "Nuevo"; its menu lists them. -->
+          <Button x:Name="BellButton" Classes="ghost" AutomationProperties.Name="{loc:T test.list.bell}">
+            <Grid>
+              <TextBlock Classes="icon" Text="&#xEA8F;" FontSize="13" />
+              <Border x:Name="BellBadge" IsVisible="False" Background="{StaticResource Accent}" CornerRadius="7" MinWidth="14" Height="14"
+                      Padding="3,0" Margin="0,-7,-9,0" HorizontalAlignment="Right" VerticalAlignment="Top">
+                <TextBlock x:Name="BellCount" FontSize="9.5" FontWeight="SemiBold" Foreground="{StaticResource App}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+            </Grid>
+          </Button>
           <Button x:Name="NewRequestButton" Classes="ghost" AutomationProperties.Name="{loc:T test.list.request.new}">
             <TextBlock Classes="icon" Text="&#xE710;" FontSize="13" />
           </Button>
@@ -41,21 +52,12 @@
     <!-- The bench's own text size (asked by the user, #143: the slider by Historial), over the app's: header and footer stay. -->
     <LayoutTransformControl x:Name="Zoomed" Grid.Row="1">
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
-    <!-- What arrived while the bench was open, or while it was closed: says it, and "Ver" goes to it. -->
-    <Border x:Name="NewsBar" Grid.Row="0" IsVisible="False" Margin="10,10,10,0" Background="{StaticResource AccentSoft}"
-            BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="12,6,6,6">
-      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-        <TextBlock Classes="icon" Text="&#xEA8F;" FontSize="12" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
-        <TextBlock x:Name="NewsText" Grid.Column="1" Margin="8,0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-        <Button x:Name="NewsShow" Grid.Column="2" Classes="btn sm primary" Content="{loc:T test.list.news.show}" />
-        <Button x:Name="NewsClose" Grid.Column="3" Classes="act" Margin="4,0,0,0" ToolTip.Tip="{loc:T common.close}">
-          <TextBlock Classes="icon" Text="&#xE711;" FontSize="10" />
-        </Button>
-      </Grid>
-    </Border>
-
     <!-- No tabs (asked by the user, #125: all of it in one vertical list); the search filters the whole list. -->
-    <Grid Grid.Row="1" Margin="10,10,18,0" ColumnDefinitions="*,Auto">
+    <Grid Grid.Row="1" Margin="10,10,18,0" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+      <!-- What the list shows (asked by the user, #249): Pendiente, En curso, Para probar, Terminado or Todo, each with its count. -->
+      <Border x:Name="ViewBar" Grid.Row="1" Grid.ColumnSpan="2" Classes="seg" Margin="0,8,0,0">
+        <UniformGrid x:Name="ViewRow" Rows="1" />
+      </Border>
       <!-- Folds every topic, or opens them all when they are all folded (asked by the user, #126). -->
       <Button x:Name="FoldAllButton" Grid.Column="1" Classes="chip" Width="30" Height="30" MinHeight="30" Padding="0" Margin="6,0,0,0"
               VerticalAlignment="Top" HorizontalContentAlignment="Center" VerticalContentAlignment="Center">

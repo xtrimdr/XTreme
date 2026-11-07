@@ -75,7 +75,7 @@ public sealed partial class TimelineView
         return null;
     }
 
-    (double Start, double End)? ShownLoop => gesture == "loop" ? (loopA, loopB) : loopRange;
+    (double Start, double End)? ShownLoop => gesture == "loop" ? (loopA, loopB) : loopErasing ? null : loopRange;
 
     /// <summary>Which part of the range is under x: "start", "end", "move" or "" (none).</summary>
     string LoopPartAt(double x)
@@ -94,8 +94,7 @@ public sealed partial class TimelineView
         var m = MarkerAt(p);
         if (right)
         {
-            StripContextRequested?.Invoke(m, SnapAt(p.X), p);
-            e.Handled = true;
+            StartStripErase(e, EraseStrip.Marker, p, () => StripContextRequested?.Invoke(m, SnapAt(p.X), p));
             return true;
         }
         if (m != null)
@@ -123,8 +122,7 @@ public sealed partial class TimelineView
         if (!InRangeStrip(p)) return false;
         if (right)
         {
-            RangeContextRequested?.Invoke(SnapAt(p.X), p);
-            e.Handled = true;
+            StartStripErase(e, EraseStrip.Range, p, () => RangeContextRequested?.Invoke(SnapAt(p.X), p));
             return true;
         }
         if (e.ClickCount == 2)
@@ -210,7 +208,7 @@ public sealed partial class TimelineView
         foreach (var m in markers)
         {
             var box = MarkerRect(m);
-            if (box.X > W || box.Right < HeaderW || m.Id == editingNameId) continue;
+            if (box.X > W || box.Right < HeaderW || m.Id == editingNameId || stripErasing.Contains(m.Id)) continue;
             bool hot = m.Id == markerDragId || gesture == null && box.Contains(lastPointer);
             ctx.DrawRectangle(hot ? Palette.Hover : Palette.Raised, Palette.Pen(Palette.Line), box, 4, 4);
             ctx.DrawLine(Palette.Pen(Palette.Fg, 1.5), new Point(box.X + 0.75, top + 1), new Point(box.X + 0.75, top + MarkerH - 1));

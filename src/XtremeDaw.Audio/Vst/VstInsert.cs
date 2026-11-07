@@ -199,7 +199,7 @@ public sealed class VstInsert : ITrackInsert, IDisposable
             VstBridge b;
             try
             {
-                b = VstBridge.Start(p.Path, p.ClassId, p.Name, sampleRate, offline: true);
+                b = VstBridge.StartForExport(p.Path, p.ClassId, p.Name, sampleRate);
             }
             catch (Exception e) when (e is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
             {

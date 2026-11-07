@@ -221,7 +221,8 @@ public static class FxDefs
     static readonly FxParam[] PhaserList =
     [
         ModRate(0.5), ModDepth(0.7), ModFeedback(0.4),
-        Stage("stages", "fx.p.stages", 2, PhaserInsert.MaxStages, 6, FxUnit.Count, 2, "fx.p.stages.tip"),
+        // stepped (#261): a handful of fixed values, shown as buttons; even steps from 2, so a lane reads as it did
+        Stepped("stages", "fx.p.stages", [.. Enumerable.Range(1, PhaserInsert.MaxStages / 2).Select(i => i * 2.0)], 6, FxUnit.Count, "fx.p.stages.tip"),
         ModSpread(0.2),
     ];
 
@@ -246,26 +247,51 @@ public static class FxDefs
         Stage("keyMs", "insp.comp.release", PumpParams.KeyMinMs, PumpParams.KeyMaxMs, 250, FxUnit.Ms, 1, "fx.pump.keyMs.tip") with { Log = true },
     ];
 
+    /// <summary>The id of the slot's own target in <see cref="TonalStored"/>.</summary>
+    public const string TonalOwnId = "custom";
+
+    /// <summary>
+    /// What each saved "target" value means. Projects keep the number, so this list only grows at the end: the first six
+    /// genres and the slot's own (6) are what 0.9.19 saved; the genres of #265 come after. The menu has its own order
+    /// (<see cref="TonalTargets.Factory"/>, then the slot's own). Before <see cref="TonalList"/>: static fields start in order.
+    /// </summary>
+    static readonly string[] TonalStored =
+    [
+        TonalTargets.Pop, TonalTargets.Rock, TonalTargets.Edm, TonalTargets.HipHop, TonalTargets.Acoustic, TonalTargets.Orchestral, TonalOwnId,
+        TonalTargets.Dubstep, TonalTargets.Riddim, TonalTargets.DeepDubstep, TonalTargets.DrumBass, TonalTargets.House, TonalTargets.Trap,
+        TonalTargets.Reggaeton, TonalTargets.Reggae, TonalTargets.Metal, TonalTargets.Rnb, TonalTargets.LoFi, TonalTargets.Country,
+    ];
+
     /// <summary>
     /// The tonal balance (#210): how fast its reading follows (Respuesta), its target (a factory genre by its place in
-    /// <see cref="TonalTargets.Factory"/>, or <see cref="TonalCustom"/>: the slot's own, <see cref="InsertSlot.Tonal"/>)
+    /// <see cref="TonalStored"/>, or <see cref="TonalCustom"/>: the slot's own, <see cref="InsertSlot.Tonal"/>)
     /// and what it listens to (<see cref="TonalMode"/>). The two choices are steps, shown as a menu and a switch.
     /// </summary>
     static readonly FxParam[] TonalList =
     [
         Stage("speed", "fx.tonal.speed", TonalAnalyzer.MinTimeSec, TonalAnalyzer.MaxTimeSec, TonalAnalyzer.DefaultTimeSec, FxUnit.Sec, 0.5, "fx.tonal.speed.tip") with { Log = true },
-        Stepped("target", "fx.tonal.target", [.. Enumerable.Range(0, TonalTargets.Factory.Length + 1).Select(i => (double)i)], 0, FxUnit.Count, "fx.tonal.target.tip"),
+        Stepped("target", "fx.tonal.target", [.. Enumerable.Range(0, TonalStored.Length).Select(i => (double)i)], 0, FxUnit.Count, "fx.tonal.target.tip"),
         Stepped("mode", "fx.tonal.mode", [0, 1, 2], 0, FxUnit.Count, "fx.tonal.mode.tip"),
     ];
 
     /// <summary>The tonal balance's "target" value that means the slot's own (made from references).</summary>
-    public static readonly int TonalCustom = TonalTargets.Factory.Length;
+    public static readonly int TonalCustom = Array.IndexOf(TonalStored, TonalOwnId);
+
+    /// <summary>The saved "target" value of a target id (a factory genre or <see cref="TonalOwnId"/>); 0 for one it doesn't know.</summary>
+    public static int TonalValue(string id) => Math.Max(0, Array.IndexOf(TonalStored, id));
+
+    /// <summary>The target id a saved "target" value means (out of range: the first genre).</summary>
+    public static string TonalIdOf(InsertSlot s)
+    {
+        int t = (int)Math.Round(s.Stage?.Get("target", 0) ?? 0);
+        return TonalStored[t >= 0 && t < TonalStored.Length ? t : 0];
+    }
 
     /// <summary>What a tonal balance compares with: its factory genre, or its own target (null while it has none).</summary>
     public static TonalTarget? TonalTargetOf(InsertSlot s)
     {
-        int t = (int)Math.Round(s.Stage?.Get("target", 0) ?? 0);
-        return t >= TonalCustom ? s.Tonal?.ToTarget() : TonalTargets.Factory[Math.Clamp(t, 0, TonalCustom - 1)];
+        string id = TonalIdOf(s);
+        return id == TonalOwnId ? s.Tonal?.ToTarget() : TonalTargets.Find(id) ?? TonalTargets.Factory[0];
     }
 
     public static TonalMode TonalModeOf(InsertSlot s) => (TonalMode)Math.Clamp((int)Math.Round(s.Stage?.Get("mode", 0) ?? 0), 0, 2);
@@ -389,6 +415,11 @@ public static class FxDefs
     public const string GraphPart = "@graph", KeyPart = "@key", ScopePart = "@scope";
     /// <summary>The tonal balance's own view: its four bands and punch, and in the full view its spectrum against the target.</summary>
     public const string TonalPart = "@tonal";
+    /// <summary>
+    /// An effect's own choices, each in the panel it belongs to (asked by the user, #261): its mode (a delay's stereo or
+    /// ping-pong, a saturation's tube or tape, a gate's mode), a delay's note value and a compressor's peak limiter.
+    /// </summary>
+    public const string ModePart = "@mode", DivisionPart = "@division", LimitPart = "@lim";
 
     /// <summary>The family of an effect kind (<see cref="FxFamily"/>); a VST3 and an unknown kind have none.</summary>
     public static FxFamily Family(string kind) => kind switch
@@ -405,7 +436,7 @@ public static class FxDefs
     static readonly FxLayout CompLayout = new(["amount", "makeup", "wet"],
     [
         [new("fx.panel.curve", [GraphPart], 4), new("fx.panel.dynamics", ["amount", "threshold", "ratio", "knee"], 4)],
-        [new("fx.panel.times", ["attack", "release"], 2), new("fx.panel.output", ["makeup", "dry", "wet", "out"], 4)],
+        [new("fx.panel.times", ["attack", "release"], 2), new("fx.panel.output", ["makeup", "dry", "wet", "out", LimitPart], 4)],
         [new("fx.panel.eq", ["hpf", "mud", "presence", "air"], 4), new("fx.panel.key", [KeyPart], 2)],
     ]) { Hero = ["amount"] };
 
@@ -425,18 +456,19 @@ public static class FxDefs
     // Each effect laid out by what it is (asked by the user, #187): its picture on top of the panel it belongs to and
     // its hero knob big inside it, the rest small beside.
     static readonly FxLayout SatLayout = new(["amount", "wet", "out"],
-        [[new("fx.panel.drive", [ScopePart, "amount"], 3), OutGroup(2)]]) { Hero = ["amount"] };
+        [[new("fx.panel.drive", [ScopePart, ModePart, "amount"], 3), OutGroup(2)]]) { Hero = ["amount"] };
 
     static readonly FxLayout GateLayout = new(["threshold", "out"],
-        [[new("fx.panel.gate", [ScopePart, "threshold"], 3), new("fx.panel.key", [KeyPart], 2)], [OutGroup()]]) { Hero = ["threshold"] };
+        [[new("fx.panel.gate", [ScopePart, ModePart, "threshold"], 1)], [new("fx.panel.key", [KeyPart], 2), OutGroup()]]) { Hero = ["threshold"] };
 
     static readonly FxLayout ReverbLayout = new(["decay", "pre", "wet"],
-        [[new("fx.panel.space", [ScopePart, "decay", "pre", "width"], 3), new("fx.panel.tone", ["tone", "lowCut"], 2)], [OutGroup()]]) { Hero = ["decay"] };
+        [[new("fx.panel.space", [ScopePart, "decay", "pre", "width"], 1)], [new("fx.panel.tone", ["tone", "lowCut"], 2), OutGroup()]]) { Hero = ["decay"] };
 
     static readonly FxLayout DelayLayout = new(["time", "repeats", "wet"],
     [
-        [new("fx.panel.echo", [ScopePart, "time", "repeats", "duck"], 3), new("fx.panel.tone", ["tone", "lowCut"], 2)],
-        [new("fx.panel.stereo", ["width"], 2), OutGroup()],
+        // the echoes across the whole width with their note value; under them what colors them, where they go and how much (#261)
+        [new("fx.panel.echo", [ScopePart, DivisionPart, "time", "repeats", "duck"], 1)],
+        [new("fx.panel.tone", ["tone", "lowCut"], 2), new("fx.panel.stereo", [ModePart, "width"], 2), OutGroup()],
     ]) { Hero = ["time", "repeats"] };
 
     static readonly FxLayout EqLayout = new(["out"], [[OutGroup()]]);
@@ -453,9 +485,9 @@ public static class FxDefs
 
     static readonly FxLayout ChorusLayout = new(["rate", "depth", "wet"], [[new("fx.panel.mod", [ScopePart, "rate", "depth", "delay", "spread"], 4)], [OutGroup()]]) { Hero = ["rate", "depth"] };
     static readonly FxLayout FlangerLayout = new(["rate", "depth", "feedback"],
-        [[new("fx.panel.mod", [ScopePart, "rate", "depth", "spread"], 3), new("fx.panel.feedback", ["delay", "feedback"], 2)], [OutGroup()]]) { Hero = ["rate", "depth"] };
+        [[new("fx.panel.mod", [ScopePart, "rate", "depth", "spread"], 1)], [new("fx.panel.feedback", ["delay", "feedback"], 2), OutGroup()]]) { Hero = ["rate", "depth"] };
     static readonly FxLayout PhaserLayout = new(["rate", "depth", "feedback"],
-        [[new("fx.panel.mod", [ScopePart, "rate", "depth", "spread"], 3), new("fx.panel.feedback", ["stages", "feedback"], 2)], [OutGroup()]]) { Hero = ["rate", "depth"] };
+        [[new("fx.panel.mod", [ScopePart, "rate", "depth", "spread"], 1)], [new("fx.panel.feedback", ["stages", "feedback"], 2), OutGroup()]]) { Hero = ["rate", "depth"] };
     static readonly FxLayout TremoloLayout = new(["rate", "depth", "shape"], [[new("fx.panel.mod", [ScopePart, "rate", "depth", "shape", "spread"], 4)], [OutGroup()]]) { Hero = ["rate", "depth"] };
 
     static readonly FxLayout TonalLayout = new(["speed"], [[new("fx.panel.tonal", [TonalPart, "speed"], 1)]]);

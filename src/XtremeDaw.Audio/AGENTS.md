@@ -14,14 +14,14 @@ master); los envíos salen del fader (post, por defecto) o de antes (PRE: despu�
 igual los callan) hacia los buses. Carpetas y buses son nodos (`BusDspChain`: suma de lo que le llega → slots → paneo →
 fader/mute → su salida y sus envíos) que corren en orden, cada uno después de todo lo que lo alimenta
 (`ChannelDsp.Nodes`: primero las carpetas, después `ProjectBuses.Order`) → slots del master → Empuje o Destino → soft clip → limitador. El click va por fuera
-del limitador, atrasado la misma latencia. `TrackDspChain` (con `TrackSend`), `InsertRack` (los slots, de pista, carpeta o
+del limitador, atrasado la misma latencia; sigue `PlaybackEngine.Tempo` (el `TempoMap`, inmutable, preparado en la UI; `SeedClick`/`NextClick` sin asignar), con acento en el primero de cada compás y la unidad del denominador. `TrackDspChain` (con `TrackSend`), `InsertRack` (los slots, de pista, carpeta o
 bus), `BusDspChain` y `MixGraphBus` (`XtremeDaw.Audio/Dsp/MixRenderer.cs`) los usan igual la reproducción y la
 exportación: no los dupliques. La conversión proyecto → motor es una sola, `ChannelDsp` (`Track`, `Bus`, `Nodes`).
 `xtlab comprobar-dsp` corre las comprobaciones del DSP.
 
 ## Automatización en el motor
 
-Fader, paneo, mute y envíos se leen en el hilo de audio (`AutoCurve`, sin asignar) y glisan sample a sample hasta el valor del fin del bloque (`TrackDspChain.ProcessAutomated`, `AddSend`), a la hora del sonido que llega ahí (`Frame` menos la latencia de los slots). Los parámetros VST3 viajan con cada bloque por la memoria compartida (`VstParamCurves`, `VstBridge.QueueParam`, `MaxParams`), en vivo y en la exportación. Las perillas de efectos nativos no tienen forma de leerse en el hilo de audio: `InsertAutomator` trabaja sobre su copia del canal y le da los slots al motor cuando un carril se movió, desde el tick de la ventana (`LiveTrack.TickAutomation`) o cada `AutoStep` en la exportación (`MixTrackSpec.InsertsAt`). El decay, tono y ancho de la reverb arman un impulso nuevo: esos se leen cada 0,25 s y el impulso entra en un fundido (`ReverbBus.Convolve`); la exportación lo espera (`InsertSpec.Wait`).
+Fader, paneo, mute y envíos se leen en el hilo de audio (`AutoCurve`, sin asignar) y glisan sample a sample hasta el valor del fin del bloque (`TrackDspChain.ProcessAutomated`, `AddSend`), a la hora del sonido que llega ahí (`Frame` menos la latencia de los slots). Los parámetros VST3 viajan con cada bloque por la memoria compartida (`VstParamCurves`, `VstBridge.QueueParam`, `MaxParams`), en vivo y en la exportación. Las perillas de efectos nativos no tienen forma de leerse en el hilo de audio: `InsertAutomator` trabaja sobre su copia del canal y le da los slots al motor cuando un carril se movió, desde el tick de la ventana (`LiveTrack.TickAutomation`; carpetas y buses, `PlaybackEngine.TickNodeAutomation`) o cada `AutoStep` en la exportación (`MixTrackSpec.InsertsAt`, `MixNodeSpec.InsertsAt`). Carpetas y buses llevan sus carriles en su nodo igual que una pista (`BusDspChain.Automation`, envíos con su curva; `ChannelDsp.Node` en la exportación). El decay, tono y ancho de la reverb arman un impulso nuevo: esos se leen cada 0,25 s y el impulso entra en un fundido (`ReverbBus.Convolve`); la exportación lo espera (`InsertSpec.Wait`).
 
 ## Slots
 
@@ -77,7 +77,7 @@ en git ni en el instalador (`CopyToPublishDirectory="Never"`): la licencia de lo
 
 ## Componentes opcionales
 
-`XtremeDaw.Audio/Components.cs`: lo que la app puede no tener (FFmpeg, modelos de stems). Uno nuevo se suma a `Components.All` y a sus textos `component.<id>.*`; se instala siempre por `ComponentInstall.Run` (uno a la vez, con progreso y cancelación) y se muestra con `ComponentList`. Lo que depende de él queda deshabilitado con un aviso. Las descargas pasan por `FileDownload` (`.part`, reanudación, SHA-256). Los modelos de stems no se alojan (decisión del usuario): se bajan los `.th` de Meta y `StemConverter` arma el ONNX en `%APPDATA%\XTreme\demucs` desde `lib\demucs-graphs` (grafos sin pesos, `tools\make-demucs-templates.py`). Tienen sus propios términos: nunca digas que son MIT.
+`XtremeDaw.Audio/Components.cs`: lo que la app puede no tener (FFmpeg, modelos de stems, bancos General MIDI más grandes: estos no se ofrecen al arrancar, `AskAtStart`). Uno nuevo se suma a `Components.All` y a sus textos `component.<id>.*`; se instala siempre por `ComponentInstall.Run` (uno a la vez, con progreso y cancelación) y se muestra con `ComponentList`. Lo que depende de él queda deshabilitado con un aviso. Las descargas pasan por `FileDownload` (`.part`, reanudación, SHA-256). Los modelos de stems no se alojan (decisión del usuario): se bajan los `.th` de Meta y `StemConverter` arma el ONNX en `%APPDATA%\XTreme\demucs` desde `lib\demucs-graphs` (grafos sin pesos, `tools\make-demucs-templates.py`). Tienen sus propios términos: nunca digas que son MIT.
 
 ## Decodificar
 

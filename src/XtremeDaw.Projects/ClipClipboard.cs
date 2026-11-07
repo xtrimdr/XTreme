@@ -52,7 +52,7 @@ public sealed class ClipClipboard
         foreach (var (_, c) in midi)
         {
             start = Math.Min(start, c.AtSec);
-            end = Math.Max(end, c.EndSec(p.Settings.Bpm));
+            end = Math.Max(end, c.EndSec(p.Settings.TempoMap));
         }
         return new(p.Id, p.Tracks[top].Id, [.. found.Select(f => new Item(ClipEditing.Copy(f.Clip), f.Index - top))],
             [.. midi.Select(m => new MidiItem(m.Clip.Copy(), m.Index - top))], start, end - start);

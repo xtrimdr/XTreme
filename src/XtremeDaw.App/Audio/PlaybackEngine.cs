@@ -84,7 +84,15 @@ public sealed class PlaybackEngine : IDisposable
     /// <summary>What the last <see cref="UpdateLatency"/> worked from, so a tick with nothing new costs one pass.</summary>
     int latencyKey;
 
+    /// <summary>The initial tempo: what the buses' synced delays and the plugins' tempo follow.</summary>
     double bpm = 120;
+    /// <summary>
+    /// The song's tempo and meter (#214): the click follows it. Immutable and prepared on the UI thread, swapped whole
+    /// (<see cref="Tempo"/>); the audio thread only calls its lookups, which allocate nothing.
+    /// </summary>
+    volatile TempoMap tempoMap = TempoMap.Constant(120).Prepare();
+    /// <summary>Set by <see cref="Tempo"/>: the audio thread finds the next click again under the new map.</summary>
+    int pendingClickSeed;
     long position; // timeline frame (before recStartFrame, maybe negative, during recording count-in)
     /// <summary>Timeline frame where the take's first sample goes: the playhead when recording started.</summary>
     long recStartFrame;
@@ -99,8 +107,12 @@ public sealed class PlaybackEngine : IDisposable
     volatile InputTap[] taps = [];
     volatile CalibrationSession? activeCalibration;
     int recCountInBeats;
-    /// <summary>First beat of the project's grid at or after <see cref="recStartFrame"/>: where the click goes after the count-in.</summary>
-    long recFirstBeat;
+    /// <summary>
+    /// The count-in's clicks left (negative, counting up to 0; 0 = over), each <see cref="recCountInLen"/> frames: the
+    /// meter's unit at the tempo where the take starts. After it the click follows the map from the take's start.
+    /// </summary>
+    long countIn;
+    double recCountInLen = SampleRate * 0.5;
     bool recUsedCountIn;
     bool recUsedClick;
     long recStartTimestamp;
@@ -148,7 +160,21 @@ public sealed class PlaybackEngine : IDisposable
     long lastRecordingDroppedFrames;
 
     long endFrame;
-    long nextBeat;
+    /// <summary>The next click of the map: its beat, its frame and whether it starts a bar (<see cref="SeedClick"/>, <see cref="NextClick"/>).</summary>
+    double nextClickBeat;
+    long nextClickFrame;
+    bool nextClickAccent;
+    /// <summary>
+    /// Where the click is in the song: the frame heard now (the output's frame less the limiter and PDC delay). It turns
+    /// at B on its own sample, apart from <see cref="position"/>, which turns that delay earlier: re-seeding the click
+    /// from the read position one lap back landed a frame past a beat (the loop's frames are truncated) and the lap's
+    /// second click was skipped (#251).
+    /// </summary>
+    long clickHead;
+    /// <summary>The delay <see cref="clickHead"/> was set with: when the PDC changes, the click moves with the audio.</summary>
+    int clickHeadLatency;
+    /// <summary>Set where the transport jumps (play, seek, record, past the end): the next block puts <see cref="clickHead"/> at its start.</summary>
+    int clickHeadSync = 1;
     float inL, inR, outL, outR;
     volatile bool inClip;
 
@@ -299,6 +325,37 @@ public sealed class PlaybackEngine : IDisposable
         }
     }
 
+    /// <summary>The tempo map the click follows (#214); set it whenever the project's changes. UI thread.</summary>
+    public TempoMap Tempo
+    {
+        get => tempoMap;
+        set
+        {
+            if (ReferenceEquals(value, tempoMap)) return;
+            tempoMap = value.Prepare();
+            if (!playing) SeedClick(Interlocked.Read(ref position));
+            else Interlocked.Exchange(ref pendingClickSeed, 1);
+        }
+    }
+
+    /// <summary>The next click at or after <paramref name="frame"/> under the map. Allocates nothing (the audio thread calls it).</summary>
+    void SeedClick(long frame)
+    {
+        var map = tempoMap;
+        // a click right on the frame still sounds (the old grid's ceil with its slack)
+        double beat = map.BeatAt(frame / (double)SampleRate) - 1e-6;
+        nextClickBeat = map.ClickAt(beat, false, out nextClickAccent);
+        nextClickFrame = (long)Math.Round(map.SecAt(nextClickBeat) * SampleRate);
+    }
+
+    /// <summary>The click after the one that just sounded.</summary>
+    void NextClick()
+    {
+        var map = tempoMap;
+        nextClickBeat = map.ClickAt(nextClickBeat, true, out nextClickAccent);
+        nextClickFrame = (long)Math.Round(map.SecAt(nextClickBeat) * SampleRate);
+    }
+
     public MixGraphBus Buses => buses;
     /// <summary>The tuner's ring: the first armed input, or input 1-2 when none is armed.</summary>
     public PitchTap Pitch { get; } = new(SampleRate);
@@ -369,7 +426,7 @@ public sealed class PlaybackEngine : IDisposable
             long pos = Interlocked.Read(ref position);
             long recStart = Interlocked.Read(ref recStartFrame);
             if (pos >= recStart || recCountInBeats <= 0) return null;
-            double beatLen = SampleRate * 60.0 / bpm;
+            double beatLen = recCountInLen;
             long startFrame = recStart - (long)Math.Round(recCountInBeats * beatLen);
             int beat = (int)((pos - startFrame) / beatLen) + 1;
             return Math.Clamp(beat, 1, recCountInBeats);
@@ -447,7 +504,11 @@ public sealed class PlaybackEngine : IDisposable
                 node.Volume = bus.Volume;
                 node.Pan = bus.Pan;
                 node.Muted = bus.Muted;
-                node.SetInserts(ChannelDsp.BusSpecs(bus, bpm, LiveVst.Of(bus.Id), FxBypass), fade: known[i]);
+                // a bus's lanes (#267), like a folder's
+                node.Automation = Automations.Compile(bus);
+                var lanes = InsertAutomator.Create(bus, ChannelDsp.BusRmsDb, bpm, LiveVst.Of(bus.Id), FxBypass);
+                if (lanes != null) automated.Add((node, lanes));
+                node.SetInserts(lanes?.At(nodeAutoSec, force: true) ?? ChannelDsp.BusSpecs(bus, bpm, LiveVst.Of(bus.Id), FxBypass), fade: known[i]);
             }
             else if (p.Folders.Find(f => f.Id == ids[i]) is { } folder)
             {
@@ -508,7 +569,7 @@ public sealed class PlaybackEngine : IDisposable
     }
 
     /// <summary>
-    /// UI thread, every tick: the folders' lanes on their native effects at the playhead (their fader's, pan's, mute's
+    /// UI thread, every tick: the folders' and buses' lanes on their native effects at the playhead (their fader's, pan's, mute's
     /// and sends' are read on the audio thread), like <c>LiveTrack.TickAutomation</c>. Allocates only when a lane moved.
     /// </summary>
     public void TickNodeAutomation(double sec)
@@ -523,15 +584,18 @@ public sealed class PlaybackEngine : IDisposable
     public void ApplyBusSlots()
     {
         foreach (var b in busList ?? [])
-            if (nodeById.TryGetValue(b.Id, out var node)) node.SetInserts(ChannelDsp.BusSpecs(b, bpm, LiveVst.Of(b.Id), FxBypass));
+            if (nodeById.TryGetValue(b.Id, out var node)) Reslot(node, b, () => ChannelDsp.BusSpecs(b, bpm, LiveVst.Of(b.Id), FxBypass));
         foreach (var f in folderList ?? [])
-            if (!f.Separator && nodeById.TryGetValue(f.Id, out var node))
-            {
-                var lanes = InsertAutomator.Create(f, ChannelDsp.BusRmsDb, bpm, LiveVst.Of(f.Id), FxBypass);
-                node.SetInserts(lanes?.At(nodeAutoSec, force: true) ?? ChannelDsp.FolderSpecs(f, bpm, LiveVst.Of(f.Id), FxBypass));
-                for (int i = 0; i < nodeAutomators.Length; i++)
-                    if (nodeAutomators[i].Node == node) nodeAutomators[i] = (node, lanes ?? nodeAutomators[i].Lanes);
-            }
+            if (!f.Separator && nodeById.TryGetValue(f.Id, out var node)) Reslot(node, f, () => ChannelDsp.FolderSpecs(f, bpm, LiveVst.Of(f.Id), FxBypass));
+    }
+
+    /// <summary>A folder's or a bus's slots again, from its lanes at the playhead if it has any on its native effects.</summary>
+    void Reslot(BusDspChain node, IAutomated owner, Func<InsertSpec[]> specs)
+    {
+        var lanes = InsertAutomator.Create(owner, ChannelDsp.BusRmsDb, bpm, LiveVst.Of(owner.Id), FxBypass);
+        node.SetInserts(lanes?.At(nodeAutoSec, force: true) ?? specs());
+        for (int i = 0; i < nodeAutomators.Length; i++)
+            if (nodeAutomators[i].Node == node) nodeAutomators[i] = (node, lanes ?? nodeAutomators[i].Lanes);
     }
 
     /// <summary>
@@ -647,6 +711,7 @@ public sealed class PlaybackEngine : IDisposable
     public void SetSettings(ProjectSettings s, bool glideDelay = false)
     {
         bpm = Math.Clamp(s.Bpm, 20, 300);
+        Tempo = s.TempoMap;
         ApplyMaster(s.Master);
         var arr = tracks;
         for (int i = 0; i < arr.Length; i++)
@@ -676,8 +741,8 @@ public sealed class PlaybackEngine : IDisposable
         long pos = Interlocked.Read(ref position);
         Interlocked.CompareExchange(ref pendingSeek, NoSeek, pos); // a seek made while stopped already moved it
         playStartSec = Math.Max(0.0, pos / (double)SampleRate);
-        double beatLen = SampleRate * 60.0 / bpm;
-        nextBeat = (long)Math.Ceiling(pos / beatLen - 1e-6);
+        SeedClick(pos);
+        Interlocked.Exchange(ref clickHeadSync, 1);
         Interlocked.Exchange(ref pendingQuietReset, 1);
         Interlocked.Exchange(ref pendingFadeIn, 1);
         playing = true;
@@ -754,10 +819,9 @@ public sealed class PlaybackEngine : IDisposable
         Interlocked.Exchange(ref pendingSeek, frame);
         if (playing) return;
         Interlocked.Exchange(ref position, frame);
-        nextBeat = BeatAt(frame);
+        SeedClick(frame);
+        Interlocked.Exchange(ref clickHeadSync, 1);
     }
-
-    long BeatAt(long frame) => (long)Math.Ceiling(frame / (SampleRate * 60.0 / bpm) - 1e-6);
 
     /// <summary>Equal-power weights for the next <paramref name="n"/> samples of the seek crossfade (cos out, sin in).</summary>
     static void CrossfadeWeights(ref float level, int n, float[] wIn, float[] wOut)
@@ -873,11 +937,15 @@ public sealed class PlaybackEngine : IDisposable
         recUsedClick = ClickOn;
         Interlocked.Exchange(ref recStartTimestamp, 0);
 
-        double beatLen = SampleRate * 60.0 / bpm;
+        // the count-in counts the meter's unit at the tempo where the take starts
+        var map = tempoMap;
+        double startBeat = map.BeatAt(Math.Max(0, startSec));
+        recCountInLen = SampleRate * 60.0 / map.BpmAt(startBeat) * map.ClickBeats(startBeat);
         long recStart = (long)(Math.Max(0, startSec) * SampleRate);
-        long startFrame = recStart - (beats > 0 ? (long)Math.Round(beats * beatLen) : 0);
-        recFirstBeat = (long)Math.Ceiling(recStart / beatLen - 1e-6);
-        nextBeat = beats > 0 ? -beats : recFirstBeat;
+        long startFrame = recStart - (beats > 0 ? (long)Math.Round(beats * recCountInLen) : 0);
+        countIn = -beats;
+        SeedClick(recStart);
+        Interlocked.Exchange(ref clickHeadSync, 1);
         Interlocked.Exchange(ref recStartFrame, recStart);
         click = null;
         clickPos = 0;
@@ -1149,7 +1217,8 @@ public sealed class PlaybackEngine : IDisposable
                     xfFrom = Interlocked.Exchange(ref position, req);
                     Interlocked.CompareExchange(ref pendingSeek, NoSeek, req);
                     xfLevel = 0;
-                    nextBeat = BeatAt(req);
+                    SeedClick(req);
+                    clickHeadSync = 1;
                 }
                 else if (fadeMode == 0 && Interlocked.Exchange(ref pendingFadeIn, 0) != 0)
                 {
@@ -1239,8 +1308,26 @@ public sealed class PlaybackEngine : IDisposable
             Correlation.Add(ml, mr, n);
             FoldMono(ref monoLevel, MonoCheck, ml, mr);
 
-            double beatLen = SampleRate * 60.0 / bpm;
+            double countLen = recCountInLen;
             int limLatency = buses.Limiter.Latency + pdcFrames;
+            if (Interlocked.Exchange(ref clickHeadSync, 0) != 0)
+            {
+                clickHead = pos - limLatency;
+                clickHeadLatency = limLatency;
+            }
+            else if (limLatency != clickHeadLatency)
+            {
+                // the PDC moved: what is heard moves with it, and so does the click
+                clickHead -= limLatency - clickHeadLatency;
+                clickHeadLatency = limLatency;
+            }
+            // a new map: the next click under it, after the count-in if one is going
+            if (Interlocked.Exchange(ref pendingClickSeed, 0) != 0) SeedClick(isRec ? Math.Max(clickHead, recStart) : clickHead);
+            // the click turns at B when what is heard gets there, like the audio (LoopSplice.Turned)
+            var clickLap = loopRange;
+            long clickA = clickLap?.Start ?? 0, clickB = clickLap?.End ?? endFrame;
+            bool clickTurns = !isRec && loop && clickB > clickA;
+            long ch = clickHead;
             var hi = clickHi;
             var lo = clickLo;
             float ol = outL, or = outR;
@@ -1248,21 +1335,27 @@ public sealed class PlaybackEngine : IDisposable
             for (int i = 0; i < n; i++)
             {
                 long f = pos + i;
-                // count-in beats are negative and counted back from the take's start; the rest follow the grid
-                bool inCountIn = isRec && nextBeat < 0;
+                // count-in clicks are negative and counted back from the take's start; the rest follow the tempo map
+                bool inCountIn = isRec && countIn < 0;
                 bool wantClick = inCountIn ? recUsedCountIn : ClickOn;
-                long beatFrame = (inCountIn ? recStart : 0) + (long)Math.Round(nextBeat * beatLen) + limLatency;
+                if (clickTurns && ch == clickB)
+                {
+                    ch = clickA;
+                    SeedClick(clickA);
+                }
+                bool due = inCountIn ? f >= recStart + (long)Math.Round(countIn * countLen) + limLatency : ch >= nextClickFrame;
+                ch++;
 
-                if (f >= beatFrame)
+                if (due)
                 {
                     if (wantClick)
                     {
-                        bool accent = inCountIn ? (nextBeat == -recCountInBeats) : (nextBeat % 4 == 0);
+                        bool accent = inCountIn ? (countIn == -recCountInBeats) : nextClickAccent;
                         click = accent ? hi : lo;
                         clickPos = 0;
                     }
-                    nextBeat++;
-                    if (inCountIn && nextBeat == 0) nextBeat = recFirstBeat;
+                    if (inCountIn) countIn++;
+                    else NextClick();
                 }
 
                 float c = 0;
@@ -1279,6 +1372,7 @@ public sealed class PlaybackEngine : IDisposable
             }
             outL = ol;
             outR = or;
+            clickHead = ch;
 
             long blockStart = pos;
             pos += n;
@@ -1310,20 +1404,20 @@ public sealed class PlaybackEngine : IDisposable
                 {
                     // the block already played the start of the lap (LoopSplice), so A comes in whole on its sample;
                     // the effects keep their state (resetting them here cut the reverb tails and clicked on every lap)
-                    // and the beats go on one lap back, so a click that hasn't sounded yet still does
+                    // (the click turns on its own, when what is heard reaches B)
                     if (xfFrom >= 0)
                     {
                         xfFrom = pos;
                         xfLevel = 0;
                     }
-                    nextBeat = BeatAt((long)Math.Round(nextBeat * beatLen) - (loopEnd - loopStart));
                     heard.Turn(loopStart, loopEnd - loopStart);
                     Interlocked.Exchange(ref position, lapTo);
                 }
                 else if (!isRec && atEnd && loop)
                 {
                     // past B, at the end of the song: nothing sounds here to join with
-                    nextBeat = BeatAt(loopStart);
+                    SeedClick(loopStart);
+                    clickHeadSync = 1;
                     heard.Turn(loopStart, pos - loopStart);
                     Interlocked.Exchange(ref position, loopStart);
                 }

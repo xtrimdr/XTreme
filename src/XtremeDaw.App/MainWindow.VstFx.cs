@@ -79,7 +79,10 @@ public partial class MainWindow
     {
         if (store == null) return;
         var wanted = new Dictionary<string, PluginRef>();
-        foreach (var (owner, slot) in VstSlots(store.Project)) wanted[EffectKey(owner, slot.Id)] = slot.Vst!.Plugin;
+        var p = store.Project;
+        foreach (var (owner, slot) in VstSlots(p))
+            // a frozen track's effects are in its render: their processes close (#240)
+            if (p.Tracks.Find(t => t.Id == owner) is not { } t || !FreezeHolds(t)) wanted[EffectKey(owner, slot.Id)] = slot.Vst!.Plugin;
         foreach (var (key, e) in effects.ToList())
             if (!wanted.TryGetValue(key, out var w) || !w.SamePlugin(e.Plugin)) DropEffect(key);
         foreach (var (key, plugin) in wanted)

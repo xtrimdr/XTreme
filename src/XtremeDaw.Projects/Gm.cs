@@ -11,11 +11,15 @@ namespace XtremeDaw.Projects;
 /// (<see cref="GmBank"/>), so the project keeps those two numbers and the tone over it (asked by the user, #200: it had
 /// no controls), the fields of <see cref="GmTone"/> with the same meaning; every one at its default plays the bank as it is.
 /// The tone stays when the program changes. A kit doesn't transpose (it would swap drums, not tune them).
+/// <see cref="Bank"/> is which bank it plays (asked by the user, #212): the shipped one, a downloaded one or a .sf2 of the
+/// user; one that isn't on this PC plays the shipped bank meanwhile and is kept, so the project sounds right again where it is.
 /// </summary>
 public sealed class GmSettings
 {
     /// <summary>The GM program, 0..127 (0 = Piano acústico); with <see cref="Drums"/>, the kit (0 = Estándar).</summary>
     public int Program { get; set; }
+    /// <summary>The bank (<see cref="GmBank.Key"/>): null = GeneralUser GS, an id of <see cref="GmBank.Downloads"/> or a .sf2's whole path.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Bank { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Drums { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public double Attack { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public double Decay { get; set; }
@@ -29,12 +33,15 @@ public sealed class GmSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public double Fine { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Mono { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public double GlideSec { get; set; }
+    /// <summary>The instrument's volume in dB (asked by the user, #212), <see cref="GmTone.MinVolumeDb"/> = silence.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public double VolumeDb { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     /// <summary>Every value back in its range, what <see cref="Track"/> does on opening and the window after each edit.</summary>
     public void Normalize()
     {
         Program = Math.Clamp(Program, 0, 127);
+        Bank = GmBank.IsDefault(Bank) ? null : GmBank.IsFile(Bank) ? Bank!.Trim() : GmBank.Key(Bank);
         Attack = Range(Attack, -1, 1);
         Decay = Range(Decay, -1, 1);
         Sustain = Range(Sustain, -1, 1);
@@ -46,11 +53,12 @@ public sealed class GmSettings
         Transpose = Math.Clamp(Transpose, -GmTone.MaxTranspose, GmTone.MaxTranspose);
         Fine = Range(Fine, -100, 100);
         GlideSec = Range(GlideSec, 0, GmTone.MaxGlideSec);
+        VolumeDb = Range(VolumeDb, GmTone.MinVolumeDb, GmTone.MaxVolumeDb);
     }
 
     static double Range(double v, double min, double max) => double.IsFinite(v) ? Math.Clamp(v, min, max) : 0;
 
-    /// <summary>The tone back to the bank's, keeping the program.</summary>
+    /// <summary>The tone back to the bank's, keeping the program and the volume.</summary>
     public void ResetTone()
     {
         Attack = Decay = Sustain = Release = Bright = Resonance = VelBright = Fine = GlideSec = 0;
@@ -63,11 +71,11 @@ public sealed class GmSettings
     public GmTone Tone() => new()
     {
         Attack = Attack, Decay = Decay, Sustain = Sustain, Release = Release, Bright = Bright, Resonance = Resonance,
-        VelBright = VelBright, Velocity = Velocity, Transpose = Drums ? 0 : Transpose, Fine = Fine, Mono = Mono, GlideSec = GlideSec,
+        VelBright = VelBright, Velocity = Velocity, Transpose = Drums ? 0 : Transpose, Fine = Fine, Mono = Mono, GlideSec = GlideSec, VolumeDb = VolumeDb,
     };
 
-    /// <summary>What the export plays it with; null when the bank isn't there.</summary>
-    public GmRig? Rig() => GmBank.Load() is { } font && font.Find(Program, Drums) is { } preset ? new GmRig(font, preset, Tone()) : null;
+    /// <summary>What the export plays it with (the shipped bank while its own isn't there); null when no bank is.</summary>
+    public GmRig? Rig() => GmBank.LoadOrDefault(Bank) is { } font && font.Find(Program, Drums) is { } preset ? new GmRig(font, preset, Tone()) : null;
 
     /// <summary>Its name as the menus show it ("Piano acústico", "Batería").</summary>
     public string Name => Drums ? GmNames.Kit(Program) : GmNames.Program(Program);

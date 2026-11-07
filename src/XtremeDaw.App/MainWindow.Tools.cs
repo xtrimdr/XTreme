@@ -75,6 +75,8 @@ public partial class MainWindow
         rangeStripButton = StripButton("\ue8ee", "strip.range.tip", RangeStripKey, on => Timeline.RangeStripShown = on);
         markerStripButton = StripButton("\ue7c1", "strip.markers.tip", MarkerStripKey, on => Timeline.MarkerStripShown = on);
         chordStripButton = StripButton("\ue90b", "strip.chords.tip", ChordStripKey, on => Timeline.ChordStripShown = on);
+        // the tempo track starts folded: it is opened when the song needs tempo or meter changes
+        tempoStripButton = StripButton("\uE916", "strip.tempo.tip", "timeline.tempoStrip", on => Timeline.TempoStripShown = on, shown: false);
         ProjectRow.SizeChanged += (_, _) => PlaceTools();
         SessionChip.SizeChanged += (_, _) => PlaceTools();
         ExportButton.SizeChanged += (_, _) => PlaceTools();
@@ -98,11 +100,11 @@ public partial class MainWindow
         InitPencil();
     }
 
-    /// <summary>A button that shows or hides one of the timeline's strips, remembered for the app, not per project.</summary>
-    ToggleButton StripButton(string glyph, string tip, string key, Action<bool> show)
+    /// <summary>A button that shows or hides one of the timeline's strips, remembered for the app, not per project; <paramref name="shown"/> until the user chooses.</summary>
+    ToggleButton StripButton(string glyph, string tip, string key, Action<bool> show, bool shown = true)
     {
-        bool on = true;
-        try { on = AppConfig.Get(key) != "off"; }
+        bool on = shown;
+        try { on = AppConfig.Get(key) is { } saved ? saved != "off" : shown; }
         catch { }
         var b = new ToggleButton
         {

@@ -63,7 +63,7 @@ public partial class MainWindow
         if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Granular != null)
             return !granulars.TryGetValue(trackId, out var grains) || grains.Loading ? TimelineView.InstrumentState.Loading
                 : grains.Missing ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Ready;
-        if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Gm != null) return GmState;
+        if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Gm is { } gm) return GmState(gm);
         var plugin = tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Instrument;
         if (plugin == null) return TimelineView.InstrumentState.TestTone;
         return instrumentFailed.Contains(FailKey(trackId, plugin)) ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Loading;
@@ -107,7 +107,8 @@ public partial class MainWindow
         if (store == null) return;
         var wanted = new Dictionary<string, PluginRef>();
         foreach (var t in tracks)
-            if (t.Track.IsMidi && t.Track.Instrument is { } plugin) wanted[t.Track.Id] = plugin;
+            // a frozen track's instrument is in its render: its process closes (#240)
+            if (t.Track.IsMidi && t.Track.Instrument is { } plugin && !FreezeHolds(t.Track)) wanted[t.Track.Id] = plugin;
         foreach (var (id, loaded) in instruments.ToList())
             if (!wanted.TryGetValue(id, out var w) || !w.SamePlugin(loaded.Plugin)) DropInstrument(id);
         foreach (var t in tracks)
@@ -253,6 +254,11 @@ public partial class MainWindow
     Task SetInstrument(LiveTrack track, VstPluginInfo? plugin)
     {
         if (store == null || store.ReadOnly || !track.Track.IsMidi) return Task.CompletedTask;
+        if (track.Track.Frozen)
+        {
+            ToastLocked(track.Track);
+            return Task.CompletedTask;
+        }
         string id = track.Track.Id;
         return EditTimeline(p =>
         {

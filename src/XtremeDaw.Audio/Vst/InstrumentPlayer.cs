@@ -428,7 +428,9 @@ public sealed class InstrumentRender : IDisposable
     /// <param name="offline">Tell the plugin it renders offline (it may use its best quality); false = as live.</param>
     public InstrumentRender(VstInstance instrument, NoteSequence? notes, double tempo, int sampleRate, bool offline = true)
     {
-        bridge = VstBridge.Start(instrument.Path, instrument.ClassId, instrument.Name, sampleRate, offline);
+        bridge = offline
+            ? VstBridge.StartForExport(instrument.Path, instrument.ClassId, instrument.Name, sampleRate)
+            : VstBridge.Start(instrument.Path, instrument.ClassId, instrument.Name, sampleRate, offline: false);
         if (instrument.State is { Length: > 0 } state && !bridge.SetState(state))
         {
             string name = instrument.Name;

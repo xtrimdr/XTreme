@@ -20,6 +20,35 @@ public sealed partial class TimelineView
     /// <summary>Px from a clip's right end, inside it, that grab its loop.</summary>
     const double LoopGrab = 10;
 
+    /// <summary>The loop icon's dark halo (asked by the user, #253: like the inspector's pointer, so it reads over any
+    /// clip): its opacity, black, and the px it reaches around the glyph, in <see cref="LoopHaloSteps"/> directions.</summary>
+    const double LoopHaloA = 0.55, LoopHaloR = 1;
+    const int LoopHaloSteps = 8;
+
+    /// <summary>The room a repeat's loop icon takes at its start: a clip's name starts past it, never under it (#253).</summary>
+    const double LoopIconW = 16;
+
+    /// <summary>Px from a clip's (or a repeat's) left end to its loop icon or name, the same on audio and MIDI (#253):
+    /// past the edge tab (<see cref="DrawGripTab"/>), so the tab never covers the first label (#240).</summary>
+    const double ClipLabelInset = 10;
+
+    /// <summary>The loop icon with a dark halo under it, so it shows over the clip's own color and its notes.</summary>
+    static void DrawLoopGlyph(DrawingContext ctx, double size, IBrush brush, Point at) =>
+        DrawHaloText(ctx, ToolCursors.LoopGlyph, size, brush, at, Icons);
+
+    /// <summary>A text or icon over a clip with the same faint dark halo as the loop icon (#253: the clip's name too), so
+    /// it reads over any color without a box; <paramref name="maxWidth"/> &gt; 0 cuts it with an ellipsis.</summary>
+    static void DrawHaloText(DrawingContext ctx, string s, double size, IBrush brush, Point at, Typeface face, double maxWidth = 0)
+    {
+        var halo = Palette.Alpha(Colors.Black, LoopHaloA / 2);
+        for (int k = 0; k < LoopHaloSteps; k++)
+        {
+            double a = k * 2 * Math.PI / LoopHaloSteps;
+            ctx.DrawText(s, size, halo, new Point(at.X + LoopHaloR * Math.Cos(a), at.Y + LoopHaloR * Math.Sin(a)), face, maxWidth);
+        }
+        ctx.DrawText(s, size, brush, at, face, maxWidth);
+    }
+
     /// <summary>How far down from a clip's top its loop corner reaches, for a clip <paramref name="h"/> px high.</summary>
     static double LoopBand(double h) => Math.Clamp(h / 4, 6, 12);
 
@@ -107,7 +136,7 @@ public sealed partial class TimelineView
             if (x1 < HeaderW) continue;
             var r = new Rect(x0, y + 5, Math.Max(2, x1 - x0), lh - 10);
             ctx.DrawRectangle(Palette.Alpha(color, 0.12), pen, r, 5, 5);
-            if (r.Width >= 16) ctx.DrawText(ToolCursors.LoopGlyph, 10, Palette.Alpha(color, 1), new Point(r.X + 4, r.Y + 3), Icons);
+            if (r.Width >= ClipLabelInset + LoopGlyphW) DrawLoopGlyph(ctx, 10, Palette.Alpha(color, 1), new Point(r.X + ClipLabelInset, r.Y + 3));
         }
     }
 
@@ -116,7 +145,7 @@ public sealed partial class TimelineView
     {
         if (clip.Width < 3 * LoopGrab || clip.Height < 20) return;
         var color = lit ? Palette.Accent : Palette.Alpha(Palette.FgColor, 0.7);
-        ctx.DrawText(ToolCursors.LoopGlyph, 9, color, new Point(clip.Right - LoopGrab - 1, clip.Top + 1), Icons);
+        DrawLoopGlyph(ctx, 9, color, new Point(clip.Right - LoopGrab - 1, clip.Top + 1));
     }
 
     /// <summary>What the loop gesture ends in, taken before the gesture is cleared: null when it wasn't one.</summary>

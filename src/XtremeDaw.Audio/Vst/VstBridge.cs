@@ -276,8 +276,20 @@ public sealed unsafe class VstBridge : IDisposable
         if (!b.readyEvent.Wait(timeoutMs)) b.Error ??= Texts.T("err.vst.timeout", "El plugin tardó demasiado en abrir.");
         if (b.Ready) return b;
         string error = b.Error ?? Texts.T("err.vst.failed", "No se pudo abrir.");
+        bool crashed = Volatile.Read(ref *(int*)(b.mem + OffStatus)) == StatusCrashed;
         b.Dispose();
-        throw new InvalidOperationException(error);
+        throw crashed ? new VstCrashedException(error) : new InvalidOperationException(error);
+    }
+
+    /// <summary>
+    /// Opens a plugin for the export: offline, with the largest block. A plugin that crashes when told so (Serum, #266)
+    /// opens again the way it already plays live, in real time with the driver's block (<see cref="VstInsert.LiveBlock"/>):
+    /// the render still waits for every block, only the plugin is not told.
+    /// </summary>
+    public static VstBridge StartForExport(string pluginPath, string cid, string name, int sampleRate)
+    {
+        try { return Start(pluginPath, cid, name, sampleRate, offline: true); }
+        catch (VstCrashedException) { return Start(pluginPath, cid, name, sampleRate, offline: false, VstInsert.LiveBlock); }
     }
 
     void ReadOutput()
@@ -544,3 +556,6 @@ public sealed unsafe class VstBridge : IDisposable
         readyEvent.Dispose();
     }
 }
+
+/// <summary>The plugin's process died while it loaded (not a refusal): <see cref="VstBridge.StartForExport"/> tries it again as live.</summary>
+public sealed class VstCrashedException(string message) : InvalidOperationException(message);

@@ -1,6 +1,91 @@
 {
   "releases": [
     {
+      "version": "0.9.20",
+      "items": [
+        {
+          "icon": "E9D2",
+          "title": "Bus automation",
+          "text": "A bus's fader, pan, mute, sends and effects are automated like a track's. Each bus has its row at the end of the timeline with its lanes; **Show buses in the timeline** hides them."
+        },
+        {
+          "icon": "E75C",
+          "title": "Right-drag erases anything",
+          "text": "As with clips, right-dragging removes what it touches anywhere on the timeline: automation blocks, tempo points, meter changes, markers, chords and the loop range. A right-click without dragging opens the menu."
+        },
+        {
+          "icon": "E9D2",
+          "title": "More genres in Tonal balance",
+          "text": "Twelve new targets: **Dubstep**, **Riddim** and **Deep dubstep (UK)**, each with its own sub, mids and punch, plus Trap, Drum & bass, House / Techno, Reggaeton, Reggae, Metal, R&B / Soul, Country / Folk and Lo-fi."
+        },
+        {
+          "icon": "E8A7",
+          "title": "Sends between buses",
+          "text": "A bus sends to other buses like a track: **+** under **Sends** in its strip, in the mixer or the inspector. A bus that would send the sound back to it isn't offered; its output still goes to the Master."
+        },
+        {
+          "icon": "E71B",
+          "title": "Mixer connections",
+          "text": "**Connections**, in the mixer's header, shows the selected channel's sends under the strips and, on a bus, the ones that reach it; each with a knob for its level, split into IN and OUT. **Send**, under each bus, makes a send in one click."
+        },
+        {
+          "icon": "E7A7",
+          "title": "Tempo changes can be undone",
+          "text": "Changing the tempo is an **Undo** step, with everything it moved, and shows in History → Steps. A track's live arpeggiator, lock and MIDI input can be undone too."
+        },
+        {
+          "icon": "E8A1",
+          "title": "Clearer effect panels",
+          "text": "Every native effect has the same **Preset** band on top, with arrows to step through them. Modes sit in their panel: the delay's note value next to the echoes, Stereo / Ping-pong under Stereo, the compressor's LIM under Output. Settings with only a few values (the delay's note, the compressors' ratio, the phaser's stages) are buttons, all in sight."
+        },
+        {
+          "icon": "E8FD",
+          "title": "Mastering group in + Effect",
+          "text": "Cleanup, Multiband, Color, Tape, Width, Soft clip and Limiter now sit together under **+ Effect** → **Mastering**, in chain order."
+        },
+        {
+          "icon": "E9CA",
+          "title": "Freeze tracks",
+          "text": "Right-click a track → **Freeze** renders its instrument and effects and closes its plugins, to lower the DSP load. Fader, pan and sends stay live; **Unfreeze** makes it editable again. The snowflake in the track header also freezes it."
+        },
+        {
+          "icon": "E8E5",
+          "title": "Double-click a .xtp",
+          "text": "With XTreme open, the project opens in that window in place of the current one, which is saved. **Settings → File association** shows which program opens .xtp files, and **Associate .xtp files with XTreme** associates them. The installer offers it too."
+        },
+        {
+          "icon": "E8B7",
+          "title": "Group into a folder with Ctrl+G",
+          "text": "**Ctrl+G** puts the tracks picked in the timeline, or those of the selected clips, in a new folder. **F2** renames depending on where you clicked: the selected clip in the timeline, the track or folder on its header or in the inspector."
+        },
+        {
+          "icon": "E790",
+          "title": "Joined mixer strips",
+          "text": "In **Settings → Appearance → Mixer strips**, **Joined** puts the channels together as one console, full height with a groove between them, and each channel's color shows as an edge or a band. Joined and Band are the defaults. In the timeline, the same groove sets each track and folder apart."
+        },
+        {
+          "icon": "E8D6",
+          "title": "General MIDI banks",
+          "text": "The **General MIDI** instrument window picks each track's bank: **FluidR3 GM** and **MuseScore General**, more complete, download from there or in **Settings → Components**, and **Load .sf2…** uses one of your own. Banks now play their velocity and key modulators."
+        },
+        {
+          "icon": "E8D6",
+          "title": "General MIDI window refreshed",
+          "text": "The instrument's volume, ◀ ▶ to step through instruments, search, a list that folds into a menu by family, and the envelope and filter drawn as they sound."
+        },
+        {
+          "icon": "EC4A",
+          "title": "Tempo track",
+          "text": "Stepped or ramped tempo changes and meter changes (7/8, 6/8…) in the **tempo track**, under the ruler. The ruler, grid, click, clock and piano roll follow them; an audio track with **Follow tempo** stretches with them."
+        },
+        {
+          "icon": "E916",
+          "title": "Pump on the beat",
+          "text": "The **Pump** no longer drifts behind an effect with latency (a plugin, the limiter) or when the loop turns."
+        }
+      ]
+    },
+    {
       "version": "0.9.19",
       "items": [
         {
@@ -89,7 +174,7 @@
           "text": "With several tracks picked (Ctrl or Shift on their headers), the right-click menu offers **Color as a gradient** and **One color for all**."
         },
         {
-          "icon": "E9E9",
+          "icon": "E790",
           "title": "Split into stems: Advanced mode",
           "text": "In **Split into stems**, **Advanced** picks the model, which stems, how many passes, splitting only the timeline selection and what happens with the original: mute the track, leave it playing or remove the clip."
         },
@@ -273,7 +358,7 @@
           "topic": "shortcuts"
         },
         {
-          "icon": "E9E9",
+          "icon": "E790",
           "title": "Resizable mixer sections",
           "text": "**Effects** and **Sends**, above the mixer, show or hide that section on every strip. Drag the line under each list to make it taller; a double click fits it to the longest list, and the height is remembered.",
           "topic": "mixer"
@@ -285,7 +370,7 @@
           "topic": "scales-chords"
         },
         {
-          "icon": "E9E9",
+          "icon": "E790",
           "title": "New inspector",
           "text": "The inspector is now in sections: the track, the selected clip and, at the bottom, the strip with the fader, pan, M and S, the effects, the sends and the output. Values are compact rows you drag. Show or hide the clip and the strip from the top, and drag the strip's edge to resize it.",
           "topic": "window"
@@ -491,7 +576,7 @@
           "topic": "scales-chords"
         },
         {
-          "icon": "E9E9",
+          "icon": "E790",
           "title": "Mix and effects of a MIDI track",
           "text": "A MIDI track's inspector shows, under its instrument, its **Mix**, its effects and its sends, like any track.",
           "topic": "instrument"

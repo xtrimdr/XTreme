@@ -8,7 +8,7 @@ namespace XtremeDaw.Projects;
 /// </summary>
 public static class Subdivisions
 {
-    /// <summary>The project is always in 4/4.</summary>
+    /// <summary>A bar of 4/4, what "bar" means without a tempo map; a bar of the song is <see cref="TempoMap.BarBeats"/> (#214).</summary>
     public const double BarBeats = 4;
 
     public static readonly string[] Straight = ["bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64"];

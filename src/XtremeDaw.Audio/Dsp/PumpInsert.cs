@@ -97,8 +97,19 @@ public sealed class PumpInsert(int sampleRate) : ITrackInsert, IKeyed
         public bool Keyed { get; init; }
     }
 
-    /// <summary>The song frame of the block's first sample, set by the chain before each <see cref="Process"/>.</summary>
+    /// <summary>
+    /// The song frame of the sound the block's first sample carries, set by the chain before each <see cref="Process"/>:
+    /// the block's frame less what the slots before it delay (<see cref="InsertRack.Process"/>), so it ducks on the beat
+    /// it hears.
+    /// </summary>
     public long Frame { get; set; }
+
+    /// <summary>
+    /// A loop that turns inside the block: from sample <see cref="TurnAt"/> on (−1 = it doesn't) the sound is
+    /// <see cref="TurnBack"/> frames earlier in the song, the loop's start. Set by the chain with <see cref="Frame"/>.
+    /// </summary>
+    public int TurnAt { get; set; } = -1;
+    public long TurnBack { get; set; }
 
     public string Kind => TrackInserts.Pump;
     public int LatencySamples => 0;
@@ -259,10 +270,12 @@ public sealed class PumpInsert(int sampleRate) : ITrackInsert, IKeyed
         lastFrame = frame;
         double inv = 1 / c.Period;
         float low = grMin;
+        int turn = TurnAt < 0 ? left.Length : TurnAt;
+        long back = TurnBack;
         for (int i = 0; i < left.Length; i++)
         {
             // from the frame itself, not added up sample by sample: no drift, and no block size rounds differently
-            double phase = (at + i) * inv - c.Offset;
+            double phase = (at + i - (i >= turn ? back : 0)) * inv - c.Offset;
             phase -= Math.Floor(phase);
             float g = (float)Gain(c, phase);
             Wave(phase, left[i], right[i], g);
@@ -271,7 +284,7 @@ public sealed class PumpInsert(int sampleRate) : ITrackInsert, IKeyed
             if (g < low) low = g;
         }
         grMin = low;
-        double end = (at + left.Length - 1) * inv - c.Offset;
+        double end = (at + left.Length - 1 - (left.Length - 1 >= turn ? back : 0)) * inv - c.Offset;
         end -= Math.Floor(end);
         ShownPhase = (float)end;
         ShownGain = (float)Gain(c, end);

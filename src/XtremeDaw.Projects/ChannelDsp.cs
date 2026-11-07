@@ -24,8 +24,8 @@ public static class ChannelDsp
     public static InsertSpec[] Specs(Channel ch, double rmsDb, double bpm = 120, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) =>
         Specs(ch.Slots, rmsDb, bpm, live, bypass);
 
-    /// <summary>A bus's slots; its delays follow <paramref name="bpm"/>.</summary>
-    public static InsertSpec[] BusSpecs(Bus b, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) => Specs(b.Inserts, BusRmsDb, bpm, live, bypass);
+    /// <summary>A bus's slots; its delays follow <paramref name="bpm"/>. Its VST3 effects carry their automated parameters.</summary>
+    public static InsertSpec[] BusSpecs(Bus b, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) => WithCurves(b, Specs(b.Inserts, BusRmsDb, bpm, live, bypass));
 
     /// <summary>A folder's slots, like a bus's: no take of its own, so its Vida reads <see cref="BusRmsDb"/>. Its VST3 effects carry their automated parameters.</summary>
     public static InsertSpec[] FolderSpecs(Folder f, double bpm, Func<InsertSlot, VstBridge?>? live = null, bool bypass = false) =>
@@ -92,17 +92,38 @@ public static class ChannelDsp
         return -1;
     }
 
-    /// <summary>A track as the export renders it, with its clips and the level its Vida is measured against.</summary>
-    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb, SamplerRig? sampler = null, GranularRig? granular = null)
+    /// <summary>
+    /// A track as the export renders it, with its clips and the level its Vida is measured against. A frozen track
+    /// (<paramref name="frozen"/>: <paramref name="clips"/> is its render, <see cref="Freezing.Clip"/>) plays that alone,
+    /// without instrument or slots: they are in it. Its fader, pan, mute, solo and sends stay.
+    /// </summary>
+    public static MixTrackSpec Track(Project p, IReadOnlyList<string> nodes, Track t, IReadOnlyList<MixClipSpec> clips, double rmsDb, SamplerRig? sampler = null, GranularRig? granular = null,
+        bool frozen = false)
     {
         var ch = t.Channel;
+        if (frozen)
+            return new MixTrackSpec
+            {
+                Name = t.Name,
+                Id = t.Id,
+                Clips = clips,
+                Tempo = p.Settings.Bpm,
+                Volume = ch.Volume,
+                Pan = ch.Pan,
+                Muted = ch.Muted,
+                Solo = Soloed(p, t),
+                Inserts = [],
+                Output = IndexOf(nodes, TrackOutput(t)),
+                Sends = Sends(nodes, ch, t),
+                Automation = Automations.Compile(t),
+            };
         var automator = InsertAutomator.Create(t, rmsDb, p.Settings.Bpm);
         return new MixTrackSpec
         {
             Name = t.Name,
             Id = t.Id,
             Clips = clips,
-            Notes = Notes(t, p.Settings.Bpm, MidiSampleRate),
+            Notes = Notes(t, p.Settings.TempoMap, MidiSampleRate),
             Instrument = t.Instrument is { } i ? Instance(i) : null,
             Sampler = sampler,
             Granular = granular,
@@ -126,30 +147,38 @@ public static class ChannelDsp
 
     /// <summary>
     /// A MIDI track's notes as the engine plays them (<see cref="NoteSynth"/>), in frames at <paramref name="sampleRate"/>
-    /// with the tempo turning beats into time; null for an audio track or one without notes. A note that runs past its
+    /// with the tempo map turning beats into time (each note's start and end through the map, so a ramp bends them right);
+    /// null for an audio track or one without notes. A note that runs past its
     /// clip's end (or its pattern's pass) is cut there and one that starts past it is left out; a pattern's clip plays
     /// its pass again until it ends. A muted note isn't heard. What notes express (slides, porta, pan, modulation) comes
     /// out of <see cref="NoteExpression"/>; pitch bend is per channel, so a chord bends together.
     /// </summary>
-    public static NoteSequence? Notes(Track t, double bpm, int sampleRate)
+    public static NoteSequence? Notes(Track t, double bpm, int sampleRate) =>
+        Notes(t, TempoMap.Constant(Math.Clamp(bpm, TempoMap.MinBpm, TempoMap.MaxBpm)), sampleRate);
+
+    /// <inheritdoc cref="Notes(Track, double, int)"/>
+    public static NoteSequence? Notes(Track t, TempoMap map, int sampleRate)
     {
         if (!t.IsMidi || t.MidiClips is not { Count: > 0 } clips) return null;
-        double beatSec = 60 / Math.Max(1, bpm);
         var list = new List<NoteExpression.Heard>();
         foreach (var c in clips)
+        {
+            double clipBeat = map.BeatAt(c.AtSec);
             for (int pass = 0; pass < c.Passes; pass++)
                 foreach (var n in c.Notes)
                 {
                     if (n.Muted || !c.Heard(n, pass, out double beat, out double endBeat)) continue;
-                    double start = c.AtSec + beat * beatSec;
-                    double end = c.AtSec + endBeat * beatSec;
+                    double start = map.SecAt(clipBeat + beat);
+                    double end = map.SecAt(clipBeat + endBeat);
                     long from = (long)Math.Round(start * sampleRate);
                     long len = Math.Max(1, (long)Math.Round(end * sampleRate) - from);
                     // a plugin takes whole semitones: the Transponer's cents only reach the test tone
                     int pitch = Math.Clamp(n.Pitch + (int)Math.Round(t.Transpose), MidiNote.MinPitch, MidiNote.MaxPitch);
                     list.Add(new(from, len, pitch, n.Pitch + t.Transpose, n));
                 }
-        return new NoteExpression(beatSec, sampleRate).Build(list);
+        }
+        // a portamento's glide is a fraction of a beat: at the initial tempo, an approximation under a tempo change
+        return new NoteExpression(60 / map.Bpm, sampleRate).Build(list);
     }
 
     /// <summary>The bus side of the mix (the folders and buses as nodes, and the master), for the export and xtlab.</summary>
@@ -160,34 +189,29 @@ public static class ChannelDsp
         foreach (var id in nodes)
         {
             if (p.Folders.Find(f => f.Id == id) is { } f)
-            {
-                var automator = InsertAutomator.Create(f, BusRmsDb, p.Settings.Bpm);
-                list.Add(new MixNodeSpec
-                {
-                    Name = f.Name,
-                    Volume = f.Volume,
-                    Pan = f.Pan,
-                    Muted = f.Muted,
-                    Inserts = automator?.At(0, force: true) ?? FolderSpecs(f, p.Settings.Bpm),
-                    Output = IndexOf(nodes, f.Output),
-                    Sends = Sends(nodes, f, f),
-                    Automation = Automations.Compile(f),
-                    InsertsAt = automator == null ? null : sec => automator.At(sec),
-                });
-            }
+                list.Add(Node(p, nodes, f, f.Name, f, FolderSpecs(f, p.Settings.Bpm)));
             else if (p.Settings.Buses.Find(b => b.Id == id) is { } b)
-                list.Add(new MixNodeSpec
-                {
-                    Name = b.Name,
-                    Volume = b.Volume,
-                    Pan = b.Pan,
-                    Muted = b.Muted,
-                    Inserts = BusSpecs(b, p.Settings.Bpm),
-                    Output = IndexOf(nodes, b.Output),
-                    Sends = Sends(nodes, b),
-                });
+                list.Add(Node(p, nodes, b, b.Name, b, BusSpecs(b, p.Settings.Bpm)));
         }
         return new MixBusSpec { Bpm = p.Settings.Bpm, Master = p.Settings.Master.ToParams(), MasterInserts = MasterSpecs(p.Settings.Master, p.Settings.Bpm), Nodes = list };
+    }
+
+    /// <summary>A folder's or a bus's node for the export, its lanes with it (#136, #267).</summary>
+    static MixNodeSpec Node(Project p, IReadOnlyList<string> nodes, IRouted r, string name, IAutomated a, InsertSpec[] specs)
+    {
+        var automator = InsertAutomator.Create(a, BusRmsDb, p.Settings.Bpm);
+        return new MixNodeSpec
+        {
+            Name = name,
+            Volume = a.AutoVolume,
+            Pan = a.AutoPan,
+            Muted = a.AutoMuted,
+            Inserts = automator?.At(0, force: true) ?? specs,
+            Output = IndexOf(nodes, r.Output),
+            Sends = Sends(nodes, r, a),
+            Automation = Automations.Compile(a),
+            InsertsAt = automator == null ? null : sec => automator.At(sec),
+        };
     }
 
     public static ReverbParams Reverb(ReverbSettings r, bool bypass = false) => new(r.Decay, r.PreDelayMs, r.Tone, r.LowCut, r.Width, r.ReturnGain, r.Muted || bypass);

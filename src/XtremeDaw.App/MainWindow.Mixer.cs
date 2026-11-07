@@ -51,6 +51,8 @@ public partial class MainWindow
     /// <summary>Rows every strip shares (takes, returns and master), so all faders and meters start and end at the same
     /// height: head, controls, fader, foot.</summary>
     const double StripHeadH = 38, StripFootH = 22;
+    /// <summary>Space (px) over a strip's head, inside its card.</summary>
+    const double StripLayoutTop = 8;
     /// <summary>The compact strip's fixed rows (px): a list's title, the pan bar and M S ●.</summary>
     const double ListHeadH = 20, PanRowH = 26, TogglesRowH = 30;
     /// <summary>The default heights of the effects and sends lists (px): four effects and two sends.</summary>
@@ -193,6 +195,8 @@ public partial class MainWindow
         public readonly Dictionary<string, (MixerMeter Meter, Action<double> Gr)> Meters = [];
         /// <summary>The track and bus strips' cards, resized in place when only the strip width changes.</summary>
         public readonly List<Border> Boxes = [];
+        /// <summary>Each channel's card by its id (track, folder or bus), for the connections band (<see cref="RefreshRopes"/>).</summary>
+        public readonly Dictionary<string, Control> Cards = [];
         /// <summary>Every strip's controls row and the compact lists' rows with what they hold, resized in place (<see cref="ApplyMixerHeights"/>).</summary>
         public readonly List<RowDefinition> TopRows = [];
         public readonly List<(RowDefinition Row, Control What, bool Head)> FxRows = [], SendRows = [];
@@ -299,6 +303,8 @@ public partial class MainWindow
         Avalonia.Automation.AutomationProperties.SetName(mixerZoomSlider, Loc.T("mixer.zoom"));
         mixerZoomIcon.Margin = new Thickness(0, 0, 8, 0);
         mixerScroll.AddHandler(PointerWheelChangedEvent, OnMixerWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        // a new strip look (#250) rebuilds the strips once
+        MixerLooks.Changed += () => { mixerKey = ""; RefreshMixer(); };
         if (double.TryParse(AppConfig.Get("mixerHeight"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double h))
             mixerH = Math.Max(MixerMinH, h);
         // until it is given one, the piano roll opens as tall as the mixer did
@@ -379,7 +385,9 @@ public partial class MainWindow
         Grid.SetColumn(masterPin, 1);
         mixerPane.Children.Add(mixerMiniRow);
         mixerPane.Children.Add(header);
-        mixerPane.Children.Add(new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { mixerScroll, masterPin } });
+        // the connections band under the strips, as wide as what scrolls (MainWindow.MixerRopes.cs)
+        Grid.SetRow(ropesBand, 1);
+        mixerPane.Children.Add(new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), RowDefinitions = new RowDefinitions("*,Auto"), Children = { mixerScroll, masterPin, ropesBand } });
         // the DockPanel fills only its last child: the views share it, so each fills the place; Mastering keeps its
         // meter pinned at its right
         var area = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -516,6 +524,7 @@ public partial class MainWindow
         row.Children.Add(AddSeparatorButton());
         row.Children.Add(SectionSwitch(FxIcon.Eq, "mixer.fx", () => mixerFx, v => mixerFx = v, false));
         row.Children.Add(SectionSwitch(FxIcon.Reverb, "mixer.sends", () => mixerSends, v => mixerSends = v, true));
+        row.Children.Add(RopesSwitch());
 
         // the strips' width, like the timeline's zoom bar (the header's own refreshers survive strip rebuilds)
         var zoom = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
@@ -704,7 +713,13 @@ public partial class MainWindow
     }
 
     /// <summary>The compressor from a strip: like the inspector, its values follow its preset.</summary>
-    void StripComp(LiveTrack t, Action<CompSettings> edit, string key) => EditTrack(t, x =>
+    void StripComp(LiveTrack t, Action<CompSettings> edit, string key)
+    {
+        if (t.Track.Frozen) ToastLocked(t.Track);
+        else StripCompEdit(t, edit, key);
+    }
+
+    void StripCompEdit(LiveTrack t, Action<CompSettings> edit, string key) => EditTrack(t, x =>
     {
         edit(x.Channel.Comp);
         if (x.Channel.Comp.Preset != "custom") x.RecalculateCompPreset();
@@ -728,7 +743,7 @@ public partial class MainWindow
             + "|" + string.Join(",", Folders.Select(f => f.Id + ":" + f.Index + ":" + f.MixerCollapsed + ":" + f.Separator + ":" + f.MixerSide + ":" + string.Join("/", f.Sends.Where(s => !s.Hidden).Select(s => s.BusId))
                 + ":" + string.Join("/", f.Inserts.Select(s => s.Id + s.Type))))
             // a bus's routing changes which buses the others can send to: their send panels come and go
-            + "|" + string.Join(",", Buses.Select(b => b.Id + ":" + b.Name + ":" + b.MixerSide + ":" + b.Output + ":" + string.Join("/", b.Sends.Select(x => x.BusId)) + ":" + string.Join("/", b.Inserts.Select(s => s.Id + s.Type))))
+            + "|" + string.Join(",", Buses.Select(b => b.Id + ":" + b.Name + ":" + b.MixerSide + ":" + b.Output + ":" + string.Join("/", b.Sends.Where(x => !x.Hidden).Select(x => x.BusId)) + ":" + string.Join("/", b.Inserts.Select(s => s.Id + s.Type))))
             + "|" + string.Join("/", MasterSet.Slots.Select(s => s.Id + s.Type));
         if (key != mixerKey)
         {
@@ -827,11 +842,11 @@ public partial class MainWindow
         if (!mixerView && !MasteringOut && !MixerOut) return;
         // the mini timeline sits over the Mastering view too
         double end = TracksEndSec();
-        miniTimeline.Bpm = Timeline.Bpm;
+        miniTimeline.Tempo = Timeline.Tempo;
         miniTimeline.SetPlayhead(pos, end, RecordingBusy);
         if (MixerOut)
         {
-            mixerMini.Bpm = Timeline.Bpm;
+            mixerMini.Tempo = Timeline.Tempo;
             mixerMini.SetPlayhead(pos, end, RecordingBusy);
         }
         masterShowL = Math.Max(outL, masterShowL * 0.82f); masterShowR = Math.Max(outR, masterShowR * 0.82f);
@@ -839,6 +854,7 @@ public partial class MainWindow
         // Mastering in its own window keeps its meter going beside the mixer
         masteringMeter?.Set(masterShowL, masterShowR, rmsL, rmsR);
         if (!StripsLive) return;
+        TickRopes();
         foreach (var t in tracks)
             if (mx.Meters.TryGetValue(t.Track.Id, out var m))
             {
@@ -950,6 +966,7 @@ public partial class MainWindow
         l.Transpose.Clear();
         l.Meters.Clear();
         l.Boxes.Clear();
+        l.Cards.Clear();
         l.TopRows.Clear();
         l.FxRows.Clear();
         l.SendRows.Clear();
@@ -969,6 +986,9 @@ public partial class MainWindow
         ClearStrips(mixerLayout);
         var order = mx.Order;
         var mixerStrips = mx.Strips;
+        // joined (#250), the strips run edge to edge and up to the master's line
+        mixerStrips.Margin = new Thickness(MixerLooks.Joined ? 0 : StripGap / 2, 0);
+        masterPin.Padding = MixerLooks.Joined ? default : new Thickness(StripGap / 2, 0, StripGap / 2, 0);
         // the two sides (asked by the user): tracks and folders on the left by default, buses on the right, and
         // anything can be moved to the other one; the free space between them grows with the window
         var strips = order.Left = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1044,18 +1064,22 @@ public partial class MainWindow
         scroll.SizeChanged += (_, _) => Align();
     }
 
-    /// <summary>A strip as a card on the mixer's background, so each channel reads apart from its neighbours.</summary>
-    static Border StripCard(double width) => new()
-    {
-        Width = width, Margin = new Thickness(StripGap / 2, StripGap), Background = Palette.Panel, BorderBrush = Palette.Line,
-        BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), ClipToBounds = true,
-    };
+    /// <summary>A strip as a card on the mixer's background, so each channel reads apart from its neighbours; with the
+    /// strips joined (<see cref="MixerLooks.Joined"/>, #250) it fills the mixer's height edge to edge, and the groove
+    /// <see cref="StripCardLook"/> lays over it sets it apart.</summary>
+    static Border StripCard(double width) => MixerLooks.Joined
+        ? new() { Width = width, Background = Palette.Panel, ClipToBounds = true }
+        : new()
+        {
+            Width = width, Margin = new Thickness(StripGap / 2, StripGap), Background = Palette.Panel, BorderBrush = Palette.Line,
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), ClipToBounds = true,
+        };
 
     /// <summary>Puts a strip's parts on the rows every strip shares (<see cref="StripHeadH"/>…), so all faders and meters
     /// start and end at the same height whatever the name, the strip type or its controls.</summary>
     Grid StripLayout(Control head, Control? controls, Control faders, Control foot)
     {
-        var g = new Grid { Margin = new Thickness(6, 8, 6, 6) };
+        var g = new Grid { Margin = new Thickness(6, StripLayoutTop, 6, 6) };
         g.RowDefinitions.Add(new RowDefinition(StripHeadH, GridUnitType.Pixel));
         var top = new RowDefinition(StripTopH, GridUnitType.Pixel);
         mx.TopRows.Add(top);
@@ -1083,6 +1107,7 @@ public partial class MainWindow
     {
         var box = StripCard(width);
         mx.Boxes.Add(box);
+        mx.Cards[t.Track.Id] = box;
         var top = StripCardLook(box, () => sel == t, () => Timeline.ArmedIndices.Contains(tracks.IndexOf(t)), () => TrackIcons.ColorOf(t.Track), () =>
         {
             int i = tracks.IndexOf(t);
@@ -1140,6 +1165,10 @@ public partial class MainWindow
 
         // its icon, its name and "VACÍA", its input while armed or its transpose under the name
         var under = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        // frozen (#240): the timeline's snowflake
+        var frozenTag = new Avalonia.Controls.Shapes.Path { Data = Snowflake.Geometry(9), Stroke = Palette.Accent, StrokeThickness = Snowflake.Stroke(9) * 1.2, StrokeLineCap = PenLineCap.Round, VerticalAlignment = VerticalAlignment.Center };
+        mx.Refresh.Add(() => frozenTag.IsVisible = t.Track.Frozen);
+        under.Children.Add(frozenTag);
         under.Children.Add(emptyHint); under.Children.Add(input); under.Children.Add(TransposeTagText(t));
         var head = StripHead(badge, name, under);
         // like a console's strip (asked by the user): its effects and its sends as lists, the pan as a bar, then M S ●
@@ -1199,7 +1228,7 @@ public partial class MainWindow
         if (fader != null) fader.Slim = tiny;
         if (faders != null) faders.Spacing = tiny ? 2 : 4;
         double side = tiny ? 2 : narrow ? 3 : 6;
-        layout.Margin = new Thickness(side, 8, side, 6);
+        layout.Margin = new Thickness(side, StripLayoutTop, side, 6);
         // the meter takes whatever the fader leaves
         double room = w - StripBorders - 2 * side - (fader != null ? fader.Width + (faders?.Spacing ?? 0) : 0);
         meter.Fit(room, MeterBarMin, MeterBarMax, MeterShare);
@@ -1207,12 +1236,34 @@ public partial class MainWindow
 
     /// <summary>
     /// A strip's card look, the same for every channel (asked by the user: a bus selects like a track): hover, selected
-    /// (raised, accent border), armed (tinted red), and its color along the top edge. A press selects it.
-    /// Returns the top edge, which the strip lays over its content.
+    /// (raised, accent border), armed (tinted red), and its color as chosen in Apariencia (<see cref="MixerLooks"/>,
+    /// #250: a line or a band along the top). A press selects it. Returns what the strip
+    /// lays over its content: the color, and with the strips joined the groove at its right and the selected frame
+    /// (the card has no border of its own there).
     /// </summary>
-    Border StripCardLook(Border box, Func<bool> selected, Func<bool> armed, Func<Color?> color, Action select)
+    Control StripCardLook(Border box, Func<bool> selected, Func<bool> armed, Func<Color?> color, Action select)
     {
-        var top = new Border { Height = 2, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false };
+        bool joined = MixerLooks.Joined;
+        string look = MixerLooks.ColorLook;
+        var over = new Grid { IsHitTestVisible = false };
+        var top = new Border { Height = look == MixerLooks.Band ? MixerLooks.BandH : MixerLooks.EdgeH, VerticalAlignment = VerticalAlignment.Top };
+        // as a card, inside its border and straight, clear of the rounded corners (#267)
+        if (!joined)
+        {
+            top.Margin = new Thickness(MixerLooks.MarkInset, MixerLooks.MarkInset, MixerLooks.MarkInset, 0);
+            top.CornerRadius = new CornerRadius(MixerLooks.MarkRadius);
+        }
+        over.Children.Add(top);
+        Border? frame = null;
+        if (joined)
+        {
+            // the groove between joined strips: a dark line with a lit one beside it, like the seam of a console's panels
+            over.Children.Add(new Border { Width = 1, HorizontalAlignment = HorizontalAlignment.Right, Background = Palette.App });
+            over.Children.Add(new Border { Width = 1, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 1, 0),
+                Background = Palette.Alpha(Palette.FgColor, MixerLooks.GrooveLitA) });
+            frame = new Border { BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 1, 0) };
+            over.Children.Add(frame);
+        }
         box.Cursor = new Cursor(StandardCursorType.Hand);
         bool hover = false;
         box.PointerEntered += (_, _) => { hover = true; Paint(); };
@@ -1224,12 +1275,15 @@ public partial class MainWindow
             // the armed strip (where R records) is tinted red, like its lane in the timeline
             box.Background = rec && !on ? Palette.Alpha(Palette.RecColor, 0.08)
                 : on ? Palette.Raised : hover ? Palette.Alpha(Palette.RaisedColor, 0.6) : Palette.Panel;
-            box.BorderBrush = rec ? Palette.Alpha(Palette.RecColor, 0.5) : on ? Palette.Accent : Palette.Line;
-            // a channel with a color shows it along the card's top edge, selected or not
-            top.Background = color() is { } c ? Palette.Alpha(c, 1) : Brushes.Transparent;
+            var border = rec ? Palette.Alpha(Palette.RecColor, 0.5) : on ? Palette.Accent : null;
+            if (frame != null) frame.BorderBrush = border;
+            else box.BorderBrush = border ?? Palette.Line;
+            // a channel with a color shows it as chosen, selected or not
+            var c = color();
+            top.Background = c is { } tc ? Palette.Alpha(tc, 1) : Brushes.Transparent;
         }
         mx.Refresh.Add(Paint);
-        return top;
+        return over;
     }
 
     /// <summary>A title in the mixer: a double click renames. Caught on its way down, because the press also lands on a
@@ -1271,7 +1325,7 @@ public partial class MainWindow
     /// The compact strip's controls, the same for a track and a bus (asked by the user, like a console's strip): the
     /// effects as a list (a click opens one in its window, <see cref="ShowSlotWindow"/>; dragged, it moves in the chain;
     /// its power switch turns it on or off), the sends as bars with the bus's name (shown with the mixer's "Envíos"; a
-    /// bus, which has none, keeps the section empty so its fader stays level), the pan as a bar from the centre, and its
+    /// bus sends to other buses too, #264; without a router the section stays empty so its fader stays level), the pan as a bar from the centre, and its
     /// <paramref name="toggles"/> (M S ● or a bus's M). The action writes the first compressor's reduction under its row.
     /// </summary>
     (Control Controls, Action<double> Gr) CompactChain(SlotOwner o, Router? sends, Func<double> panOf, Action<double> setPan, params Control[] toggles)
@@ -1393,7 +1447,7 @@ public partial class MainWindow
         rows.Add((listRow, list, false));
     }
 
-    /// <summary>The compact strip's sends: a bar per bus in the list of <paramref name="router"/> (a track or a folder), its power switch turning it on or off.</summary>
+    /// <summary>The compact strip's sends: a bar per bus in the list of <paramref name="router"/> (a track, a folder or a bus), its power switch turning it on or off.</summary>
     StackPanel CompactSends(Router router, List<Action>? refresh = null, Action<string, Control>? rowAdded = null)
     {
         var sends = new StackPanel { Spacing = 1 };
@@ -1435,7 +1489,7 @@ public partial class MainWindow
                 percentShown = p;
                 bar.Readout = ValueFormat.Percent(level);
             }
-            if (router.Lanes is { } lanes) FollowLane(bar, () => lanes is Folder lf ? FolderById(lf.Id) : lanes, AutoTarget.Send(id), k =>
+            if (router.Lanes is { } lanes) FollowLane(bar, () => lanes is Folder lf ? FolderById(lf.Id) : lanes is Bus lb ? BusById(lb.Id) : lanes, AutoTarget.Send(id), k =>
             {
                 bar.Value = k;
                 ShowPercent(k);
@@ -1763,7 +1817,12 @@ public partial class MainWindow
     {
         OwnerId = t.Track.Id,
         Slots = () => t.Channel.Slots,
-        Edit = (change, key) => EditTrack(t, x => change(x.Channel.Slots), key),
+        // a frozen track's slots are in its render (#240): they wait for Descongelar
+        Edit = (change, key) =>
+        {
+            if (t.Track.Frozen) ToastLocked(t.Track);
+            else EditTrack(t, x => change(x.Channel.Slots), key);
+        },
         Recalculate = c => t.RecalculateCompPreset(c),
         Take = () => t.FirstAudio,
         Insert = t.Chain.Find,
@@ -1924,15 +1983,19 @@ public partial class MainWindow
         return b;
     }
 
-    /// <summary>The built-in effects by what they do, in the order "+ Efecto" lists them: a new one goes in its group.</summary>
+    /// <summary>
+    /// The built-in effects by what they do, in the order "+ Efecto" lists them: a new one goes in its group. The
+    /// mastering stages have their own group, in the chain's order, and only there (asked by the user, #257).
+    /// </summary>
     static readonly (string Name, string Icon, string[] Kinds)[] FxGroups =
     [
-        ("fx.group.dynamics", FxIcon.Comp, [InsertSlot.CompKind, InsertSlot.GateKind, TrackInserts.Pump, TrackInserts.Bands, TrackInserts.Clip, TrackInserts.Limit]),
+        ("fx.group.dynamics", FxIcon.Comp, [InsertSlot.CompKind, InsertSlot.GateKind, TrackInserts.Pump]),
         ("fx.group.models", FxIcon.Comp, [TrackInserts.Fet, TrackInserts.Opto, TrackInserts.VariMu, TrackInserts.BusComp, TrackInserts.Vca]),
-        ("fx.group.eq", FxIcon.Eq, [InsertSlot.EqKind, TrackInserts.Clean, TrackInserts.Color]),
-        ("fx.group.sat", FxIcon.Sat, [InsertSlot.SatKind, TrackInserts.Tape]),
+        ("fx.group.eq", FxIcon.Eq, [InsertSlot.EqKind]),
+        ("fx.group.sat", FxIcon.Sat, [InsertSlot.SatKind]),
         ("fx.group.mod", FxIcon.Chorus, [TrackInserts.Chorus, TrackInserts.Flanger, TrackInserts.Phaser, TrackInserts.Tremolo]),
-        ("fx.group.space", FxIcon.Reverb, [InsertSlot.ReverbKind, InsertSlot.DelayKind, TrackInserts.Width]),
+        ("fx.group.space", FxIcon.Reverb, [InsertSlot.ReverbKind, InsertSlot.DelayKind]),
+        ("mix.slot.group.master", FxIcon.Limit, [TrackInserts.Clean, TrackInserts.Bands, TrackInserts.Color, TrackInserts.Tape, TrackInserts.Width, TrackInserts.Clip, TrackInserts.Limit]),
         ("fx.group.analysis", FxIcon.Tonal, [TrackInserts.Tonal]),
     ];
 

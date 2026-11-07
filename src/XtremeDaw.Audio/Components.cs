@@ -29,6 +29,8 @@ public abstract class OptionalComponent(string id)
     public virtual string? ManualUrl => null;
     /// <summary>Where the terms of something that isn't under XTreme's license are; the install shows them.</summary>
     public virtual string? TermsPage => null;
+    /// <summary>The notice at startup offers it; an extra nothing needs (the bigger GM banks) is only in Configuración.</summary>
+    public virtual bool AskAtStart => true;
     /// <summary>The choices, biggest last; the last is the default.</summary>
     public abstract IReadOnlyList<ComponentPackage> Packages { get; }
     /// <param name="package">Null installs everything.</param>
@@ -167,12 +169,63 @@ public sealed class StemsComponent() : OptionalComponent("stems")
     }
 }
 
+/// <summary>
+/// The bigger General MIDI banks (<see cref="Dsp.GmBank.Downloads"/>, asked by the user, #212): each one is a package of
+/// its own, so it costs only what is wanted. They download to <see cref="Dsp.GmBank.DownloadDir"/> and each GM track
+/// picks its bank; the app plays without them (GeneralUser GS comes with it).
+/// </summary>
+public sealed class GmBanksComponent() : OptionalComponent("gm")
+{
+    static bool Have(Dsp.GmDownload d) => Dsp.GmBank.Available(d.Id);
+
+    public override bool Ready => Dsp.GmBank.Downloads.All(Have);
+    public override bool Partial => !Ready && Dsp.GmBank.Downloads.Any(Have);
+    public override bool CanInstall => true;
+    public override bool AskAtStart => false;
+    public override void Refresh() => Dsp.GmBank.Retry();
+
+    public override IReadOnlyList<ComponentPackage> Packages
+    {
+        get
+        {
+            var missing = Dsp.GmBank.Downloads.Where(d => !Have(d)).ToList();
+            var list = missing.Select(d => For(d.Id)).ToList();
+            if (missing.Count > 1) list.Add(new("gmAll", missing.Select(d => d.File).ToList(), missing.Sum(d => d.Bytes)));
+            return list;
+        }
+    }
+
+    /// <summary>What one bank still needs: nothing once it is here.</summary>
+    public static ComponentPackage For(string bank)
+    {
+        var d = Dsp.GmBank.Download(bank);
+        bool need = d != null && !Have(d);
+        return new("gm." + (d?.Id ?? bank), need ? [d!.File] : [], need ? d!.Bytes : 0);
+    }
+
+    public override async Task InstallAsync(ComponentPackage? package, Action<double> progress, CancellationToken ct)
+    {
+        var todo = Dsp.GmBank.Downloads.Where(d => (package == null || package.Files.Contains(d.File)) && !Have(d)).ToList();
+        long total = Math.Max(1, todo.Sum(d => d.Bytes)), done = 0;
+        foreach (var d in todo)
+        {
+            long before = done;
+            await FileDownload.GetAsync(d.Url, Path.Combine(Dsp.GmBank.DownloadDir, d.File), d.Bytes, d.Sha256,
+                got => progress((before + got) / (double)total), ct).ConfigureAwait(false);
+            done += d.Bytes;
+        }
+        Dsp.GmBank.Retry();
+        progress(1);
+    }
+}
+
 /// <summary>The list; new components are added here.</summary>
 public static class Components
 {
     public static readonly FfmpegComponent Ffmpeg = new();
     public static readonly StemsComponent Stems = new();
-    public static readonly OptionalComponent[] All = [Ffmpeg, Stems];
+    public static readonly GmBanksComponent GmBanks = new();
+    public static readonly OptionalComponent[] All = [Ffmpeg, Stems, GmBanks];
 
     public static void Refresh()
     {

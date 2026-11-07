@@ -15,9 +15,12 @@ public enum SnapEdges { None = 0, Start = 1, End = 2, Both = Start | End }
 /// What a time snaps to: lines every <paramref name="Step"/> seconds (0 = none), the nearest one or, with
 /// <paramref name="Cell"/>, the start of the cell it falls in. With <paramref name="Bar"/> (a bar's length) the lines
 /// start over at each bar, which only changes anything for a step that doesn't fit a whole number of times in it (the
-/// dotted values, <see cref="Subdivisions"/>). A plain number is a step with nearest lines.
+/// dotted values, <see cref="Subdivisions"/>). A plain number is a step with nearest lines. With <paramref name="Map"/>
+/// the lines come from the song's tempo map (#214): every <paramref name="Beats"/> beats from each bar's start, or the
+/// bars themselves when it is 0, so they follow its tempo changes and meters; <paramref name="Step"/> is then only a
+/// length near the lines' spacing (0 still means off).
 /// </summary>
-public readonly record struct SnapGrid(double Step, bool Cell = false, double Bar = 0)
+public readonly record struct SnapGrid(double Step, bool Cell = false, double Bar = 0, TempoMap? Map = null, double Beats = 0)
 {
     public static implicit operator SnapGrid(double step) => new(step);
 }
@@ -43,6 +46,14 @@ public static class ClipEditing
     /// <summary>A value's lines at <paramref name="bpm"/>: its step, starting over at each bar.</summary>
     public static SnapGrid GridOf(string mode, double bpm) => new(GridSeconds(mode, bpm), Bar: Subdivisions.BarBeats * 60 / Math.Max(1, bpm));
 
+    /// <summary>A value's lines on the song's tempo map: its step from each bar's start, or the bars for "bar"; off (a step of 0) for anything else.</summary>
+    public static SnapGrid GridOf(string mode, TempoMap map)
+    {
+        double beats = mode == "bar" ? 0 : Subdivisions.Beats(mode);
+        if (mode != "bar" && beats <= 0) return new(0);
+        return new((beats > 0 ? beats : map.BarBeats(0)) * 60 / map.Bpm, Map: map, Beats: beats);
+    }
+
     /// <summary>Whether lines every <paramref name="step"/> starting over at each <paramref name="bar"/> are just evenly spaced.</summary>
     public static bool FitsBar(double step, double bar) => bar <= 0 || step >= bar - 1e-9 || Math.Abs(bar / step - Math.Round(bar / step)) < 1e-6;
 
@@ -58,6 +69,7 @@ public static class ClipEditing
     public static double Snap(double sec, SnapGrid grid, bool free)
     {
         if (free || grid.Step <= 0) return sec;
+        if (grid.Map is { } map) return map.SecAt(map.SnapBeat(map.BeatAt(sec), grid.Beats, grid.Cell));
         double step = grid.Step;
         if (FitsBar(step, grid.Bar)) return (grid.Cell ? Math.Floor(sec / step + CellSlack) : JsRound(sec / step)) * step;
         // a dotted step: the lines of the bar it falls in, and the next bar's first one
@@ -196,9 +208,9 @@ public static class ClipEditing
     /// The lock rule, the same for the window and xtlab: a clip of a locked track, or a locked clip, keeps its place,
     /// its length and its spot on the track. The edits that would change those refuse it (<see cref="Unlocked"/>) and
     /// the ones over several clips skip it; its gain, fades, curve and framing still change, so a locked take can still
-    /// be mixed.
+    /// be mixed. A frozen track (<see cref="Track.Frozen"/>) locks its clips the same way.
     /// </summary>
-    public static bool IsLocked(Track t, Clip c) => t.Locked || c.Locked;
+    public static bool IsLocked(Track t, Clip c) => t.EditLocked || c.Locked;
 
     /// <summary>Whether the clip with this id is locked (false when there is none).</summary>
     public static bool IsLocked(Project p, string clipId)
@@ -209,12 +221,12 @@ public static class ClipEditing
     }
 
     /// <summary>A track with a lock on it: its own, or one of its clips'. It can't be removed or recorded over.</summary>
-    public static bool HasLock(Track t) => t.Locked || t.Clips.Any(c => c.Locked);
+    public static bool HasLock(Track t) => t.EditLocked || t.Clips.Any(c => c.Locked);
 
     static void Unlocked(Track t, Clip c)
     {
         if (IsLocked(t, c))
-            throw new ArgumentException(t.Locked
+            throw new ArgumentException(t.EditLocked
                 ? Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", t.Name)
                 : Texts.T("err.clip.locked", "El clip está bloqueado."));
     }
@@ -237,7 +249,7 @@ public static class ClipEditing
         if (from == to) return to.Id;
         if (to.IsMidi) throw new ArgumentException(Texts.T("err.midi.noAudio", "El audio no va en pistas MIDI."));
         Unlocked(from, clip);
-        if (to.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", to.Name));
+        if (to.EditLocked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", to.Name));
         Clip? other = swapId == null ? null : to.Clips.Find(c => c.Id == swapId)
             ?? throw new ArgumentException(Texts.T("err.clip.swapNotFound", "Clip a intercambiar no encontrado."));
         if (other != null) Unlocked(to, other);
@@ -355,7 +367,7 @@ public static class ClipEditing
     }
 
     /// <summary>A clip can land on that stretch of the track without covering anything; a locked track takes none.</summary>
-    public static bool IsFree(Project p, Track t, double start, double end) => !t.Locked && t.Clips.All(c =>
+    public static bool IsFree(Project p, Track t, double start, double end) => !t.EditLocked && t.Clips.All(c =>
     {
         var w = Window(c, p.FindMedia(c.MediaId));
         return w.End <= start || w.Start >= end;
@@ -529,13 +541,14 @@ public static class ClipEditing
         double len = endSec - startSec;
         int changed = 0;
         bool Holds(Track t) => t.Clips.Any(c => IsLocked(t, c) && Window(c, p.FindMedia(c.MediaId), lengthOf?.Invoke(c)).End > startSec)
-            || t.Locked && t.MidiClips?.Any(c => c.EndSec(p.Settings.Bpm) > startSec) == true;
+            || t.EditLocked && t.MidiClips?.Any(c => c.EndSec(p.Settings.TempoMap) > startSec) == true;
         var ids = trackIds.Distinct().Where(id => p.Tracks.Find(t => t.Id == id) is { } t && !Holds(t)).ToList();
         if (p.Tracks.All(t => ids.Contains(t.Id)))
         {
             ProjectMarkers.CloseGap(p, startSec, endSec);
-            // the whole song moved: the folders' lanes go with it
+            // the whole song moved: the folders' and buses' lanes go with it
             foreach (var f in p.Folders) Automations.CloseGap(f, startSec, endSec);
+            foreach (var b in p.Settings.Buses) Automations.CloseGap(b, startSec, endSec);
         }
         foreach (string id in ids)
         {

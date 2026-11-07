@@ -23,7 +23,9 @@ public partial class MainWindow
     {
         if (DateTime.UtcNow - lastLockToast < LockToastGap) return;
         lastLockToast = DateTime.UtcNow;
-        if (t.Locked)
+        if (t.Frozen)
+            Toast(Loc.T("freeze.toast", t.Name), action: (Loc.T("freeze.off"), () => _ = UnfreezeTrack(t.Id)));
+        else if (t.Locked)
             Toast(Loc.T("lock.toast.track", t.Name), action: (Loc.T("lock.unlock"), () => _ = SetTrackLocked(t.Id, false)));
         else if (clipId != null)
             Toast(Loc.T("lock.toast.clip"), action: (Loc.T("lock.unlock"), () => _ = SetClipLocked(t.Id, clipId, false)));
@@ -46,7 +48,7 @@ public partial class MainWindow
     {
         if (store == null) return [.. ids];
         var p = store.Project;
-        var free = ids.Where(id => !ClipEditing.IsLocked(p, id) && (MidiEditing.TryFind(p, id) == null || !MidiEditing.Find(p, id).Track.Locked)).ToList();
+        var free = ids.Where(id => !ClipEditing.IsLocked(p, id) && (MidiEditing.TryFind(p, id) == null || !MidiEditing.Find(p, id).Track.EditLocked)).ToList();
         if (free.Count < ids.Count) Toast(Loc.T("lock.toast.skipped", ids.Count - free.Count));
         return free;
     }

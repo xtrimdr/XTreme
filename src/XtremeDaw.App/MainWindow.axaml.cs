@@ -170,6 +170,7 @@ public partial class MainWindow : Window
         InitTransport();
         InitMarkers();
         InitTools();
+        InitTempo();
         InitLocks();
         InitPreview();
         InitMode();
@@ -245,6 +246,7 @@ public partial class MainWindow : Window
             else if (StartupMode.Mode == StartupMode.Empty) await StartUntitled();
             else await ShowProjects();
             if (NewsGuide.Unseen) OpenNews();
+            ShellOpen.Listen(path => _ = OpenFromShell(path));
         };
         Closing += async (_, e) =>
         {
@@ -580,18 +582,21 @@ public partial class MainWindow : Window
         await Task.Run(() => { foreach (var old in previous) old.CloseVideo(); });
         tracks = list;
         if (!preserveView) dirty = false;
-        foreach (var t in list) t.SetMidi(p.Settings.Bpm);
+        foreach (var t in list) t.SetMidi(p.Settings.TempoMap);
         engine.SetTracks(list, p.Settings);
+        ResetFreezes(st);
+        SyncFreezes();
         SyncInstruments();
         SyncSamplers();
         SyncEffects();
         RefreshTranspose();
         SessionName.Text = p.Name;
         Title = WindowTitle(p.Name);
-        Tempo.Set(p.Settings.Bpm);
-        Timeline.Bpm = p.Settings.Bpm;
+        Timeline.Tempo = p.Settings.TempoMap;
+        Tempo.Set(ShownBpm(engine.PositionSec));
         Timeline.LengthSec = engine.LengthSec;
         ApplyRouting(p, list);
+        SyncBusRows();
         Timeline.SetTracks(list, p.Folders, preserveView);
         RefreshPiano();
         RefreshMarkers();
@@ -761,6 +766,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 await DuplicateTracksShortcut();
                 return;
+            case "folderGroup":
+                e.Handled = true;
+                await GroupInFolderShortcut();
+                return;
             case "split":
                 e.Handled = true;
                 await SplitAtPlayhead();
@@ -790,6 +799,10 @@ public partial class MainWindow : Window
             case "quantize":
                 await Quantize();
                 break;
+            case "renameClip":
+                e.Handled = true;
+                RenameShortcut();
+                return;
             case "virtualKeys":
                 VirtualKeysButton.IsChecked = !VirtualKeysOn;
                 break;
@@ -891,6 +904,9 @@ public partial class MainWindow : Window
         if (action is "duplicate" or "delete" or "copy" or "paste" && BlockShortcut(action)) return;
         switch (action)
         {
+            case "delete" when Timeline.PickedTempoBeat is > 0 and var tempoBeat:
+                await RemoveTempoPoint(tempoBeat);
+                break;
             case "delete" when Timeline.ChordMarks.Count > 0:
                 RemoveChords(Timeline.ChordMarks.ToList());
                 break;
@@ -1133,6 +1149,14 @@ public partial class MainWindow : Window
         ToolTip.SetTip(b, lit ? Loc.T(solo ? "mixer.clearSolos" : "mixer.clearMutes") : Loc.T(solo ? "timeline.noSolos" : "timeline.noMutes"));
     }
 
+    /// <summary>
+    /// Whether a restored track sounds with what the live one already has loaded (its kind, instrument, sampler,
+    /// granular, GM and freeze): if not, undo reloads the tracks instead of copying the settings over (#262).
+    /// </summary>
+    static bool SameSound(Track live, Track restored) => live.Kind == restored.Kind
+        && JsonSerializer.Serialize(new object?[] { live.Instrument, live.Sampler, live.Granular, live.Gm, live.Freeze }, ProjectStore.Json)
+            == JsonSerializer.Serialize(new object?[] { restored.Instrument, restored.Sampler, restored.Granular, restored.Gm, restored.Freeze }, ProjectStore.Json);
+
     void UpdateUndoButtons()
     {
         UndoButton.IsEnabled = !restoring && !RecordingBusy && store?.ReadOnly == false && undo.CanUndo;
@@ -1166,7 +1190,8 @@ public partial class MainWindow : Window
                 var restored = st.Project.Tracks[i];
                 return t.Track.Id == restored.Id && t.Track.Video == restored.Video
                     && JsonSerializer.Serialize(t.Track.Clips, ProjectStore.Json) == JsonSerializer.Serialize(restored.Clips, ProjectStore.Json)
-                    && JsonSerializer.Serialize(t.Track.MidiClips, ProjectStore.Json) == JsonSerializer.Serialize(restored.MidiClips, ProjectStore.Json);
+                    && JsonSerializer.Serialize(t.Track.MidiClips, ProjectStore.Json) == JsonSerializer.Serialize(restored.MidiClips, ProjectStore.Json)
+                    && SameSound(t.Track, restored);
             }).All(same => same);
             if (sameClips)
             {
@@ -1180,6 +1205,16 @@ public partial class MainWindow : Window
                     tracks[i].Track.Icon = restored.Icon;
                     tracks[i].Track.Input = restored.Input;
                     tracks[i].Track.Transpose = restored.Transpose;
+                    tracks[i].Track.FollowTempo = restored.FollowTempo;
+                    // the rest of a track's own settings (#262: undoing a lock, the arpeggiator or the MIDI input did nothing)
+                    tracks[i].Track.Locked = restored.Locked;
+                    tracks[i].Track.MixerSide = restored.MixerSide;
+                    tracks[i].Track.HeightScale = restored.HeightScale;
+                    tracks[i].Track.SplitWave = restored.SplitWave;
+                    tracks[i].Track.MidiInput = restored.MidiInput;
+                    tracks[i].Track.MidiChannel = restored.MidiChannel;
+                    tracks[i].Track.Arp = restored.Arp;
+                    tracks[i].Track.KeyNames = restored.KeyNames;
                     // the lanes before the channel: ApplyChannel hands them to the engine
                     tracks[i].Track.Automation = restored.Automation;
                     tracks[i].Track.AutomationFolded = restored.AutomationFolded;
@@ -1192,7 +1227,12 @@ public partial class MainWindow : Window
                 UpdateResetHeights();
                 engine.SetSettings(st.Project.Settings, glideDelay: true);
                 if (MasteringShown) BuildMastering();
-                Timeline.Bpm = st.Project.Settings.Bpm;
+                Timeline.Tempo = st.Project.Settings.TempoMap;
+                // a tempo map undone with nothing musical on the timeline: the MIDI tracks still read it
+                foreach (var t in tracks) t.SetMidi(st.Project.Settings.TempoMap);
+                SyncSamplers(); // an LFO in time with the song's tempo, which a step may bring back
+                ShowMidiListeners();
+                RefreshPiano();
                 Timeline.InvalidateVisual();
                 Preview.SetProject(tracks, st.Project.Settings);
                 RefreshFormat();

@@ -163,6 +163,9 @@ public sealed class TrackDspChain
     /// <summary>The timeline frame of the block that <see cref="ProcessFilledBuffer"/> runs: where the lanes are read.</summary>
     public long Frame { get; set; }
 
+    /// <summary>A loop turns in the next block at sample <paramref name="at"/>, back <paramref name="back"/> frames: for the slots that follow the beat (audio thread).</summary>
+    public void Turn(int at, long back) => rack.Turn(at, back);
+
     /// <summary>Its sends to buses, swapped whole by the UI (never changed in place).</summary>
     public TrackSend[] Sends { get => sends; set => sends = value; }
     /// <summary>
@@ -795,6 +798,16 @@ public sealed class InsertRack(int sampleRate)
     /// <summary>The timeline frame of the next block, for a VST3 slot's lanes and the pump's beat.</summary>
     public long Frame { get; set; }
 
+    /// <summary>
+    /// A loop that turns in the next block (<see cref="Turn"/>): from this sample on (−1 = it doesn't) the sound comes from
+    /// <see cref="turnBack"/> frames earlier. It lasts one block.
+    /// </summary>
+    int turnAt = -1;
+    long turnBack;
+
+    /// <summary>The loop turns in the next block at sample <paramref name="at"/>, back <paramref name="back"/> frames (audio thread, before <see cref="Process"/>).</summary>
+    public void Turn(int at, long back) => (turnAt, turnBack) = (at, back);
+
     /// <summary>Where in the keys (<see cref="SidechainKey"/>) the next block is, for the slots that listen to another track.</summary>
     public int KeyOffset { get; set; }
 
@@ -867,15 +880,24 @@ public sealed class InsertRack(int sampleRate)
     {
         var cur = inserts;
         double reduction = 0;
+        // how late the slots so far leave the sound: a pump after them ducks on the beat it hears (#256)
+        int late = 0;
         for (int k = 0; k < cur.Length; k++)
         {
             if (skipAnalyzers && cur[k] is TonalInsert) continue;
             if (cur[k] is Vst.VstInsert vst) vst.Frame = Frame;
-            else if (cur[k] is FxShell { Inner: PumpInsert pump }) pump.Frame = Frame;
+            else if (cur[k] is FxShell { Inner: PumpInsert pump })
+            {
+                pump.Frame = Frame - late;
+                pump.TurnAt = turnAt < 0 ? -1 : turnAt + late;
+                pump.TurnBack = turnBack;
+            }
             if (Sidechains.Of(cur[k]) is { } keyed) keyed.Key.Pos = KeyOffset;
             cur[k].Process(bl, br);
             if (meters) reduction += cur[k].TakeGrDb();
+            late += cur[k].LatencySamples;
         }
+        turnAt = -1;
         if (fadeOut == 0 && fadeIn == 0 && wanted != cur) fadeOut = TrackDspChain.SwapFade;
         if (fadeOut > 0) FadeOutAndSwap(bl, br);
         else if (fadeIn > 0) FadeIn(bl, br);

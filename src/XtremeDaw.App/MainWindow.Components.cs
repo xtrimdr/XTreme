@@ -13,13 +13,19 @@ public partial class MainWindow
         ComponentInstall.Toasts = Toasts;
         ComponentInstall.Toast = m => Toast(m);
         ComponentInstall.Status = m => Status(m);
-        ComponentInstall.Changed += () => ShowFfmpeg(Components.Ffmpeg.Version);
+        ComponentInstall.Changed += () =>
+        {
+            ShowFfmpeg(Components.Ffmpeg.Version);
+            // a GM bank installed from Configuración: the tracks that chose it play it, the windows offer it
+            SyncGms();
+            RefreshGmWindows();
+        };
         FfmpegState.PointerPressed += (_, _) => ComponentsHelp.Show();
         Opened += async (_, _) =>
         {
             await ComponentInstall.RefreshAsync();
             if (!Components.Ffmpeg.Ready) Status(Loc.T("title.ffmpeg.missing.status"));
-            if (Components.All.Any(c => !c.Ready && !c.Partial && !ComponentInstall.Skipped(c) && (c.CanInstall || c.ManualUrl != null)))
+            if (Components.All.Any(c => c.AskAtStart && !c.Ready && !c.Partial && !ComponentInstall.Skipped(c) && (c.CanInstall || c.ManualUrl != null)))
                 ComponentsHelp.Show();
         };
     }

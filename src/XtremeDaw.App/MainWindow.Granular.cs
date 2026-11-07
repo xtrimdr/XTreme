@@ -140,6 +140,11 @@ public partial class MainWindow
     {
         if (restoring || store == null || store.ReadOnly) return;
         if (tracks.FirstOrDefault(t => t.Track.Id == trackId) is not { Track.Granular: { } g } live || !granulars.TryGetValue(trackId, out var loaded)) return;
+        if (RefuseFrozen(trackId))
+        {
+            loaded.Window?.Refresh();
+            return;
+        }
         undo.Checkpoint(store.Project, $"granular:{trackId}:{key}");
         change(g);
         g.Normalized();

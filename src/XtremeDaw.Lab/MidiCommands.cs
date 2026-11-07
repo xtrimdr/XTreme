@@ -522,8 +522,9 @@ static class MidiCommands
         bool follows = OnBeats();
         TempoFollow.SetGrid(p, 75); // "Detectar tempo": the audio stays, the clips still follow
         bool grid = OnBeats();
-        bool undone = history.Undo(p) && p.Settings.Bpm == 75 && OnBeats();
-        bool redone = history.Redo(p) && p.Settings.Bpm == 75 && OnBeats();
+        // #262: undo brings the tempo back too, with every clip on its bar
+        bool undone = history.Undo(p) && Math.Abs(p.Settings.Bpm - 120) < 1e-9 && OnBeats();
+        bool redone = history.Redo(p) && Math.Abs(p.Settings.Bpm - 75) < 1e-9 && OnBeats();
         foreach (double bpm in new[] { 20.0, 300, 137.3, 61.7 }) TempoFollow.SetBpm(p, bpm);
         TempoFollow.SetBpm(p, 120);
         bool drift = OnBeats();

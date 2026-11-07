@@ -295,7 +295,7 @@ public partial class MainWindow
     {
         if (store == null || MidiEditing.TryFind(store.Project, clipId) == null) return;
         MidiEditing.SetNotes(store.Project, clipId, notes);
-        double bpm = store.Project.Settings.Bpm;
+        var bpm = store.Project.Settings.TempoMap;
         foreach (var t in tracks)
             if (t.Track.IsMidi) t.SetMidi(bpm);
         Timeline.InvalidateVisual();
@@ -532,14 +532,17 @@ public partial class MainWindow
         };
         void Apply()
         {
+            // one undo step for a run of changes in the panel (#262)
+            if (store is { ReadOnly: false }) undo.Checkpoint(store.Project, $"arp:{t.Track.Id}");
             arp.On = values["on"] != 0;
             arp.Pattern = LiveArp.Patterns[values["pattern"]];
             arp.Step = MidiTools.Beats(ArpSteps[values["rate"]]);
             arp.Octaves = values["octaves"];
             arp.Gate = values["gate"] / 100.0;
             t.Track.Arp = arp;
-            t.SetMidi(store?.Project.Settings.Bpm ?? 120);
+            t.SetMidi(store?.Project.Settings.TempoMap ?? XtremeDaw.Projects.TempoMap.Constant(120));
             MarkDirty();
+            UpdateUndoButtons();
         }
         ToolParam[] rows =
         [
@@ -739,13 +742,22 @@ public partial class MainWindow
             List<int>? pick = null;
             if (data.Tracks.Count > 1 && (pick = await MidiAsk.Ask(Path.GetFileName(path), data)) == null) return;
             List<string> clips = [];
+            bool adopted = false;
             await EditTimeline(p =>
             {
+                // into an empty song the file brings its tempo and meters (#214); with clips already there the song keeps its own
+                if (data.Map != null && p.Tracks.All(t => t.Clips.Count == 0 && (t.MidiClips?.Count ?? 0) == 0))
+                {
+                    var before = p.Settings.TempoMap;
+                    adopted = MidiFiles.UseTempo(p, data);
+                    if (adopted) atSec = p.Settings.TempoMap.SecAt(before.BeatAt(atSec));
+                }
                 clips = MidiFiles.Import(p, data, trackId, atSec, pick);
                 return clips.Count > 0 ? MidiEditing.Find(p, clips[0]).Track.Id : trackId;
             }, "midi-imported");
             if (clips.Count > 0) OpenInPiano(clips[0]);
             Status(Loc.T("tool.import.done", clips.Count));
+            if (adopted && store != null) Toast(Loc.T("tempo.imported", BpmLabel(store.Project.Settings.Bpm)));
         }
         catch (ArgumentException e) { Toast(e.Message); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast(Loc.T("tool.file.readFailed", Path.GetFileName(path))); }

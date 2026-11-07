@@ -65,12 +65,18 @@ public static class EditSteps
             a = b = null;
         }
         if (a == null || b == null) return new("edit", [P(T("step.unknown", "Un cambio"))]);
+        // the song's tempo (#262): the whole map at another speed
+        if (Num(a, "tempoScale") != Num(b, "tempoScale") && b["tempoMap"]?["points"] is JsonArray { Count: > 0 } points && points[0] is JsonObject first)
+            return new("edit", [P(T("step.tempo", "Tempo: ")), Q($"{Math.Round(Num(first, "bpm"), 2).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} BPM")]);
+        // a tempo map edit moves what lives in beats: it is the step, not the clips it moved
+        if (TempoShape(a) != TempoShape(b)) return new("edit", [P(T("step.tempoMap", "Cambiaste el tempo o el compás"))]);
         var changes = new List<Change>();
         var busNames = ById(b["buses"] as JsonArray).Concat(ById(a["buses"] as JsonArray))
             .GroupBy(kv => kv.Key).ToDictionary(g => g.Key, g => Name(g.First().Value));
         Tracks(a, b, changes, mediaName, busNames);
         Automation(a["tracks"] as JsonArray, b["tracks"] as JsonArray, changes);
         Automation(a["folders"] as JsonArray, b["folders"] as JsonArray, changes);
+        Automation(a["buses"] as JsonArray, b["buses"] as JsonArray, changes);
         Folders(a["folders"] as JsonArray, b["folders"] as JsonArray, changes, busNames);
         Buses(a["buses"] as JsonArray, b["buses"] as JsonArray, changes, busNames);
         Markers(a["markers"] as JsonArray, b["markers"] as JsonArray, changes);
@@ -80,7 +86,7 @@ public static class EditSteps
         return Combine(changes);
     }
 
-    /// <summary>A track or a folder whose lanes changed, whichever way (<see cref="Automations"/>).</summary>
+    /// <summary>A track, a folder or a bus whose lanes changed, whichever way (<see cref="Automations"/>).</summary>
     static void Automation(JsonArray? before, JsonArray? after, List<Change> changes)
     {
         var old = ById(before);
@@ -446,6 +452,24 @@ public static class EditSteps
         if (!Same(a, b, "videoFx")) changes.Add(new("color", [P(T("step.videoFx", "Efectos del video"))], "video-fx", null));
         if (!Same(a, b, "compare")) changes.Add(new("volume", [P(T("step.compare", "Comparación A/B de la mezcla"))], "compare", null));
     }
+
+    /// <summary>
+    /// A state's tempo map without the whole song's speed (<see cref="ProjectSettings.TempoScale"/>, a step of its own,
+    /// told before): its points' beats, tempos over that speed and ramps, and its meters.
+    /// </summary>
+    static string TempoShape(JsonObject o)
+    {
+        double scale = o["tempoScale"] is JsonValue v && v.TryGetValue(out double k) && k > 0 ? k : 1;
+        if (o["tempoMap"] is not JsonObject map) return "";
+        var sb = new System.Text.StringBuilder();
+        foreach (var p in map["points"] as JsonArray ?? [])
+            if (p is JsonObject point)
+                sb.Append(Num(point, "beat")).Append(':').Append(Math.Round(Num(point, "bpm") / scale, 6)).Append(point["ramp"]?.ToString() == "true" ? "~" : "").Append(',');
+        sb.Append('|').Append(map["meters"]?.ToJsonString());
+        return sb.ToString();
+    }
+
+    static double Num(JsonObject o, string key) => o[key] is JsonValue v && v.TryGetValue(out double d) ? d : 0;
 
     // ---------- JSON helpers ----------
 

@@ -43,6 +43,16 @@ public sealed class SelectButton : Button
         Click += (_, _) => Open();
     }
 
+    /// <summary>A select that is the point of its row (an effect's preset, #261): taller, its choice in larger semibold text.</summary>
+    public void Emphasize(double height)
+    {
+        Height = MinHeight = height;
+        Padding = new Thickness(10, 0, 8, 0);
+        CornerRadius = new CornerRadius(6);
+        text.FontSize = 12.5;
+        text.FontWeight = FontWeight.SemiBold;
+    }
+
     /// <summary>Replaces the options (only when they changed); hints show as each option's tooltip, groups name each one's submenu.</summary>
     public void SetItems(string[] next, string?[]? nextHints = null, string?[]? nextGroups = null)
     {

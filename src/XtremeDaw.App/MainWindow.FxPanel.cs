@@ -135,6 +135,53 @@ public partial class MainWindow
         return (cell, knob);
     }
 
+    /// <summary>
+    /// The most values a stepped parameter can have and still show as buttons (asked by the user, #261: a handful of
+    /// fixed values reads and picks faster all in sight than on a knob); more than that stays a knob.
+    /// </summary>
+    const int FxChoiceMaxSteps = 8;
+
+    static bool FxIsChoice(FxParam p) => p.Steps is { Length: >= 2 and <= FxChoiceMaxSteps };
+
+    /// <summary>
+    /// A stepped parameter as a row of buttons, one per value, with its name on top as a knob's (#261). A value that reads
+    /// long ("1 · 0,3 s") shows its first part and the rest in its tooltip. It follows its lane like a knob.
+    /// </summary>
+    Control FxStepChoice(SlotOwner o, string id, FxParam p, List<Action> refresh)
+    {
+        var steps = p.Steps!;
+        var buttons = new ToggleButton[steps.Length];
+        var row = new UniformGrid { Rows = 1 };
+        void Show(double v)
+        {
+            double at = p.Snap(v);
+            for (int i = 0; i < buttons.Length; i++) buttons[i].IsChecked = steps[i] == at;
+        }
+        for (int i = 0; i < steps.Length; i++)
+        {
+            double v = steps[i];
+            string text = FxText(p, v);
+            int cut = text.IndexOf(" · ", StringComparison.Ordinal);
+            var b = new ToggleButton { Content = cut > 0 ? text[..cut] : text, Classes = { "seg" }, Padding = new Thickness(2, 0), FontSize = 11, Focusable = false };
+            if (cut > 0) ToolTip.SetTip(b, text);
+            b.Click += (_, _) =>
+            {
+                if (!syncing) FxEdit(o, id, p, v);
+                if (o.Slot(id) is { } s) Show(p.Get(s));
+            };
+            buttons[i] = b;
+            row.Children.Add(b);
+        }
+        var name = new TextBlock { Text = Loc.T(p.Label).ToUpperInvariant(), FontSize = 10, LetterSpacing = 0.8, Foreground = Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis,
+            Background = Brushes.Transparent, Margin = new Thickness(2, 0, 0, 0) };
+        if (p.Tip != null) ToolTip.SetTip(name, Loc.T(p.Tip));
+        var cell = new StackPanel { Spacing = 4, Children = { name, new Border { Classes = { "seg" }, Child = row } } };
+        refresh.Add(() => { if (o.Slot(id) is { } s) Show(p.Get(s)); });
+        if (!TrackInserts.IsMeter(o.Slot(id)?.Type))
+            AutomateOn(cell, () => TrackOf(o), AutoTarget.Fx(id, p.Id), k => Show(p.FromKnob(k)));
+        return cell;
+    }
+
     /// <summary>A grid of knobs that deals out its width (<see cref="KnobGrid"/>).</summary>
     static KnobGrid FxGrid(List<Knob> knobs, double top = 2) =>
         new(knobs, FxCellW, FxCellMinW, FxBigCellW, FxKnobW, FxKnobBigW) { Margin = new Thickness(0, top, 0, 0) };
@@ -177,28 +224,32 @@ public partial class MainWindow
             to.Children.Add(cell);
             list.Add(knob);
         }
+        // the effect's own choices: the full view puts each in its panel, the other views in a row under the preset (#261)
+        var parts = new Dictionary<string, Control>();
         switch (kind)
         {
             case InsertSlot.SatKind:
                 body.Children.Add(PresetBar(o, id, kind, refresh, []));
                 SatSettings S() => o.Slot(id)?.Sat ?? GoneSat;
-                body.Children.Add(FxSegments([("tube", Loc.T("insp.sat.tube"), Loc.T("insp.sat.tube.hint")), ("tape", Loc.T("insp.sat.tape"), Loc.T("insp.sat.tape.hint"))],
-                    () => S().Mode, m => SlotEdit(o, id, s => { s.Sat!.Mode = m; s.Sat.On = true; }, "sat.mode"), refresh));
+                parts[FxDefs.ModePart] = FxSegments([("tube", Loc.T("insp.sat.tube"), Loc.T("insp.sat.tube.hint")), ("tape", Loc.T("insp.sat.tape"), Loc.T("insp.sat.tape.hint"))],
+                    () => S().Mode, m => SlotEdit(o, id, s => { s.Sat!.Mode = m; s.Sat.On = true; }, "sat.mode"), refresh);
                 break;
             case InsertSlot.GateKind:
                 body.Children.Add(PresetBar(o, id, kind, refresh, []));
                 GateSettings G() => o.Slot(id)?.Gate ?? GoneGate;
-                body.Children.Add(FxSegments(GateModes.Select(m => (m, Loc.T("gate.mode." + m), (string?)Loc.T($"gate.mode.{m}.hint"))).ToArray(),
-                    () => G().Mode, m => SlotEdit(o, id, s => { s.Gate!.Mode = m; s.Gate.On = true; }, "gate.mode"), refresh));
+                parts[FxDefs.ModePart] = FxSegments(GateModes.Select(m => (m, Loc.T("gate.mode." + m), (string?)Loc.T($"gate.mode.{m}.hint"))).ToArray(),
+                    () => G().Mode, m => SlotEdit(o, id, s => { s.Gate!.Mode = m; s.Gate.On = true; }, "gate.mode"), refresh);
                 break;
             case InsertSlot.CompKind:
-                CompChoices(body, o, id, refresh);
+                parts[FxDefs.LimitPart] = CompChoices(body, o, id, refresh);
                 break;
             case InsertSlot.ReverbKind:
                 body.Children.Add(PresetBar(o, id, kind, refresh, ReverbPresetItems(o, id)));
                 break;
             case InsertSlot.DelayKind:
-                DelayChoices(body, o, id, refresh);
+                var (mode, division) = DelayChoices(body, o, id, refresh, full == true);
+                parts[FxDefs.ModePart] = mode;
+                parts[FxDefs.DivisionPart] = division;
                 break;
             case InsertSlot.EqKind:
                 var bigEq = InspectorIcon("", Loc.T("eq.big.tip"), () => ShowEqBig(o, id, o.OwnerId == sel?.Track.Id));
@@ -214,7 +265,7 @@ public partial class MainWindow
             case TrackInserts.Tonal:
                 // an analyzer has no fine controls: its compact or full view everywhere, the full one in Mastering (#210)
                 TonalChoices(body, o, id, refresh);
-                FxSized(body, o, id, kind, refresh, FxDefs.Layout(kind)!, full ?? true);
+                FxSized(body, o, id, kind, refresh, FxDefs.Layout(kind)!, full ?? true, []);
                 return;
             default:
                 body.Children.Add(PresetBar(o, id, kind, refresh, []));
@@ -223,9 +274,11 @@ public partial class MainWindow
 
         if (full is { } big && FxDefs.Layout(kind) is { } layout)
         {
-            FxSized(body, o, id, kind, refresh, layout, big);
+            if (!big && parts.Count > 0) body.Children.Add(FxChoiceRow(parts));
+            FxSized(body, o, id, kind, refresh, layout, big, parts);
             return;
         }
+        if (parts.Count > 0) body.Children.Add(FxChoiceRow(parts));
 
         if (TrackInserts.HasCompGraph(kind)) body.Children.Add(CompGraphOf(o, id, refresh));
         if (TrackInserts.TakesKey(kind)) body.Children.Add(KeyChoice(o, id, refresh));
@@ -235,7 +288,10 @@ public partial class MainWindow
         var all = FxDefs.Params(kind);
         Func<bool>? Shown(FxParam p) => kind == InsertSlot.DelayKind && p.Id == "time" ? Free : null;
         foreach (var p in all.Where(p => !p.Fine && hide?.Contains(p.Id) != true))
-            Add(p, grid, knobs, null, Shown(p));
+        {
+            if (FxIsChoice(p)) body.Children.Add(FxStepChoice(o, id, p, refresh));
+            else Add(p, grid, knobs, null, Shown(p));
+        }
         foreach (var p in FxDefs.Common(kind)) Add(p, grid, knobs);
         body.Children.Add(grid);
 
@@ -243,8 +299,14 @@ public partial class MainWindow
         var fine = all.Where(p => p.Fine).ToArray();
         if (fine.Length == 0) return;
         var fineKnobs = new List<Knob>();
-        var fineGrid = FxGrid(fineKnobs, 6);
-        foreach (var p in fine) Add(p, fineGrid, fineKnobs, shown: Shown(p));
+        var fineKnobGrid = FxGrid(fineKnobs, 0);
+        var fineGrid = new StackPanel { Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
+        foreach (var p in fine)
+        {
+            if (FxIsChoice(p)) fineGrid.Children.Add(FxStepChoice(o, id, p, refresh));
+            else Add(p, fineKnobGrid, fineKnobs, shown: Shown(p));
+        }
+        fineGrid.Children.Add(fineKnobGrid);
         fineGrid.IsVisible = Manual();
         var button = new Button { Classes = { "ghost" }, FontSize = 11, Padding = new Thickness(8, 6), Focusable = false, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
         void Label() => button.Content = (fineGrid.IsVisible ? "▾ " : "▸ ") + Loc.T("insp.fine");
@@ -259,7 +321,7 @@ public partial class MainWindow
     /// compressor's graph); full, every control in inner panels, row by row, each panel as wide as its share. Nothing
     /// waits behind a "fine controls" button in either: what isn't in the compact view is one click away, in the full one.
     /// </summary>
-    void FxSized(StackPanel body, SlotOwner o, string id, string kind, List<Action> refresh, FxLayout layout, bool full)
+    void FxSized(StackPanel body, SlotOwner o, string id, string kind, List<Action> refresh, FxLayout layout, bool full, Dictionary<string, Control> parts)
     {
         FxParam[] all = [.. FxDefs.Params(kind), .. FxDefs.Common(kind)];
         var family = FxDefs.Family(kind);
@@ -268,7 +330,24 @@ public partial class MainWindow
         (Control Cell, Knob Knob) Cell(FxParam p, bool hero) =>
             FxKnobCell(o, id, p, refresh, null, kind == InsertSlot.DelayKind && p.Id == "time" ? Free : null, tint, hero);
         // the hero knobs first and big (#187), the rest in a grid that takes what is left of the width
+        // a stepped parameter with a handful of values goes as buttons over the knobs, the panel's width (#261)
         Control Knobs(IEnumerable<string> ids, double top)
+        {
+            var choices = new StackPanel { Spacing = 8 };
+            foreach (string pid in ids)
+                if (Array.Find(all, p => p.Id == pid) is { } p && FxIsChoice(p)) choices.Children.Add(FxStepChoice(o, id, p, refresh));
+            string[] turned = [.. ids.Where(pid => Array.Find(all, p => p.Id == pid) is { } p && !FxIsChoice(p))];
+            if (choices.Children.Count == 0) return KnobRow(turned, top);
+            choices.Margin = new Thickness(0, top, 0, 0);
+            if (turned.Length > 0)
+            {
+                var knobsRow = KnobRow(turned, 0);
+                knobsRow.Margin = new Thickness(0, 4, 0, 0);
+                choices.Children.Add(knobsRow);
+            }
+            return choices;
+        }
+        Control KnobRow(string[] ids, double top)
         {
             var knobs = new List<Knob>();
             var grid = FxGrid(knobs, 0);
@@ -304,7 +383,7 @@ public partial class MainWindow
             FxDefs.KeyPart when TrackInserts.TakesKey(kind) => KeyChoice(o, id, refresh, labeled: false),
             FxDefs.ScopePart when FxScope.Has(kind) => ScopeOf(o, id, kind, scopeH, tint ?? Palette.AccentColor, refresh),
             FxDefs.TonalPart when kind == TrackInserts.Tonal => TonalOf(o, id, full, tint ?? Palette.AccentColor, refresh),
-            _ => null,
+            _ => parts.GetValueOrDefault(part),
         };
 
         if (!full)
@@ -321,12 +400,28 @@ public partial class MainWindow
                 var g = row[i];
                 var title = new TextBlock { Classes = { "label" }, Text = Loc.T(g.Label) };
                 if (tint is { } t) title.Foreground = Palette.Alpha(t, 0.85);
-                var stack = new StackPanel { Spacing = 6, Children = { title } };
-                foreach (string part in g.Ids.Where(x => x.StartsWith('@')))
-                    if (Part(part, FxScopeFullH) is { } c) stack.Children.Add(c);
-                string[] knobIds = [.. g.Ids.Where(x => !x.StartsWith('@'))];
-                if (knobIds.Length > 0) stack.Children.Add(Knobs(knobIds, 0));
-                var panel = new Border { Child = stack, Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
+                // what goes in the panel in the order its list says, the knobs next to each other in one row; under the
+                // title, centered in the height the row gives it (#261: a short panel beside a tall one was left with a hole)
+                var stack = new StackPanel { Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+                var run = new List<string>();
+                void Flush()
+                {
+                    if (run.Count > 0) stack.Children.Add(Knobs(run, 0));
+                    run = [];
+                }
+                foreach (string pid in g.Ids)
+                {
+                    if (!pid.StartsWith('@')) { run.Add(pid); continue; }
+                    Flush();
+                    if (Part(pid, FxScopeFullH) is { } c) stack.Children.Add(c);
+                }
+                Flush();
+                var content = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
+                content.Children.Add(title);
+                Grid.SetRow(stack, 1);
+                stack.Margin = new Thickness(0, 6, 0, 0);
+                content.Children.Add(stack);
+                var panel = new Border { Child = content, Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
                     BorderBrush = tint is { } b ? Palette.Alpha(b, FxInnerTintLine) : Palette.Line, Background = Palette.Alpha(Palette.AppColor, FxInnerAlpha),
                     Margin = new Thickness(i == 0 ? 0 : FxInnerGap, 0, 0, 0) };
                 Grid.SetColumn(panel, i);
@@ -334,6 +429,30 @@ public partial class MainWindow
             }
             body.Children.Add(grid);
         }
+    }
+
+    /// <summary>An effect's own choices side by side, sharing the width (#261): where they go when there are no inner panels.
+    /// A delay's note values take a line of their own under them: nine buttons need the whole width.</summary>
+    static Control FxChoiceRow(Dictionary<string, Control> parts)
+    {
+        var side = parts.Where(x => x.Key != FxDefs.DivisionPart).Select(x => x.Value).ToArray();
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions(string.Join(",", side.Select(_ => "*"))) };
+        if (parts.GetValueOrDefault(FxDefs.DivisionPart) is { } division)
+            return side.Length == 0 ? division : new StackPanel { Spacing = 8, Children = { WithRow(row, side), division } };
+        return WithRow(row, side);
+    }
+
+    static Grid WithRow(Grid row, Control[] side)
+    {
+        int col = 0;
+        foreach (var c in side)
+        {
+            c.Margin = new Thickness(col == 0 ? 0 : FxInnerGap, 0, 0, 0);
+            c.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(c, col++);
+            row.Children.Add(c);
+        }
+        return row;
     }
 
     /// <summary>An inner panel of a full view: a step down from the effect's box, the room between two of them and how
@@ -484,7 +603,20 @@ public partial class MainWindow
     {
         bool comp = kind == InsertSlot.CompKind;
         var select = StripSelect([]);
+        select.Emphasize(PresetBarH);
         var items = new List<FxPresetItem>();
+        // the last entry is "Personalizado" while the settings are on no preset: the arrows step over it
+        bool custom = false;
+        void Step(int d)
+        {
+            int real = items.Count - (custom ? 1 : 0);
+            if (real == 0) return;
+            int at = select.SelectedIndex;
+            int to = at < 0 || at >= real ? (d > 0 ? 0 : real - 1) : ((at + d) % real + real) % real;
+            items[to].Pick();
+        }
+        var prev = InspectorIcon("", Loc.T("fx.preset.prev.tip"), () => Step(-1));
+        var next = InspectorIcon("", Loc.T("fx.preset.next.tip"), () => Step(1));
         var defaultItem = new FxPresetItem(Loc.T("fx.preset.default"), Loc.T("fx.preset.default.hint"), null,
             () => SlotEdit(o, id, s => FxPresets.Apply(s, DefaultSlot(o, kind)), "preset"),
             s => comp ? s.Comp?.Preset == CompPresets.DefaultId : FxPresets.Same(s, DefaultSlot(o, kind)));
@@ -543,6 +675,7 @@ public partial class MainWindow
             // a saved preset wins over the factory one it was made from; on none, the bar says so
             int at = items.FindIndex(x => x.Mine != null && x.Is(s));
             if (at < 0) at = items.FindIndex(x => x.Mine == null && x.Is(s));
+            custom = at < 0;
             if (at < 0)
             {
                 items.Add(new FxPresetItem(Loc.T(comp ? "insp.comp.manual" : "mix.custom.m"), Loc.T(comp ? "mix.comp.custom.tip" : "fx.preset.custom.tip"), null, () => { }, _ => true));
@@ -553,18 +686,33 @@ public partial class MainWindow
             ToolTip.SetTip(select, items[at].Hint);
             delete.IsVisible = items[at].Mine != null;
         });
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*" + string.Concat(Enumerable.Repeat(",Auto", (extra?.Length ?? 0) + 2))) };
-        row.Children.Add(select);
-        int col = 1;
-        foreach (var c in (Control[])[.. extra ?? [], save, delete])
+        // a band of its own, the same in every native effect (asked by the user, #261: it has to read as the preset
+        // system): its name, the arrows, the menu, the effect's own buttons, save and delete; in the family's color
+        var family = FxDefs.Family(kind);
+        Color? tint = family == FxFamily.None ? null : Palette.FamilyColor(family);
+        var name = new TextBlock { Text = Loc.T("fx.preset.label").ToUpperInvariant(), FontSize = 10.5, FontWeight = FontWeight.SemiBold, LetterSpacing = 0.8,
+            Foreground = tint is { } t ? Palette.Alpha(t, 0.9) : Palette.Faint, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 6, 0) };
+        Control[] cells = [name, prev, next, select, .. extra ?? [], save, delete];
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*" + string.Concat(Enumerable.Repeat(",Auto", cells.Length - 4))) };
+        for (int i = 0; i < cells.Length; i++)
         {
-            c.Margin = new Thickness(4, 0, 0, 0);
-            Grid.SetColumn(c, col++);
+            var c = cells[i];
+            if (i > 0) c.Margin = new Thickness(i == 3 ? 6 : i < 3 ? 0 : 4, 0, 0, 0);
+            c.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(c, i);
             row.Children.Add(c);
         }
         presetBarRefresh.Add(new(refresh));
-        return row;
+        return new Border
+        {
+            Child = row, Padding = new Thickness(6, 5), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
+            BorderBrush = tint is { } b ? Palette.Alpha(b, PresetBandLine) : Palette.Line,
+            Background = tint is { } f ? Palette.Alpha(f, PresetBandFill) : Palette.Raised,
+        };
     }
+
+    /// <summary>The preset band (#261): its menu's height, and how much of the family's color its fill and border take.</summary>
+    const double PresetBarH = 30, PresetBandFill = 0.07, PresetBandLine = 0.35;
 
     /// <summary>The open panels with a preset bar: a save or a delete reaches all of them (the list is the machine's).</summary>
     readonly List<WeakReference<List<Action>>> presetBarRefresh = [];
@@ -621,8 +769,9 @@ public partial class MainWindow
         }, "delay.preset"), s => s.Delay != null && DelayBus.PresetOf(ToParams(s.Delay)) == x.Label)),
     ];
 
-    /// <summary>The compressor's choices: its presets, measuring the take and peak limiting (its Default is the reset).</summary>
-    void CompChoices(StackPanel body, SlotOwner o, string id, List<Action> refresh)
+    /// <summary>The compressor's choices: its presets with measuring the take beside them (its Default is the reset), and
+    /// peak limiting, returned for its place in the panel (#261: it is part of the output).</summary>
+    Control CompChoices(StackPanel body, SlotOwner o, string id, List<Action> refresh)
     {
         CompSettings C() => o.Slot(id)?.Comp ?? GoneComp;
         // the take goes off the UI thread: a long one takes a moment the first time, and then the result is kept
@@ -654,35 +803,49 @@ public partial class MainWindow
             lim.Classes.Set("on", c.Limit);
             ToolTip.SetTip(lim, Loc.T(c.Limit ? "mix.lim.on" : "mix.lim.off"));
         });
-        body.Children.Add(PresetBar(o, id, InsertSlot.CompKind, refresh, CompPresetItems(o, id), [analyze, lim]));
+        body.Children.Add(PresetBar(o, id, InsertSlot.CompKind, refresh, CompPresetItems(o, id), [analyze]));
+        lim.HorizontalAlignment = HorizontalAlignment.Center;
+        return lim;
     }
 
-    /// <summary>The delay's choices: its preset, stereo or ping-pong, and the note value (or "Libre (ms)").</summary>
-    void DelayChoices(StackPanel body, SlotOwner o, string id, List<Action> refresh)
+    /// <summary>
+    /// The delay's choices: its preset, and returned for their panels (#261) stereo or ping-pong and the note value (or
+    /// "Libre (ms)"), named in full where there is room (<paramref name="wide"/>).
+    /// </summary>
+    (Control Mode, Control Division) DelayChoices(StackPanel body, SlotOwner o, string id, List<Action> refresh, bool wide)
     {
         DelaySettings V() => o.Slot(id)?.Delay ?? GoneDelay;
         double Bpm() => store?.Project.Settings.Bpm ?? 110;
         body.Children.Add(PresetBar(o, id, InsertSlot.DelayKind, refresh, DelayPresetItems(o, id)));
-        body.Children.Add(FxSegments([("stereo", Loc.T("mix.delay.stereo.short"), Loc.T("mix.delay.stereo.tip")), ("pingpong", Loc.T("mix.delay.pingpong.short"), Loc.T("mix.delay.pingpong.tip"))],
-            () => V().Mode, m => SlotEdit(o, id, s => s.Delay!.Mode = m, "delay.mode"), refresh));
-        var division = StripSelect(DelayBus.Divisions.Select(d => Loc.Or("mix.div." + d.Id, d.Label)).Append(Loc.T("mix.delay.free")).ToArray());
-        division.Selected += i =>
-        {
-            if (i == DelayBus.Divisions.Length)
-                SlotEdit(o, id, s => { var d = s.Delay!; d.TimeMs = Math.Round(DelayBus.DelayTimeSec(ToParams(d), Bpm()) * 1000); d.Sync = false; }, "delay.sync");
-            else
+        string sfx = wide ? "" : ".short";
+        var mode = FxSegments([("stereo", Loc.T("mix.delay.stereo" + sfx), Loc.T("mix.delay.stereo.tip")), ("pingpong", Loc.T("mix.delay.pingpong" + sfx), Loc.T("mix.delay.pingpong.tip"))],
+            () => V().Mode, m => SlotEdit(o, id, s => s.Delay!.Mode = m, "delay.mode"), refresh);
+        // the note value as buttons, all in sight (asked by the user, #261: a handful of values picks faster than a menu),
+        // in its musical short form ("1/8.", "1/8T"), its full name and time in the tooltip; "Libre" frees the time knob
+        const string free = "free";
+        var division = FxSegments([.. DelayBus.Divisions.Select(d => (d.Id, d.Id.Replace('t', 'T'), (string?)null)), (free, Loc.T("fx.delay.free"), Loc.T("mix.delay.free"))],
+            () => V().Sync ? V().Division : free,
+            pick =>
             {
-                string div = DelayBus.Divisions[i].Id;
-                SlotEdit(o, id, s => { s.Delay!.Sync = true; s.Delay.Division = div; }, "delay.division");
-            }
-        };
+                if (pick == free)
+                {
+                    if (V().Sync) SlotEdit(o, id, s => { var d = s.Delay!; d.TimeMs = Math.Round(DelayBus.DelayTimeSec(ToParams(d), Bpm()) * 1000); d.Sync = false; }, "delay.sync");
+                }
+                else SlotEdit(o, id, s => { s.Delay!.Sync = true; s.Delay.Division = pick; }, "delay.division");
+            }, refresh);
+        var cells = ((UniformGrid)((Border)division).Child!).Children.OfType<ToggleButton>().ToArray();
+        foreach (var b in cells) { b.Padding = new Thickness(2, 0); b.FontSize = 11; }
         refresh.Add(() =>
         {
-            var d = V();
-            division.SelectedIndex = d.Sync ? Math.Max(0, Array.FindIndex(DelayBus.Divisions, x => x.Id == d.Division)) : DelayBus.Divisions.Length;
-            ToolTip.SetTip(division, Loc.T("mix.delay.time.tip", $"{Math.Round(DelayBus.DelayTimeSec(ToParams(d), Bpm()) * 1000):0}", d.Sync ? Loc.T("mix.delay.at", $"{Bpm():0.##}") : ""));
+            for (int i = 0; i < DelayBus.Divisions.Length; i++)
+            {
+                var x = DelayBus.Divisions[i];
+                var at = ToParams(V()) with { Sync = true, Division = x.Id };
+                ToolTip.SetTip(cells[i], $"{Loc.Or("mix.div." + x.Id, x.Label)} · {Math.Round(DelayBus.DelayTimeSec(at, Bpm()) * 1000):0} ms");
+            }
         });
-        body.Children.Add(division);
+        var name = new TextBlock { Text = Loc.T("fx.delay.note").ToUpperInvariant(), FontSize = 10, LetterSpacing = 0.8, Foreground = Palette.Faint, Margin = new Thickness(2, 0, 0, 0) };
+        return (mode, new StackPanel { Spacing = 4, Children = { name, division } });
     }
 
     /// <summary>

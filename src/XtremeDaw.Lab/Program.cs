@@ -138,7 +138,7 @@ static class Program
                                            --pua es la cuarta banda (baja 2-5 kHz cuando pega la púa); --look pone
                                            un look al --cuanto-look (0 = Natural, 1 = el look entero); --sugerime
                                            muestra qué oye en el archivo y qué propone, y masteriza con eso
-              balance   archivo [--objetivo pop|rock|edm|hiphop|acoustic|orchestral] [--referencia a.wav,b.mp3]
+              balance   archivo [--objetivo pop|rock|edm|hiphop|acoustic|orchestral|dubstep|riddim|deepdubstep|…] [--referencia a.wav,b.mp3]
                         [--modo estereo|mid|side] [--curva] [--comprobar]
                                            el Balance tonal del archivo entero contra un objetivo: las cuatro bandas
                                            (graves 20-120 Hz, medios graves 120-1k, medios agudos 1k-5k, agudos 5k-20k)
@@ -262,6 +262,14 @@ static class Program
               proyecto editar carpeta nuevo-separador [nombre] [--en n] [--visible]   un separador con nombre en ese lugar de la secuencia (oculto en el timeline salvo --visible)
               proyecto editar carpeta lado id izquierda|derecha   de qué lado del mixer va la tira (pista, carpeta, separador o bus)
               proyecto editar carpeta tempo bpm    cambia el tempo con todo en su compás y deja los clips estirados en cache/
+              proyecto editar carpeta tempo-mapa [tiempo:bpm,…] [--compas compás:n/d,…]   la pista de tempo: cada punto
+                                           en tiempos (negras desde 0), con ~ al final es una rampa hasta el siguiente
+                                           ("0:120,16:90~,32:140"); los compases cambian al empezar uno (desde 0:
+                                           "0:4/4,8:7/8"). Lo MIDI, lo de pistas que siguen el tempo, marcadores,
+                                           acordes y el loop quedan en su tiempo; sin nada, muestra el mapa
+              proyecto editar carpeta sigue-tempo pista si|no   una pista de audio que sigue el tempo: sus clips se
+                                           mueven y se estiran con el mapa (por defecto quedan en segundos)
+              proyecto verificar-tempo     verifica la pista de tempo: rampas, compases, click, qué se mueve, deshacer y .mid
               proyecto editar carpeta transponer pista semitonos   cambia el tono de la pista sin cambiar el largo (-12..+12, 0 = original)
                                            y deja sus tomas transpuestas en cache/ (como el Transponer del inspector)
               proyecto editar carpeta guardar-plantilla pista [nombre] | usar-plantilla id|nombre | aplicar-plantilla pista nombre   plantillas de pista (pistas.json)
@@ -305,8 +313,8 @@ static class Program
                                            pistas); sin operación, lo muestra con sus slots y envíos
               proyecto envios carpeta quien [bus [nivel] [--pre|--post] [--apagar|--prender] [--quitar|--sumar]] [--salida bus|master]
                                            la salida y los envíos de una pista (número o id), carpeta:n o bus:n; --pre lo
-                                           saca antes del fader (después de los efectos y el paneo). Un bus sale solo al master: con
-                                           bus:n lo rechaza. --quitar saca el bus de su lista (apagado, con su nivel) y
+                                           saca antes del fader (después de los efectos y el paneo). Un bus manda a otros buses
+                                           (no a sí mismo ni cerrando un bucle) y sale solo al master. --quitar saca el bus de su lista (apagado, con su nivel) y
                                            --sumar lo vuelve a poner. Las opciones van después del nivel
               proyecto historial carpeta   tomas (en uso / no usadas), exportaciones y actividad, como la pestaña Historial
               proyecto historial carpeta quitar|usar medio [--en s] [--pista id] | borrar-no-usadas | borrar-exportacion n

@@ -20,7 +20,7 @@ public static class ClipStamp
     public static List<string> Audio(Project p, Clip brush, string trackId, IReadOnlyList<double> starts, double? durationSec = null, bool apply = true)
     {
         var t = p.Tracks.Find(x => x.Id == trackId);
-        if (t == null || t.IsMidi || t.Locked || p.FindMedia(brush.MediaId) is not { } media) return [];
+        if (t == null || t.IsMidi || t.EditLocked || p.FindMedia(brush.MediaId) is not { } media) return [];
         var w = ClipEditing.Window(brush, media, durationSec);
         double length = w.End - w.Start;
         List<string> made = [];
@@ -48,16 +48,16 @@ public static class ClipStamp
     public static List<string> Midi(Project p, MidiClip brush, string trackId, IReadOnlyList<double> starts, bool apply = true)
     {
         var t = p.Tracks.Find(x => x.Id == trackId);
-        if (t is not { IsMidi: true } || t.Locked) return [];
-        double bpm = p.Settings.Bpm, length = brush.LengthSec(bpm);
+        if (t is not { IsMidi: true } || t.EditLocked) return [];
+        var map = p.Settings.TempoMap;
         var parts = brush.PatternId is { } id ? MidiPatterns.Parts(p, id) : [];
         List<string> made = [];
         foreach (double at in starts)
         {
-            double start = ClipEditing.ToSample(Math.Max(0, at));
+            double start = ClipEditing.ToSample(Math.Max(0, at)), end = map.SecAt(map.BeatAt(start) + brush.LengthBeats);
             if (parts.Count > 1)
             {
-                if (parts.Any(x => !MidiFree(x.Track, start, start + length, bpm))) continue;
+                if (parts.Any(x => !MidiFree(x.Track, start, end, map))) continue;
                 string? first = null;
                 foreach (var part in parts)
                 {
@@ -69,7 +69,7 @@ public static class ClipStamp
             }
             else
             {
-                if (!MidiFree(t, start, start + length, bpm)) continue;
+                if (!MidiFree(t, start, end, map)) continue;
                 var c = Place(parts.Count == 1 ? parts[0].Clip : brush, brush, start);
                 // a pattern that is gone leaves the brush a clip of its own
                 if (parts.Count == 0) c.PatternId = c.PatternName = c.PatternPart = null;
@@ -108,6 +108,6 @@ public static class ClipStamp
         return w.End <= start + TouchSec || w.Start >= end - TouchSec;
     });
 
-    static bool MidiFree(Track t, double start, double end, double bpm) => !t.Locked && (t.MidiClips ?? []).All(c =>
-        c.EndSec(bpm) <= start + TouchSec || c.AtSec >= end - TouchSec);
+    static bool MidiFree(Track t, double start, double end, TempoMap map) => !t.EditLocked && (t.MidiClips ?? []).All(c =>
+        c.EndSec(map) <= start + TouchSec || c.AtSec >= end - TouchSec);
 }

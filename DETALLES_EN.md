@@ -31,7 +31,7 @@ Each ticket has a **topic**, from a fixed list (the part of the app: Timeline, M
 
 When several sessions work in this folder, building, checking and copying go one at a time: Debug `dotnet build` (`tools\turno.targets`), `probar.ps1` and the heavy `xtlab` commands (`comprobar-dsp`, `exportar`, `separar`…) wait for their turn (`turno.lock`, next to `xtlab.exe`). `probar.ps1` and `xtlab` run below normal priority so the machine stays responsive. If the turn doesn't come within 9 minutes they fail and say who holds it (`probar.ps1` and `xtlab`, code 4). `XtremeDaw.Audio` is built optimized in Debug too, so the test copy and `xtlab` measure the DSP as the installer runs it.
 
-Files also go one session at a time: a Claude Code hook (`tools\bloqueos.ps1`, registered in `.claude\settings.json`) gives each file edited, or changed by a command, to the session that touched it until its turn ends; another session that wants to change it waits (up to 9 minutes) and, if a command overwrote someone else's file, it is told so. It blocks `git restore`, `stash`, `clean`, `reset --hard` and `checkout --`. `tools\bloqueos.ps1 -Lista` shows who holds what and `-Limpiar` releases everything (in case a session died; they expire on their own after 30 unused minutes).
+Files also go one session at a time: a Claude Code hook (`tools\bloqueos.ps1`, registered in `.claude\settings.json`) gives each file edited, or changed by a command, to the session that touched it until its turn ends; another session that wants to change it waits (up to 9 minutes) and, if a command overwrote someone else's file, it is told so. It blocks `git restore`, `stash`, `clean`, `reset --hard` and `checkout --`. `tools\bloqueos.ps1 -Lista` shows who holds what and `-Limpiar` releases everything (in case a session died; they expire on their own after 30 unused minutes). Sessions send each other alerts (#263): the hook tells on its own when a file you waited for is released, when another session takes one you changed, when someone else's command changed one of yours and when a build fails in a file of yours; by hand, `-Avisa <#ticket|session|todos> -Texto "…"` (`-Atencion` to make it stop), `-PideArchivo <path>` (asks whoever holds it), `-SueltaArchivo <path>` (releases it before the turn ends) and `-Buzon` (the unread alerts). The agent gets them on its next edit or command, before its turn ends or with the next message, and the bench shows them as they arrive.
 
 The app starts in the **Projects** manager (list, search, templates, rename, duplicate, Recycle Bin). With a
 project folder as an argument, it opens it directly. `tools\make-shortcut.ps1` creates the desktop shortcut **XTreme Prueba**, which opens the newest finished test copy (`probar.ps1 -Abrir -Acceso`) without building and without needing any open session; `probar.ps1` remakes it after every copy.
@@ -72,6 +72,8 @@ Spanish by default; the language is chosen in Settings.
 | Ctrl+Z / Ctrl+Y | undo / redo |
 | Ctrl+Shift+N | new track |
 | Ctrl+Shift+D | duplicate the track (or the picked ones), with its content |
+| F2 | rename depending on where you last clicked: in the inspector, its name; on the track headers, the selected track or folder; in the timeline, the selected clip (without one, the track or folder) |
+| Ctrl+G | group what is picked in the timeline into a folder (tracks, or those of the selected clips) |
 | Ctrl+click / Shift+click on a header | pick several tracks (one by one / a range) to move them together |
 | Ctrl+S | save now |
 | Ctrl+Shift+S | save as… |
@@ -130,6 +132,8 @@ console without opening the window. Its commands and options are in Spanish (for
 `exportar`, `proyecto`, `proyectos`); run it without arguments to see the help, or see the command table in
 the [Spanish version](DETALLES.md#xtlab).
 
+`xtlab proyecto editar folder tempo-mapa [beat:bpm,…] [--compas bar:n/d,…]`: the tempo track: points in beats (quarter notes from 0), a trailing `~` ramps to the next (`0:120,16:90~,32:140`); meters change at a bar start (`0:4/4,8:7/8`). MIDI, follow-tempo tracks, markers, chords and the loop keep their bar; with nothing, prints the map. `xtlab proyecto editar folder sigue-tempo track si|no`: an audio track that follows the tempo (its clips move and stretch with the map; by default they stay in seconds). `xtlab proyecto verificar-tempo`: checks ramps, meters, the click, what moves, undo and .mid.
+
 `xtlab proyecto verificar-bucles`: checks looped takes, MIDI clips and automation blocks: repeats, following the original, splitting and saving.
 
 `xtlab proyecto verificar-sin-guardar`: checks the project without a place: where it lives, the recent list, finding it again at startup and Save as.
@@ -140,7 +144,7 @@ the [Spanish version](DETALLES.md#xtlab).
 
 `xtlab midi herramienta folder --clip id --tool arpeggiate [--rate 5 …]`: runs any piano roll tool (`MidiTools.All`) with its settings by id. `xtlab midi exportar-mid folder --clip id --a x.mid`: the clip as a type 1 MIDI file, at the project's tempo. `xtlab midi importar-mid folder --de x.mid [--pista n] [--en 0]`: with `--pista`, everything in one clip on that MIDI track; without it, a new track per track of the file (per channel in a type 0). `xtlab midi partitura folder --clip id --a x.pdf`: the clip as a PDF score (grand staff, 4/4, quantized to 1/16, with the key signature of the project's scale when it is natural major or minor).
 
-`xtlab balance file [--objetivo pop|rock|edm|hiphop|acoustic|orchestral] [--referencia a.wav,b.mp3] [--modo estereo|mid|side] [--curva] [--comprobar]`: the file's tonal balance against a target: the four bands (20–120 Hz, 120 Hz–1 kHz, 1–5 kHz, 5–20 kHz) and the low-end punch; `--referencia` builds the target from those files, `--curva` lists the 61 points with their range, `--comprobar` runs only its checks.
+`xtlab balance file [--objetivo pop|rock|edm|hiphop|acoustic|orchestral|dubstep|riddim|deepdubstep|…] [--referencia a.wav,b.mp3] [--modo estereo|mid|side] [--curva] [--comprobar]`: the file's tonal balance against a target: the four bands (20–120 Hz, 120 Hz–1 kHz, 1–5 kHz, 5–20 kHz) and the low-end punch; `--referencia` builds the target from those files, `--curva` lists the 61 points with their range, `--comprobar` runs only its checks.
 
 ## Stem separation models
 

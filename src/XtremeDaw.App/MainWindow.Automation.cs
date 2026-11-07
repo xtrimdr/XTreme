@@ -18,7 +18,8 @@ namespace XtremeDaw.App;
 /// <summary>
 /// Automation (asked by the user: anything a channel has, audio or MIDI): a right click on a control, or the track's
 /// menu, gives that parameter a lane, a child of the track in the timeline (<c>TimelineView.Automation.cs</c>). A folder
-/// is a channel too (#136): its lanes go the same way, under its row. Lanes live on their owner, the track or the folder
+/// is a channel too (#136): its lanes go the same way, under its row, and so are a bus's (#267), under its row at the end
+/// of the timeline. Lanes live on their owner, the track, the folder or the bus
 /// (<see cref="IAutomated"/>, <see cref="Automations"/>), and never change the channel: the controls follow them while
 /// they play (<see cref="FollowLanes"/>), and what the channel holds comes back when a lane goes off.
 /// </summary>
@@ -47,7 +48,8 @@ public partial class MainWindow
             if (at >= 0) l.Blocks[at] = block;
             else l.Blocks.Add(block);
         });
-        Timeline.AutomationBlockCreated += (t, id, sec) => _ = LaneEdit(t, id, l => Automations.AddBlock(l, sec, BarSec, Automations.PositionAt(l, Automations.Stepped(t, l.Target), sec)));
+        Timeline.AutomationBlocksErased += (t, id, gone) => _ = LaneEdit(t, id, l => l.Blocks.RemoveAll(b => gone.Contains(b.Id)));
+        Timeline.AutomationBlockCreated +=(t, id, sec) => _ = LaneEdit(t, id, l => Automations.AddBlock(l, sec, BarSec(sec), Automations.PositionAt(l, Automations.Stepped(t, l.Target), sec)));
         Timeline.AutomationToggled += (t, id) => _ = LaneEdit(t, id, l => l.On = !l.On);
         Timeline.AutomationFoldRequested += FoldLanes;
         Timeline.AutomationContextRequested += ShowLaneMenu;
@@ -60,18 +62,19 @@ public partial class MainWindow
         };
     }
 
-    /// <summary>The project's track or folder by id (the objects change with every undo).</summary>
-    static IAutomated? OwnerIn(Project p, string id) => (IAutomated?)p.Tracks.Find(t => t.Id == id) ?? p.Folders.Find(f => f.Id == id);
+    /// <summary>The project's track, folder or bus by id (the objects change with every undo).</summary>
+    static IAutomated? OwnerIn(Project p, string id) => (IAutomated?)p.Tracks.Find(t => t.Id == id) ?? (IAutomated?)p.Folders.Find(f => f.Id == id) ?? p.Settings.Buses.Find(b => b.Id == id);
 
     /// <summary>A track's live side (its instrument's process); null for a folder.</summary>
     LiveTrack? LiveOf(IAutomated o) => o is Projects.Track tr ? tracks.FirstOrDefault(t => t.Track.Id == tr.Id) : null;
 
-    /// <summary>Folds or shows a track's or a folder's lanes (a view setting: no undo step).</summary>
+    /// <summary>Folds or shows a track's, a folder's or a bus's lanes (a view setting: no undo step).</summary>
     void FoldLanes(IAutomated owner)
     {
         if (store == null || OwnerIn(store.Project, owner.Id) is not { } o) return;
         o.AutomationFolded = !o.AutomationFolded;
         MarkDirty();
+        SyncBusRows();
         Timeline.UpdateTracks(tracks, store.Project.Folders);
     }
 
@@ -289,7 +292,7 @@ public partial class MainWindow
                 if (Automations.BlockById(l, blockId) is { } b) b.Points = [new AutomationPoint { Sec = 0, Value = b.PositionAt(sec - b.AtSec, stepped) }];
             }), enabled: enabled, tip: Loc.T("auto.flat.tip")));
         }
-        else list.Add(MenuAction(Loc.T("auto.block.new"), () => LaneEdit(t, id, l => Automations.AddBlock(l, sec, BarSec, Automations.PositionAt(l, stepped, sec))), enabled: enabled, tip: Loc.T("auto.block.new.tip")));
+        else list.Add(MenuAction(Loc.T("auto.block.new"), () => LaneEdit(t, id, l => Automations.AddBlock(l, sec, BarSec(sec), Automations.PositionAt(l, stepped, sec))), enabled: enabled, tip: Loc.T("auto.block.new.tip")));
         list.Add(MenuAction(Loc.T("auto.block.paste"), () => PasteBlock(t, id, sec), Shortcuts.Label("paste"), enabled && blockClipboard != null));
         list.Add(new Separator());
         // looked up by id at each click: a right click keeps the menu open while the lane changes
@@ -457,8 +460,8 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// A control of a track or a folder: a right click offers its lane, and with <paramref name="show"/> it follows that
-    /// lane while it is on screen. Does nothing for an owner that has no lanes (a bus, the master).
+    /// A control of a track, a folder or a bus: a right click offers its lane, and with <paramref name="show"/> it follows that
+    /// lane while it is on screen. Does nothing for an owner that has no lanes (the master).
     /// </summary>
     void AutomateOn(Control c, Func<IAutomated?> track, string target, Action<double>? show = null)
     {
@@ -481,12 +484,13 @@ public partial class MainWindow
         if (c.GetVisualRoot() != null) laneViews.Add(view);
     }
 
-    /// <summary>The track or folder a strip's slots belong to; null for a bus or the master.</summary>
+    /// <summary>The track, folder or bus a strip's slots belong to; null for the master.</summary>
     IAutomated? TrackOf(SlotOwner o)
     {
         foreach (var t in tracks) if (t.Track.Id == o.OwnerId) return t.Track;
         if (store == null) return null;
         foreach (var f in store.Project.Folders) if (f.Id == o.OwnerId) return f;
+        foreach (var b in store.Project.Settings.Buses) if (b.Id == o.OwnerId) return b;
         return null;
     }
 

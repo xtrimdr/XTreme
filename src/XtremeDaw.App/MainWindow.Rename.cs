@@ -42,7 +42,17 @@ public partial class MainWindow
         }, RoutingStrategies.Tunnel);
         nameEditor.LostFocus += (_, _) => EndNameEdit(true);
         Timeline.AddHandler(PointerWheelChangedEvent, (_, _) => EndNameEdit(true), RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        // where the last press landed decides what F2 renames; the window's handler runs first, the panels' then refine it
+        // (the inspector's also when it floats in its own window)
+        AddHandler(PointerPressedEvent, (_, _) => renameZone = RenameZone.Other, RoutingStrategies.Tunnel, handledEventsToo: true);
+        inspectorExpanded.AddHandler(PointerPressedEvent, (_, _) => renameZone = RenameZone.Inspector, RoutingStrategies.Tunnel, handledEventsToo: true);
+        Timeline.AddHandler(PointerPressedEvent, (_, e) =>
+            renameZone = e.GetPosition(Timeline).X < Timeline.HeaderW ? RenameZone.Headers : RenameZone.Lanes, RoutingStrategies.Tunnel, handledEventsToo: true);
     }
+
+    /// <summary>The part of the window F2 answers to: the one last clicked.</summary>
+    enum RenameZone { Other, Inspector, Headers, Lanes }
+    RenameZone renameZone;
 
     /// <summary>Renames in place when the row is on screen, otherwise falls back to <paramref name="elsewhere"/>.</summary>
     void RenameInPlace(string id, Action elsewhere)
@@ -146,6 +156,37 @@ public partial class MainWindow
         if (ClipNameOf(id) is { } name)
             AskName(Timeline, point, Loc.T("menu.renameClip"), name, Loc.T("common.ok"), text => _ = RenameClip(id, text));
     });
+
+    /// <summary>
+    /// F2 answers to where the user last clicked (asked by the user, #252), the same for audio and MIDI clips: in the
+    /// inspector, its name field (the folder's or the track's); on the track headers, the selected folder's or
+    /// track's name box, even with a clip of it selected; in the lanes (or anywhere else), the selected clip's
+    /// box, and without one the folder's or the track's. Off screen, a clip asks in the name dialog, a track or a
+    /// folder takes the inspector's field.
+    /// </summary>
+    void RenameShortcut()
+    {
+        if (store is not { ReadOnly: false } || restoring) return;
+        string? clip = Timeline.SelectedMidiId ?? Timeline.SelectedClipId;
+        if (clip != null && ClipNameOf(clip) == null) clip = null;
+        if (renameZone == RenameZone.Inspector && FocusInspectorName()) return;
+        if (renameZone is not (RenameZone.Inspector or RenameZone.Headers) && clip != null)
+        {
+            BeginClipRename(clip, new Point(Timeline.Bounds.Width / 2, Timeline.Bounds.Height / 3));
+            return;
+        }
+        if ((Timeline.SelectedFolderId ?? sel?.Track.Id) is { } id) RenameInPlace(id, () => FocusInspectorName());
+    }
+
+    /// <summary>Puts the caret in the inspector's name field of the selected folder or track, all selected; false when it is not shown.</summary>
+    bool FocusInspectorName()
+    {
+        var box = Timeline.SelectedFolderId != null ? folderName : sel != null ? takeName : null;
+        if (box is not { IsEffectivelyVisible: true }) return false;
+        box.Focus();
+        box.SelectAll();
+        return true;
+    }
 
     /// <summary>One undo step; a blank name takes the clip's own away (a pattern keeps its name).</summary>
     Task RenameClip(string id, string text)

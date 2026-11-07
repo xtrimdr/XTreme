@@ -299,8 +299,8 @@ public sealed class AutomationLane
 }
 
 /// <summary>
-/// What carries lanes (<see cref="Automations"/>): a track or a folder, both channels (asked by the user, #136: a folder's
-/// lanes are like a track's). Its slots, routing, fader, pan and mute are what a lane drives and starts from; the
+/// What carries lanes (<see cref="Automations"/>): a track, a folder or a bus, all channels (asked by the user, #136: a folder's
+/// lanes are like a track's; #267: a bus's too). Its slots, routing, fader, pan and mute are what a lane drives and starts from; the
 /// instrument targets are a track's alone.
 /// </summary>
 public interface IAutomated

@@ -81,8 +81,15 @@ public static class MixCompare
         {
             FolderId = f.Id, Output = f.Output, Sends = ProjectLibrary.Clone(f.Sends), Volume = f.Volume, Pan = f.Pan, Inserts = ProjectLibrary.Clone(f.Inserts),
         })],
-        Buses = ProjectLibrary.Clone(p.Settings.Buses),
+        Buses = Unautomated(ProjectLibrary.Clone(p.Settings.Buses)),
     };
+
+    /// <summary>A mix doesn't carry the buses' lanes (#267): they are of the song, like a track's, and <see cref="Apply"/> leaves them.</summary>
+    static List<Bus> Unautomated(List<Bus> buses)
+    {
+        foreach (var b in buses) b.Automation = null;
+        return buses;
+    }
 
     /// <summary>Puts <paramref name="s"/> on the project, by id (see the class); then normalizes, so a send to a bus that is gone drops.</summary>
     public static void Apply(Project p, MixSnapshot s)

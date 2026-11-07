@@ -30,30 +30,43 @@ public partial class MainWindow
         var reference = InspectorIcon("", Loc.T("tonal.ref.tip"), () => _ = PickTonalReference(o, id));
         body.Children.Add(PresetBar(o, id, TrackInserts.Tonal, refresh, [], [reset, reference]));
 
+        // the menu lists the genres in their order and the slot's own last; the slot keeps the saved value (FxDefs.TonalValue)
         var target = StripSelect([]);
         ToolTip.SetTip(target, Loc.T("fx.tonal.target.tip"));
+        int ownAt = TonalTargets.Factory.Length;
+        int MenuIndex(InsertSlot? s)
+        {
+            string tid = s == null ? TonalTargets.Factory[0].Id : FxDefs.TonalIdOf(s);
+            return tid == FxDefs.TonalOwnId ? ownAt : Math.Max(0, Array.FindIndex(TonalTargets.Factory, t => t.Id == tid));
+        }
         target.Selected += i =>
         {
             if (i < 0) return;
-            if (i == FxDefs.TonalCustom && o.Slot(id)?.Tonal == null)
+            if (i == ownAt && o.Slot(id)?.Tonal == null)
             {
                 // the menu shows the target it had until the reference is in
-                target.SelectedIndex = (int)Math.Round(o.Slot(id)?.Stage?.Get("target", 0) ?? 0);
+                target.SelectedIndex = MenuIndex(o.Slot(id));
                 _ = PickTonalReference(o, id);
                 return;
             }
-            SlotEdit(o, id, s => s.Stage!.Values["target"] = i, "tonal.target");
+            int value = FxDefs.TonalValue(i == ownAt ? FxDefs.TonalOwnId : TonalTargets.Factory[i].Id);
+            SlotEdit(o, id, s => s.Stage!.Values["target"] = value, "tonal.target");
         };
         refresh.Add(() =>
         {
             if (o.Slot(id) is not { } s) return;
-            var names = new string[FxDefs.TonalCustom + 1];
+            var names = new string[ownAt + 1];
             var hints = new string?[names.Length];
-            for (int i = 0; i < FxDefs.TonalCustom; i++) names[i] = Loc.T("tonal.target." + TonalTargets.Factory[i].Id);
+            for (int i = 0; i < ownAt; i++)
+            {
+                names[i] = Loc.T("tonal.target." + TonalTargets.Factory[i].Id);
+                string tip = "tonal.target." + TonalTargets.Factory[i].Id + ".tip";
+                hints[i] = Loc.Has(tip) ? Loc.T(tip) : null;
+            }
             names[^1] = s.Tonal is { } own ? Loc.T("tonal.target.custom", own.Name) : Loc.T("tonal.target.custom.none");
             hints[^1] = s.Tonal is { Files.Count: > 0 } f ? string.Join("\n", f.Files) : Loc.T("tonal.ref.tip");
             target.SetItems(names, hints);
-            target.SelectedIndex = (int)Math.Round(s.Stage?.Get("target", 0) ?? 0);
+            target.SelectedIndex = MenuIndex(s);
         });
         body.Children.Add(target);
 

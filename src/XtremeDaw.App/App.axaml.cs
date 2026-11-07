@@ -25,12 +25,13 @@ public partial class App : Application
         Controls.PanelLooks.Load();
         Controls.ThemePicker.Presets = Controls.TronLegacy.Tile;
         Controls.TrackColorLooks.Load();
+        Controls.MixerLooks.Load();
         NoteNames.Load();
         Controls.UiFonts.Load();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // XTreme.exe [carpeta | proyecto.xtp] (a double click on a .xtp passes the file)
-            var dir = MainWindow.ProjectArg(desktop.Args ?? []) is { Length: > 0 } arg ? XtremeDaw.Projects.ProjectStore.DirOf(arg) : null;
+            var dir = ShellOpen.ProjectArg(desktop.Args ?? []) is { Length: > 0 } arg ? XtremeDaw.Projects.ProjectStore.DirOf(arg) : null;
             // the splash paints first; the main window (slow to build) comes once it is on screen
             var splash = new SplashWindow();
             splash.Opened += (_, _) => Dispatcher.UIThread.Post(() =>

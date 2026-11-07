@@ -1,8 +1,10 @@
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using XtremeDaw.App.Audio;
 using XtremeDaw.App.Controls;
 using XtremeDaw.App.Dialogs;
 using XtremeDaw.App.Model;
+using XtremeDaw.Audio;
 using XtremeDaw.Audio.Dsp;
 using XtremeDaw.Projects;
 
@@ -18,15 +20,15 @@ namespace XtremeDaw.App;
 public partial class MainWindow
 {
     readonly Dictionary<string, GmSynth> gms = [];
-    /// <summary>The bank is being read; <see cref="gmMissing"/> once it turned out not to be there.</summary>
-    bool gmLoading, gmMissing;
+    /// <summary>The banks being read (<see cref="GmBank.Key"/>); one that failed is <see cref="GmBank.Failed"/>.</summary>
+    readonly HashSet<string> gmLoading = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Hands each track its GM instrument with its preset and drops the ones no track wants. After every <see cref="ApplyTracks"/>.</summary>
     void SyncGms()
     {
         foreach (var id in gms.Keys.ToList())
             if (tracks.FirstOrDefault(t => t.Track.Id == id)?.Track.Gm == null) gms.Remove(id);
-        bool any = false;
+        var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in tracks)
         {
             if (t.Track.Gm is not { } g || t.Track.Instrument != null || t.Track.Sampler != null || t.Track.Granular != null)
@@ -34,22 +36,38 @@ public partial class MainWindow
                 t.Gm = null;
                 continue;
             }
-            any = true;
+            wanted.Add(GmBank.Key(g.Bank));
             if (!gms.TryGetValue(t.Track.Id, out var synth)) gms[t.Track.Id] = synth = new GmSynth(PlaybackEngine.SampleRate);
             if (t.Gm != synth) t.Gm = synth;
-            if (GmBank.Loaded && GmBank.Load() is { } font)
+            if (GmFont(g, synth) is { } font)
             {
                 var preset = font.Find(g.Program, g.Drums);
                 var tone = g.Tone();
-                if (synth.Preset != preset || synth.Tone != tone) synth.Set(font, preset, tone);
+                if (synth.Font != font || synth.Preset != preset || synth.Tone != tone) synth.Set(font, preset, tone);
             }
         }
-        if (any && !GmBank.Loaded && !gmLoading && !gmMissing) _ = LoadGmBank();
+        // the shipped bank always: it is what plays while a track's own is read or missing
+        if (wanted.Count > 0) wanted.Add(GmBank.Default);
+        foreach (var key in wanted)
+            if (!GmBank.IsLoaded(key) && !GmBank.Failed(key) && !gmLoading.Contains(key) && (GmBank.IsDefault(key) || GmBank.Available(key))) _ = LoadGmBank(key);
+        GmBank.Keep(wanted);
         foreach (var (id, window) in gmWindows.ToList())
         {
             if (tracks.FirstOrDefault(t => t.Track.Id == id) is { Track.Gm: not null } live && gms.ContainsKey(id)) ShowGmState(live, window);
             else window.Close();
         }
+    }
+
+    /// <summary>
+    /// What a track plays: its bank once read; while it is read, what it already had (or the shipped bank); and the shipped
+    /// one when its own isn't on this PC. Null until the shipped one is read.
+    /// </summary>
+    static SoundFont? GmFont(GmSettings g, GmSynth synth)
+    {
+        if (GmBank.IsLoaded(g.Bank)) return GmBank.Load(g.Bank);
+        bool waiting = !GmBank.IsDefault(g.Bank) && GmBank.Available(g.Bank) && !GmBank.Failed(g.Bank);
+        if (waiting && synth.Font != null) return synth.Font;
+        return GmBank.Loaded ? GmBank.Load() : null;
     }
 
     readonly Dictionary<string, GmWindow> gmWindows = [];
@@ -71,6 +89,9 @@ public partial class MainWindow
                 if (tracks.FirstOrDefault(t => t.Track.Id == trackId) is { } t) _ = SetGm(t, n, drums);
             },
             Edit = (change, key) => EditGm(trackId, change, key),
+            PickBank = bank => _ = SetGmBank(trackId, bank),
+            DownloadBank = id => _ = DownloadGmBank(trackId, id),
+            LoadBankFile = () => _ = PickGmFile(trackId, gmWindows.GetValueOrDefault(trackId) ?? (Window)this),
             Shortcut = e => OnKey(this, e),
             Front = on => SamplerInFront(trackId, on),
             IsEnabledForEdits = store is { ReadOnly: false },
@@ -88,19 +109,38 @@ public partial class MainWindow
     void ShowGmState(LiveTrack t, GmWindow window)
     {
         window.ShowTrack(t.Track.Name, t.Track.Color);
-        window.Refresh(gmMissing ? Loc.T("gm.missing") : GmBank.Loaded ? null : Loc.T("gm.loading"));
+        window.Refresh(t.Track.Gm is { } g ? GmNotice(g) : null);
     }
 
-    async Task LoadGmBank()
+    /// <summary>What the GM window says over the program: the bank loading or missing; null when it plays as chosen.</summary>
+    string? GmNotice(GmSettings g)
     {
-        gmLoading = true;
+        if (GmBank.Failed(null)) return Loc.T("gm.missing");
+        if (!GmBank.IsDefault(g.Bank))
+        {
+            if (!GmBank.Available(g.Bank)) return Loc.T("gm.bank.missing", GmBank.NameOf(g.Bank), GmBank.DefaultName);
+            if (GmBank.Failed(g.Bank)) return Loc.T("gm.bank.broken", GmBank.NameOf(g.Bank), GmBank.DefaultName);
+            if (!GmBank.IsLoaded(g.Bank)) return Loc.T("gm.bank.loading", GmBank.NameOf(g.Bank));
+        }
+        return GmBank.Loaded ? null : Loc.T("gm.loading");
+    }
+
+    async Task LoadGmBank(string key)
+    {
+        gmLoading.Add(key);
         InstrumentsChanged();
-        var font = await Task.Run(GmBank.Load);
-        gmLoading = false;
-        gmMissing = font == null;
-        if (gmMissing) Toast(Loc.T("gm.missing"));
+        RefreshGmWindows();
+        var font = await Task.Run(() => GmBank.Load(key));
+        gmLoading.Remove(key);
+        if (font == null) Toast(GmBank.IsDefault(key) ? Loc.T("gm.missing") : Loc.T("gm.bank.broken", GmBank.NameOf(key), GmBank.DefaultName));
         SyncGms();
         InstrumentsChanged();
+    }
+
+    void RefreshGmWindows()
+    {
+        foreach (var (id, window) in gmWindows)
+            if (tracks.FirstOrDefault(t => t.Track.Id == id) is { Track.Gm: not null } live) ShowGmState(live, window);
     }
 
     void DropAllGms()
@@ -109,13 +149,65 @@ public partial class MainWindow
         gms.Clear();
     }
 
-    TimelineView.InstrumentState GmState => gmMissing ? TimelineView.InstrumentState.Failed
+    /// <summary>Loading only while nothing plays yet: a track whose own bank is still being read already sounds with another.</summary>
+    TimelineView.InstrumentState GmState(GmSettings g) => GmBank.Failed(null) ? TimelineView.InstrumentState.Failed
         : GmBank.Loaded ? TimelineView.InstrumentState.Ready : TimelineView.InstrumentState.Loading;
+
+    /// <summary>Sets the bank a MIDI track's GM instrument plays (null = the shipped one): one undo step.</summary>
+    Task SetGmBank(string trackId, string? bank)
+    {
+        if (store == null || store.ReadOnly) return Task.CompletedTask;
+        if (RefuseFrozen(trackId))
+        {
+            RefreshGmWindows();
+            return Task.CompletedTask;
+        }
+        return EditTimeline(p =>
+        {
+            if (p.Tracks.Find(t => t.Id == trackId) is not { Gm: { } g }) return null;
+            g.Bank = bank;
+            g.Normalize();
+            return trackId;
+        }, "instrument-set");
+    }
+
+    /// <summary>A bank offered for download, from the GM window: Complementos installs it and the track takes it once it is here.</summary>
+    async Task DownloadGmBank(string trackId, string id)
+    {
+        await ComponentInstall.Run(Components.GmBanks, GmBanksComponent.For(id));
+        if (GmBank.Available(id)) await SetGmBank(trackId, id);
+        else RefreshGmWindows();
+    }
+
+    /// <summary>"Cargar .sf2…" in the GM window: a bank of the user, by its whole path.</summary>
+    async Task PickGmFile(string trackId, Window owner)
+    {
+        var files = await owner.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = Loc.T("gm.bank.file.title"),
+            AllowMultiple = false,
+            FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType(Loc.T("gm.bank.file.type")) { Patterns = ["*.sf2"] }],
+        });
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path) return;
+        // a file that doesn't read says so once and isn't kept on the track
+        var font = await Task.Run(() => { GmBank.Retry(); return GmBank.Load(path); });
+        if (font == null)
+        {
+            Toast(Loc.T("gm.bank.unreadable", Path.GetFileName(path)));
+            return;
+        }
+        await SetGmBank(trackId, path);
+    }
 
     /// <summary>Sets a MIDI track's GM program (or kit): one undo step, in place of whatever it played with.</summary>
     Task SetGm(LiveTrack track, int program, bool drums)
     {
         if (store == null || store.ReadOnly || !track.Track.IsMidi) return Task.CompletedTask;
+        if (RefuseFrozen(track.Track.Id))
+        {
+            RefreshGmWindows();
+            return Task.CompletedTask;
+        }
         string id = track.Track.Id;
         return EditTimeline(p =>
         {
@@ -135,7 +227,12 @@ public partial class MainWindow
     void EditGm(string trackId, Action<GmSettings> change, string key)
     {
         if (restoring || store == null || store.ReadOnly) return;
-        if (tracks.FirstOrDefault(t => t.Track.Id == trackId) is not { Track.Gm: { } g }) return;
+        if (tracks.FirstOrDefault(t => t.Track.Id == trackId) is not { Track.Gm: { } g } live) return;
+        if (RefuseFrozen(trackId))
+        {
+            if (gmWindows.TryGetValue(trackId, out var window)) ShowGmState(live, window);
+            return;
+        }
         undo.Checkpoint(store.Project, $"gm:{trackId}:{key}");
         change(g);
         g.Normalize();

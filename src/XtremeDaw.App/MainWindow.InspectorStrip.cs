@@ -94,6 +94,7 @@ public partial class MainWindow
                 else if (stripFolder is { } f) FolderChannelEdit(f.Id, x => x.Muted = !x.Muted, "muted");
                 else TogglePicked(false);
             }, stripRefresh);
+        AutomateOn(mute, StripLanes, AutoTarget.Mute);
         stripSolo = StripToggle("S", Shortcuts.Tip(Loc.T("track.solo"), "solo"), 26,
             () => stripBus == null && (stripFolder?.Solo ?? (PickTargets() is { Count: > 0 } p && p.All(t => t.Channel.Solo))), false,
             () =>
@@ -140,8 +141,8 @@ public partial class MainWindow
         sectionLooks["Mezcla"] = ("", null);
     }
 
-    /// <summary>Whose lanes the strip's fader and pan offer and follow: the folder it shows or the single track; none for a bus.</summary>
-    IAutomated? StripLanes() => stripBus != null ? null : stripFolder ?? (IAutomated?)SingleTrack?.Track;
+    /// <summary>Whose lanes the strip's fader, pan and M offer and follow: the bus or folder it shows (as the project has it now), or the single track.</summary>
+    IAutomated? StripLanes() => stripBus is { } b ? BusById(b.Id) : stripFolder is { } f ? FolderById(f.Id) : SingleTrack?.Track;
 
     /// <summary>An edit of the strip's fader or pan: the bus or folder it shows, or the selected (or picked) tracks.</summary>
     void StripEdit(double v, Action<Bus, double> bus, Action<Folder, double> folder, Action<LiveTrack, double> track, string key)
@@ -294,7 +295,7 @@ public partial class MainWindow
         inspectorTopBox.IsEnabled = Inspector.IsEnabled;
         busHead.IsVisible = bus != null;
         takeSections.IsVisible = channel;
-        takeSections.IsEnabled = group == null || group.Any(t => !t.Track.Locked);
+        takeSections.IsEnabled = group == null || group.Any(t => !t.Track.EditLocked);
         busPanel.IsVisible = bus != null;
         // the clip's section: a single audio track's, shown or not from the header
         clipArea.IsVisible = clipShown && sel is { Track.IsMidi: false } && group == null;
@@ -317,14 +318,10 @@ public partial class MainWindow
         // a folder's strip goes with its own panel (takeSections is a track's)
         inspectorStrip.IsEnabled = Inspector.IsEnabled && (folder != null || takeSections.IsEnabled);
         stripFxPart.IsVisible = group == null;
-        // a folder's sends and output are a track's (#149), made by RebuildInspectorSends
-        stripSendsPart.IsVisible = bus == null && (folder != null || channel);
+        // a folder's and a bus's sends and output are a track's (#149, #264), made by RebuildInspectorSends (a bus's
+        // output is the Master's)
+        stripSendsPart.IsVisible = bus != null || folder != null || channel;
         stripSolo.IsVisible = bus == null;
-        if (bus != null)
-        {
-            // a bus only goes to the Master for now (ProjectBuses.CanFeed)
-            stripOutput.Child = StripOutputRow(new TextBlock { Text = Loc.T("route.master"), Classes = { "dim" }, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
-        }
         stripFxCount.Text = stripRows.Count > 0 ? stripRows.Count.ToString() : "";
         stripSendsCount.Text = stripSends.Children.Count > 0 ? stripSends.Children.Count.ToString() : "";
 

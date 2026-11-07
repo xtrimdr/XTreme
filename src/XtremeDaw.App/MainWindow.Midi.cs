@@ -555,8 +555,9 @@ public partial class MainWindow
         var clips = track.MidiClips;
         if (clips == null || clips.Count == 0) return null;
         if (clips.Any(c => c.Id == Timeline.SelectedMidiId)) return Timeline.SelectedMidiId;
-        double pos = engine.PositionSec, bpm = store?.Project.Settings.Bpm ?? 120;
-        return (clips.LastOrDefault(c => pos >= c.AtSec && pos < c.EndSec(bpm))
+        double pos = engine.PositionSec;
+        var map = store?.Project.Settings.TempoMap ?? TempoMap.Constant(120);
+        return (clips.LastOrDefault(c => pos >= c.AtSec && pos < c.EndSec(map))
             ?? clips.Where(c => c.AtSec > pos).MinBy(c => c.AtSec)
             ?? clips.MaxBy(c => c.AtSec))!.Id;
     }
@@ -586,7 +587,7 @@ public partial class MainWindow
         if (clip == null) pianoClipId = null;
         var track = clip == null ? null : MidiEditing.Find(p!, clip.Id).Track;
         pianoTrackId = track?.Id;
-        pianoRoll.SetClip(clip, clip?.PatternId is { } id ? MidiPatterns.Clips(p!, id) : track?.MidiClips, track?.Name, track == null ? null : TrackIcons.ColorOf(track), p?.Settings.Bpm ?? 120, frame, clip == null ? null : PartGhosts(p!, clip));
+        pianoRoll.SetClip(clip, clip?.PatternId is { } id ? MidiPatterns.Clips(p!, id) : track?.MidiClips, track?.Name, track == null ? null : TrackIcons.ColorOf(track), p?.Settings.TempoMap ?? TempoMap.Constant(120), frame, clip == null ? null : PartGhosts(p!, clip));
         RefreshPianoParts(p, clip, track);
         pianoTitle.Text = clip == null || track == null ? ""
             : clip.PatternId is { } pattern ? Loc.T("piano.pattern", clip.PatternName!, clip.Notes.Count, PatternClipsLabel(MidiPatterns.Clips(p!, pattern).Count()))
@@ -761,17 +762,17 @@ public partial class MainWindow
         };
         AddRangeItems(list, track, enabled);
         double at = engine.PositionSec;
-        bool under = MidiEditing.TryFind(store.Project, clipId) is { } clip && MidiEditing.CanSplit(clip, at, store.Project.Settings.Bpm);
+        bool under = MidiEditing.TryFind(store.Project, clipId) is { } clip && MidiEditing.CanSplit(clip, at, store.Project.Settings.TempoMap);
         list.AddRange(
         [
             MenuAction(Loc.T("midi.menu.open"), () => { OpenInPiano(clipId); return Task.CompletedTask; }, icon: ""),
             new Separator(),
             // the same groups and order as an audio clip's menu: edit, place, then its own tools
-            MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled && !track.Track.Locked),
+            MenuAction(Loc.T("menu.cut"), () => CopySelection(cut: true), Shortcuts.Label("cut"), enabled && !track.Track.EditLocked),
             MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")),
             MenuAction(Loc.T("menu.duplicate"), () => boxed.Count > 1 ? DuplicateClips(boxed) : DuplicateMidiClip(clipId), Shortcuts.Label("duplicate"), enabled),
-            MenuAction(Loc.T("menu.split"), () => SplitMidi(track, clipId, at), Shortcuts.First("split"), enabled && under && !track.Track.Locked),
-            MenuAction(Loc.T("menu.renameClip.more"), () => { BeginClipRename(clipId, point); return Task.CompletedTask; }, enabled: enabled, icon: "\uE8AC",
+            MenuAction(Loc.T("menu.split"), () => SplitMidi(track, clipId, at), Shortcuts.First("split"), enabled && under && !track.Track.EditLocked),
+            MenuAction(Loc.T("menu.renameClip.more"), () => { BeginClipRename(clipId, point); return Task.CompletedTask; }, Shortcuts.Label("renameClip"), enabled: enabled, icon: "\uE8AC",
                 tip: MidiEditing.TryFind(store.Project, clipId)?.PatternId != null ? Loc.T("menu.renameClip.pattern") : null),
             new Separator(),
             MenuAction(Loc.T("midi.quantize.menu", PianoSnapLabel()), () => Quantize(boxed.Count > 1 ? boxed : [clipId]), Shortcuts.Label("quantize"),

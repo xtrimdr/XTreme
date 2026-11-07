@@ -13,7 +13,7 @@ namespace XtremeDaw.App;
 
 /// <summary>Port of TransportBar.tsx and App.tsx transport actions (the Timeline / Mixer toggle is in
 /// MainWindow.Mixer.cs). The click menu auditions through <see cref="PlaybackEngine.PreviewClick"/>. View preferences and
-/// click settings belong to the app, while tempo belongs to the project (outside undo, like the web).</summary>
+/// click settings belong to the app, while tempo belongs to the project (an undo step, #262).</summary>
 public partial class MainWindow
 {
     readonly HashSet<Key> transportKeys = [];
@@ -26,6 +26,8 @@ public partial class MainWindow
     static readonly TimeSpan TempoAskDelay = TimeSpan.FromMilliseconds(700);
     readonly Avalonia.Threading.DispatcherTimer tempoAskTimer = new() { Interval = TempoAskDelay };
     double tempoAsked;
+    /// <summary>The initial tempo <see cref="tempoAsked"/> means (<see cref="InitialFor"/>).</summary>
+    double tempoAskedInitial;
     ProjectStore? tempoAskedIn;
     Task clickPrefsSaving = Task.CompletedTask;
     bool? transportPlaying;
@@ -92,11 +94,12 @@ public partial class MainWindow
         if (store == null || store.ReadOnly || restoring) return;
         if (RecordingBusy || store.Project.Tracks.All(t => t.Clips.Count == 0))
         {
-            SetTempo(value, follow: true);
+            SetTempo(InitialFor(value), follow: true);
             return;
         }
         Tempo.Set(value);
         tempoAsked = value;
+        tempoAskedInitial = InitialFor(value);
         tempoAskedIn = store;
         tempoAskTimer.Start();
     }
@@ -106,12 +109,12 @@ public partial class MainWindow
         if (Tempo.Busy) return; // the timer ticks again
         tempoAskTimer.Stop();
         if (store is not { } st || st != tempoAskedIn) return;
-        double before = st.Project.Settings.Bpm, value = tempoAsked;
-        if (value == before) return;
+        double before = ShownBpm(engine.PositionSec), value = tempoAsked, initial = tempoAskedInitial;
+        if (initial == st.Project.Settings.Bpm) return;
         var choice = await TempoAsk.Ask(Bpm(before), Bpm(value));
         if (store != st) return;
         if (choice == Dialogs.TempoDialog.Choice.Cancel) Tempo.Set(before);
-        else SetTempo(value, follow: choice == Dialogs.TempoDialog.Choice.Stretch);
+        else SetTempo(initial, follow: choice == Dialogs.TempoDialog.Choice.Stretch);
     }
 
     /// <summary>
@@ -125,13 +128,15 @@ public partial class MainWindow
         var p = store.Project;
         follow &= !RecordingBusy;
         double f = p.Settings.Bpm / value, at = engine.PositionSec;
-        // no undo step: the tempo stays outside the snapshots, like the web's setBpm
+        // one undo step (#262); the wheel or a drag on the box make one
+        undo.Checkpoint(p, "tempo");
         if (follow) TempoFollow.SetBpm(p, value);
         else TempoFollow.SetGrid(p, value);
         engine.Bpm = value;
-        Timeline.Bpm = value;
+        engine.Tempo = p.Settings.TempoMap;
+        Timeline.Tempo = p.Settings.TempoMap;
         // MIDI notes are in beats: they follow the tempo
-        foreach (var t in tracks) t.SetMidi(value);
+        foreach (var t in tracks) t.SetMidi(p.Settings.TempoMap);
         SyncSamplers(); // an LFO in time with the song
         if (follow)
         {
@@ -146,9 +151,11 @@ public partial class MainWindow
         }
         engine.RefreshClipTiming();
         Timeline.LengthSec = engine.LengthSec;
-        Tempo.Set(value);
+        Tempo.Set(ShownBpm(engine.PositionSec));
+        RefreshPiano();
         Timeline.InvalidateVisual();
         MarkDirty();
+        UpdateUndoButtons();
     }
 
     void BuildClickMenu()
@@ -215,15 +222,47 @@ public partial class MainWindow
         else Toast(engine.Status);
     }
 
-    static string TransportBars(double sec, double bpm)
+    /// <summary>"bar.unit.sixteenth" (from 1) on the tempo map: the unit is the meter's (eighths in 6/8), split in sixteenths.</summary>
+    string TransportBars(double sec)
     {
-        long n = BarsKey(sec, bpm);
-        return $"{n / 16 + 1}.{n % 16 / 4 + 1}.{n % 4 + 1}";
+        long n = BarsKey(sec);
+        return $"{n / BarsKeyBar + 1}.{n % BarsKeyBar / BarsKeyUnit + 1}.{n % BarsKeyUnit + 1}";
+    }
+
+    /// <summary>The tempo map the clock reads: the engine's (the project's, set with it).</summary>
+    TempoMap ClockMap => engine.Tempo;
+
+    /// <summary>The tempo the box shows: the song's tempo under the playhead (the initial one with a single tempo).</summary>
+    double ShownBpm(double pos)
+    {
+        var map = store?.Project.Settings.TempoMap ?? ClockMap;
+        return map.SingleTempo ? engine.Bpm : Math.Round(map.BpmAtSec(Math.Max(0, pos)), 1, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>A value typed in the tempo box, as the song's initial tempo: with tempo changes, the whole map scales so the tempo under the playhead becomes it.</summary>
+    double InitialFor(double shown)
+    {
+        if (store == null) return shown;
+        var map = store.Project.Settings.TempoMap;
+        if (map.SingleTempo) return shown;
+        double here = map.BpmAtSec(Math.Max(0, engine.PositionSec));
+        return Math.Round(Math.Clamp(map.Bpm * shown / here, TempoMap.MinBpm, TempoMap.MaxBpm), 3);
     }
     static string TransportTime(double sec) => $"{(long)(Math.Max(0, sec) / 60):00}:{Math.Max(0, sec) % 60:00.0}";
 
-    /// <summary>The sixteenth <see cref="TransportBars"/> shows: its text is a function of this number alone.</summary>
-    static long BarsKey(double sec, double bpm) => (long)Math.Floor(Math.Max(0, sec) * bpm / 15 + 1e-6);
+    /// <summary>How <see cref="BarsKey"/> packs a bar, a unit and a sixteenth.</summary>
+    const long BarsKeyBar = 64 * 64, BarsKeyUnit = 64;
+
+    /// <summary>The bar, unit and sixteenth <see cref="TransportBars"/> shows: its text is a function of this number alone. Allocates nothing.</summary>
+    long BarsKey(double sec)
+    {
+        ClockMap.BarBeatAt(Math.Max(0, sec), out int bar, out double unit);
+        var (_, den) = ClockMap.MeterAt(bar);
+        int units = (int)Math.Floor(unit + 1e-6);
+        int sixteenths = Math.Max(1, 16 / den);
+        int sub = Math.Clamp((int)Math.Floor((unit - units) * sixteenths + 1e-6), 0, sixteenths - 1);
+        return Math.Max(0, bar) * BarsKeyBar + Math.Min(units, (int)BarsKeyUnit - 1) * BarsKeyUnit + sub;
+    }
 
     /// <summary>What <see cref="TransportTime"/> shows as one number: its minutes and its rounded tenth of a second.</summary>
     static long TimeKey(double sec)
@@ -294,32 +333,31 @@ public partial class MainWindow
     void RefreshTransport(double pos)
     {
         bool bars = Timeline.RulerInBars;
-        double bpm = engine.Bpm;
         if (bars != clockBarsShown)
         {
             clockBarsShown = bars;
             clockShown = clockTotalShown = clockTipShown = -1;
         }
-        long now = bars ? BarsKey(pos, bpm) : TimeKey(pos);
+        long now = bars ? BarsKey(pos) : TimeKey(pos);
         if (now != clockShown)
         {
             clockShown = now;
-            TimeText.Text = bars ? TransportBars(pos, bpm) : TransportTime(pos);
+            TimeText.Text = bars ? TransportBars(pos) : TransportTime(pos);
         }
         // while recording the total is the take so far, like the web
         double total = RecordingBusy ? pos : engine.LengthSec;
-        long end = bars ? BarsKey(total, bpm) : TimeKey(total);
+        long end = bars ? BarsKey(total) : TimeKey(total);
         if (end != clockTotalShown)
         {
             clockTotalShown = end;
-            BarText.Text = "/ " + (bars ? TransportBars(total, bpm) : TransportTime(total));
+            BarText.Text = "/ " + (bars ? TransportBars(total) : TransportTime(total));
         }
-        long tipKey = bars ? TimeKey(pos) : BarsKey(pos, bpm);
+        long tipKey = bars ? TimeKey(pos) : BarsKey(pos);
         if (tipKey != clockTipShown)
         {
             clockTipShown = tipKey;
             string tip = bars ? Loc.T("transport.clock.bars.tip", TransportTime(pos))
-                : Loc.T("transport.clock.time.tip", TransportBars(pos, bpm));
+                : Loc.T("transport.clock.time.tip", TransportBars(pos));
             if (tip != clockTip) { clockTip = tip; ToolTip.SetTip(ClockButton, tip); }
         }
         if (transportPlaying != engine.Playing)
@@ -333,7 +371,7 @@ public partial class MainWindow
         CutAudioButton.IsEnabled = !engine.Recording;
         PlayButton.IsEnabled = ToStartButton.IsEnabled = !engine.Recording;
         // a value waiting for its question (TempoEdited) stays in the box: the engine only gets it with the answer
-        Tempo.Set(tempoAskTimer.IsEnabled || TempoAsk.IsVisible ? tempoAsked : engine.Bpm);
+        Tempo.Set(tempoAskTimer.IsEnabled || TempoAsk.IsVisible ? tempoAsked : ShownBpm(pos));
         Tempo.IsEnabled = store != null && !store.ReadOnly && !restoring && !RecordingBusy;
         ShowArm();
         ShowMidiListeners();

@@ -40,7 +40,7 @@ public sealed partial class TimelineView
         if (id == null) return list;
         foreach (var r in rows)
         {
-            if (r.Folder != null || r.Lane != null) continue;
+            if (r.Folder != null || r.Lane != null || r.Bus != null) continue;
             string t = tracks[r.Track].Track.Id;
             if (t == id || list.Count > 0) list.Add(t);
         }
@@ -92,7 +92,7 @@ public sealed partial class TimelineView
         double top = RulerH, bottom = H;
         foreach (var r in rows)
         {
-            if (r.Folder != null || r.Lane != null || r.Track != dropTrack) continue;
+            if (r.Folder != null || r.Lane != null || r.Bus != null || r.Track != dropTrack) continue;
             top = r.Top + RulerH - scrollY;
             bottom = top + r.H;
             ctx.FillRectangle(Palette.AccentSoft, new Rect(HeaderW, top, Math.Max(0, Bounds.Width - HeaderW), r.H));

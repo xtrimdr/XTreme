@@ -330,7 +330,21 @@ public sealed partial class TimelineView : Control
     /// </summary>
     readonly record struct WaveKey(double Pps, double ScrollX, double W, double Top, double Bottom, double At, double TrimStart, double TrimEnd, double Stretch, bool Reversed);
 
-    public double Bpm { get; set; } = 120;
+    TempoMap tempo = TempoMap.Constant(120).Prepare();
+    /// <summary>The song's tempo map (#214): the bars, the grid and the magnet follow it. The window sets it after every change.</summary>
+    public TempoMap Tempo
+    {
+        get => tempo;
+        set
+        {
+            tempo = value.Prepare();
+            TempoChanged();
+            InvalidateVisual();
+            layer.InvalidateVisual();
+        }
+    }
+    /// <summary>The tempo at the song's start.</summary>
+    public double Bpm => tempo.Bpm;
     public double LengthSec { get; set; }
     public double Playhead { get; private set; }
     public int Selected { get; private set; } = -1;
@@ -383,6 +397,8 @@ public sealed partial class TimelineView : Control
     public Func<LiveTrack, string>? InputLabel { get; set; }
     /// <summary>The ● of a track header was clicked (native only: the web has no record arming).</summary>
     public event Action<LiveTrack>? ArmRequested;
+    /// <summary>A track's freeze toggle was clicked (#240): the window freezes it, or unfreezes it.</summary>
+    public event Action<LiveTrack>? FreezeRequested;
     /// <summary>The input chip of an armed track was clicked: the window shows the input menu (native only).</summary>
     public event Action<LiveTrack, Point>? InputMenuRequested;
     /// <summary>The track's badge was clicked: the window shows the color and icon picker there (native only).</summary>
@@ -619,7 +635,7 @@ public sealed partial class TimelineView : Control
     {
         foreach (var r in rows)
         {
-            if (r.Folder != null || r.Lane != null) continue;
+            if (r.Folder != null || r.Lane != null || r.Bus != null) continue;
             if (FirstBoxedMidi(r.Track) is { } firstMidi)
             {
                 if (boxed.Count == 1) { SelectMidiClip(r.Track, firstMidi.Id); return; }
@@ -652,7 +668,7 @@ public sealed partial class TimelineView : Control
     /// <summary>True on a part of a clip that a Shift+drag clones: its body, not its handles, and not a locked one.</summary>
     bool OnClipBody(int i, Point p)
     {
-        if (tracks[i].Track.IsMidi) return !tracks[i].Track.Locked && MidiClipAt(i, p.X) is { } m && !OnMidiEdge(m, p.X);
+        if (tracks[i].Track.IsMidi) return !tracks[i].Track.EditLocked && MidiClipAt(i, p.X) is { } m && !OnMidiEdge(m, p.X);
         return ClipAt(i, p.X) is { } c && !ClipEditing.IsLocked(tracks[i].Track, c.Clip) && HitHandle(c, p) == ClipEditMode.Move;
     }
 
@@ -702,7 +718,7 @@ public sealed partial class TimelineView : Control
         if (range)
         {
             // every track on screen between the anchor and this one, in the order they are drawn
-            var order = rows.Where(r => r.Folder == null && r.Lane == null).Select(r => tracks[r.Track].Track.Id).ToList();
+            var order = rows.Where(r => r.Folder == null && r.Lane == null && r.Bus == null).Select(r => tracks[r.Track].Track.Id).ToList();
             int a = order.IndexOf(pickAnchor), b = order.IndexOf(id);
             picked.Clear();
             if (a < 0) picked.Add(id);
@@ -799,7 +815,8 @@ public sealed partial class TimelineView : Control
     {
         n = Math.Clamp(n, 0, ZoomPresetBeats.Length - 1);
         if (ZoomPresetBeats[n] == 0) { FitAll(); return; }
-        ZoomTo((Bounds.Width - HeaderW - 24) / (ZoomPresetBeats[n] * 60 / Math.Max(1, Bpm)));
+        double at = tempo.BeatAt(Math.Max(0, Sec(HeaderW)));
+        ZoomTo((Bounds.Width - HeaderW - 24) / Math.Max(1e-3, tempo.SecAt(at + ZoomPresetBeats[n]) - tempo.SecAt(at)));
     }
 
     public void FitAll()
@@ -881,7 +898,7 @@ public sealed partial class TimelineView : Control
         foreach (var r in rows)
         {
             // a separator keeps its height
-            if (r.Folder is { Separator: true }) continue;
+            if (r.Folder is { Separator: true } || r is { Bus: not null, Lane: null }) continue;
             double bottom = RulerH + r.Top - scrollY + r.H;
             if (Math.Abs(p.Y - bottom) <= RowEdgeGrab) return RowIdOf(r);
         }
@@ -897,8 +914,8 @@ public sealed partial class TimelineView : Control
     public const double SeparatorH = 22;
     IReadOnlyList<Folder> folders = [];
     readonly Dictionary<string, Folder> folderById = [];
-    /// <summary>A row on screen: a track (its index) or a folder, with its place in px from the top of the content.</summary>
-    readonly record struct Row(int Track, Folder? Folder, double Top, double H, AutomationLane? Lane = null);
+    /// <summary>A row on screen: a track (its index), a folder or a bus (#267, at the end, Track -1), with its place in px from the top of the content.</summary>
+    readonly record struct Row(int Track, Folder? Folder, double Top, double H, AutomationLane? Lane = null, Bus? Bus = null);
     /// <summary>The rows in order as they belong now (during a reorder: with room made where the dragged one lands).</summary>
     readonly List<Row> rows = [];
     readonly Dictionary<string, double> targetTop = [];
@@ -906,7 +923,7 @@ public sealed partial class TimelineView : Control
     readonly HashSet<string> hidden = [];
     double contentH;
 
-    string RowIdOf(Row r) => r.Lane?.Id ?? r.Folder?.Id ?? tracks[r.Track].Track.Id;
+    string RowIdOf(Row r) => r.Lane?.Id ?? r.Folder?.Id ?? r.Bus?.Id ?? tracks[r.Track].Track.Id;
 
     void SetFolders(IReadOnlyList<Folder> list)
     {
@@ -973,7 +990,7 @@ public sealed partial class TimelineView : Control
             seq.RemoveAll(block.Contains);
             seq.InsertRange(Math.Clamp(drop!.Value.Pos, 0, seq.Count), block);
         }
-        contentH = Stack(seq, targetTop, hidden, landing);
+        contentH = StackBuses(Stack(seq, targetTop, hidden, landing));
         var index = new Dictionary<string, int>();
         for (int i = 0; i < tracks.Count; i++) index[tracks[i].Track.Id] = i;
         foreach (var x in seq)
@@ -989,9 +1006,13 @@ public sealed partial class TimelineView : Control
                 foreach (var lane in LanesOf(t)) rows.Add(new Row(i, null, targetTop[lane.Id], AutoH(lane), lane));
             }
         }
+        AddBusRows();
         overSeparator.Clear();
         for (int k = 0; k + 1 < rows.Count; k++)
             if (rows[k + 1].Folder is { Separator: true, HiddenInTimeline: false }) overSeparator.Add(RowIdOf(rows[k]));
+        seamUnder.Clear();
+        for (int k = 0; k < rows.Count; k++)
+            if (k + 1 == rows.Count || rows[k + 1].Lane == null) seamUnder.Add(RowIdOf(rows[k]));
         ClampScroll();
     }
 
@@ -1003,6 +1024,30 @@ public sealed partial class TimelineView : Control
     /// redundant). Not while a reorder moves rows around, when they pass over each other.
     /// </summary>
     bool OverSeparator(string id) => !(gesture == "reorder" && moved) && overSeparator.Contains(id);
+
+    /// <summary>Rows that close a channel (a track or a folder, under its automation lanes when shown): they end in
+    /// <see cref="DrawSeam"/>'s groove instead of a line.</summary>
+    readonly HashSet<string> seamUnder = [];
+
+    /// <summary>
+    /// A row's bottom edge from <paramref name="x0"/> to <paramref name="x1"/>: nothing over a separator, the groove the
+    /// joined mixer strips have between them at the end of a channel (asked by the user, #250: "la sombra del separador …
+    /// apliquémoslo a los canales en el timeline"), a thin line between a channel and its own lanes.
+    /// </summary>
+    void DrawRowBottom(DrawingContext ctx, string id, double x0, double x1, double bottom)
+    {
+        if (OverSeparator(id) || x1 <= x0) return;
+        if (seamUnder.Contains(id)) DrawSeam(ctx, x0, x1, bottom);
+        else ctx.DrawLine(Palette.Pen(Palette.Line), new Point(x0, bottom - 0.5), new Point(x1, bottom - 0.5));
+    }
+
+    /// <summary>The joined mixer strips' groove, lying down: a dark line (the window's background) at the row's bottom
+    /// with a lit one over it, like the seam between a console's panels.</summary>
+    static void DrawSeam(DrawingContext ctx, double x0, double x1, double bottom)
+    {
+        ctx.FillRectangle(Palette.App, new Rect(x0, bottom - 1, x1 - x0, 1));
+        ctx.FillRectangle(Palette.Alpha(Palette.FgColor, MixerLooks.GrooveLitA), new Rect(x0, bottom - 2, x1 - x0, 1));
+    }
 
     /// <summary>The dragged item: the carried tracks, or a folder with its children.</summary>
     List<object> Dragged(List<object> seq) => dragFolder is { } df
@@ -1033,7 +1078,7 @@ public sealed partial class TimelineView : Control
     public bool SelectedHeader(out double left, out double top, out double bottom)
     {
         left = top = bottom = 0;
-        string? id = SelectedFolderId ?? (Selected >= 0 && Selected < tracks.Count ? tracks[Selected].Track.Id : null);
+        string? id = SelectedFolderId ?? (Selected >= 0 && Selected < tracks.Count ? tracks[Selected].Track.Id : SelectedBusId?.Invoke());
         if (id == null) return false;
         for (int i = 0; i < rows.Count; i++)
         {
@@ -1193,13 +1238,31 @@ public sealed partial class TimelineView : Control
 
     /// <summary>The folders in drawing order: the lifted one last.</summary>
     IEnumerable<Folder> FolderOrder() => folders.Where(f => f.Id != liftedId).Concat(folders.Where(f => f.Id == liftedId));
-    SnapGrid Grid => new(snapMode == "line" ? LineStep : FixedSnap, Bar: 4 * BeatSec);
+    /// <summary>The magnet's lines on the tempo map: every <see cref="SnapBeats"/> from each bar's start (the bars for "bar"; Auto, the lines drawn now).</summary>
+    SnapGrid Grid
+    {
+        get
+        {
+            double beats = snapMode == "line" ? LineBeats : snapMode == "bar" ? 0 : FixedSnapBeats;
+            if (snapMode != "line" && snapMode != "bar" && beats <= 0) return new(0);
+            double beatSec = tempo.BeatSecAt(tempo.BeatAt(Math.Max(0, Playhead)));
+            return new((beats > 0 ? beats : tempo.BarBeats(0)) * beatSec, Map: tempo, Beats: beats);
+        }
+    }
     /// <summary>The magnet's lines, whatever kind it is (a step of 0 = off).</summary>
     public SnapGrid SnapLines => Grid;
-    /// <summary>The magnet's step in seconds (0 = off).</summary>
+    /// <summary>The magnet's step in seconds (0 = off), at the tempo under the playhead.</summary>
     public double SnapSec => Grid.Step;
-    /// <summary>The magnet's length when it has a fixed one, or 0.</summary>
-    double FixedSnap => ClipEditing.GridSeconds(snapMode, Bpm);
+    /// <summary>The magnet's length in beats when it has a fixed one ("bar" too, as 4/4's), or 0.</summary>
+    double FixedSnapBeats => NoteBeats(snapMode);
+
+    /// <summary>A value's beats (<see cref="Subdivisions.Beats"/>) remembered by id: the grid reads it on every frame and parsing it made garbage.</summary>
+    static readonly Dictionary<string, double> noteBeats = [];
+    static double NoteBeats(string mode)
+    {
+        if (noteBeats.TryGetValue(mode, out double b)) return b;
+        return noteBeats[mode] = Subdivisions.Beats(mode);
+    }
     double ViewSec => Math.Max(8, Math.Max(LengthSec, Playhead + 2));
     double MinPps => Math.Max(0.01, (Bounds.Width - HeaderW) / Math.Max(600, ViewSec * 8));
     void ClampScroll() => scrollY = Math.Clamp(scrollY, 0, Math.Max(0, contentH + ExtraRows * laneH + TailH + FooterH - (Bounds.Height - RulerH)));
@@ -1367,6 +1430,7 @@ public sealed partial class TimelineView : Control
             for (int k = 0; k < folders.Count; k++) if (folders[k].Id != liftedId) DrawFolderLane(ctx, folders[k], W);
             DrawDropHole(ctx, W);
             foreach (int i in drawOrder) DrawLane(ctx, i, W);
+            DrawBusLanes(ctx, W);
             DrawAutoLanes(ctx, W);
             DrawPatternLinks(ctx, W);
             if (liftedId != null && folderById.TryGetValue(liftedId, out var liftedFolder)) DrawFolderLane(ctx, liftedFolder, W);
@@ -1393,6 +1457,7 @@ public sealed partial class TimelineView : Control
         DrawRangeStrip(ctx, W);
         DrawStrip(ctx, W);
         DrawChordStrip(ctx, W);
+        DrawTempoStrip(ctx, W);
 
         // sticky headers
         ctx.FillRectangle(Palette.Panel, new Rect(0, 0, HeaderW, H));
@@ -1403,6 +1468,7 @@ public sealed partial class TimelineView : Control
         {
             for (int k = 0; k < folders.Count; k++) if (folders[k].Id != liftedId) DrawFolderHeader(ctx, folders[k]);
             foreach (int i in drawOrder) DrawHeader(ctx, i);
+            DrawBusHeaders(ctx);
             DrawAutoHeaders(ctx);
             if (liftedId != null && folderById.TryGetValue(liftedId, out var liftedFolder)) DrawFolderHeader(ctx, liftedFolder);
         }
@@ -1412,7 +1478,7 @@ public sealed partial class TimelineView : Control
             DrawDropTarget(ctx, W);
         }
         if (ExtraRows > 0) DrawRecordingHeader(ctx, LaneY(tracks.Count), W);
-        if (tracks.Count == 0 && folders.Count == 0 && !Recording)
+        if (tracks.Count == 0 && folders.Count == 0 && busRows.Count == 0 && !Recording)
         {
             ctx.DrawText(Loc.T("timeline.empty.title"), 12.5, Palette.Dim, new Point(HeaderW + 24, RulerH + 66), Palette.UiBold);
             ctx.DrawText(Loc.T("timeline.empty.a"), 12,
@@ -1550,9 +1616,9 @@ public sealed partial class TimelineView : Control
                     if (tracks[i].Clips.Contains(c) && Window(c, o) is var along) Outline(i, along.Start, along.End);
                 if (tracks[i].Track.MidiClips is not { } midi) continue;
                 foreach (var (c, from) in midiCarried)
-                    if (midi.Contains(c)) Outline(i, from, from + c.LengthBeats * BeatSec);
+                    if (midi.Contains(c)) Outline(i, from, SecPlus(from, c.LengthBeats));
             }
-            if (midiHeld != null && !midiCarrying) Outline(fromIndex, midiFromSec, midiFromSec + midiFromBeats * BeatSec);
+            if (midiHeld != null && !midiCarrying) Outline(fromIndex, midiFromSec, SecPlus(midiFromSec, midiFromBeats));
         }
     }
 
@@ -1643,7 +1709,7 @@ public sealed partial class TimelineView : Control
         // a lifted folder travels folded, so it shows its mini map while dragged too
         if (f.Collapsed || f.Id == liftedId) DrawMiniMap(ctx, f, y, fh, W);
         else DrawFolderSummary(ctx, f, y, fh, W, c);
-        if (!OverSeparator(f.Id)) ctx.DrawLine(Palette.Pen(Palette.Line), new Point(HeaderW, y + fh - 0.5), new Point(W, y + fh - 0.5));
+        DrawRowBottom(ctx, f.Id, HeaderW, W, y + fh);
     }
 
     /// <summary>Accent over a selected track's header and lane, so it reads as chosen and not as a hover (asked by the user).</summary>
@@ -1757,29 +1823,29 @@ public sealed partial class TimelineView : Control
                     bar, Math.Min(3, bar.Height / 2), Math.Min(3, bar.Height / 2));
                 if (strip < MiniWaveAt || m.Notes.Count == 0) continue;
                 using (ctx.PushClip(bar))
-                    DrawMiniNotes(ctx, m, x0, end - start, bar.Top + 1, bar.Height - 2, W, silent ? Palette.Faint : Palette.Alpha(tint, 0.8));
+                    DrawMiniNotes(ctx, m, start, end, bar.Top + 1, bar.Height - 2, W, silent ? Palette.Faint : Palette.Alpha(tint, 0.8));
             }
         }
     }
 
     /// <summary>A MIDI clip's notes squeezed into a mini map strip, repeats of a pattern included, like the lane draws them.</summary>
-    void DrawMiniNotes(DrawingContext ctx, MidiClip c, double x0, double lengthSec, double top, double h, double W, IBrush fill)
+    void DrawMiniNotes(DrawingContext ctx, MidiClip c, double start, double end, double top, double h, double W, IBrush fill)
     {
         int lo = 127, hi = 0;
         foreach (var n in c.Notes) { lo = Math.Min(lo, n.Pitch); hi = Math.Max(hi, n.Pitch); }
         int span = Math.Max(12, hi - lo + 1);
         lo -= (span - (hi - lo + 1)) / 2;
-        double rowH = Math.Max(1, Math.Min(2, h / span)), beatPx = BeatSec * pps;
-        double length = lengthSec / BeatSec, cell = c.Repeats ? c.CellBeats : length;
-        for (int pass = Math.Max(0, (int)Math.Floor((HeaderW - x0) / (cell * beatPx))); pass * cell < length - 1e-9; pass++)
+        double rowH = Math.Max(1, Math.Min(2, h / span)), sb = tempo.BeatAt(start);
+        double length = BeatsBetween(start, end), cell = c.Repeats ? c.CellBeats : length;
+        for (int pass = Math.Max(0, (int)Math.Floor((tempo.BeatAt(Sec(HeaderW)) - sb) / cell)); pass * cell < length - 1e-9; pass++)
         {
-            if (x0 + pass * cell * beatPx > W) break;
+            if (BeatX(sb + pass * cell) > W) break;
             foreach (var n in c.Notes)
             {
                 if (!MidiClip.Slice(n, pass, cell, length, out double from, out double to)) continue;
-                double nx = x0 + from * beatPx;
+                double nx = BeatX(sb + from);
                 if (nx > W) break;
-                double nw = Math.Max(1, (to - from) * beatPx - 1);
+                double nw = Math.Max(1, BeatX(sb + to) - nx - 1);
                 if (nx + nw < HeaderW) continue;
                 ctx.FillRectangle(fill, new Rect(nx, top + (span - 1 - (n.Pitch - lo)) / (double)span * (h - rowH), nw, rowH));
             }
@@ -1859,7 +1925,7 @@ public sealed partial class TimelineView : Control
             ctx.DrawText(PanText(pan), 10.5, Palette.Faint, new Point(216 + Extra, pr.Y + 3), Palette.Mono);
         }
         DrawFolderKnobs(ctx, f);
-        if (!OverSeparator(f.Id)) ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, y + fh - 0.5), new Point(HeaderW, y + fh - 0.5));
+        DrawRowBottom(ctx, f.Id, 0, HeaderW, y + fh);
     }
 
     /// <summary>"5 pistas" for a folder header, made once per count.</summary>
@@ -1989,7 +2055,7 @@ public sealed partial class TimelineView : Control
         {
             double top = FolderY(into), bottom = top + FolderRowH(into);
             foreach (var r in rows)
-                if (r.Folder == null && r.Lane == null && (tracks[r.Track].Track.FolderId == into.Id || IsDragged(tracks[r.Track].Track.Id)) && targetTop.ContainsKey(tracks[r.Track].Track.Id))
+                if (r.Folder == null && r.Lane == null && r.Bus == null && (tracks[r.Track].Track.FolderId == into.Id || IsDragged(tracks[r.Track].Track.Id)) && targetTop.ContainsKey(tracks[r.Track].Track.Id))
                 {
                     double ry = RulerH + r.Top - scrollY;
                     if (ry >= top) bottom = Math.Max(bottom, ry + r.H);
@@ -2014,42 +2080,45 @@ public sealed partial class TimelineView : Control
 
     /// <summary>Px under which a fixed grid's lines are too close together to draw.</summary>
     const double MinGridPx = 6;
-    /// <summary>The grid's fixed spacing in seconds (a subdivision, or the snap's when linked), or 0 when it follows the zoom.</summary>
-    double FixedGrid => gridMode switch { "auto" => 0, "snap" => FixedSnap, _ => ClipEditing.GridSeconds(gridMode, Bpm) };
-
-    /// <summary>The spacing of the lines drawn at this zoom, what Auto snaps to: a fixed grid's own or the finest
-    /// tick, doubling up to whole bars while they are too close together to draw (a dotted grid goes straight to the bar).</summary>
-    double LineStep
+    /// <summary>The grid's fixed spacing in beats (a value, or the magnet's when linked), 0 when it follows the zoom, -1 for the bars alone.</summary>
+    double FixedGridBeats
     {
         get
         {
-            double beat = BeatSec, g = FixedGrid, step = g >= beat ? g : FineTick(beat);
-            while (step * pps < MinGridPx) step = ClipEditing.FitsBar(step, 4 * beat) ? step * 2 : 4 * beat;
-            return step;
+            string mode = gridMode == "snap" ? snapMode : gridMode;
+            return mode switch { "auto" or "line" or "off" => 0, "bar" => -1, _ => NoteBeats(mode) };
         }
     }
 
-    /// <summary>Bars mode, one label per bar: the length of the finest minor tick (a beat, or a half of a half…).</summary>
-    double FineTick(double beat)
+    /// <summary>
+    /// The spacing of the lines drawn at this zoom in beats, what Auto snaps to (0 = the bars): a fixed grid's own or
+    /// the finest tick, doubling up to whole bars while they are too close together to draw (a step that doesn't fit the
+    /// bar goes straight to the bar). Measured at the first bar in view: with a tempo map the bars change length.
+    /// </summary>
+    double LineBeats
     {
-        double g = FixedGrid;
-        if (g > 0) return g < beat && g * pps >= MinGridPx ? g : beat;
-        double tick = beat;
-        while (tick / 2 * pps >= FineTickPx * 2 && tick > 1e-4) tick /= 2;
+        get
+        {
+            int b = Math.Max(0, tempo.BarAt(tempo.BeatAt(Math.Max(0, Sec(HeaderW)))));
+            var (num, den) = tempo.MeterAt(b);
+            double unit = 4.0 / den, len = num * unit, beatPx = pps * tempo.BeatSecAt(tempo.BarStartBeat(b));
+            double g = FixedGridBeats;
+            if (g < 0 || !(beatPx > 0)) return 0;
+            double step = g >= unit ? g : FineBeats(unit, beatPx);
+            while (step < len - 1e-9 && step * beatPx < MinGridPx) step = ClipEditing.FitsBar(step, len) ? step * 2 : len;
+            return step >= len - 1e-9 ? 0 : step;
+        }
+    }
+
+    /// <summary>Bars mode, one label per bar: the finest minor tick in beats (the meter's unit, or a half of it, a half of that…).</summary>
+    double FineBeats(double unit, double beatPx)
+    {
+        double g = FixedGridBeats;
+        if (g > 0) return g < unit && g * beatPx >= MinGridPx ? g : unit;
+        double tick = unit;
+        while (tick / 2 * beatPx >= FineTickPx * 2 && tick > 1e-4) tick /= 2;
         return tick;
     }
-
-    /// <summary>Bars mode: the lines between two labelled bars (beats, or single bars when labels skip some; a fixed
-    /// grid of a beat or more draws its own spacing, down to none for "bar", a dotted one starting over at each bar).</summary>
-    (double Sub, int N) BarSubs(int step, double beat, double bar)
-    {
-        if (step != 1) return (bar, step);
-        double g = FixedGrid;
-        return g >= beat ? (g, (int)Math.Ceiling(bar / g - 1e-6)) : (beat, 4);
-    }
-
-    /// <summary>The fine ticks in a bar: how many of <paramref name="fine"/> fit (a dotted one leaves a shorter last cell).</summary>
-    static int TicksInBar(double fine, double bar) => (int)Math.Ceiling(bar / fine - 1e-6);
 
     /// <summary>The time ruler's step at this zoom: the first of <see cref="TimeSteps"/> at least 64 px apart, else the
     /// last. A plain loop: Array.FindIndex with a lambda on pps was a new closure on every frame.</summary>
@@ -2091,16 +2160,6 @@ public sealed partial class TimelineView : Control
         return numberTexts[n];
     }
 
-    /// <summary>The ruler's "bar.beat" labels zoomed in past the beats, by bar and beat.</summary>
-    readonly Dictionary<(long Bar, int Beat), string> barBeatTexts = [];
-
-    string BarBeatText(long bar, int beat)
-    {
-        if (barBeatTexts.TryGetValue((bar, beat), out var t)) return t;
-        if (barBeatTexts.Count >= DrawnTextMax) barBeatTexts.Clear();
-        return barBeatTexts[(bar, beat)] = $"{bar}.{beat}";
-    }
-
     void DrawRuler(DrawingContext ctx, double W)
     {
         // the ruler's numbers sit under the marker strip
@@ -2131,47 +2190,41 @@ public sealed partial class TimelineView : Control
             }
             return;
         }
-        double beat = 60 / Bpm, bar = 4 * beat;
-        int step = 1;
-        while (step * bar * pps < 56) step *= 2;
-        int first = Math.Max(0, (int)(Sec(HeaderW) / bar) - 1);
         var tick = Palette.Pen(Palette.Line);
         var beatPen = Palette.Pen(Palette.Alpha(Palette.LineColor, 0.7));
-        for (int b = first - first % step; ; b += step)
+        for (int k = 0; k < rulerTicks.Count; k++)
         {
-            double x = X(b * bar);
-            if (x > W) break;
-            ctx.DrawLine(tick, new Point(x, 3), new Point(x, rulerH));
-            ctx.DrawText(NumberText(b + 1), 15, Palette.Fg, new Point(x + 4, 3), Palette.MonoBold);
-            // minor ticks: beats inside a bar, or single bars when the labels skip some; zoomed in, see below
-            if (step == 1 && FineTick(beat) < beat) continue;
-            var (sub, subN) = BarSubs(step, beat, bar);
-            if (sub * pps >= 6)
-                for (int k = 1; k < subN; k++)
-                {
-                    double bx = X(b * bar + k * sub);
-                    ctx.DrawLine(beatPen, new Point(bx, rulerH - 6), new Point(bx, rulerH));
-                    bool onBeat = Math.Abs(k * sub / beat - Math.Round(k * sub / beat)) < 1e-6;
-                    if (sub * pps >= MinorLabelPx && (step != 1 || onBeat))
-                        ctx.DrawText(NumberText(step == 1 ? (int)Math.Round(k * sub / beat) + 1 : b + k + 1), 10, Palette.Faint, new Point(bx + 3, 17), Palette.Mono);
-                }
-        }
-        // zoomed in past the beats (native only): every half, quarter… of a beat, starting over at each bar, the beats
-        // labelled "bar.beat"
-        double fine = FineTick(beat);
-        if (step != 1 || fine >= beat) return;
-        int perBar = TicksInBar(fine, bar);
-        for (long b = Math.Max(0, (long)Math.Floor(Sec(HeaderW) / bar)); X(b * bar) <= W; b++)
-            for (int k = 1; k < perBar; k++)
+            var t = rulerTicks[k];
+            double x = t.X;
+            switch (t.Kind)
             {
-                double tx = X(b * bar + k * fine);
-                if (tx > W) break;
-                double inBeats = k * fine / beat;
-                bool onBeat = Math.Abs(inBeats - Math.Round(inBeats)) < 1e-6;
-                ctx.DrawLine(beatPen, new Point(tx, onBeat ? rulerH - 9 : rulerH - 5), new Point(tx, rulerH));
-                if (onBeat) ctx.DrawText(BarBeatText(b + 1, (int)Math.Round(inBeats) + 1), 10, Palette.Faint, new Point(tx + 3, 17), Palette.Mono);
+                case TickBar:
+                    ctx.DrawLine(tick, new Point(x, 3), new Point(x, rulerH));
+                    ctx.DrawText(NumberText(t.Bar + 1), 15, Palette.Fg, new Point(x + 4, 3), Palette.MonoBold);
+                    break;
+                case TickMinorBar or TickSub:
+                    ctx.DrawLine(beatPen, new Point(x, rulerH - 6), new Point(x, rulerH));
+                    if (t.Label) ctx.DrawText(NumberText(t.Kind == TickSub ? t.Unit + 1 : t.Bar + 1), 10, Palette.Faint, new Point(x + 3, 17), Palette.Mono);
+                    break;
+                case TickFine:
+                    ctx.DrawLine(beatPen, new Point(x, rulerH - 5), new Point(x, rulerH));
+                    break;
+                default:
+                    ctx.DrawLine(beatPen, new Point(x, rulerH - 9), new Point(x, rulerH));
+                    ctx.DrawText(NumberText(t.Unit + 1), 10, Palette.Faint, new Point(x + 3, 17), Palette.Mono);
+                    break;
             }
+        }
     }
+
+    /// <summary>The kinds of <see cref="RulerTick"/>: a labelled bar, a bar between labels, a unit or grid step, a fine tick, a fine tick on a unit (labelled with the unit's number only, #255).</summary>
+    const byte TickBar = 0, TickMinorBar = 1, TickSub = 2, TickFine = 3, TickFineUnit = 4;
+
+    /// <summary>A tick of the bars ruler: where, what kind, its bar and its unit in the bar (from 0), and whether it carries its number.</summary>
+    readonly record struct RulerTick(double X, byte Kind, int Bar, int Unit, bool Label);
+
+    /// <summary>The bars ruler's ticks in view, built with <see cref="grid"/> (one pass over the visible bars of the tempo map) and drawn by <see cref="DrawRuler"/>.</summary>
+    readonly List<RulerTick> rulerTicks = [];
 
     // x of every ruler tick in view (major = labelled step, minor = beat / subdivision), rebuilt each Render so the
     // lanes can draw the same ticks as faint vertical lines behind their clips without allocating per lane
@@ -2181,6 +2234,7 @@ public sealed partial class TimelineView : Control
     void BuildGrid(double W)
     {
         grid.Clear();
+        rulerTicks.Clear();
         // a zoom that isn't a positive number would make the loops below run forever
         if (!(pps > 0) || !double.IsFinite(pps)) return;
         if (!bars)
@@ -2196,30 +2250,64 @@ public sealed partial class TimelineView : Control
             }
             return;
         }
-        double beat = 60 / Bpm, bar = 4 * beat;
+        BuildBars(W);
+    }
+
+    /// <summary>
+    /// Bars mode: the ticks of every bar in view, from the tempo map (each bar its own length and meter). Bars get a
+    /// number, or every few when they get close; inside a labelled bar, the meter's units (eighths in 6/8) or the
+    /// grid's steps, and zoomed in past the units their halves, quarters…, the units labelled with their number only. Only the
+    /// visible bars are visited.
+    /// </summary>
+    void BuildBars(double W)
+    {
+        double sec0 = Math.Max(0, Sec(HeaderW));
+        int first = Math.Max(0, tempo.BarAt(tempo.BeatAt(sec0)));
+        double firstPx = (tempo.BarStartSec(first + 1) - tempo.BarStartSec(first)) * pps;
+        if (!(firstPx > 0)) return;
         int step = 1;
-        while (step * bar * pps < 56) step *= 2;
-        int first = Math.Max(0, (int)(Sec(HeaderW) / bar) - 1);
-        for (int b = first - first % step; ; b += step)
+        while (step * firstPx < 56 && step < 1 << 24) step *= 2;
+        // bars between the labels get a tick while they are apart enough; else only the labelled ones are visited
+        bool every = firstPx >= 6;
+        double g = FixedGridBeats;
+        for (int b = every ? first : first - first % step; ; b += every ? 1 : step)
         {
-            double x = X(b * bar);
+            double bs = tempo.BarStartBeat(b), x = X(tempo.SecAt(bs));
             if (x > W) break;
-            grid.Add((x, true));
-            if (step == 1 && FineTick(beat) < beat) continue;
-            var (sub, subN) = BarSubs(step, beat, bar);
-            if (sub * pps >= 6)
-                for (int k = 1; k < subN; k++) grid.Add((X(b * bar + k * sub), false));
-        }
-        double fine = FineTick(beat);
-        if (step != 1 || fine >= beat) return;
-        int perBar = TicksInBar(fine, bar);
-        for (long b = Math.Max(0, (long)Math.Floor(Sec(HeaderW) / bar)); X(b * bar) <= W; b++)
-            for (int k = 1; k < perBar; k++)
+            bool labelled = b % step == 0;
+            rulerTicks.Add(new(x, labelled ? TickBar : TickMinorBar, b, 0, !labelled && firstPx >= MinorLabelPx));
+            grid.Add((x, labelled));
+            if (step != 1 || g < 0) continue;
+            var (num, den) = tempo.MeterAt(b);
+            double unit = 4.0 / den, len = num * unit, beatPx = pps * tempo.BeatSecAt(bs);
+            double fine = FineBeats(unit, beatPx);
+            if (fine < unit - 1e-9)
             {
-                double tx = X(b * bar + k * fine);
+                int n = (int)Math.Ceiling(len / fine - 1e-6);
+                for (int k = 1; k < n; k++)
+                {
+                    double at = k * fine, tx = X(tempo.SecAt(bs + at));
+                    if (tx > W) break;
+                    double units = at / unit;
+                    bool onUnit = Math.Abs(units - Math.Round(units)) < 1e-6;
+                    rulerTicks.Add(new(tx, onUnit ? TickFineUnit : TickFine, b, (int)Math.Round(units), onUnit));
+                    grid.Add((tx, false));
+                }
+                continue;
+            }
+            double sub = g >= unit ? g : unit;
+            if (sub * beatPx < 6) continue;
+            int subN = (int)Math.Ceiling(len / sub - 1e-6);
+            for (int k = 1; k < subN; k++)
+            {
+                double at = k * sub, tx = X(tempo.SecAt(bs + at));
                 if (tx > W) break;
+                double units = at / unit;
+                bool onUnit = Math.Abs(units - Math.Round(units)) < 1e-6;
+                rulerTicks.Add(new(tx, TickSub, b, (int)Math.Round(units), onUnit && sub * beatPx >= MinorLabelPx));
                 grid.Add((tx, false));
             }
+        }
     }
 
     void DrawLane(DrawingContext ctx, int i, double W)
@@ -2242,17 +2330,46 @@ public sealed partial class TimelineView : Control
         var minorPen = Palette.Pen(Palette.Alpha(Palette.LineColor, 0.22));
         foreach (var (gx, major) in grid)
             if (gx >= HeaderW) ctx.DrawLine(major ? majorPen : minorPen, new Point(gx, y), new Point(gx, y + lh));
-        for (int k = 0; k < t.Clips.Count; k++) DrawClip(ctx, t, t.Clips[k], y, sel, W);
-        DrawLoopGhost(ctx, i, y, W);
-        if (t.Track.IsMidi) DrawMidiClips(ctx, i, y, W);
+        // a frozen track (#240): its clips dimmed, under the wave of the render it plays, and their labels over it all
+        var layer = t.Freeze != null ? ClipLayer.Body : ClipLayer.All;
+        using (ctx.PushOpacity(t.Freeze != null ? FrozenDim : 1))
+        {
+            for (int k = 0; k < t.Clips.Count; k++) DrawClip(ctx, t, t.Clips[k], y, sel, W, layer);
+            DrawLoopGhost(ctx, i, y, W);
+            if (t.Track.IsMidi) DrawMidiClips(ctx, i, y, W, layer);
+        }
+        if (t.Freeze is { } frozen)
+        {
+            DrawFrozen(ctx, t, frozen, y, W);
+            for (int k = 0; k < t.Clips.Count; k++) DrawClip(ctx, t, t.Clips[k], y, sel, W, ClipLayer.Labels);
+            if (t.Track.IsMidi) DrawMidiClips(ctx, i, y, W, ClipLayer.Labels);
+        }
         DrawJoins(ctx, i, W);
         if (Range is { } r && rangeTracks.Contains(t.Track.Id)) DrawRange(ctx, y, lh, W, r.Start, r.End);
         DrawSplitHover(ctx, i, y, lh);
-        if (!OverSeparator(t.Track.Id)) ctx.DrawLine(Palette.Pen(Palette.Line), new Point(HeaderW, y + lh - 0.5), new Point(W, y + lh - 0.5));
+        DrawRowBottom(ctx, t.Track.Id, HeaderW, W, y + lh);
     }
 
-    void DrawClip(DrawingContext ctx, LiveTrack t, LiveClip c, double y, bool sel, double W)
+    /// <summary>How much a frozen track's clips show under its render's wave.</summary>
+    const double FrozenDim = 0.35;
+
+    /// <summary>A frozen track's render: its wave across the lane, in the track's color or the accent, with no box (it isn't a clip one can touch).</summary>
+    void DrawFrozen(DrawingContext ctx, LiveTrack t, FrozenRender f, double y, double W)
     {
+        var c = f.Lane;
+        var w = Window(c, c.Clip);
+        if (X(w.End) < HeaderW || X(w.Start) > W) return;
+        double lh = RowH(t.Track);
+        var color = TrackIcons.ColorOf(t.Track) ?? Palette.AccentColor;
+        bool silent = t.Silenced || anySoloed && !t.Soloed;
+        var (geo, line) = Waveform(c, c.Clip, w, y + 8, y + lh - 8, W);
+        WaveLooks.Paint(WaveLooks.Current, ctx, geo, silent ? Palette.Faint : Palette.Alpha(color, 0.9), line);
+        // each clip then draws its labels over it, the snowflake first (DrawFrozenChip)
+    }
+
+    void DrawClip(DrawingContext ctx, LiveTrack t, LiveClip c, double y, bool sel, double W, ClipLayer layer = ClipLayer.All)
+    {
+        bool body = (layer & ClipLayer.Body) != 0, labels = (layer & ClipLayer.Labels) != 0;
         var model = DisplayClip(c);
         double lh = RowH(t.Track);
         var w = Window(c, model);
@@ -2279,84 +2396,95 @@ public sealed partial class TimelineView : Control
         var border = looked ? look.Border : Palette.Pen(c.Offline ? Palette.Alpha(color, sel ? 0.9 : 0.45)
             : sel ? Palette.Alpha(color, tint != null ? 0.95 : 0.6) : tint != null ? Palette.Alpha(color, 0.45) : Palette.Line,
             (c.Offline || tint != null) && sel ? 1.5 : 1);
-        ctx.DrawRectangle(fill, border, clip, 5, 5);
+        if (body) ctx.DrawRectangle(fill, border, clip, 5, 5);
+        // what is being worked on: the dark shade and its bar go with the clip, its pill with the labels
+        float? working = null;
+        string[]? workTexts = null;
+        string? workGlyph = null;
+        if (c.Offline) { }
+        else if (ClipRenderProgress?.Invoke(t, c) is { } progress) (working, workTexts) = (progress, model.Stretch != 1 ? FittingTexts : TransposingTexts);
+        else if (TempoProgress?.Invoke(c) is { } listened) (working, workTexts, workGlyph) = (listened, TempoTexts, TempoGlyph);
+        else if (ScaleProgress?.Invoke(c) is { } scaled) (working, workTexts, workGlyph) = (scaled, ScaleTexts, ToMidiGlyph);
+        else if (ToMidiProgress?.Invoke(c) is { } heard) (working, workTexts, workGlyph) = (heard, ToMidiTexts, ToMidiGlyph);
+        else if (StemsProgress?.Invoke(c) is { } split) (working, workTexts) = (split, StemsTexts);
+        var f = ClipEnvelope.FitFades(model.FadeInSec, model.FadeOutSec, w.End - w.Start);
+        double fadeInX = x0 + f.FadeIn * pps, fadeOutX = x1 - f.FadeOut * pps;
         using (ctx.PushClip(new RoundedRect(clip, 5)))
         {
-            if (looked) TrackColorLooks.DrawBar(ctx, clip, color, sel);
-            if (c.Offline)
+            if (body)
             {
-                ctx.DrawText(c.Name, 11, sel ? Palette.Fg : Palette.Dim, new Point(Math.Max(x0, HeaderW) + 8, y + 7), Palette.UiBold);
-                ctx.DrawText(Loc.T("clip.offline"), 11, Palette.Faint, new Point(Math.Max(x0, HeaderW) + 8, y + 26), Palette.Ui);
-            }
-            else
-            {
-                if (thumbs)
+                if (looked) TrackColorLooks.DrawBar(ctx, clip, color, sel);
+                if (!c.Offline)
                 {
-                    DrawFilmstrip(ctx, c, model, clip, W);
-                    // the wave sits on a dark gradient over the bottom 55 % of the clip
-                    var shade = new Rect(clip.X, clip.Bottom - clip.Height * 0.55, clip.Width, clip.Height * 0.55);
-                    ctx.DrawRectangle(ClipShade, null, shade);
-                    ctx.DrawRectangle(null, border, clip.Deflate(0.5), 4.5, 4.5); // over the frames, inside the clip
+                    if (thumbs)
+                    {
+                        DrawFilmstrip(ctx, c, model, clip, W);
+                        // the wave sits on a dark gradient over the bottom 55 % of the clip
+                        var shade = new Rect(clip.X, clip.Bottom - clip.Height * 0.55, clip.Width, clip.Height * 0.55);
+                        ctx.DrawRectangle(ClipShade, null, shade);
+                        ctx.DrawRectangle(null, border, clip.Deflate(0.5), 4.5, 4.5); // over the frames, inside the clip
+                    }
+                    double waveTop = thumbs ? clip.Bottom - clip.Height * 0.55 : y + 6 + (looked ? TrackColorLooks.Top(clip.Height) : 0), waveBottom = y + lh - 6;
+                    // the wave is the track's color or the accent, at full strength over the frames (the shade dims it); untinted goes white there
+                    var wave = silent ? Palette.Faint : looked ? look.Content : thumbs && tint == null && !sel ? Palette.Alpha(Colors.White, 0.85)
+                        : Palette.Alpha(color, sel || thumbs ? 1 : 0.8);
+                    // a split track shows a stereo clip's left over its right (asked by the user), each in its half
+                    if (t.Track.SplitWave && c.Audio is { Mono: false } && (waveBottom - waveTop) / 2 >= SplitWaveMinH)
+                    {
+                        double split = Math.Round((waveTop + waveBottom) / 2) + 0.5;
+                        var (left, leftLine) = Waveform(c, model, w, waveTop, split - 1.5, W, 0);
+                        WaveLooks.Paint(WaveLooks.Current, ctx, left, wave, leftLine);
+                        var (right, rightLine) = Waveform(c, model, w, split + 1.5, waveBottom, W, 1);
+                        WaveLooks.Paint(WaveLooks.Current, ctx, right, wave, rightLine);
+                        ctx.DrawLine(Palette.Pen(Palette.Alpha(color, 0.25)), new Point(Math.Max(x0, HeaderW), split), new Point(Math.Min(x1, W), split));
+                    }
+                    else
+                    {
+                        var (geo, line) = Waveform(c, model, w, waveTop, waveBottom, W);
+                        WaveLooks.Paint(WaveLooks.Current, ctx, geo, wave, line);
+                    }
+                    if (working is { } done) DrawWorkingShade(ctx, clip, done);
                 }
-                double waveTop = thumbs ? clip.Bottom - clip.Height * 0.55 : y + 6 + (looked ? TrackColorLooks.Top(clip.Height) : 0), waveBottom = y + lh - 6;
-                // the wave is the track's color or the accent, at full strength over the frames (the shade dims it); untinted goes white there
-                var wave = silent ? Palette.Faint : looked ? look.Content : thumbs && tint == null && !sel ? Palette.Alpha(Colors.White, 0.85)
-                    : Palette.Alpha(color, sel || thumbs ? 1 : 0.8);
-                // a split track shows a stereo clip's left over its right (asked by the user), each in its half
-                if (t.Track.SplitWave && c.Audio is { Mono: false } && (waveBottom - waveTop) / 2 >= SplitWaveMinH)
+                void Fade(double a, double b, double edge)
                 {
-                    double split = Math.Round((waveTop + waveBottom) / 2) + 0.5;
-                    var (left, leftLine) = Waveform(c, model, w, waveTop, split - 1.5, W, 0);
-                    WaveLooks.Paint(WaveLooks.Current, ctx, left, wave, leftLine);
-                    var (right, rightLine) = Waveform(c, model, w, split + 1.5, waveBottom, W, 1);
-                    WaveLooks.Paint(WaveLooks.Current, ctx, right, wave, rightLine);
-                    ctx.DrawLine(Palette.Pen(Palette.Alpha(color, 0.25)), new Point(Math.Max(x0, HeaderW), split), new Point(Math.Min(x1, W), split));
+                    FadeShade(ctx, edge, a, b, clip.Top, clip.Bottom);
+                    ctx.DrawLine(Palette.Pen(Palette.Accent, 1.5), new Point(a, clip.Top), new Point(b, clip.Bottom));
                 }
-                else
-                {
-                    var (geo, line) = Waveform(c, model, w, waveTop, waveBottom, W);
-                    WaveLooks.Paint(WaveLooks.Current, ctx, geo, wave, line);
-                }
-                if (ClipRenderProgress?.Invoke(t, c) is { } progress) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), progress, model.Stretch != 1 ? FittingTexts : TransposingTexts, null);
-                else if (TempoProgress?.Invoke(c) is { } listened) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), listened, TempoTexts, TempoGlyph);
-                else if (ScaleProgress?.Invoke(c) is { } scaled) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), scaled, ScaleTexts, ToMidiGlyph);
-                else if (ToMidiProgress?.Invoke(c) is { } heard) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), heard, ToMidiTexts, ToMidiGlyph);
-                else if (StemsProgress?.Invoke(c) is { } split) DrawWorking(ctx, clip, Math.Max(x0, HeaderW), split, StemsTexts, null);
+                if (f.FadeIn > 0) Fade(fadeInX, x0, x0);
+                if (f.FadeOut > 0) Fade(fadeOutX, x1, x1);
+                bool editable = sel && Selected >= 0 && Selected < tracks.Count && tracks[Selected] == t && CurveEditable(Selected, c);
+                if (!c.Offline && (editable || model.GainDb != 0 || model.GainCurve.Count > 0)) DrawCurve(ctx, c, model, w, clip, editable);
             }
-            var f = ClipEnvelope.FitFades(model.FadeInSec, model.FadeOutSec, w.End - w.Start);
-            void Fade(double a, double b, double edge)
+            if (labels)
             {
-                FadeShade(ctx, edge, a, b, clip.Top, clip.Bottom);
-                ctx.DrawLine(Palette.Pen(Palette.Accent, 1.5), new Point(a, clip.Top), new Point(b, clip.Bottom));
-            }
-            if (f.FadeIn > 0) Fade(x0 + f.FadeIn * pps, x0, x0);
-            if (f.FadeOut > 0) Fade(x1 - f.FadeOut * pps, x1, x1);
-            bool editable = sel && Selected >= 0 && Selected < tracks.Count && tracks[Selected] == t && CurveEditable(Selected, c);
-            if (!c.Offline && (editable || model.GainDb != 0 || model.GainCurve.Count > 0)) DrawCurve(ctx, c, model, w, clip, editable);
-            bool locked = ClipEditing.IsLocked(t.Track, c.Clip);
-            if (sel || clip.Contains(lastPointer)) DrawEdgeHandles(ctx, c, clip, x0 + f.FadeIn * pps, x1 - f.FadeOut * pps, locked);
-            double tabAt = !c.Offline && MediaBadge(clip) != null ? 52 : 22;
-            // a repeat of a loop says so, like GarageBand's
-            if (model.LoopOf != null && clip.Width > 20) DrawClipTab(ctx, clip, clip.Width - 4, ToolCursors.LoopGlyph);
-            if (locked && clip.Width > tabAt + 2) DrawClipTab(ctx, clip, tabAt, "");
-            if (locked) tabAt += 22;
-            if (model.Reversed && clip.Width > tabAt + 2) DrawClipTab(ctx, clip, tabAt, "");
-            if (model.Reversed) tabAt += 22;
-            if (model.Pitch != 0 && clip.Width > tabAt + 12) DrawPitchTab(ctx, clip, tabAt + 10, model.Pitch);
-            if (!c.Offline && model.Name is { } own && c.Clip.Id != editingNameId)
-                DrawClipName(ctx, clip, own, Math.Max(x0, HeaderW) + 4, clip.Right - tabAt - (model.Pitch != 0 ? 40 : 0) - 4, sel);
-            if (!c.Offline && MediaBadge(clip) is { } badge) DrawMediaBadge(ctx, badge, c.VideoPath != null);
-            if (w.AnchorCut > 0.0005)
-            {
-                for (double sy = clip.Top - 6; sy < clip.Bottom; sy += 6)
-                    ctx.DrawLine(Palette.Pen(Palette.Accent, 2), new Point(x0, sy + 6), new Point(x0 + 6, sy));
-                if (clip.Width > 60)
+                bool locked = ClipEditing.IsLocked(t.Track, c.Clip);
+                if (sel || clip.Contains(lastPointer)) DrawEdgeHandles(ctx, c, clip, fadeInX, fadeOutX, locked);
+                // every label asks the strip for its room, the most telling first; the name takes what is left (#240)
+                var band = BandOf(clip, x0, x1, fadeInX, fadeOutX, W);
+                if (t.Freeze != null && band.TakeLeft(FrozenChipW, out var frozen)) DrawFrozenChip(ctx, frozen);
+                if (!c.Offline && band.TakeRight(MediaBadgeW, out var badge)) DrawMediaBadge(ctx, badge, c.VideoPath != null);
+                // a repeat of a loop says so with the loop icon at its start, as while it was dragged (#253)
+                if (model.LoopOf != null && band.TakeLeft(LoopGlyphW, out var loop)) DrawLoopGlyph(ctx, 10, Palette.Alpha(color, 1), new Point(loop.X, loop.Y - 1));
+                if (locked && band.TakeRight(ClipTabW, out var lockTab)) DrawClipTab(ctx, lockTab, "");
+                if (model.Reversed && band.TakeRight(ClipTabW, out var reversed)) DrawClipTab(ctx, reversed, "");
+                if (model.Pitch != 0 && band.TakeRight(PitchTabW, out var pitch)) DrawPitchTab(ctx, pitch, model.Pitch);
+                if (working is { } done && workTexts != null) DrawWorkingPill(ctx, ref band, done, workTexts, workGlyph);
+                if (c.Clip.Id != editingNameId && (c.Offline ? c.Name : model.Name) is { } own) DrawClipName(ctx, clip, own, band.Left, band.Right, sel);
+                if (c.Offline && clip.Height >= OfflineTextMinH)
+                    ctx.DrawText(Loc.T("clip.offline"), 11, Palette.Faint, new Point(Math.Max(x0, HeaderW) + ClipLabelInset, clip.Top + ClipBand.Below + ClipBand.H + 2), Palette.Ui);
+                if (w.AnchorCut > 0.0005)
                 {
-                    var label = Palette.Text(SecText(w.AnchorCut), 10.5, Palette.Accent, Palette.Mono);
-                    ctx.DrawRectangle(Palette.Alpha(Colors.Black, 0.7), null,
-                        new Rect(x0 + 10, clip.Bottom - 19, label.Width + 22, 16), 2, 2);
-                    ctx.DrawText("\uE8C6", 10, Palette.Accent, new Point(x0 + 14, clip.Bottom - 17), Icons);
-                    ctx.DrawText(label, new Point(x0 + 28, clip.Bottom - 18));
+                    for (double sy = clip.Top - 6; sy < clip.Bottom; sy += 6)
+                        ctx.DrawLine(Palette.Pen(Palette.Accent, 2), new Point(x0, sy + 6), new Point(x0 + 6, sy));
+                    // along the bottom, where the strip isn't
+                    if (clip.Width > 60 && clip.Height >= ClipBand.MinClipH + 20)
+                    {
+                        var label = Palette.Text(SecText(w.AnchorCut), 10.5, Palette.Accent, Palette.Mono);
+                        ctx.DrawRectangle(Palette.Alpha(Colors.Black, 0.7), null,
+                            new Rect(x0 + 10, clip.Bottom - 19, label.Width + 22, 16), 2, 2);
+                        ctx.DrawText("", 10, Palette.Accent, new Point(x0 + 14, clip.Bottom - 17), Icons);
+                        ctx.DrawText(label, new Point(x0 + 28, clip.Bottom - 18));
+                    }
                 }
             }
         }
@@ -2380,16 +2508,21 @@ public sealed partial class TimelineView : Control
     /// being detected: the wave dims, a bar fills along its bottom and a label (<paramref name="texts"/>, by percent)
     /// says how far it is, after <paramref name="glyph"/> (a Fluent icon; null = the transpose's). It keeps sounding meanwhile.
     /// </summary>
-    void DrawWorking(DrawingContext ctx, Rect clip, double left, float progress, string[] texts, string? glyph)
+    void DrawWorkingShade(DrawingContext ctx, Rect clip, float progress)
     {
         ctx.FillRectangle(Palette.Alpha(Colors.Black, 0.45), clip);
         var track = new Rect(clip.X, clip.Bottom - 4, clip.Width, 4);
         ctx.FillRectangle(Palette.Alpha(Colors.White, 0.08), track);
         ctx.FillRectangle(Palette.Accent, new Rect(track.X, track.Y, track.Width * Math.Clamp(progress, 0, 1), track.Height));
+    }
+
+    /// <summary>The label of <see cref="DrawWorkingShade"/>, from the strip: a short clip keeps only the bar.</summary>
+    static void DrawWorkingPill(DrawingContext ctx, ref ClipBand band, float progress, string[] texts, string? glyph)
+    {
         int pct = Math.Clamp((int)(progress * 100), 0, 100);
         var label = Palette.Text(texts[pct], 11, Palette.Fg, Palette.Ui);
-        var pill = new Rect(left + 6, clip.Y + 6, label.Width + 30, 20);
-        if (pill.Right > clip.Right - 4) return; // a short clip keeps only the bar
+        if (!band.TakeLeft(label.Width + 30, out var room)) return;
+        var pill = room.Inflate(new Thickness(0, 2));
         ctx.DrawRectangle(Palette.Alpha(Colors.Black, 0.7), Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.5)), pill, 4, 4);
         if (glyph == null) FxIcon.Draw(ctx, FxIcon.Transpose, new Rect(pill.X + 7, pill.Center.Y - 6, 12, 12), Palette.Accent);
         else
@@ -2516,7 +2649,7 @@ public sealed partial class TimelineView : Control
     /// audio only, so you can tell them apart without opening anything. It sits left of the edge handles and only
     /// says something, with no tooltip: over a clip it would cover what you are about to grab.
     /// </summary>
-    static Rect? MediaBadge(Rect clip) => clip.Width >= 48 && clip.Height >= 24 ? new Rect(clip.Right - 30, clip.Top + 4, 18, 16) : null;
+    const double MediaBadgeW = 18;
 
     void DrawMediaBadge(DrawingContext ctx, Rect badge, bool video)
     {
@@ -2608,24 +2741,24 @@ public sealed partial class TimelineView : Control
         t.Draw(ctx, new Point(tab.X + 6, tab.Y + 3));
     }
 
-    /// <summary>A small padlock in a locked clip's top right corner, on a dark tab so it reads over the frames.</summary>
+    /// <summary>Lowest clip that also shows "Sin conexión" under its name.</summary>
+    const double OfflineTextMinH = 40;
     /// <summary>Narrowest stretch of a clip that still shows its name.</summary>
     const double ClipNameMinW = 24;
     /// <summary>Narrowest box for a clip's name, and how tall it is.</summary>
     const double ClipEditorW = 160, ClipEditorH = 22;
 
     /// <summary>
-    /// A clip's own name (asked by the user) at its top left, on a dark tab like its others so it reads over the wave,
-    /// cut where the tabs on the right begin (<paramref name="right"/>).
+    /// A clip's own name (asked by the user) at its top left, audio or MIDI alike (#253), with a faint dark halo so it
+    /// reads over the wave or the notes, cut at <paramref name="right"/> (where the tabs or the next repeat begin).
     /// </summary>
     static void DrawClipName(DrawingContext ctx, Rect clip, string name, double left, double right, bool sel)
     {
         if (clip.Height < 24 || right - left < ClipNameMinW) return;
+        // no box: the faint dark halo of the loop icon keeps it legible over the clip (#253)
         var text = Palette.Text(name, 11, sel ? Palette.Fg : Palette.Dim, Palette.UiBold);
-        var tab = new Rect(Math.Round(left) + 0.5, Math.Round(clip.Top + 4) + 0.5, Math.Min(text.Width + 10, right - left), 16);
-        ctx.DrawRectangle(Palette.Alpha(Palette.AppColor, 0.75), null, tab, 4, 4);
-        using (ctx.PushClip(tab.Deflate(new Thickness(5, 0))))
-            text.Draw(ctx, new Point(tab.X + 5, tab.Center.Y - text.Height / 2));
+        DrawHaloText(ctx, name, 11, sel ? Palette.Fg : Palette.Dim, new Point(Math.Round(left) + 1, Math.Round(clip.Top + 12 - text.Height / 2)),
+            Palette.UiBold, right - left - 1);
     }
 
     /// <summary>Where a clip's in-place name box goes: along its top, from where it shows; null when it is not on screen.</summary>
@@ -2650,17 +2783,19 @@ public sealed partial class TimelineView : Control
         return null;
     }
 
-    static void DrawClipTab(DrawingContext ctx, Rect clip, double fromRight, string glyph)
+    /// <summary>Widths of a clip's icon tab (lock, reversed) and of its pitch tab, in its label strip.</summary>
+    const double ClipTabW = 17, PitchTabW = 27;
+
+    /// <summary>An icon tab of a clip (a padlock when locked, an arrow when reversed), on a dark tab so it reads over the frames.</summary>
+    static void DrawClipTab(DrawingContext ctx, Rect tab, string glyph)
     {
-        var tab = new Rect(Math.Round(clip.Right - fromRight) + 0.5, Math.Round(clip.Top + 4) + 0.5, 17, 16);
         ctx.DrawRectangle(Palette.Alpha(Palette.AppColor, 0.75), null, tab, 4, 4);
         ctx.DrawText(glyph, 10, Palette.Dim, new Point(tab.X + 3.5, tab.Y + 3), Icons);
     }
 
     /// <summary>A clip's own pitch ("+2"), beside its other tabs: the track's Transponer has its tag in the header.</summary>
-    static void DrawPitchTab(DrawingContext ctx, Rect clip, double fromRight, double pitch)
+    static void DrawPitchTab(DrawingContext ctx, Rect tab, double pitch)
     {
-        var tab = new Rect(Math.Round(clip.Right - fromRight) + 0.5, Math.Round(clip.Top + 4) + 0.5, 27, 16);
         ctx.DrawRectangle(Palette.Alpha(Palette.AppColor, 0.75), null, tab, 4, 4);
         var t = Palette.Text(TransposeTags[Math.Clamp((int)Math.Round(pitch), -12, 12) + 12], 10, Palette.Accent, Palette.Mono);
         t.Draw(ctx, new Point(tab.Center.X - t.Width / 2, tab.Center.Y - t.Height / 2));
@@ -2886,7 +3021,10 @@ public sealed partial class TimelineView : Control
     }
     Rect ArmRect(int i) => Compact ? CompactBtn(i, 0) : HeadBtn(i, HeaderRight - 122);
     /// <summary>The input chip: wide enough for its longest label ("11-12") and the arrow side by side.</summary>
-    Rect InputRect(int i) => Compact ? NoRect : HeadBtn(i, HeaderRight - 176, 50);
+    Rect InputRect(int i) => Compact ? NoRect : HeadBtn(i, HeaderRight - 204, 50);
+    /// <summary>The freeze toggle (#240, asked by the user): left of the ●, lit in the accent while the track is frozen.
+    /// Not in a compact header (the track menu still has it).</summary>
+    Rect FreezeRect(int i) => Compact ? NoRect : HeadBtn(i, HeaderRight - 150);
     Rect MuteRect(int i) => Compact ? CompactBtn(i, 1) : HeadBtn(i, HeaderRight - 94);
     Rect SoloRect(int i) => Compact ? CompactBtn(i, 2) : HeadBtn(i, HeaderRight - 66);
     Rect RemoveRect(int i) => Compact ? NoRect : HeadBtn(i, HeaderRight - 38);
@@ -2901,7 +3039,7 @@ public sealed partial class TimelineView : Control
     }
     /// <summary>Room for the name: an armed track shows its input left of the ●, so the name gets shorter.</summary>
     double NameW(int i) => Compact ? CompactNameW(i) : Math.Max(0, (i >= 0 && i < tracks.Count && tracks[i].Track.IsMidi && InstrumentRect(i).Width > 0 ? InstrumentRect(i).X - 62
-        : armed.Contains(i) && !Recording && InputLabel != null ? InputRect(i).X - 62 : HeaderRight - 186) - Indent(i) - NameShift(i));
+        : armed.Contains(i) && !Recording && InputLabel != null ? InputRect(i).X - 62 : HeaderRight - 214) - Indent(i) - NameShift(i));
     double NameX(int i) => Compact ? BadgeRect(i).Right + 2 : 54 + Indent(i) + NameShift(i);
     /// <summary>Where a track's name sits (and its in-place editor goes, which a compact header lets run over the lane).</summary>
     Rect NameRect(int i) => new(NameX(i), HeadY(i) + 7, Compact ? Math.Max(CompactEditorW, NameW(i) + 8) : NameW(i) + 8, 26);
@@ -2983,6 +3121,7 @@ public sealed partial class TimelineView : Control
         bool chip = isArmed && !Recording && InputLabel != null;
         double nameW = NameW(i);
         // a locked track says so with a padlock after its name and its tags, which gives it the room
+        // (a frozen one says so with its lit freeze toggle, #240)
         bool padlock = t.Track.Locked && editingNameId != t.Track.Id && !RecordingInto(i);
         if (padlock) nameW = Math.Max(0, nameW - LockW);
         if (RecordingInto(i))
@@ -3016,8 +3155,9 @@ public sealed partial class TimelineView : Control
 
         if (!RecordingInto(i) && lastPointer.Y >= y && lastPointer.Y < y + lh)
             DrawTrash(ctx, RemoveRect(i), Hot(RemoveRect(i)));
-        if (!OverSeparator(t.Track.Id)) ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, y + lh - 0.5), new Point(HeaderW, y + lh - 0.5));
+        DrawRowBottom(ctx, t.Track.Id, 0, HeaderW, y + lh);
         DrawArm(ctx, ArmRect(i), isArmed || RecordingInto(i), Hot(ArmRect(i)));
+        DrawFreeze(ctx, FreezeRect(i), t.Track.Frozen, Hot(FreezeRect(i)));
         if (tracks[i].Track.IsMidi && InstrumentRect(i).Width > 0) DrawInstrumentChip(ctx, i);
 
         var ch = t.Channel;
@@ -3127,7 +3267,7 @@ public sealed partial class TimelineView : Control
         double nameW = NameW(i);
         if (nameW >= CompactNameMin && editingNameId != t.Track.Id)
             ctx.DrawText(t.Track.Name, 12.5, Palette.Fg, new Point(badge.Right + 6, hy + 11), Palette.UiBold, nameW);
-        if (!OverSeparator(t.Track.Id)) ctx.DrawLine(Palette.Pen(Palette.Line), new Point(0, y + lh - 0.5), new Point(HeaderW, y + lh - 0.5));
+        DrawRowBottom(ctx, t.Track.Id, 0, HeaderW, y + lh);
         var ch = t.Channel;
         DrawToggle(ctx, MuteRect(i), "M", ch.Muted, Palette.Mute, Hot(MuteRect(i)));
         DrawToggle(ctx, SoloRect(i), "S", ch.Solo, Palette.Accent, Hot(SoloRect(i)));
@@ -3266,6 +3406,15 @@ public sealed partial class TimelineView : Control
         DrawChevron(ctx, new Point(r.Right - 9, r.Center.Y + 1), Palette.Dim);
     }
 
+    /// <summary>The freeze toggle (#240): a snowflake, on the accent while the track is frozen; like M / S on hover.</summary>
+    static void DrawFreeze(DrawingContext ctx, Rect r, bool on, bool hot)
+    {
+        if (hot) DrawGlow(ctx, r, Palette.AccentColor);
+        var border = on ? null : Palette.Pen(hot ? Palette.Alpha(Palette.AccentColor, 0.5) : Palette.Line);
+        ctx.DrawRectangle(on ? Palette.Accent : Palette.Hover, border, r, 4, 4);
+        Snowflake.Draw(ctx, r.Center, Math.Min(r.Width, r.Height) - 6, on ? Palette.App : hot ? Palette.Fg : Palette.Dim);
+    }
+
     /// <summary>An M / S toggle; on hover it glows in the accent and, while off, its letter and border brighten.</summary>
     static void DrawToggle(DrawingContext ctx, Rect r, string label, bool on, IBrush onBrush, bool hot)
     {
@@ -3305,15 +3454,17 @@ public sealed partial class TimelineView : Control
         if (row?.Lane == null) selectedBlock = null;
         if (buttons.IsLeftButtonPressed || buttons.IsRightButtonPressed)
         {
+            if (TempoStripPressed(p, e, buttons.IsRightButtonPressed)) return;
             if (ChordStripPressed(p, e, buttons.IsRightButtonPressed)) return;
             if (RangePressed(p, e, buttons.IsRightButtonPressed)) return;
             if (StripPressed(p, e, buttons.IsRightButtonPressed)) return;
         }
         if (buttons.IsRightButtonPressed)
         {
-            if (p.Y >= RulerH && AutoRightPressed(row, i, p)) { e.Handled = true; return; }
+            if (p.Y >= RulerH && AutoRightPressed(row, i, p, e)) { e.Handled = true; return; }
             if (p.Y < RulerH && p.X > HeaderW) RulerMenuRequested?.Invoke(p);
             else if (row?.Folder is { } folder) FolderContextRequested?.Invoke(folder, p);
+            else if (row?.Bus is { } rightBus) BusRowRightPressed(rightBus, p);
             // the empty space under the last row, header or lanes, offers a new track
             else if (row == null && p.Y >= RulerH)
             {
@@ -3359,6 +3510,11 @@ public sealed partial class TimelineView : Control
         if (row?.Folder is { } pressed)
         {
             FolderPressed(pressed, p, e);
+            return;
+        }
+        if (row?.Bus is { } pressedBus)
+        {
+            BusRowPressed(pressedBus, p, e);
             return;
         }
         if (JoinChipAt(i, p) is { } incoming)
@@ -3418,6 +3574,12 @@ public sealed partial class TimelineView : Control
         if (p.X < HeaderW && ArmRect(i).Contains(p))
         {
             ArmRequested?.Invoke(tracks[i]);
+            e.Handled = true;
+            return;
+        }
+        if (p.X < HeaderW && FreezeRect(i).Contains(p))
+        {
+            FreezeRequested?.Invoke(tracks[i]);
             e.Handled = true;
             return;
         }
@@ -3785,6 +3947,10 @@ public sealed partial class TimelineView : Control
             StripMoved();
         else if (gesture == "chords")
             ChordsMoved();
+        else if (gesture == "tempo")
+            TempoMoved();
+        else if (gesture == "tempo-size")
+            TempoSizeMoved();
         else if (gesture == "volume")
         {
             var r = channelFolder is { } cf ? FolderVolumeRect(cf) : VolumeRect(fromIndex);
@@ -3962,6 +4128,7 @@ public sealed partial class TimelineView : Control
         // old height for a moment and glided from there, so everything jumped on release
         if (kind == "row-height" && changed && heightDrag is { } rh) RowHeightRequested?.Invoke(rh.Id, rh.H);
         if (kind == "auto") EndAuto(changed);
+        if (kind == "erase") EndRightErase(changed);
         ClearGesture();
         e.Pointer.Capture(null);
         if (kind == "range" && Range == null) ClearRange();
@@ -3971,6 +4138,8 @@ public sealed partial class TimelineView : Control
         if (kind == "zoom") EndZoom(lastPointer, (modifiers & KeyModifiers.Alt) != 0);
         if (kind is "marker" or "loop") StripReleased(kind, changed);
         if (kind == "chords") ChordsReleased(changed);
+        if (kind == "tempo") TempoReleased(changed);
+        if (kind == "tempo-size") TempoSizeReleased(changed);
         if (kind == "box" && changed) EndBox();
         // Ctrl+click on a take adds it or takes it out (with Ctrl held, a drag still swaps it with another track's clip)
         if (toggle != null && !changed && grabbedId != null) ToggleBoxed(grabbedId, toggle);
@@ -4007,22 +4176,26 @@ public sealed partial class TimelineView : Control
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         base.OnPointerCaptureLost(e);
+        if (gesture == "tempo") tempoPreview = null;
         ClearGesture();
     }
 
     public void CancelGesture()
     {
         ClearRange();
+        if (gesture == "tempo") tempoPreview = null;
         ClearGesture();
         CancelChordDrag();
     }
     void ClearGesture()
     {
         if (gesture == "listen") ListenEnded?.Invoke();
+        tempoHeldScale = null;
         stretchText = null;
         loopRuns.Clear();
         ClearGroup();
         if (erasing.Count > 0) erasing.Clear();
+        ClearRightErase();
         rightMenu = null;
         if (gesture == "pencil") TakePencil();
         bool reordered = gesture == "reorder" && moved;
@@ -4078,7 +4251,9 @@ public sealed partial class TimelineView : Control
         int i = row is { Folder: null, Lane: null } h ? h.Track : -1;
         if (ToolCursor() is { } toolCursor) { Cursor = toolCursor; return; }
         var cursor = StandardCursorType.Arrow;
-        if (InRangeStrip(lastPointer)) cursor = RangeCursor(lastPointer);
+        if (OnTempoEdge(lastPointer)) cursor = StandardCursorType.SizeNorthSouth;
+        else if (InTempoStrip(lastPointer)) cursor = TempoCursor(lastPointer);
+        else if (InRangeStrip(lastPointer)) cursor = RangeCursor(lastPointer);
         else if (InStrip(lastPointer)) cursor = StripCursor(lastPointer);
         else if (InChordStrip(lastPointer)) cursor = ChordCursor(lastPointer);
         else if (OnGrip(lastPointer)) cursor = StandardCursorType.SizeWestEast;

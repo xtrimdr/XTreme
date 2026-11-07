@@ -29,6 +29,13 @@
   t-<owner hash>.json: 'bloqueado' when its line loops back, 'atencion' when a command of its changed another session's
   files; they outlive the turn (the agent stopped because of them) until the session's next tool call.
 
+  Alerts between sessions (#263): m-<target hash>-<ms>-<n>.json, one per alert, for a session or one owner (a
+  subagent). The hook writes them by itself (a file let go for whoever was first in line, a file taken that another
+  session changed, a command that changed a file someone holds, a build that fails in a file another session changed)
+  and agents send them by hand (-Avisa, -PideArchivo). They reach the agent on its next edit or command (PostToolUse
+  'avisos' and 'despues', as context), before its turn ends (Stop keeps it going to read them) and with the user's next
+  message; the bench shows them as they arrive. A read one stays AlertKeepSec for the bench, then goes.
+
   A lock is a file in .claude\bloqueos named by the path's hash, created by a move so only one session can win it.
   A session that died without its Stop leaves locks behind: they expire after StaleSec without being touched.
 #>
@@ -37,7 +44,18 @@ param(
     [switch]$Lista,
     [switch]$Limpiar,
     # tools\cerrar-sesion.ps1: the session whose locks go (soltar), without a hook's stdin
-    [string]$Sesion = ''
+    [string]$Sesion = '',
+    # Alerts between sessions (#263), run by an agent (its session from CLAUDE_CODE_SESSION_ID):
+    #   -Avisa <todos|#60|1a2b3c4d> -Texto "…" [-Atencion]   a message to a session, the one working on a ticket, or all
+    #   -PideArchivo <ruta>     asks whoever holds the file to let it go
+    #   -SueltaArchivo <ruta>   lets go of a file this session holds before its turn ends
+    #   -Buzon                  reads this session's unread alerts
+    [string]$Avisa = '',
+    [string]$Texto = '',
+    [switch]$Atencion,
+    [string]$PideArchivo = '',
+    [string]$SueltaArchivo = '',
+    [switch]$Buzon
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +64,9 @@ $KeepSec = 300      # a place in line is kept this long after the last try
 $ActiveSec = 5      # someone who tried this recently is still waiting in the hook right now
 $ReserveSec = 120   # a file let go waits this long for the first in line, even if it's off doing something else
 $StaleSec = 1800    # a lock nobody touched in 30 min belongs to a session that's gone
+$AlertKeepSec = 1800  # a read alert stays this long, so the bench can still show it
+$LogKeepSec = 86400   # the conversation in the bench (#269, avisos.jsonl) keeps a day
+$ChangedSec = 7200  # a change mark this old no longer makes its author someone to warn
 $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $Dir = Join-Path $Root '.claude\bloqueos'
 $Utf8 = New-Object Text.UTF8Encoding($false)
@@ -62,6 +83,7 @@ $BenchFiles = @(
     '^src\\XtremeDaw\.Lab\\TestListCommands\.cs$'
     '^tools\\probar\.ps1$'
     '^src\\XtremeDaw\.App\\LockLight\.cs$'
+    '^src\\XtremeDaw\.App\\AgentAlert\.cs$'
 )
 
 function Now { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
@@ -230,6 +252,173 @@ function Deny([string]$why) {
     exit 0
 }
 
+# Which ticket each session works on (the newest it took): pruebas\lista.json read once, keyed by the session's first
+# characters, as TestList writes them (agent:1a2b3c4d).
+function LoadTickets {
+    if ($null -ne $script:tickets) { return }
+    $script:tickets = @{}
+    $script:takers = @{}
+    $j = ReadJson (Join-Path $Root 'pruebas\lista.json')
+    if (-not $j) { return }
+    foreach ($i in $j.items) {
+        $by = [string]$i.takenBy
+        if (-not $by.StartsWith('agent:') -or $by.Length -le 6) { continue }
+        $script:takers[[int]$i.id] = $by.Substring(6)
+        if ([int]$i.id -gt [int]$script:tickets[$by.Substring(6)]) { $script:tickets[$by.Substring(6)] = [int]$i.id }
+    }
+}
+
+function TicketOf([string]$session) {
+    LoadTickets
+    foreach ($k in $script:tickets.Keys) { if ($session.StartsWith($k, [StringComparison]::OrdinalIgnoreCase)) { return $script:tickets[$k] } }
+    0
+}
+
+# The first characters of the session that took ticket $n ('' when nobody has it).
+function TakerOf([int]$n) { LoadTickets; [string]$script:takers[$n] }
+
+# How an alert names a session: its ticket, or its first characters; '' is the user (a hand run).
+function SessionName([string]$session) {
+    if (-not $session) { return 'el usuario' }
+    $t = TicketOf $session
+    if ($t) { "la sesión del #$t" } else { "la sesión $($session.Substring(0, [Math]::Min(8, $session.Length)))" }
+}
+
+# The sessions whose Claude is open now (p-*.json of a live process).
+function LiveSessions {
+    @(foreach ($f in Get-ChildItem $Dir -Filter 'p-*.json' -ErrorAction SilentlyContinue) {
+        $c = ReadJson $f.FullName
+        if ($c -and $c.session -and $c.pid -and -not (Gone $c)) { [string]$c.session }
+    }) | Select-Object -Unique
+}
+
+# Leaves an alert for $to (a session, or an owner: session/agent). Nothing to oneself, and an alert already waiting
+# unread with the same text isn't written twice (a build that fails again).
+function Send([string]$to, [string]$kind, [string]$text, [string]$path = '', [string]$from = '') {
+    if (-not $to -or $to -eq $from -or -not $text) { return $false }
+    $text = $text.Substring(0, 1).ToUpper() + $text.Substring(1)
+    New-Item -ItemType Directory -Force $Dir | Out-Null
+    $h = Hash $to
+    foreach ($f in Get-ChildItem $Dir -Filter "m-$h-*.json" -ErrorAction SilentlyContinue) {
+        $m = ReadJson $f.FullName
+        if ($m -and -not [long]$m.read -and $m.text -eq $text) { return $true }
+    }
+    $ms = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $file = Join-Path $Dir "m-$h-$ms-$(Get-Random -Maximum 100000).json"
+    $m = [ordered]@{ to = $to; from = $from; kind = $kind; text = $text; path = $path; at = (Now); read = 0 }
+    Move-Item -Force (WriteJson $file $m) $file
+    LogAlert $m
+    $true
+}
+
+# The bench's conversation between agents (#269): every alert also goes, one JSON per line, to avisos.jsonl, which keeps
+# LogKeepSec (the m-*.json go once read). A line is written in one call, retried while another session appends.
+function LogAlert($m) {
+    $line = ($m | ConvertTo-Json -Compress) + "`n"
+    $log = Join-Path $Dir 'avisos.jsonl'
+    for ($n = 0; $n -lt 20; $n++) {
+        try { [IO.File]::AppendAllText($log, $line, $Utf8); return } catch [IO.IOException] { Start-Sleep -Milliseconds 25 }
+    }
+}
+
+# Drops the log's lines older than LogKeepSec, at most once an hour (a turn that ends looks).
+function TrimLog {
+    $log = Join-Path $Dir 'avisos.jsonl'
+    if (-not (Test-Path $log) -or (Get-Item $log).CreationTimeUtc -gt [DateTime]::UtcNow.AddHours(-1)) { return }
+    try {
+        $now = Now
+        $keep = @(foreach ($l in [IO.File]::ReadAllLines($log, $Utf8)) {
+            if (-not $l) { continue }
+            $j = $null
+            try { $j = $l | ConvertFrom-Json } catch { }
+            if ($j -and $now - [long]$j.at -le $LogKeepSec) { $l }
+        })
+        $tmp = "$log.$PID.tmp"
+        [IO.File]::WriteAllText($tmp, $(if ($keep.Count) { ($keep -join "`n") + "`n" } else { '' }), $Utf8)
+        Move-Item -Force $tmp $log
+        # the new file starts the hour over
+        (Get-Item $log).CreationTimeUtc = [DateTime]::UtcNow
+    } catch { }
+}
+
+# This owner's unread alerts, and its session's, oldest first, marked read: what the agent gets told now ('' if none).
+function Inbox($me) {
+    if (-not $me.session -or -not (Test-Path $Dir)) { return '' }
+    $files = @(Get-ChildItem $Dir -Filter "m-$(Hash $me.owner)-*.json" -ErrorAction SilentlyContinue)
+    if ($me.owner -ne $me.session) { $files += @(Get-ChildItem $Dir -Filter "m-$(Hash $me.session)-*.json" -ErrorAction SilentlyContinue) }
+    $lines = @()
+    $stop = $false
+    foreach ($f in $files | Sort-Object { [long]$_.Name.Split('-')[2] }) {
+        $m = ReadJson $f.FullName
+        if (-not $m -or [long]$m.read) { continue }
+        $m.read = Now
+        Move-Item -Force (WriteJson $f.FullName $m) $f.FullName
+        $label = switch ([string]$m.kind) { 'atencion' { $stop = $true; 'ATENCIÓN' } 'pedido' { 'PEDIDO' } 'mensaje' { 'MENSAJE' } default { 'AVISO' } }
+        $lines += "- $label de $(SessionName ([string]$m.from)): $($m.text)"
+    }
+    if (-not $lines.Count) { return '' }
+    $how = if ($stop) { 'Hay una ATENCIÓN: pará y avisale al usuario qué dice.' } else { 'Tenelos en cuenta y seguí (si un archivo tuyo cambió, volvé a leerlo antes de editarlo).' }
+    "Avisos de otras sesiones de XTreme (sistema de bloqueos, #263):`n$($lines -join "`n")`n$how Para contestar: tools\bloqueos.ps1 -Avisa <#ticket|sesión|todos> -Texto `"…`"."
+}
+
+# What a PostToolUse hook says: the alerts as context, and a block reason when the command clashed.
+function Post([string]$context, [string]$why = '') {
+    if (-not $context -and -not $why) { return }
+    $o = @{}
+    if ($why) { $o.decision = 'block'; $o.reason = $why }
+    if ($context) { $o.hookSpecificOutput = @{ hookEventName = 'PostToolUse'; additionalContext = $context } }
+    [Console]::Out.Write(($o | ConvertTo-Json -Compress -Depth 4))
+}
+
+# A file let go: whoever is first in its line hears it's kept for them.
+function TellFreed([string]$full, $me) {
+    $h = Hash $full
+    $rel = Rel $full
+    $q = @(Queue $h)
+    if ($q.Count) { $null = Send ([string]$q[0].owner) 'aviso' "Se liberó $rel y queda reservado para vos $([int]($ReserveSec / 60)) min: volvé a intentar la acción que estaba en cola." $rel $me.session }
+    # and whoever asked for it (-PideArchivo) without being in line
+    foreach ($f in Get-ChildItem $Dir -Filter "k-$h-*.json" -ErrorAction SilentlyContinue) {
+        $k = ReadJson $f.FullName
+        Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+        if (-not $k -or ($q.Count -and [string]$q[0].owner -eq [string]$k.session)) { continue }
+        $why = if ($q.Count) { "; hay $($q.Count) en la cola antes que vos" } else { '' }
+        $null = Send ([string]$k.session) 'aviso' "Se liberó $rel, que habías pedido$why." $rel $me.session
+    }
+}
+
+# Lets go of one lock, keeping it a while for whoever is in line.
+function Release($lock, $me) {
+    $h = Hash $lock.path
+    if (@(Queue $h).Count) { Move-Item -Force (WriteJson (Join-Path $Dir "r-$h.json") @{ at = (Now) }) (Join-Path $Dir "r-$h.json") }
+    Remove-Item $lock.File -Force -ErrorAction SilentlyContinue
+    TellFreed $lock.path $me
+}
+
+# Who should hear about $full: whoever holds it, else whoever changed it last and is still open; never $me's own.
+function Concerned([string]$full, $me) {
+    $l = ReadJson (Join-Path $Dir "l-$(Hash $full).json")
+    if ($l -and -not (Mine $l $me) -and -not (Stale $l)) { return [string]$l.owner }
+    $e = ReadJson (Join-Path $Dir "e-$(Hash $full).json")
+    if ($e -and -not (Mine $e $me) -and (Now) - [long]$e.at -le $ChangedSec -and (LiveSessions) -contains [string]$e.session) { return [string]$e.owner }
+    ''
+}
+
+# A build this command ran failed: each file with an error that another session holds or changed tells that session.
+function TellBuild([string]$cmd, $response, $me) {
+    if ($cmd -notmatch '(?i)dotnet\s+(build|msbuild)|probar\.ps1|msbuild') { return }
+    $text = if ($response -is [string]) { $response } else { ($response.PSObject.Properties | ForEach-Object { [string]$_.Value }) -join "`n" }
+    $seen = @{}
+    foreach ($m in [regex]::Matches($text, '(?m)(?<file>[A-Za-z]:\\[^\r\n(:]+?)\((?<line>\d+)(,\d+)?\)\s*:\s*error\s+(?<code>\w+)\s*:\s*(?<msg>[^\r\n\[]+)')) {
+        $full = [IO.Path]::GetFullPath($m.Groups['file'].Value)
+        if ($seen[$full] -or -not $full.StartsWith($Root + '\', [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $seen[$full] = 1
+        $to = Concerned $full $me
+        if (-not $to) { continue }
+        $rel = Rel $full
+        $null = Send $to 'aviso' "La compilación falla en $rel($($m.Groups['line'].Value)): $($m.Groups['code'].Value) $($m.Groups['msg'].Value.Trim()). Es un archivo tuyo: arreglalo apenas puedas." $rel $me.session
+    }
+}
+
 function Who($lock) {
     $at = if ($lock.since) { [long]$lock.since } else { [long]$lock.joined / 1000 }
     $since = [DateTimeOffset]::FromUnixTimeSeconds($at).ToLocalTime().ToString('HH:mm')
@@ -324,6 +513,14 @@ function Take([string]$full, $me, [bool]$wait) {
             try {
                 [IO.File]::Move($tmp, $file)
                 Remove-Item $qfile, (Join-Path $Dir "r-$h.json") -Force -ErrorAction SilentlyContinue
+                # #263: whoever changed it last, from another session still open, hears it's someone else's now
+                $e = ReadJson (Join-Path $Dir "e-$h.json")
+                if ($e -and -not (Mine $e $me) -and [string]$e.session -ne $me.session -and (Now) - [long]$e.at -le $ChangedSec -and
+                    (LiveSessions) -contains [string]$e.session) {
+                    $rel = Rel $full
+                    $at = [DateTimeOffset]::FromUnixTimeSeconds([long]$e.at).ToLocalTime().ToString('HH:mm')
+                    $null = Send ([string]$e.owner) 'aviso' "$(SessionName $me.session) tomó $rel, que cambiaste vos a las $at. Si te falta algo ahí, pedíselo: tools\bloqueos.ps1 -PideArchivo $rel" $rel $me.session
+                }
                 return $null
             }
             catch { Remove-Item $tmp -Force -ErrorAction SilentlyContinue; continue }
@@ -351,7 +548,7 @@ function Refuse($r) {
     if ($r.Cycle) {
         Deny "BLOQUEADO: $what $holder, y esa espera termina en un archivo que tenés vos: nadie avanzaría. Terminá tu turno ya, así soltás tus archivos, y avisale al usuario qué quedó sin hacer. No lo cambies por otro camino (shell, Write, git, scripts)."
     }
-    Deny "EN COLA: $what $holder. Estás $($r.Place)° de $($r.Line) en la espera. Tu lugar queda guardado $([int]($KeepSec / 60)) min: seguí con otra parte del trabajo si la hay y volvé a intentar esta misma acción (contale al usuario en qué puesto estás). No lo cambies por otro camino (shell, Write, git, scripts)."
+    Deny "EN COLA: $what $holder. Estás $($r.Place)° de $($r.Line) en la espera. Tu lugar queda guardado $([int]($KeepSec / 60)) min: seguí con otra parte del trabajo si la hay y volvé a intentar esta misma acción (contale al usuario en qué puesto estás). Si lo necesitás ya, pedíselo: tools\bloqueos.ps1 -PideArchivo $what (te llega un aviso cuando se libere). No lo cambies por otro camino (shell, Write, git, scripts)."
 }
 
 # Dirty files (tracked or not, never ignored) plus every file another session holds, with what they look like now.
@@ -393,6 +590,53 @@ if ($Lista -or $Limpiar) {
         $i = 0
         foreach ($q in Queue (Hash $p)) { $i++; "    $i° en la cola: $(Who $q)" }
     }
+    exit 0
+}
+
+# Alerts by hand (#263): the agent's own session comes from CLAUDE_CODE_SESSION_ID ('' = the user, from a console).
+if ($Avisa -or $PideArchivo -or $SueltaArchivo -or $Buzon) {
+    $mine = [string]$env:CLAUDE_CODE_SESSION_ID
+    $me = @{ session = $mine; agent = ''; owner = $mine }
+    if ($Buzon) {
+        if (-not $mine) { 'Sin sesión de Claude (CLAUDE_CODE_SESSION_ID): no hay buzón que leer.'; exit 1 }
+        $t = Inbox $me
+        if ($t) { $t } else { 'No hay avisos nuevos.' }
+        exit 0
+    }
+    if ($Avisa) {
+        # -Avisa 60 "texto": the text lands in the first positional parameter
+        if (-not $Texto) { $Texto = $Evento }
+        if (-not $Texto) { 'Falta el texto: -Texto "…".'; exit 1 }
+        $live = @(LiveSessions | Where-Object { $_ -ne $mine })
+        $to = if ($Avisa -eq 'todos') { $live }
+              elseif ($Avisa -match '^#?(\d+)$') { $p = TakerOf ([int]$Matches[1]); if ($p) { @($live | Where-Object { $_.StartsWith($p, [StringComparison]::OrdinalIgnoreCase) }) } else { @() } }
+              else { @($live | Where-Object { $_.StartsWith($Avisa, [StringComparison]::OrdinalIgnoreCase) }) }
+        if (-not @($to).Count) { "No hay otra sesión abierta que corresponda a «$Avisa»."; exit 1 }
+        $kind = if ($Atencion) { 'atencion' } else { 'mensaje' }
+        foreach ($s in $to) { $null = Send $s $kind $Texto '' $mine }
+        "Avisado: $((@($to) | ForEach-Object { SessionName $_ }) -join ', ')."
+        exit 0
+    }
+    $p = if ($PideArchivo) { $PideArchivo } else { $SueltaArchivo }
+    $full = [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $Root $p }))
+    $rel = Rel $full
+    $file = Join-Path $Dir "l-$(Hash $full).json"
+    $lock = ReadJson $file
+    if ($lock) { $lock | Add-Member -NotePropertyName File -NotePropertyValue $file }
+    if ($SueltaArchivo) {
+        if (-not $lock -or -not $mine -or [string]$lock.session -ne $mine) { "$rel no lo tiene esta sesión: no hay nada que soltar."; exit 1 }
+        Release $lock $me
+        "Se soltó $rel."
+        exit 0
+    }
+    if (-not $lock -or (Stale $lock)) { "$rel está libre."; exit 0 }
+    if ($mine -and [string]$lock.session -eq $mine) { "$rel ya es de esta sesión."; exit 0 }
+    $null = Send ([string]$lock.owner) 'pedido' "$(SessionName $mine) necesita $rel. Cuando termines con él, soltalo: tools\bloqueos.ps1 -SueltaArchivo $rel (o terminá tu turno)." $rel $mine
+    if ($mine) {
+        $k = Join-Path $Dir "k-$(Hash $full)-$(Hash $mine).json"
+        Move-Item -Force (WriteJson $k @{ session = $mine; path = $full; at = (Now) }) $k
+    }
+    "Se lo pedí a $(SessionName ([string]$lock.session)). Cuando lo suelte, te llega un aviso."
     exit 0
 }
 
@@ -449,10 +693,12 @@ try {
         'pedido' {
             # #173: a session sent to tickets by number (/xt_revisar-workbench 60 61, from the bench or typed) takes
             # them at once, before the agent reads anything: the bench shows them in progress while its Claude runs,
-            # also after the bench restarts, even if the agent never gets to its own -Toma. Nothing goes to stdout:
-            # here it would be added to the prompt.
+            # also after the bench restarts, even if the agent never gets to its own -Toma. Only the alerts go to
+            # stdout (#263): here it is added to the prompt.
             if (-not $me.session) { exit 0 }
             $null = ClaudeProcess $me
+            $context = Inbox $me
+            if ($context) { [Console]::Out.Write($context) }
             if ([string]$in.prompt -notmatch '^\s*/xt_revisar-workbench\b(?<args>[^\r\n]*)') { exit 0 }
             $nums = @([regex]::Matches($Matches['args'], '\d+') | ForEach-Object { [int]$_.Value } | Where-Object { $_ -gt 0 } | Select-Object -Unique)
             $xtlab = Join-Path $Root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows\xtlab.exe'
@@ -464,10 +710,17 @@ try {
             foreach ($n in $nums) { & $xtlab lista tomar $n --archivo $list *> $null }
             exit 0
         }
+        'avisos' {
+            # PostToolUse of an edit (#263): the alerts that came meanwhile
+            Post (Inbox $me)
+            exit 0
+        }
         'despues' {
+            $context = Inbox $me
+            TellBuild ([string]$in.tool_input.command) $in.tool_response $me
             $file = Join-Path $Dir "s-$(Hash ([string]$in.tool_use_id)).json"
             $before = ReadJson $file
-            if (-not $before) { exit 0 }
+            if (-not $before) { Post $context; exit 0 }
             Remove-Item $file -Force -ErrorAction SilentlyContinue
             CommandEnds $me
             $old = @{}
@@ -495,22 +748,28 @@ try {
                 # The holder edited it, or ran a command of its own, while this one ran: most likely its change.
                 if ([long]$held.touched -ge $start -or (RanSince ([string]$held.owner) $start)) { continue }
                 $clash += "$(Rel $p) ($(Who $held))"
+                # #263: and the holder hears it too, so it reads the file again before its next edit
+                $null = Send ([string]$held.owner) 'aviso' "Un comando de $(SessionName $me.session) cambió $(Rel $p), que tenés tomado. Volvé a leerlo antes de editarlo; si se perdió algo tuyo, avisale al usuario." (Rel $p) $me.session
             }
+            $why = ''
             if ($clash.Count) {
                 SetLight $me 'atencion' ($clash -join '; ')
                 $why = "ATENCIÓN: este comando cambió archivos que está editando otra sesión: $($clash -join '; '). No intentes arreglarlo ni deshacerlo vos (podés pisar lo del otro): pará y avisale al usuario exactamente qué archivos y qué comando."
-                [Console]::Out.Write((@{ decision = 'block'; reason = $why } | ConvertTo-Json -Compress))
             }
+            Post $context $why
             exit 0
         }
         'soltar' {
+            # #263: alerts that came while the agent was finishing keep it going one more step to read them
+            if (-not $Sesion -and -not $in.stop_hook_active) {
+                $context = Inbox $me
+                if ($context) { [Console]::Out.Write((@{ decision = 'block'; reason = $context } | ConvertTo-Json -Compress)); exit 0 }
+            }
             foreach ($l in @(Locks)) {
                 # -Sesion (the session is closing): its subagents' too
                 if ($l.session -ne $me.session -or (-not $Sesion -and $l.agent -ne $me.agent)) { continue }
-                $h = Hash $l.path
                 # Someone is in line: the file is kept for them a while, even if they're off doing something else.
-                if (@(Queue $h).Count) { Move-Item -Force (WriteJson (Join-Path $Dir "r-$h.json") @{ at = (Now) }) (Join-Path $Dir "r-$h.json") }
-                Remove-Item $l.File -Force -ErrorAction SilentlyContinue
+                Release $l $me
             }
             Remove-Item (Join-Path $Dir "d-$(Hash $me.owner).json"), (Join-Path $Dir "c-$(Hash $me.owner).json") -Force -ErrorAction SilentlyContinue
             # The traffic light (#167): a place in line ends with the turn; a red stays, marked, until the next tool
@@ -528,7 +787,13 @@ try {
                 Where-Object { $_.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddSeconds(-$ReserveSec) } | Remove-Item -Force -ErrorAction SilentlyContinue
             # Snapshots of commands that never got their PostToolUse (refused by another hook, interrupted), old
             # change marks, and the w-*.json of the version before the queue.
-            foreach ($pat in 's-*.json', 'e-*.json', 'c-*.json', 'p-*.json', 'w-*.json', 't-*.json') {
+            # Alerts read a while ago (the bench showed them), and requests for a file never let go.
+            foreach ($f in Get-ChildItem $Dir -Filter 'm-*.json' -ErrorAction SilentlyContinue) {
+                $m = ReadJson $f.FullName
+                if (-not $m -or ([long]$m.read -and (Now) - [long]$m.read -gt $AlertKeepSec)) { Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue }
+            }
+            TrimLog
+            foreach ($pat in 's-*.json', 'e-*.json', 'c-*.json', 'p-*.json', 'w-*.json', 't-*.json', 'm-*.json', 'k-*.json') {
                 Get-ChildItem $Dir -Filter $pat -ErrorAction SilentlyContinue |
                     Where-Object { $_.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddHours(-2) } |
                     # a session working longer than that keeps its process written down: the bench tells by it that its tickets are in progress (#173)

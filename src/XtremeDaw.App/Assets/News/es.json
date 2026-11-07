@@ -1,6 +1,91 @@
 {
   "releases": [
     {
+      "version": "0.9.20",
+      "items": [
+        {
+          "icon": "E9D2",
+          "title": "Automatización de buses",
+          "text": "Fader, paneo, mute, envíos y efectos de un bus se automatizan como los de una pista. Cada bus tiene su fila al final del timeline con sus carriles; **Mostrar buses en el timeline** las oculta."
+        },
+        {
+          "icon": "E75C",
+          "title": "Clic derecho y arrastrar borra todo",
+          "text": "Como con los clips, arrastrar con clic derecho borra lo que toca en todo el timeline: bloques de automatización, puntos de tempo, cambios de compás, marcadores, acordes y el rango del loop. Un clic derecho sin arrastrar abre el menú."
+        },
+        {
+          "icon": "E9D2",
+          "title": "Más géneros en el Balance tonal",
+          "text": "Doce objetivos nuevos: **Dubstep**, **Riddim** y **Deep dubstep (UK)**, cada uno con su sub, sus medios y su punch, más Trap, Drum & bass, House / Techno, Reggaetón, Reggae, Metal, R&B / Soul, Country / Folk y Lo-fi."
+        },
+        {
+          "icon": "E8A7",
+          "title": "Envíos entre buses",
+          "text": "Un bus manda a otros buses como una pista: **+** en **Envíos** de su tira, en el mixer o en el inspector. No se ofrece uno que le devolvería el sonido; su salida sigue yendo al Master."
+        },
+        {
+          "icon": "E71B",
+          "title": "Conexiones en el mixer",
+          "text": "**Conexiones**, en la cabecera del mixer, muestra debajo de las tiras los envíos del canal elegido y, en un bus, los que le llegan; cada uno con una perilla para su nivel, separados en IN y OUT. **Enviar**, bajo cada bus, crea un envío con un clic."
+        },
+        {
+          "icon": "E7A7",
+          "title": "El tempo se deshace",
+          "text": "Cambiar el tempo es un paso de **Deshacer**, con todo lo que movió, y aparece en Historial → Pasos. También se deshacen el arpegiador en vivo, el bloqueo y la entrada MIDI de una pista."
+        },
+        {
+          "icon": "E8A1",
+          "title": "Paneles de efectos más claros",
+          "text": "Cada efecto nativo tiene arriba la misma banda de **Preset**, con flechas para recorrerlos. Los modos van en su panel: la nota del delay junto a los ecos, Estéreo / Ping-pong en Estéreo, LIM del compresor en Salida. Lo que tiene pocos valores (la nota del delay, el ratio de los compresores, las etapas del phaser) se elige con botones, todos a la vista."
+        },
+        {
+          "icon": "E8FD",
+          "title": "Grupo Mastering en + Efecto",
+          "text": "Limpieza, Multibanda, Color, Cinta, Ancho, Soft clip y Limitador van juntos en **+ Efecto** → **Mastering**, en el orden de la cadena."
+        },
+        {
+          "icon": "E9CA",
+          "title": "Congelar pistas",
+          "text": "Clic derecho en una pista → **Congelar** renderiza su instrumento y sus efectos y cierra sus plugins, para bajar la carga del DSP. Fader, paneo y envíos siguen activos; **Descongelar** la vuelve a dejar editable. También se congela con el copo del encabezado de la pista."
+        },
+        {
+          "icon": "E8E5",
+          "title": "Doble clic en un .xtp",
+          "text": "Con XTreme abierto, el proyecto se abre en esa ventana en lugar del actual, que se guarda. **Configuración → Asociación de archivos** dice qué programa abre los .xtp y **Asociar archivos .xtp a XTreme** los asocia. El instalador también lo ofrece."
+        },
+        {
+          "icon": "E8B7",
+          "title": "Agrupar en carpeta con Ctrl+G",
+          "text": "**Ctrl+G** pone en una carpeta nueva las pistas elegidas en el timeline, o las de los clips seleccionados. **F2** renombra según dónde hiciste clic: el clip seleccionado en el timeline, la pista o carpeta en sus encabezados o en el inspector."
+        },
+        {
+          "icon": "E790",
+          "title": "Tiras del mixer unidas",
+          "text": "En **Configuración → Apariencia → Tiras del mixer**, **Unidas** junta los canales en una sola consola, de todo el alto y con un surco entre ellos, y el color de cada canal va como filo o franja. Unidas y Franja vienen por defecto. En el timeline, el mismo surco separa cada pista y carpeta."
+        },
+        {
+          "icon": "E8D6",
+          "title": "Bancos General MIDI",
+          "text": "La ventana del instrumento **General MIDI** elige el banco de cada pista: **FluidR3 GM** y **MuseScore General**, más completos, se bajan desde ahí o en **Configuración → Componentes**, y **Cargar .sf2…** usa uno propio. Los bancos suenan con sus moduladores de velocidad y tecla."
+        },
+        {
+          "icon": "E8D6",
+          "title": "Ventana General MIDI renovada",
+          "text": "Volumen del instrumento, ◀ ▶ para pasar de instrumento, búsqueda, lista plegable con un desplegable por familia, y la envolvente y el filtro dibujados como suenan."
+        },
+        {
+          "icon": "EC4A",
+          "title": "Pista de tempo",
+          "text": "Cambios de tempo en escalón o en rampa y cambios de compás (7/8, 6/8…) en la **pista de tempo**, bajo la regla. La regla, la grilla, el click, el reloj y el piano roll los siguen; una pista de audio con **Seguir tempo** se estira con ellos."
+        },
+        {
+          "icon": "E916",
+          "title": "Pump en el tiempo",
+          "text": "El **Pump** ya no se corre detrás de un efecto con latencia (un plugin, el limitador) ni al girar el bucle."
+        }
+      ]
+    },
+    {
       "version": "0.9.19",
       "items": [
         {
@@ -89,7 +174,7 @@
           "text": "Con varias pistas elegidas (Ctrl o Shift en los encabezados), el clic derecho ofrece **Colorear en degradé** y **Un color para todas**."
         },
         {
-          "icon": "E9E9",
+          "icon": "E790",
           "title": "Separar en stems: modo Avanzado",
           "text": "En **Separar en stems**, **Avanzado** elige el modelo, qué stems, cuántas pasadas, separar solo la selección del timeline y qué pasa con el original: silenciar la pista, dejarla sonando o quitar el clip."
         },
@@ -273,7 +358,7 @@
           "topic": "shortcuts"
         },
         {
-          "icon": "E9E9",
+          "icon": "E790",
           "title": "Secciones del mixer ajustables",
           "text": "**Efectos** y **Envíos**, arriba del mixer, muestran u ocultan esa sección en todas las tiras. La línea de abajo de cada lista se arrastra para agrandarla; doble clic la ajusta a la lista más larga, y el alto queda guardado.",
           "topic": "mixer"
@@ -285,7 +370,7 @@
           "topic": "scales-chords"
         },
         {
-          "icon": "E9E9",
+          "icon": "E790",
           "title": "Inspector nuevo",
           "text": "El inspector se ordena en secciones: la pista, el clip elegido y, abajo, la tira con el fader, el paneo, M y S, los efectos, los envíos y la salida. Los valores son filas compactas que se arrastran. El clip y la tira se muestran u ocultan desde arriba, y el alto de la tira se ajusta con su borde.",
           "topic": "window"
@@ -491,7 +576,7 @@
           "topic": "scales-chords"
         },
         {
-          "icon": "E9E9",
+          "icon": "E790",
           "title": "Mezcla y efectos de una pista MIDI",
           "text": "El inspector de una pista MIDI muestra, debajo del instrumento, su **Mezcla**, sus efectos y sus envíos, como cualquier pista.",
           "topic": "instrument"

@@ -138,9 +138,10 @@ public partial class MainWindow
             return;
         }
         string? midiTrack = at.TrackId is { } id && store.Project.Tracks.Find(t => t.Id == id) is { IsMidi: true } ? id : null;
-        double beatSec = 60 / Math.Max(1, store.Project.Settings.Bpm);
+        var map = store.Project.Settings.TempoMap;
+        double fromBeat = map.BeatAt(at.Sec);
         var ghosts = new Controls.TimelineView.DropGhost[all.Count];
-        for (int k = 0; k < midi.Count; k++) ghosts[k] = new(midiTrack, MidiFileBeats(midi[k]) * beatSec, Path.GetFileName(midi[k]));
+        for (int k = 0; k < midi.Count; k++) ghosts[k] = new(midiTrack, map.SecAt(fromBeat + MidiFileBeats(midi[k])) - at.Sec, Path.GetFileName(midi[k]));
         for (int k = 0; k < files.Count; k++)
         {
             var file = carried.FirstOrDefault(c => c.Path == files[k]);

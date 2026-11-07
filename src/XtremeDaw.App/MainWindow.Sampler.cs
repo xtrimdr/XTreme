@@ -219,6 +219,12 @@ public partial class MainWindow
     {
         if (restoring || store == null || store.ReadOnly) return;
         if (tracks.FirstOrDefault(t => t.Track.Id == trackId) is not { Track.Sampler: { } s } live || !samplers.TryGetValue(trackId, out var loaded)) return;
+        if (RefuseFrozen(trackId))
+        {
+            // the knob that moved goes back to what the track has
+            loaded.Window?.Refresh();
+            return;
+        }
         undo.Checkpoint(store.Project, $"sampler:{trackId}:{key}");
         change(s);
         s.Normalized();
@@ -251,7 +257,7 @@ public partial class MainWindow
     /// </summary>
     async Task LoadSample(string trackId, string path, bool granular = false)
     {
-        if (store is not { } st || !CanImport()) return;
+        if (store is not { } st || !CanImport() || RefuseFrozen(trackId)) return;
         if (!AudioImport.IsSupported(path))
         {
             Toast(Loc.T("imp.fail", Path.GetFileName(path), Loc.T("sampler.notAudio")));
@@ -311,7 +317,7 @@ public partial class MainWindow
 
     async Task PickSample(string trackId, bool granular = false)
     {
-        if (!CanImport()) return;
+        if (!CanImport() || RefuseFrozen(trackId)) return;
         Window? own = granular ? granulars.GetValueOrDefault(trackId)?.Window : samplers.GetValueOrDefault(trackId)?.Window;
         var top = own?.StorageProvider ?? StorageProvider;
         var files = await top.OpenFilePickerAsync(new FilePickerOpenOptions { Title = Loc.T("sampler.load"), FileTypeFilter = [AudioFiles, FilePickerFileTypes.All] });

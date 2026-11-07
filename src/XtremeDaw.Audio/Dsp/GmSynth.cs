@@ -24,6 +24,8 @@ public sealed record GmTone
     public const double MaxResonanceDb = 20;
     public const double MaxGlideSec = 2;
     public const int MaxTranspose = 24;
+    /// <summary>The instrument's volume range (asked by the user, #212): the bottom is silence.</summary>
+    public const double MinVolumeDb = -60, MaxVolumeDb = 12;
 
     public static readonly GmTone Neutral = new();
 
@@ -47,6 +49,11 @@ public sealed record GmTone
     public bool Mono { get; init; }
     /// <summary>In Mono, how long a note tied to the one held slides from its pitch.</summary>
     public double GlideSec { get; init; }
+    /// <summary>The instrument's level in dB over the bank's, on what already sounds too (glided per block, no clicks).</summary>
+    public double VolumeDb { get; init; }
+
+    /// <summary><see cref="VolumeDb"/> as a factor; 0 at <see cref="MinVolumeDb"/>.</summary>
+    public float Gain => VolumeDb <= MinVolumeDb ? 0 : (float)Math.Pow(10, Math.Min(VolumeDb, MaxVolumeDb) / 20);
 
     /// <summary>A bank's time with a time knob's position on it.</summary>
     public static double Time(double bank, double knob) => knob < 0 ? bank * (1 + knob) : bank + MaxAddSec * knob * knob;
@@ -61,7 +68,8 @@ public sealed record GmTone
 /// instruments it was written for): a SoundFont player over <see cref="SoundFont"/>, one preset per track (a GM program
 /// or a drum kit). Each region a note hits is a voice: a 4-point Hermite read of its sample with its loop, the SF2
 /// volume envelope (linear attack, decay and release in dB), the modulation envelope and the two LFOs on pitch and on a
-/// resonant low pass, the velocity's default curve, pan and the exclusive classes that cut a hi-hat. Over that, the
+/// resonant low pass, the velocity's default curve, what the bank's modulators add for the note's velocity and key
+/// (<see cref="SfMod"/>), pan and the exclusive classes that cut a hi-hat. Over that, the
 /// track's <see cref="GmTone"/> (envelope, filter, velocity, tuning, Mono with glide), which each note takes as it starts.
 /// <para>
 /// What it does with the notes (jumps, loops, the keyboards) is <see cref="NoteInstrument"/>'s, shared with the sampler.
@@ -107,6 +115,8 @@ public sealed class GmSynth : NoteInstrument
         public double ReleaseFromCb;
         // what the tone adds: filter (cents, centibels) and the glide from the note before (semitones over frames)
         public double CutoffShift, ResonanceAdd, GlideSemis;
+        // the region's filter and modulation envelope with what its modulators added for this note (SfMod)
+        public double Cutoff, EnvToPitch, EnvToCutoff, ModAttackSec, ModHoldSec, ModDecaySec, ModReleaseSec;
         public long GlideFrames;
         // modulation envelope, 0..1
         public int ModStage;
@@ -126,6 +136,8 @@ public sealed class GmSynth : NoteInstrument
     SoundFont? blockFont;
     SfPreset? blockPreset;
     GmTone blockTone = GmTone.Neutral;
+    /// <summary>The volume reached by the last block, which the next one glides from (audio thread).</summary>
+    float level = 1;
     long order;
     /// <summary>The last note each source began (song, keyboards, window): where a Mono glide starts from.</summary>
     readonly double[] lastNote = [double.NaN, double.NaN, double.NaN];
@@ -143,6 +155,7 @@ public sealed class GmSynth : NoteInstrument
         tone = sound ?? GmTone.Neutral;
     }
 
+    public SoundFont? Font => font;
     public SfPreset? Preset => preset;
     public GmTone Tone => tone;
 
@@ -150,7 +163,9 @@ public sealed class GmSynth : NoteInstrument
     public static double TailOf(SfPreset p, GmTone? sound = null)
     {
         double most = 0.5, knob = (sound ?? GmTone.Neutral).Release;
-        foreach (var r in p.Regions) most = Math.Max(most, GmTone.Time(r.Release, knob));
+        // a modulator may lengthen it (a low key's release): the most it can add
+        foreach (var r in p.Regions)
+            most = Math.Max(most, GmTone.Time(Timed(r.Release, r.Mods.Where(m => m.Dest == SoundFont.DestRelease).Sum(m => Math.Abs(m.Amount))), knob));
         return Math.Min(MaxTailSec + GmTone.MaxAddSec, most);
     }
 
@@ -159,6 +174,8 @@ public sealed class GmSynth : NoteInstrument
         blockFont = font;
         blockPreset = preset;
         blockTone = tone;
+        // nothing sounds: no glide (the export starts at its level, whatever its blocks)
+        if (!Sounding) level = blockTone.Gain;
     }
 
     protected override bool CanPlay => blockFont != null && blockPreset != null;
@@ -289,11 +306,47 @@ public sealed class GmSynth : NoteInstrument
         v.BaseSemis = ((pitchKey - r.Root) * r.ScaleTuning + r.TuneCents + tn.Fine) / 100;
         v.RateRatio = r.SampleRate / (double)rate;
         v.Bend = bend;
-        v.Pan = Math.Clamp(r.Pan + pan, -1, 1);
+        // what the bank's modulators add for this velocity and key, in each generator's units
+        double mPitch = 0, mCutoff = 0, mRes = 0, mEnvCut = 0, mPan = 0, mMA = 0, mMH = 0, mMD = 0, mMR = 0, mA = 0, mH = 0, mD = 0, mS = 0, mR = 0, mAtt = 0, mTune = 0;
+        var mods = r.Mods;
+        for (int i = 0; i < mods.Length; i++)
+        {
+            double d = mods[i].At(k, velocity);
+            switch (mods[i].Dest)
+            {
+                case SoundFont.DestEnvToPitch: mPitch += d; break;
+                case SoundFont.DestCutoff: mCutoff += d; break;
+                case SoundFont.DestResonance: mRes += d; break;
+                case SoundFont.DestEnvToCutoff: mEnvCut += d; break;
+                case SoundFont.DestPan: mPan += d; break;
+                case SoundFont.DestModAttack: mMA += d; break;
+                case SoundFont.DestModHold: mMH += d; break;
+                case SoundFont.DestModDecay: mMD += d; break;
+                case SoundFont.DestModRelease: mMR += d; break;
+                case SoundFont.DestAttack: mA += d; break;
+                case SoundFont.DestHold: mH += d; break;
+                case SoundFont.DestDecay: mD += d; break;
+                case SoundFont.DestSustain: mS += d; break;
+                case SoundFont.DestRelease: mR += d; break;
+                case SoundFont.DestAttenuation: mAtt += d; break;
+                case SoundFont.DestCoarse: mTune += 100 * d; break;
+                case SoundFont.DestFine: mTune += d; break;
+            }
+        }
+        v.BaseSemis += mTune / 100;
+        v.Pan = Math.Clamp(r.Pan + (float)(mPan / 500) + pan, -1, 1);
         float vel = velocity / 127f;
-        v.VelGain = (float)(1 - tn.Velocity * (1 - vel * vel)) * r.Gain * Headroom;
+        float modGain = mAtt == 0 ? 1 : (float)Math.Pow(10, -Math.Clamp(mAtt * SoundFont.AttenuationPart, -960, 960) / 200);
+        v.VelGain = (float)(1 - tn.Velocity * (1 - vel * vel)) * r.Gain * modGain * Headroom;
         v.CutoffShift = 1200 * GmTone.CutoffOctaves * (tn.Bright - tn.VelBright * (1 - vel));
-        v.ResonanceAdd = 10 * GmTone.MaxResonanceDb * tn.Resonance;
+        v.ResonanceAdd = 10 * GmTone.MaxResonanceDb * tn.Resonance + mRes;
+        v.Cutoff = mCutoff == 0 ? r.Cutoff : Math.Clamp(r.Cutoff + mCutoff, 1500, SoundFont.OpenCutoff);
+        v.EnvToPitch = r.ModEnvToPitch + mPitch;
+        v.EnvToCutoff = r.ModEnvToCutoff + mEnvCut;
+        v.ModAttackSec = Timed(r.ModAttack, mMA);
+        v.ModHoldSec = Timed(r.ModHold, mMH);
+        v.ModDecaySec = Timed(r.ModDecay, mMD);
+        v.ModReleaseSec = Timed(r.ModRelease, mMR);
         v.GlideSemis = double.IsNaN(glide) ? 0 : glide;
         v.GlideFrames = double.IsNaN(glide) ? 0 : Math.Max(1, (long)(tn.GlideSec * rate));
         v.Time = 0;
@@ -302,11 +355,11 @@ public sealed class GmSynth : NoteInstrument
         v.StageT = 0;
         v.AttackAmp = 0;
         v.Cb = SilentCb;
-        v.HoldSec = r.Hold * Math.Pow(2, r.HoldPerKey * (60 - k) / 1200);
-        v.DecaySec = GmTone.Time(r.Decay * Math.Pow(2, r.DecayPerKey * (60 - k) / 1200), tn.Decay);
-        v.AttackSec = GmTone.Time(r.Attack, tn.Attack);
-        v.ReleaseSec = GmTone.Time(r.Release, tn.Release);
-        v.SustainCb = GmTone.SustainCb(r.SustainCb, tn.Sustain, SilentCb);
+        v.HoldSec = Timed(r.Hold, mH) * Math.Pow(2, r.HoldPerKey * (60 - k) / 1200);
+        v.DecaySec = GmTone.Time(Timed(r.Decay, mD) * Math.Pow(2, r.DecayPerKey * (60 - k) / 1200), tn.Decay);
+        v.AttackSec = GmTone.Time(Timed(r.Attack, mA), tn.Attack);
+        v.ReleaseSec = GmTone.Time(Timed(r.Release, mR), tn.Release);
+        v.SustainCb = GmTone.SustainCb(Math.Clamp(r.SustainCb + mS, 0, 1440), tn.Sustain, SilentCb);
         v.ModStage = SDelay;
         v.ModT = 0;
         v.ModLevel = 0;
@@ -324,6 +377,9 @@ public sealed class GmSynth : NoteInstrument
         v.GainR += v.StepR * ControlFrames;
         v.StepL = v.StepR = 0;
     }
+
+    /// <summary>A time in seconds with what a modulator adds in timecents (a stage of 0 s stays 0: the SF2's -12000).</summary>
+    static double Timed(double sec, double timecents) => timecents == 0 || sec <= 0 ? sec : sec * Math.Pow(2, timecents / 1200);
 
     /// <summary>
     /// A note picked up <paramref name="t"/> frames after it began: its envelopes walk there in control steps (or jump,
@@ -387,7 +443,7 @@ public sealed class GmSynth : NoteInstrument
                 if (v.Cb >= SilentCb) v.Stage = SDone;
                 break;
         }
-        if (r.ModEnvToPitch == 0 && r.ModEnvToCutoff == 0) return;
+        if (v.EnvToPitch == 0 && v.EnvToCutoff == 0) return;
         v.ModT += dt;
         switch (v.ModStage)
         {
@@ -395,21 +451,21 @@ public sealed class GmSynth : NoteInstrument
                 if (v.ModT >= r.ModDelay) { v.ModStage = SAttack; v.ModT = 0; }
                 break;
             case SAttack:
-                v.ModLevel = r.ModAttack <= 0 ? 1 : Math.Min(1, v.ModT / r.ModAttack);
+                v.ModLevel = v.ModAttackSec <= 0 ? 1 : Math.Min(1, v.ModT / v.ModAttackSec);
                 if (v.ModLevel >= 1) { v.ModStage = SHold; v.ModT = 0; }
                 break;
             case SHold:
-                if (v.ModT >= r.ModHold) { v.ModStage = SDecay; v.ModT = 0; }
+                if (v.ModT >= v.ModHoldSec) { v.ModStage = SDecay; v.ModT = 0; }
                 break;
             case SDecay:
-                v.ModLevel = r.ModDecay <= 0 ? r.ModSustain : Math.Max(r.ModSustain, 1 - v.ModT / r.ModDecay);
+                v.ModLevel = v.ModDecaySec <= 0 ? r.ModSustain : Math.Max(r.ModSustain, 1 - v.ModT / v.ModDecaySec);
                 if (v.ModLevel <= r.ModSustain) v.ModStage = SSustain;
                 break;
             case SSustain:
                 v.ModLevel = r.ModSustain;
                 break;
             case SRelease:
-                v.ModLevel = r.ModRelease <= 0 ? 0 : Math.Max(0, v.ModReleaseFrom * (1 - v.ModT / r.ModRelease));
+                v.ModLevel = v.ModReleaseSec <= 0 ? 0 : Math.Max(0, v.ModReleaseFrom * (1 - v.ModT / v.ModReleaseSec));
                 break;
         }
     }
@@ -435,12 +491,12 @@ public sealed class GmSynth : NoteInstrument
             v.LfoPhase += r.ModLfoHz * dt;
             if (v.LfoPhase >= 1) v.LfoPhase -= 1;
         }
-        double cents = vib * r.VibToPitch + lfo * r.ModLfoToPitch + v.ModLevel * r.ModEnvToPitch;
+        double cents = vib * r.VibToPitch + lfo * r.ModLfoToPitch + v.ModLevel * v.EnvToPitch;
         double semis = v.BaseSemis + cents / 100 + (v.Bend?.At(v.Time) ?? 0);
         if (v.Time < v.GlideFrames) semis += v.GlideSemis * (1 - v.Time / (double)v.GlideFrames);
         v.Step = Math.Pow(2, semis / 12) * v.RateRatio;
 
-        double cutoff = r.Cutoff + v.ModLevel * r.ModEnvToCutoff + lfo * r.ModLfoToCutoff + v.CutoffShift;
+        double cutoff = v.Cutoff + v.ModLevel * v.EnvToCutoff + lfo * r.ModLfoToCutoff + v.CutoffShift;
         v.Filtering = cutoff < SoundFont.OpenCutoff - 1;
         if (v.Filtering) Lowpass(v, Math.Min(8.176 * Math.Pow(2, cutoff / 1200), 0.45 * rate), r.Resonance + v.ResonanceAdd);
 
@@ -466,14 +522,16 @@ public sealed class GmSynth : NoteInstrument
 
     protected override void RenderVoices(int at, int n, Span<float> l, Span<float> r)
     {
+        float to = blockTone.Gain, from = level, step = n > 0 ? (to - from) / n : 0;
+        level = to;
         for (int i = 0; i < Pool; i++)
         {
             var v = voices[i];
-            if (v.Active) Render(v, l.Slice(at, n), r.Slice(at, n));
+            if (v.Active) Render(v, l.Slice(at, n), r.Slice(at, n), from, step);
         }
     }
 
-    void Render(Voice v, Span<float> l, Span<float> r)
+    void Render(Voice v, Span<float> l, Span<float> r, float vol, float volStep)
     {
         var reg = v.R;
         var d = v.Data;
@@ -531,8 +589,9 @@ public sealed class GmSynth : NoteInstrument
                 gl *= v.FadeGain;
                 gr *= v.FadeGain;
             }
-            l[i] += s * gl;
-            r[i] += s * gr;
+            float g = vol + volStep * (i + 1);
+            l[i] += s * gl * g;
+            r[i] += s * gr * g;
             v.Pos += v.Step;
             v.Time++;
         }

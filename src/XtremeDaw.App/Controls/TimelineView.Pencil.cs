@@ -29,7 +29,11 @@ public sealed partial class TimelineView
         InvalidateVisual();
     }
 
-    double PencilSec => pencilMidi ? pencilSize * 60 / Math.Max(1, Bpm) : pencilSize;
+    /// <summary>Whether there is a brush to put.</summary>
+    double PencilSec => pencilSize;
+
+    /// <summary>Where a copy put at <paramref name="at"/> ends: a MIDI brush's beats go through the tempo map.</summary>
+    double PencilEnd(double at) => pencilMidi ? SecPlus(at, pencilSize) : at + pencilSize;
 
     /// <summary>A press on a clip with the pencil: its track and its id (a take or a MIDI clip), to make it the brush.</summary>
     public event Action<LiveTrack, string>? PencilPicked;
@@ -47,7 +51,7 @@ public sealed partial class TimelineView
     /// <summary>Lápiz or Pincel: the tools that put the brush.</summary>
     bool Drawing => tool is TimelineTool.Draw or TimelineTool.Paint;
 
-    bool PencilTakes(int i) => i >= 0 && i < tracks.Count && PencilSec > 0 && tracks[i].Track.IsMidi == pencilMidi && !tracks[i].Track.Locked;
+    bool PencilTakes(int i) => i >= 0 && i < tracks.Count && PencilSec > 0 && tracks[i].Track.IsMidi == pencilMidi && !tracks[i].Track.EditLocked;
 
     void PencilPressed(int i, Point p, PointerPressedEventArgs e)
     {
@@ -88,9 +92,9 @@ public sealed partial class TimelineView
             return;
         }
         double at = Sec(lastPointer.X);
-        while (at >= pencilAt[^1] + PencilSec && pencilAt.Count < MaxPencilCopies)
+        while (at >= PencilEnd(pencilAt[^1]) && pencilAt.Count < MaxPencilCopies)
         {
-            pencilAt.Add(pencilAt[^1] + PencilSec);
+            pencilAt.Add(PencilEnd(pencilAt[^1]));
             moved = true;
         }
     }
@@ -125,7 +129,7 @@ public sealed partial class TimelineView
             else if (pencilHover is { } hover) Ghost(hover.Sec);
             void Ghost(double at)
             {
-                double x0 = Math.Max(HeaderW, X(at)), x1 = X(at + PencilSec);
+                double x0 = Math.Max(HeaderW, X(at)), x1 = X(PencilEnd(at));
                 if (x1 > x0) ctx.DrawRectangle(fill, pen, new RoundedRect(new Rect(x0 + 0.5, top + 0.5, x1 - x0 - 1, h - 1), 5));
             }
             break;

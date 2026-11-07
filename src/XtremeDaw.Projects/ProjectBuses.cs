@@ -3,10 +3,11 @@ namespace XtremeDaw.Projects;
 /// <summary>
 /// The edits of the buses (<see cref="ProjectSettings.Buses"/>) and of where things send their sound (every
 /// <see cref="IRouted"/>: a track's channel, a folder, a bus): outputs and sends. One place for the mixer, the
-/// inspector, the timeline and xtlab. For now a bus goes to the master only (asked by the user, 2026-10-26: chains
-/// between buses made the routing hard to follow): <see cref="CanFeed"/> refuses a bus as the source and
-/// <see cref="Normalize"/> clears a bus's output and sends. The engine still runs buses fed by buses
-/// (<see cref="Order"/>, <c>MixRenderer</c>), so the chains can come back later. Each edit returns false (or null)
+/// inspector, the timeline and xtlab. A bus's output goes to the master only (asked by the user, 2026-10-26: chains
+/// of outputs made the routing hard to follow; <see cref="CanOutput"/>), but it sends to other buses like a track does
+/// (asked by the user, #264): <see cref="CanFeed"/> refuses a send that would close a loop and <see cref="Normalize"/>
+/// drops one a file brings. The engine runs each bus after the ones that feed it (<see cref="Order"/>,
+/// <c>MixRenderer</c>). Each edit returns false (or null)
 /// when there was nothing to do, so the caller doesn't mark the project dirty for nothing.
 /// </summary>
 public static class ProjectBuses
@@ -133,15 +134,39 @@ public static class ProjectBuses
         p.Tracks.Select(t => (IRouted)t.Channel).Concat(p.Folders.Where(f => !f.Separator)).Concat(p.Settings.Buses);
 
     /// <summary>
-    /// Whether <paramref name="from"/> can send or route its sound to the bus <paramref name="to"/>: the bus exists and
-    /// <paramref name="from"/> is a track or a folder (a bus goes to the master only, so no loop can close).
+    /// Whether <paramref name="from"/> can send its sound to the bus <paramref name="to"/>: the bus exists and, when
+    /// <paramref name="from"/> is a bus too (#264: a bus sends to other buses like a track does), it isn't itself and
+    /// <paramref name="to"/>'s sound doesn't already come back to it, so no loop can close.
     /// </summary>
-    public static bool CanFeed(Project p, IRouted from, string to) => from is not Bus && p.Settings.Buses.Exists(b => b.Id == to);
+    public static bool CanFeed(Project p, IRouted from, string to) =>
+        p.Settings.Buses.Exists(b => b.Id == to) && (from is not Bus bus || bus.Id != to && !Reaches(p, to, bus.Id));
+
+    /// <summary>
+    /// Whether <paramref name="r"/>'s output can go to the bus <paramref name="to"/>: as <see cref="CanFeed"/>, but a
+    /// bus's output goes to the master only (asked by the user, 2026-10-26; #264 brought back sends between buses, not outputs).
+    /// </summary>
+    public static bool CanOutput(Project p, IRouted r, string to) => r is not Bus && CanFeed(p, r, to);
+
+    /// <summary>Whether the sound of the bus <paramref name="from"/> gets to the bus <paramref name="to"/>, through its output and the sends it shows.</summary>
+    static bool Reaches(Project p, string from, string to)
+    {
+        var seen = new HashSet<string>();
+        var stack = new Stack<string>();
+        stack.Push(from);
+        while (stack.Count > 0)
+        {
+            string id = stack.Pop();
+            if (id == to) return true;
+            if (!seen.Add(id) || p.Settings.Buses.Find(b => b.Id == id) is not { } b) continue;
+            foreach (string next in Targets(b)) stack.Push(next);
+        }
+        return false;
+    }
 
     /// <summary>Where <paramref name="r"/>'s output goes: null = the master. False when nothing changed or it would close a loop.</summary>
     public static bool SetOutput(Project p, IRouted r, string? busId)
     {
-        if (r.Output == busId || busId != null && !CanFeed(p, r, busId)) return false;
+        if (r.Output == busId || busId != null && !CanOutput(p, r, busId)) return false;
         r.Output = busId;
         return true;
     }
@@ -223,11 +248,14 @@ public static class ProjectBuses
         return order;
     }
 
-    /// <summary>The buses <paramref name="r"/>'s sound goes to: its output and its sends.</summary>
+    /// <summary>
+    /// The buses <paramref name="r"/>'s sound goes to: its output and its sends, but those taken out of its list
+    /// (<see cref="Send.Hidden"/>: off, they carry nothing, and adding one back checks <see cref="CanFeed"/> again).
+    /// </summary>
     static IEnumerable<string> Targets(IRouted r)
     {
         if (r.Output != null) yield return r.Output;
-        foreach (var s in r.Sends) yield return s.BusId;
+        foreach (var s in r.Sends) if (!s.Hidden) yield return s.BusId;
     }
 
     /// <summary>
@@ -247,11 +275,17 @@ public static class ProjectBuses
             r.Sends.RemoveAll(s => s == null || !ids.Contains(s.BusId) || !seen.Add(s.BusId));
             foreach (var s in r.Sends) s.Level = double.IsFinite(s.Level) ? Math.Clamp(s.Level, 0, 1) : 0;
         }
-        // a bus goes to the master only (see the summary): what a file brings from before goes
+        // a bus's output goes to the master only (see the summary); its sends stay unless one goes to itself or closes a
+        // loop (a hand-edited file): they are put back one by one, in the list's order, and the one that would close it is dropped
         foreach (var b in p.Settings.Buses)
         {
             b.Output = null;
-            b.Sends.Clear();
+            b.Sends.RemoveAll(s => s.BusId == b.Id);
         }
+        var pending = p.Settings.Buses.Select(b => (Bus: b, Sends: b.Sends.ToList())).ToList();
+        foreach (var (b, _) in pending) b.Sends.Clear();
+        foreach (var (b, sends) in pending)
+            foreach (var s in sends)
+                if (s.Hidden ? s.BusId != b.Id : CanFeed(p, b, s.BusId)) b.Sends.Add(s);
     }
 }

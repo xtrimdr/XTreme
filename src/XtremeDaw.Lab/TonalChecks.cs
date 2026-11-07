@@ -182,6 +182,56 @@ static class TonalChecks
             if (ok) good++;
         }
         Row("Balance: objetivos de fábrica", $"{good}/{TonalTargets.Factory.Length}", "todos", good == TonalTargets.Factory.Length);
+
+        // 10. what 0.9.19 saved keeps its meaning (#265): the first six genres 0..5, the slot's own 6; every genre has a value
+        string[] old = [TonalTargets.Pop, TonalTargets.Rock, TonalTargets.Edm, TonalTargets.HipHop, TonalTargets.Acoustic, TonalTargets.Orchestral];
+        bool same6 = old.Select(FxDefs.TonalValue).SequenceEqual(Enumerable.Range(0, 6)) && FxDefs.TonalCustom == 6;
+        var values = TonalTargets.Factory.Select(f => FxDefs.TonalValue(f.Id)).ToArray();
+        bool allValued = values.Distinct().Count() == values.Length && !values.Contains(FxDefs.TonalCustom);
+        bool roundTrip = TonalTargets.Factory.All(f =>
+        {
+            var s = InsertSlot.New(TrackInserts.Tonal);
+            s.Stage!.Values["target"] = FxDefs.TonalValue(f.Id);
+            var b = JsonSerializer.Deserialize<InsertSlot>(JsonSerializer.Serialize(s, ProjectStore.Json), ProjectStore.Json)!;
+            _ = ChannelDsp.Specs([b], -24);
+            return FxDefs.TonalTargetOf(b)?.Id == f.Id;
+        });
+        bool keptOwn = FxDefs.TonalTargetOf(back)?.Id == "custom";
+        bool compat = same6 && allValued && roundTrip && keptOwn;
+        Row("Balance: objetivos guardados", compat ? "sí" : "no", "sí", compat);
+
+        // 11. the dubstep family (#265): the sub peaks at 40-70 Hz with the high-pass under 30 Hz; modern dubstep has a
+        // denser 150-300 Hz and a hotter 2-4 kHz than EDM, riddim limits hardest, deep dubstep is darker and freer
+        var dub = TonalTargets.Find(TonalTargets.Dubstep)!;
+        var rid = TonalTargets.Find(TonalTargets.Riddim)!;
+        var deep = TonalTargets.Find(TonalTargets.DeepDubstep)!;
+        var edm = TonalTargets.Find(TonalTargets.Edm)!;
+        double Avg(TonalTarget t, double lo, double hi)
+        {
+            double sum = 0;
+            int c = 0;
+            for (int i = 0; i < TonalScale.Points; i++)
+                if (TonalScale.Freq(i) is var f && f >= lo && f <= hi) { sum += t.Mean[i]; c++; }
+            return sum / c;
+        }
+        double PeakHz(TonalTarget t)
+        {
+            int best = 0;
+            for (int i = 1; i < TonalScale.Points; i++) if (t.Mean[i] > t.Mean[best]) best = i;
+            return TonalScale.Freq(best);
+        }
+        bool subOk = new[] { dub, rid, deep }.All(t => PeakHz(t) is >= 40 and <= 70 && Avg(t, 20, 30) < Avg(t, 45, 63) - 4);
+        (string Name, bool Ok)[] parts =
+        [
+            ("sub", subOk),
+            ("growl", Avg(dub, 150, 300) > Avg(edm, 150, 300)),
+            ("1-5k", Avg(dub, 2000, 4000) > Avg(edm, 2000, 4000)),
+            ("punch", rid.CrestMax < dub.CrestMax && deep.CrestMax > dub.CrestMax),
+            ("deep", Avg(deep, 6000, 16000) < Avg(dub, 6000, 16000) - 2 && Avg(deep, 40, 63) > Avg(dub, 40, 63)),
+        ];
+        var failed = parts.Where(p => !p.Ok).Select(p => p.Name).ToArray();
+        Row("Balance: familia dubstep", failed.Length == 0 ? "sí" : string.Join(",", failed), "sí", failed.Length == 0);
+        Console.WriteLine($"{"  (dubstep: pico sub)",-36} {$"{PeakHz(dub):0} Hz",12}");
         return allOk;
     }
 
@@ -214,7 +264,7 @@ static class TonalChecks
     static readonly string[] BandNames = ["Graves", "Medios graves", "Medios agudos", "Agudos"];
 
     /// <summary>
-    /// xtlab balance archivo [--objetivo pop|rock|edm|hiphop|acoustic|orchestral] [--referencia a.wav,b.wav]
+    /// xtlab balance archivo [--objetivo pop|rock|edm|hiphop|acoustic|orchestral|dubstep|riddim|deepdubstep|…] [--referencia a.wav,b.wav]
     /// [--modo estereo|mid|side] [--curva]: the file's tonal balance against a target, as the panel shows it.
     /// </summary>
     public static int Run(Args a)

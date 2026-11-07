@@ -25,26 +25,70 @@ public sealed record TonalTarget(string Id, double[] Mean, double[] Min, double[
 /// is a shared width profile (wider at the extremes, where mixes differ most) times the genre's own spread. The punch
 /// ranges go from limited, steady lows (EDM, hip-hop) to the untouched transients of acoustic and orchestral music.
 /// A user who wants another reference builds one from files (<see cref="TonalReference"/>).
+/// The dubstep family (#265, asked to be exact) has three targets, because its styles differ where it matters most:
+/// modern dubstep (brostep) is a loud, steady wall with a sub peak at 45–60 Hz, a dense growl region up to 300 Hz, a
+/// raised 1–5 kHz (screeches, snare crack) and a gentle top; riddim is even more limited, with the mids filled by its
+/// repeated mid-bass; deep (UK, 140) dubstep is mostly sub, with sparse dark drums and more room for transients. All three
+/// cut under 30 Hz, where a dubstep master puts its high-pass.
 /// </summary>
 public static class TonalTargets
 {
-    /// <summary>The target ids, in the order the menu lists them; their names are the window's.</summary>
-    public const string Pop = "pop", Rock = "rock", Edm = "edm", HipHop = "hiphop", Acoustic = "acoustic", Orchestral = "orchestral";
+    /// <summary>The target ids; their names are the window's. A project keeps the target by id's place in the effect's
+    /// stored order (<c>FxDefs.TonalStored</c>), not here: this list only says the menu's order.</summary>
+    public const string Pop = "pop", Rock = "rock", Edm = "edm", HipHop = "hiphop", Acoustic = "acoustic", Orchestral = "orchestral",
+        Dubstep = "dubstep", Riddim = "riddim", DeepDubstep = "deepdubstep", DrumBass = "dnb", House = "house", Trap = "trap",
+        Reggaeton = "reggaeton", Reggae = "reggae", Metal = "metal", Rnb = "rnb", LoFi = "lofi", Country = "country";
 
     /// <summary>The half-width of a target's range at each frequency, before the genre's spread (dB).</summary>
     static readonly (double Hz, double Db)[] Width =
         [(20, 6), (40, 4.5), (80, 3.5), (150, 3), (300, 2.5), (3000, 2.5), (6000, 3), (10000, 3.5), (16000, 4.5), (20480, 6)];
 
+    /// <summary>The factory targets, in the menu's order: from band music to electronic, then acoustic.</summary>
     public static readonly TonalTarget[] Factory =
     [
         Make(Pop, 1.0, 7, 10.5,
             [(20, -8), (40, 4), (60, 6), (100, 6), (200, 3), (500, 0.5), (1000, -1), (2000, -2), (4000, -4), (8000, -7), (12000, -10), (16000, -14), (20480, -22)]),
         Make(Rock, 1.0, 8, 11.5,
             [(20, -12), (40, 1), (60, 4), (100, 5), (200, 3), (500, 1), (1000, -0.5), (2000, -1.5), (4000, -3), (8000, -6.5), (12000, -10), (16000, -14), (20480, -22)]),
-        Make(Edm, 0.85, 6, 9,
-            [(20, -4), (40, 8), (60, 10), (100, 9), (200, 4), (500, 0), (1000, -1.5), (2000, -2.5), (4000, -3.5), (8000, -5.5), (12000, -8), (16000, -11), (20480, -18)]),
+        // tight lows (kick and palm mutes, under a high-pass), a dense wall of guitars through the mids, kick click at 3–5 kHz
+        Make(Metal, 0.9, 7, 10,
+            [(20, -14), (40, -1), (60, 3), (100, 4.5), (200, 3), (500, 1.5), (1000, 0), (2000, -0.5), (4000, -2), (8000, -5.5), (12000, -9.5), (16000, -14), (20480, -22)]),
+        Make(Country, 1.0, 8, 12,
+            [(20, -14), (40, -1), (60, 3), (100, 4.5), (200, 3.5), (500, 1), (1000, -0.5), (2000, -1.5), (4000, -3.5), (8000, -7), (12000, -10.5), (16000, -14.5), (20480, -22)]),
+        // warm lows, a forward voice, a smooth top
+        Make(Rnb, 1.0, 7, 10,
+            [(20, -6), (40, 6), (60, 8), (100, 7), (200, 4), (500, 1), (1000, -1), (2000, -2.5), (4000, -4.5), (8000, -7.5), (12000, -11), (16000, -15), (20480, -23)]),
         Make(HipHop, 0.9, 6.5, 9.5,
             [(20, -2), (40, 9), (60, 11), (100, 9), (200, 4), (500, 0), (1000, -1.5), (2000, -2.5), (4000, -4.5), (8000, -7.5), (12000, -10.5), (16000, -14), (20480, -22)]),
+        // the 808 reaches lower than hip-hop's kick; bright hats over a darker body
+        Make(Trap, 0.9, 5.5, 8.5,
+            [(20, 0), (30, 8), (40, 11), (60, 11.5), (100, 8), (200, 3), (500, -0.5), (1000, -2), (2000, -3), (4000, -4.5), (8000, -6.5), (12000, -9), (16000, -12.5), (20480, -20)]),
+        // dembow kick and bass at 50–80 Hz, the voice up front
+        Make(Reggaeton, 0.9, 6, 9,
+            [(20, -6), (40, 7), (60, 9.5), (100, 8), (200, 3.5), (500, 0.5), (1000, -1), (2000, -2), (4000, -3.5), (8000, -6), (12000, -9), (16000, -12.5), (20480, -20)]),
+        // round bass at 60–120 Hz, relaxed mids and top, live drums
+        Make(Reggae, 1.1, 7.5, 11,
+            [(20, -8), (40, 5), (60, 9), (100, 9), (200, 4), (500, 0.5), (1000, -1.5), (2000, -3), (4000, -5), (8000, -8), (12000, -11), (16000, -15), (20480, -23)]),
+        Make(Edm, 0.85, 6, 9,
+            [(20, -4), (40, 8), (60, 10), (100, 9), (200, 4), (500, 0), (1000, -1.5), (2000, -2.5), (4000, -3.5), (8000, -5.5), (12000, -8), (16000, -11), (20480, -18)]),
+        // a four-on-the-floor kick focused at 50–60 Hz, scooped low mids, open hats
+        Make(House, 0.85, 6.5, 9.5,
+            [(20, -6), (40, 7), (60, 10), (100, 8.5), (200, 3.5), (500, -0.5), (1000, -2), (2000, -3), (4000, -3.5), (8000, -5), (12000, -7.5), (16000, -10.5), (20480, -18)]),
+        Make(Dubstep, 0.8, 5, 8,
+            [(20, -6), (30, 4), (40, 9), (50, 10.5), (63, 10.5), (80, 9.5), (100, 8.5), (150, 7), (200, 5.5), (300, 3.5), (500, 1), (1000, -1),
+             (2000, -1.5), (3000, -2), (4000, -2.5), (6000, -4), (8000, -5), (10000, -6.5), (12000, -8), (16000, -11), (20480, -18)]),
+        Make(Riddim, 0.8, 4.5, 7,
+            [(20, -6), (30, 5), (40, 9.5), (50, 10.5), (63, 10), (80, 9), (100, 8.5), (150, 7.5), (200, 6), (300, 4), (500, 1.5), (1000, -0.5),
+             (2000, -1.5), (3000, -2), (4000, -2.5), (6000, -4), (8000, -5.5), (10000, -7), (12000, -8.5), (16000, -12), (20480, -19)]),
+        Make(DeepDubstep, 0.95, 6, 9.5,
+            [(20, -4), (30, 6), (40, 11), (50, 12), (63, 11.5), (80, 9), (100, 7), (150, 4), (200, 2.5), (300, 1), (500, -0.5), (1000, -2),
+             (2000, -3.5), (4000, -5.5), (6000, -7.5), (8000, -9.5), (12000, -13), (16000, -17), (20480, -25)]),
+        // sub under fast breaks: a scooped middle and the brightest top of the electronic targets
+        Make(DrumBass, 0.9, 6, 9,
+            [(20, -6), (40, 7), (60, 8), (100, 6), (200, 2.5), (500, -0.5), (1000, -1.5), (2000, -2), (4000, -3), (8000, -4.5), (12000, -7), (16000, -10), (20480, -17)]),
+        // warm and rolled off on top (tape, vinyl, sampled loops), with soft, uncompressed drums
+        Make(LoFi, 1.2, 8, 12,
+            [(20, -12), (40, 2), (60, 5), (100, 6), (200, 4.5), (500, 1.5), (1000, -0.5), (2000, -2.5), (4000, -5.5), (8000, -10), (12000, -15), (16000, -21), (20480, -30)]),
         Make(Acoustic, 1.2, 9.5, 14,
             [(20, -16), (40, -4), (60, 1), (100, 3), (200, 3), (500, 1), (1000, -1), (2000, -2.5), (4000, -5), (8000, -9), (12000, -12.5), (16000, -16), (20480, -24)]),
         Make(Orchestral, 1.3, 10, 15,

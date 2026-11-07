@@ -77,11 +77,49 @@ public sealed class Project
 
 public sealed class ProjectSettings
 {
-    /// <summary>110 like a new project in the web app.</summary>
-    public double Bpm { get; set; } = 110;
+    /// <summary>
+    /// The initial tempo, 110 like a new project in the web app: the first point of <see cref="TempoMap"/>. Setting it
+    /// is a change of the whole song's speed, as the transport's tempo has always been: every tempo of the map is
+    /// multiplied by new/old (<see cref="TempoScale"/>), an undo step of its own (#262); nothing on the timeline moves (that is
+    /// <see cref="TempoFollow.SetBpm"/> and <see cref="TempoFollow.SetGrid"/>). A point of the map, the first one too,
+    /// is edited through <see cref="TempoFollow.SetMap"/>, which is content and goes in an undo step.
+    /// </summary>
+    [JsonIgnore]
+    public double Bpm
+    {
+        get => TempoMap.Bpm;
+        set
+        {
+            double k = value / TempoMap.Bpm;
+            if (k == 1) return;
+            TempoMap = TempoMap.Scaled(k).WithInitial(value);
+            if (double.IsFinite(k) && k > 0) TempoScale *= k;
+        }
+    }
+    /// <summary>
+    /// "bpm" in the file: the initial tempo, kept for older versions; a project without a map gets a one-point 4/4 map
+    /// from it. Reading it only sets the first point (the map that comes after it in the file wins).
+    /// </summary>
+    [JsonInclude, JsonPropertyName("bpm")]
+    double SavedBpm
+    {
+        get => TempoMap.Bpm;
+        set => TempoMap = TempoMap.WithInitial(value);
+    }
+    /// <summary>
+    /// The song's tempo and meter (#214, <see cref="Projects.TempoMap"/>). Replaced whole, never edited in place:
+    /// <see cref="TempoFollow.SetMap"/> moves what is musical with it and goes in an undo step.
+    /// </summary>
+    public TempoMap TempoMap { get; set; } = TempoMap.Constant(TempoMap.DefaultBpm);
+    /// <summary>
+    /// What the changes of the whole song's speed (<see cref="TempoFollow.SetBpm"/>, <see cref="TempoFollow.SetGrid"/>)
+    /// have multiplied the map's tempos by so far. Native only: like <see cref="TimeScale"/>, an undo step keeps it and
+    /// brings it back.
+    /// </summary>
+    public double TempoScale { get; set; } = 1;
     /// <summary>
     /// What the tempo changes have multiplied the timeline's times by so far (<see cref="TempoFollow"/>). Native only:
-    /// an undo step keeps it, so one from before a tempo change comes back at the tempo there is now.
+    /// an undo step keeps it and brings it back with the times it scaled.
     /// </summary>
     public double TimeScale { get; set; } = 1;
     /// <summary>
@@ -108,7 +146,7 @@ public sealed class ProjectSettings
     public ExportSettings Export { get; set; } = new();
     /// <summary>
     /// Native only: the A–B range that playback repeats while the loop is on (seconds); both null = the whole song.
-    /// Transport state like the tempo, outside undo. Set through <see cref="ProjectMarkers.SetLoop"/>.
+    /// Transport state, outside undo (a step that brings back another tempo rescales it). Set through <see cref="ProjectMarkers.SetLoop"/>.
     /// </summary>
     public double? LoopStartSec { get; set; }
     public double? LoopEndSec { get; set; }
@@ -118,6 +156,11 @@ public sealed class ProjectSettings
     /// project clears them (<see cref="ProjectLibrary.Create"/>).
     /// </summary>
     public List<Bus> Buses { get; set; } = ProjectBuses.Defaults();
+    /// <summary>
+    /// Native only: the buses' rows at the end of the timeline (#267, with their automation lanes) are hidden. A view
+    /// setting, outside undo; shown by default (the user's call), old projects too. Their lanes play either way.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool BusRowsHidden { get; set; }
     /// <summary>Native only: the mix's A/B (<see cref="MixCompare"/>); null = one mix, nothing to compare.</summary>
     public MixCompareState? Compare { get; set; }
 
@@ -161,8 +204,10 @@ public sealed class ProjectSettings
 
     internal void Normalize()
     {
-        if (!(Bpm is >= 20 and <= 400)) Bpm = 110;
+        TempoMap ??= TempoMap.Constant(TempoMap.DefaultBpm);
+        TempoMap.Normalize();
         if (!double.IsFinite(TimeScale) || TimeScale <= 0) TimeScale = 1;
+        if (!double.IsFinite(TempoScale) || TempoScale <= 0) TempoScale = 1;
         ScaleRoot = (ScaleRoot % 12 + 12) % 12;
         if (XtremeDaw.Audio.Midi.MusicScale.Find(ScaleRoot, Scale) == null) Scale = null;
         Mode = Mode == "audio" ? Mode : "video";
@@ -545,6 +590,14 @@ public sealed class Track : IAutomated
     /// <summary>Takes or notes (<see cref="TrackKinds"/>): "audio" or "midi". Native only.</summary>
     public string Kind { get; set; } = TrackKinds.Audio;
     [JsonIgnore] public bool IsMidi => Kind == TrackKinds.Midi;
+    /// <summary>
+    /// An audio track whose clips follow the tempo map (#214, asked by the user): they live in beats like a MIDI
+    /// track's, so a tempo change moves and stretches them. False (the default) = seconds: they stay where they are.
+    /// Native only; a MIDI track always follows (<see cref="Musical"/>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool FollowTempo { get; set; }
+    /// <summary>Its clips and lanes are in beats: a MIDI track, or an audio one that follows the tempo.</summary>
+    [JsonIgnore] public bool Musical => IsMidi || FollowTempo;
     /// <summary>It has something to play: takes or MIDI clips.</summary>
     [JsonIgnore] public bool HasContent => Clips.Count > 0 || MidiClips is { Count: > 0 };
     /// <summary>False = audio only: the track gets no panel in the video. Always false on a MIDI track.</summary>
@@ -566,6 +619,11 @@ public sealed class Track : IAutomated
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Locked { get; set; }
+    /// <summary>Frozen (#240): it plays this render of its instrument and slots instead (<see cref="Freezing"/>); null = live. Native only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public TrackFreeze? Freeze { get; set; }
+    [JsonIgnore] public bool Frozen => Freeze != null;
+    /// <summary>Its takes, notes and slots can't change: locked, or frozen (the render would no longer be what it is).</summary>
+    [JsonIgnore] public bool EditLocked => Locked || Freeze != null;
     /// <summary>The mixer side its strip sits on (<see cref="MixerSides"/>); null = the left. A track in a folder goes with it. Native only.</summary>
     public string? MixerSide { get; set; }
     /// <summary>Its own lane height as a multiple of the height every track shares (the timeline's slider), so the slider
@@ -627,6 +685,7 @@ public sealed class Track : IAutomated
             if (Automation.Count == 0) Automation = null;
         }
         Kind = TrackKinds.Normalize(Kind);
+        if (Freeze != null && !Freeze.Normalize()) Freeze = null;
         if (IsMidi)
         {
             Video = false;
@@ -988,9 +1047,10 @@ public sealed class Send
 /// buses) and what is sent to it (<see cref="IRouted.Sends"/>), runs the sum through its insert slots (a reverb or a delay
 /// is one more slot: <see cref="InsertSlot.Reverb"/>, <see cref="InsertSlot.Delay"/>), its pan, fader and mute, and passes
 /// it on to its own <see cref="Output"/> and sends. One idea for what other mixers split into buses and FX returns (the
-/// user's call); version 2's fixed Reverb and Delay and its extra returns became buses.
+/// user's call); version 2's fixed Reverb and Delay and its extra returns became buses. Its parameters carry lanes like a
+/// folder's (asked by the user, #267: its rows go at the end of the timeline, like aux tracks), read by its node.
 /// </summary>
-public sealed class Bus : IRouted
+public sealed class Bus : IRouted, IAutomated
 {
     public string Id { get; set; } = Ids.New("bus");
     public string Name { get; set; } = "";
@@ -1010,10 +1070,25 @@ public sealed class Bus : IRouted
     public List<Send> Sends { get; set; } = [];
     /// <summary>The mixer side its strip sits on (<see cref="MixerSides"/>); null = the right, where buses go by default.</summary>
     public string? MixerSide { get; set; }
+    /// <summary>Its automated parameters (<see cref="Automations"/>), lanes under its row at the end of the timeline; null = none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<AutomationLane>? Automation { get; set; }
+    /// <summary>Its lanes are folded under its row (they keep playing), like <see cref="Track.AutomationFolded"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool AutomationFolded { get; set; }
+    IReadOnlyList<InsertSlot> IAutomated.AutoSlots => Inserts;
+    IRouted IAutomated.AutoRouted => this;
+    double IAutomated.AutoVolume => Volume;
+    double IAutomated.AutoPan => Pan;
+    bool IAutomated.AutoMuted => Muted;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     internal void Normalize()
     {
+        if (Automation != null)
+        {
+            Automation.RemoveAll(l => l == null);
+            foreach (var l in Automation) l.Normalize();
+            if (Automation.Count == 0) Automation = null;
+        }
         MixerSide = MixerSides.Normalize(MixerSide, MixerSides.Right);
         if (string.IsNullOrEmpty(Id)) Id = Ids.New("bus");
         Name ??= "";
@@ -1147,7 +1222,7 @@ public sealed class InsertSlot
         {
             Stage ??= new();
             Stage.Normalize(Type);
-            if (Type == Dsp.TrackInserts.Tonal && Tonal == null && Stage.Get("target", 0) >= FxDefs.TonalCustom) Stage.Values["target"] = 0;
+            if (Type == Dsp.TrackInserts.Tonal && Tonal == null && FxDefs.TonalIdOf(this) == FxDefs.TonalOwnId) Stage.Values["target"] = 0;
             Sat = null; Comp = null; Eq = null; Reverb = null; Delay = null; Gate = null; Vst = null;
             return;
         }

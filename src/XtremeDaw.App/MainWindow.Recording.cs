@@ -87,6 +87,7 @@ public partial class MainWindow
         };
         CountCancelButton.Click += async (_, _) => await StopRecording(true);
         Timeline.ArmRequested += ToggleArm;
+        Timeline.FreezeRequested += t => _ = t.Track.Frozen ? UnfreezeTrack(t.Track.Id) : FreezeTrack(t.Track.Id);
         Timeline.InputMenuRequested += (t, at) => ShowInputMenu(t, Timeline, at);
         Timeline.InputLabel = t => t.Track.IsMidi ? MidiInputShort(t.Track) : InputShort(t.Track);
     }

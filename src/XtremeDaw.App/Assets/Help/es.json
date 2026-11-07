@@ -354,7 +354,7 @@
             "**Pincel** ({key:toolPaint}): igual que el lápiz, pero arrastrando lo repite a lo largo del tramo.",
             "**Rango** ({key:toolRange}): marca un tramo.",
             "**Dividir** ({key:toolSplit}): un clic corta el clip.",
-            "**Borrar** ({key:toolErase}): saca lo que toca. Con cualquier herramienta, clic derecho y arrastrar sobre los clips también los borra.",
+            "**Borrar** ({key:toolErase}): saca lo que toca. Con cualquier herramienta, clic derecho y arrastrar borra lo que toca: clips, bloques de automatización, puntos de tempo, cambios de compás, marcadores, acordes y el rango del loop. Un clic derecho sin arrastrar abre el menú.",
             "**Escuchar** ({key:toolListen}): mantené apretado sobre un clip para oír esa pista sola.",
             "**Zoom** ({key:toolZoom}) y **Mano** ({key:toolHand}): acercar y mover la vista."
           ],
@@ -468,7 +468,26 @@
             "Para saber el tempo de un audio, clic derecho en el clip → **Detectar tempo**.",
             "Elegí **Poner el proyecto a N BPM**. Eso mueve la grilla y no estira nada."
           ],
-          "see": ["click", "scale"]
+          "see": ["click", "scale", "tempo-track"]
+        },
+        {
+          "id": "tempo-track",
+          "icon": "EC4A",
+          "title": "Cambios de tempo y de compás",
+          "keywords": "pista de tempo rampa compas 7/8 6/8 3/4 accelerando rallentando seguir tempo",
+          "intro": "La pista de tempo cambia el tempo y el compás a lo largo del tema.",
+          "steps": [
+            "Mostrala con su botón al lado de las herramientas. Arriba está la fila de compás y abajo la curva de tempo. Arrastrá su borde de abajo para hacerla más alta.",
+            "Doble clic en la curva (o clic con el Lápiz) agrega un punto. Arrastralo en tiempo y en tempo: Alt lo mueve libre, Shift cambia solo el tempo.",
+            "Clic derecho en un punto: **Rampa hasta el siguiente**, **Escribir tempo…** o **Borrar** (también Supr).",
+            "Doble clic o clic derecho en la fila de compás, o en los números de la regla, cambia el compás desde ese compás."
+          ],
+          "notes": [
+            "El primer punto no se mueve en el tiempo ni se borra.",
+            "Los clips MIDI, los marcadores, los acordes y las pistas con **Seguir tempo** quedan en su compás. Las demás pistas de audio quedan en segundos: **Seguir tempo** se prende con clic derecho en la pista.",
+            "Con cambios de tempo, la caja **Tempo** del transporte muestra el tempo bajo el cabezal; escribir ahí cambia la velocidad de todo el tema."
+          ],
+          "see": ["tempo", "click"]
         },
         {
           "id": "markers-loop",
@@ -498,7 +517,7 @@
             "Doble clic en el nombre de una pista la renombra.",
             "Tocá su insignia para elegir color e ícono. En el inspector, el cuadrito al lado del nombre cambia el color; en una carpeta, el botón de al lado se lo pasa a sus pistas.",
             "Arrastrá una pista por su manija para cambiarla de lugar.",
-            "**Nueva pista → Carpeta** agrupa pistas: arrastralas adentro por la manija.",
+            "**Nueva pista → Carpeta** agrupa pistas: arrastralas adentro por la manija. {key:folderGroup} pone en una carpeta nueva las pistas elegidas, o las de los clips seleccionados.",
             "Clic derecho en la pista → **Duplicar pista** ({key:duplicateTrack}) la copia debajo con todo; **Duplicar sin contenido**, solo con su sonido.",
             "En el mixer, clic derecho en el espacio vacío → **Nuevo separador** lo pone donde hiciste clic; **Separador** en la cabecera, después del canal elegido. Doble clic en un separador elige su color; en su nombre, lo renombra."
           ],
@@ -522,6 +541,24 @@
           "notes": [
             "El volumen, los fades y el encuadre se siguen pudiendo tocar."
           ]
+        },
+        {
+          "id": "freeze",
+          "icon": "E9CA",
+          "title": "Congelar una pista",
+          "keywords": "freeze render cpu dsp carga plugin instrumento bajar consumo",
+          "intro": "Renderiza el instrumento y los efectos de una pista para que dejen de consumir DSP. Los plugins de la pista se cierran.",
+          "steps": [
+            "Clic en el copo {icon:E9CA} del encabezado de la pista, o clic derecho en la pista (en el timeline o en el mixer) → **Congelar**.",
+            "El copo queda prendido y sus clips se ven apagados bajo la onda del render.",
+            "Para cambiar algo, otro clic en el copo, o clic derecho → **Descongelar**."
+          ],
+          "notes": [
+            "Fader, paneo, mute, solo y envíos siguen activos y automatizables.",
+            "Mientras está congelada no se editan sus clips, notas, efectos, instrumento ni Transponer.",
+            "El render se guarda en la carpeta freeze del proyecto."
+          ],
+          "see": ["lock"]
         },
         {
           "id": "undo-versions",
@@ -597,7 +634,7 @@
             "El **⋯** o el clic derecho lo apaga, duplica o elimina."
           ],
           "notes": [
-            "Los efectos propios van por grupos: **Dinámica**, **Compresores clásicos**, **EQ**, **Saturación**, **Modulación** y **Espacio y estéreo**.",
+            "Los efectos propios van por grupos: **Dinámica**, **Compresores clásicos**, **EQ**, **Saturación**, **Modulación**, **Espacio y estéreo** y **Mastering** (las etapas de la cadena de mastering, en su orden).",
             "Un clic en un efecto propio abre su ventana, abajo de donde hiciste clic. Se mueve desde su barra, queda abierta mientras trabajás y podés tener varias. Se cierra con su X o con **Esc**. El botón de agrandar, en su barra, muestra todos los controles en paneles; achicada, solo lo principal. Cada efecto recuerda su tamaño.",
             "Cada efecto tiene su identidad: lo principal va en perillas grandes, arriba va su gráfico (la cola de la reverb, los ecos del delay, la onda de la modulación, la curva de la saturación, el campo estéreo, la respuesta de los de tono) y lleva el color de su familia: violeta la dinámica, verde el tono, naranja la saturación, azul el espacio y rosa la modulación."
           ],
@@ -653,7 +690,7 @@
           "id": "tonal",
           "icon": "E9D2",
           "title": "Balance tonal",
-          "keywords": "balance tonal espectro mastering referencia graves agudos punch mid side tonal balance",
+          "keywords": "balance tonal espectro mastering referencia graves agudos punch mid side tonal balance genero dubstep riddim trap reggaeton metal house techno drum bass lofi",
           "intro": "El **Balance tonal** compara el balance de frecuencias de la mezcla con un objetivo. No cambia el sonido.",
           "steps": [
             "En el master o en cualquier pista o bus, tocá **+ Efecto** → **Análisis** → **Balance tonal**. En el master va siempre al final, después de **Salida**: lee lo que sale, con el limitador.",
@@ -662,6 +699,7 @@
             "**Punch** es la pegada de los graves (cresta bajo 120 Hz) contra el rango del objetivo."
           ],
           "notes": [
+            "Géneros: Pop, Rock, Metal, Country / Folk, R&B / Soul, Hip-hop, Trap, Reggaetón / Urbano, Reggae, Electrónica (EDM), House / Techno, Dubstep, Riddim, Deep dubstep (UK), Drum & bass, Lo-fi, Acústico / Jazz y Orquestal / Clásica. Los tres de dubstep se diferencian en el sub, los medios y la limitación: el menú lo dice en cada uno.",
             "La vista completa suma el espectro de la mezcla sobre la banda del objetivo.",
             "**Estéreo / Mid / Side**: los dos lados, solo el centro o solo los costados.",
             "**Respuesta** es cuánto tiempo promedia (1 a 10 s). El botón de recargar empieza la lectura de nuevo.",
@@ -780,6 +818,8 @@
           ],
           "notes": [
             "**PRE** saca el envío antes del fader: sigue sonando aunque bajes la pista.",
+            "Un bus también manda a otros buses, con el mismo **+** de **Envíos** en su tira. No se ofrece uno que le devolvería el sonido; su salida va siempre al Master.",
+            "**Conexiones**, en la cabecera del mixer, muestra debajo de las tiras los envíos activos del canal elegido: una línea hasta cada bus, con una perilla para su nivel. Con un bus elegido, también los que le llegan, más tenues. Las sogas salen de OUT y llegan a IN, a los costados de la tira elegida; en la otra punta, bajo cada perilla, también IN u OUT, y la flecha entra desde abajo. Bajo cada bus al que el canal todavía no manda, **Enviar** crea el envío al instante. Arrastrá el borde de arriba de la franja para agrandarla.",
             "Al detener, las colas siguen sonando hasta apagarse. Para callarlas ya, tocá **Cortar audio** (el parlante tachado del transporte) o {key:cutAudio}: corta también las notas que quedaron sonando."
           ],
           "see": ["add-fx", "mixer"]
@@ -792,8 +832,8 @@
           "intro": "Hace que un control cambie solo a lo largo del tema.",
           "steps": [
             "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista o de la carpeta → **Automatización**. En un plugin: tocá **Automatizar** en la barra de su ventana y mové el parámetro.",
-            "Aparece un carril debajo de la pista, o debajo de la fila de la carpeta. Los de una carpeta se ocultan al plegarla; **Ver la automatización**, en su menú, los muestra u oculta.",
-            "Clic agrega un punto, arrastrar lo mueve y doble clic lo borra. Shift+arrastrar dibuja.",
+            "Aparece un carril debajo de la pista, de la fila de la carpeta o de la fila del bus. Los buses tienen su fila al final del timeline; **Mostrar buses en el timeline** (clic derecho en una fila de bus o en el espacio vacío) las muestra u oculta. Los de una carpeta se ocultan al plegarla; **Ver la automatización**, en su menú, los muestra u oculta.",
+            "Clic agrega un punto, arrastrar lo mueve y doble clic lo borra. Shift+arrastrar dibuja. Arrastrar con clic derecho borra los bloques que toca, como con los clips.",
             "Arrastrá el círculo en medio de un tramo para darle tensión: curvarlo, o cambiar cuántos escalones, pulsos u ondas tiene. Doble clic la vuelve a cero.",
             "Clic derecho sobre un punto o un tramo → su forma: **Curva**, **Curva doble**, **Mantener**, **Escalones**, **Escalones suaves**, **Pulsos** u **Onda**. La de un punto es la del tramo que llega a él.",
             "Arrastrá la esquina de arriba a la derecha de un bloque para repetirlo en bucle.",
@@ -1123,18 +1163,21 @@
           "id": "general-midi",
           "icon": "E8D6",
           "title": "Instrumentos General MIDI",
-          "keywords": "general midi gm soundfont sf2 piano bateria bajo cuerdas programa instrumento nativo importar mid cancion pistas canal 10 generaluser envolvente ataque liberacion filtro brillo resonancia sensibilidad velocidad transponer afinacion mono glide",
+          "keywords": "volumen buscar compacto plegar lista siguiente anterior banco bancos fluidr3 musescore descargar general midi gm soundfont sf2 piano bateria bajo cuerdas programa instrumento nativo importar mid cancion pistas canal 10 generaluser envolvente ataque liberacion filtro brillo resonancia sensibilidad velocidad transponer afinacion mono glide",
           "intro": "Los 128 instrumentos General MIDI y los kits de batería, sin instalar nada.",
           "steps": [
             "En **Instrumento**, abrí **General MIDI**: cada familia (Pianos, Guitarras, Bajos…) tiene sus 8 instrumentos, y **Batería** tiene los kits.",
-            "**Abrir la ventana** (en el inspector o el piano roll) muestra la del instrumento: las familias y los kits a la izquierda, sus instrumentos a la derecha (un clic lo elige) y un teclado para probarlo.",
-            "Abajo, las perillas cambian el sonido sobre el del banco: **Envolvente** (Ataque, Caída, Sostén, Liberación), **Filtro** (Brillo, Resonancia, Brillo vel.) y **Tocar** (Sensibilidad, Transponer, Afinación y, en **Mono**, Glide). En el centro suena como el banco; doble clic vuelve ahí y **Restablecer** las vuelve todas.",
+            "**Abrir la ventana** (en el inspector o el piano roll) muestra la del instrumento: arriba, el que suena, ◀ ▶ para pasar al anterior o al siguiente, el **Banco** y el **Volumen** del instrumento; abajo, las familias y los kits a la izquierda, sus instrumentos a la derecha (un clic lo elige), **Buscar instrumento** y un teclado para probarlo.",
+            "El botón de lista, arriba, pliega la lista: la ventana se achica y el instrumento se elige en un desplegable por familia.",
+            "En **Sonido**, las perillas cambian el sonido sobre el del banco, con la envolvente y el filtro dibujados como suenan: **Envolvente** (Ataque, Caída, Sostén, Liberación), **Filtro** (Brillo, Resonancia, Brillo vel.) y **Tocar** (Sensibilidad, Transponer, Afinación y, en **Mono**, Glide). En el centro suena como el banco; doble clic vuelve ahí y **Restablecer** las vuelve todas.",
             "Al importar un **.mid** a pistas nuevas, cada pista toma el instrumento que pide el archivo; la del canal 10 toma la batería, con el nombre de cada tecla en el piano roll.",
             "Si el archivo tiene más de una pista, **Importar MIDI** pregunta cuáles traer. **Todas** y **Ninguna** marcan o desmarcan la lista.",
-            "Cada pista toma el nombre que trae en el archivo; sin nombre, el de su instrumento."
+            "Cada pista toma el nombre que trae en el archivo; sin nombre, el de su instrumento.",
+            "**Banco**, arriba a la derecha de la ventana, elige con qué banco suena la pista: **GeneralUser GS** (viene con la app), **FluidR3 GM** o **MuseScore General** (más completos: se bajan desde ahí o en **Configuración → Componentes**) o **Cargar .sf2…** para uno propio."
           ],
           "notes": [
-            "El sonido es el banco **GeneralUser GS**, que viene con la app.",
+            "Sin elegir otro, suena con el banco **GeneralUser GS**, que viene con la app.",
+            "Cada pista guarda su banco. Si falta en otra PC, suena con GeneralUser GS y la ventana lo avisa.",
             "Al cambiar de instrumento, las perillas quedan como estaban. En la batería, Transponer no se aplica.",
             "Al importar sobre una pista MIDI elegida, las pistas marcadas van a un solo clip. Si esa pista suena con el tono de prueba, toma el instrumento de la primera."
           ],
@@ -1220,11 +1263,7 @@
             "**Expresión**, en la barra de abajo, muestra u oculta la franja de abajo, y su desplegable elige qué muestra: velocidad, mod X, mod Y, paneo o release. **Vista** muestra otras pistas en gris y pone una forma de onda de fondo. Clic derecho en una tecla la nombra.",
             "En **Escala**, **Teclado MIDI a la escala** hace que lo que tocás caiga en la escala. **Arpegiador**, en Herramientas, arpegia el teclado y graba lo que suena."
           ],
-          "see": [
-            "midi-track",
-            "scales-chords",
-            "midi-keyboard"
-          ]
+          "see": ["midi-track", "scales-chords", "midi-keyboard"]
         },
         {
           "id": "midi-keyboard",
@@ -1381,7 +1420,8 @@
           ],
           "notes": [
             "El original no se toca. Las exportaciones y las versiones guardadas no se copian.",
-            "Para abrirlo después, hacé doble clic en el .xtp o usá **Abrir…** en Proyectos.",
+            "Para abrirlo después, hacé doble clic en el .xtp o usá **Abrir…** en Proyectos. Con XTreme abierto, se abre en esa ventana en lugar del actual.",
+            "Si el doble clic no abre XTreme, usá **Asociar archivos .xtp a XTreme** en Configuración → Asociación de archivos.",
             "Los proyectos de WildTrack también se abren con **Abrir…**: elegí su **guitarcam.json** y pasa a .xtp."
           ],
           "see": ["new-project", "share-project"]
@@ -1454,7 +1494,7 @@
             "El botón de diseño {icon:E80A} cambia entre **Clásico** y **Vertical**.",
             "Los dos botones de panel ocultan los costados.",
             "{key:fullScreen} pasa a pantalla completa.",
-            "En **Configuración → Apariencia** se elige el estilo de los paneles de la ventana (planos, en relieve o en relieve con degradé), de las perillas, los faders, los medidores, las ondas y cómo se ve el color de cada pista en el timeline (clips tenues, llenos, solo la onda o con barra de título; franja o tinte en el encabezado, carril teñido y la selección en su color) y en el inspector (línea y tinte, solo línea, lleno o sin color; franja al costado, secciones teñidas e íconos en su color), la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) los **colores de los medidores** (**Por defecto**, o **Custom**: elegís Bajo, Caliente y Clip, o tocás **Sorprendeme** para sortear tres que combinan; valen en todos los medidores y estilos y los umbrales no cambian) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica."
+            "En **Configuración → Apariencia** se elige el estilo de los paneles de la ventana (planos, en relieve o en relieve con degradé), de las perillas, los faders, los medidores, las ondas y cómo se ve el color de cada pista en el timeline (clips tenues, llenos, solo la onda o con barra de título; el encabezado con filo, franja, teñido, lleno o sin color, carril teñido y la selección en su color), cómo se ven las **carpetas** (marco, bloque de su color o línea al costado), las **tiras del mixer** (tarjetas o unidas; el color del canal como filo, franja, teñida, encabezado lleno o sin color) y en el inspector (línea y tinte, solo línea, lleno o sin color; franja al costado, secciones teñidas e íconos en su color), la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) los **colores de los medidores** (**Por defecto**, o **Custom**: elegís Bajo, Caliente y Clip, o tocás **Sorprendeme** para sortear tres que combinan; valen en todos los medidores y estilos y los umbrales no cambian) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica."
           ],
           "settings": "view"
         },

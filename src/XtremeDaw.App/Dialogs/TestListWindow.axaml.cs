@@ -26,7 +26,7 @@ namespace XtremeDaw.App.Dialogs;
 /// trying things; it opens without taking the focus, and marking gives the focus back to the main window, so Space keeps
 /// meaning play. Claude's skills are one menu in the title bar, and whether they open in the app or a console is picked
 /// there once. What an agent adds, sends back or says is "Nuevo" until the ticket is opened, and arriving while the bench
-/// is open it is announced on top. Every click carries the ticket's <see cref="TestItem.Rev"/>: a ticket that went
+/// is open it comes as a toast, like XTreme's (asked by the user, #260), and the bell in the title bar counts them. Every click carries the ticket's <see cref="TestItem.Rev"/>: a ticket that went
 /// stale on the screen cannot undo what an agent did meanwhile.
 /// </para>
 /// <see cref="Bench"/> reads the file; the window only shows it.
@@ -122,6 +122,14 @@ public sealed partial class TestListWindow : Window
     bool auditOpen;
     /// <summary>The topics folded in the tree (<see cref="NoTopic"/> = the ones without) and the sections folded inside each ("topic:section"), kept across runs.</summary>
     readonly HashSet<string> folded = [.. (AppConfig.Get(FoldedKey) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)];
+    /// <summary>
+    /// What the list shows (asked by the user, #249: with many tickets at once the states got mixed up), remembered in
+    /// <c>config.json</c>: "pending" (requests and fixes nobody is on), "busy" (an agent is starting or working on it),
+    /// "totest" (waits for the person to try it), "done" (works) or "all".
+    /// </summary>
+    const string ViewKey = "benchView";
+    static readonly string[] Views = ["pending", "busy", "totest", "done", "all", AgentsView];
+    string view = AppConfig.Get(ViewKey) is { } savedView && Views.Contains(savedView) ? savedView : "all";
     /// <summary>The words in the search box, each one has to be in the ticket (empty = no search).</summary>
     string[] search = [];
     /// <summary>The tickets unfolded in the list to read their conversation in place (#197), for this run only.</summary>
@@ -129,10 +137,16 @@ public sealed partial class TestListWindow : Window
     /// <summary>The end of the writes in order: a reply saved by losing the focus cannot land after the click that took it.</summary>
     Task<bool> writes = Task.FromResult(true);
 
-    /// <summary>The "Nuevo" tickets already announced, so the bar tells only of what just arrived. Null before the first list.</summary>
+    /// <summary>The "Nuevo" tickets already announced, so the toasts tell only of what just arrived. Null before the first list.</summary>
     HashSet<int>? announced;
-    /// <summary>The ticket "Ver" opens.</summary>
-    int newsTarget;
+    /// <summary>XTreme's toasts, bottom right over the list: one per ticket that arrives (#260).</summary>
+    readonly ToastHost toasts = new() { Margin = new(12) };
+    /// <summary>What closes each ticket's toast, so a ticket seen meanwhile takes its toast away.</summary>
+    readonly Dictionary<int, Action> newsToasts = [];
+    /// <summary>More arriving at once than this go in one toast, not a pile of them.</summary>
+    const int MaxNewsToasts = 3;
+    /// <summary>The widest a toast gets: XTreme's, less in a narrow window.</summary>
+    const double ToastWidth = 420;
 
     /// <summary>The file changed from here.</summary>
     public event Action? Changed;
@@ -142,6 +156,12 @@ public sealed partial class TestListWindow : Window
 
     /// <summary>Each session's lock traffic light (#167), read at every fill: what a ticket's "en curso" shows.</summary>
     Dictionary<string, LockLight> lights = new();
+    /// <summary>The alerts between the agents' sessions (#263), read at every fill: toasts and each "en curso" tooltip.</summary>
+    List<AgentAlert> alerts = [];
+    /// <summary>The alerts already told in a toast. Null before the first list: what was there then is not news.</summary>
+    HashSet<string>? alertsTold;
+    /// <summary>Alerts in the tooltip of a ticket's "en curso": the newest few.</summary>
+    const int AlertTipMax = 3;
     /// <summary>Which agents' sessions are running (#173): a ticket whose session ended is not "Tomado". Read once per fill.</summary>
     AgentSessions sessions = AgentSessions.None;
     string build = TestBuild.CopyName ?? "";
@@ -288,12 +308,12 @@ public sealed partial class TestListWindow : Window
                 e.Handled = true;
             }
         };
-        NewsShow.Click += (_, _) =>
-        {
-            NewsBar.IsVisible = false;
-            OpenTicket(newsTarget);
-        };
-        NewsClose.Click += (_, _) => NewsBar.IsVisible = false;
+        Grid.SetRow(toasts, 1);
+        toasts.ZIndex = 10;
+        Shell.Children.Add(toasts);
+        Shell.SizeChanged += (_, e) => toasts.Width = Math.Max(0, Math.Min(ToastWidth, e.NewSize.Width - 24));
+        ToolTip.SetTip(BellButton, Loc.T("test.list.bell"));
+        BellButton.Click += (_, _) => ShowBellMenu();
 
         Header.PointerPressed += (_, e) =>
         {
@@ -507,7 +527,7 @@ public sealed partial class TestListWindow : Window
     /// <summary>Draws the list that waited for the reply box to lose the focus, once the click that took it is over.</summary>
     void FillWaiting()
     {
-        if (waiting is { } d && !pressing && replyBox?.IsFocused != true && inlineBox?.IsFocused != true) Fill(d);
+        if (waiting is { } d && !pressing && replyBox?.IsFocused != true && inlineBox?.IsFocused != true && !AgentTyping) Fill(d);
     }
 
     void Refill()
@@ -520,7 +540,8 @@ public sealed partial class TestListWindow : Window
     {
         current = data;
         Announce(data);
-        if (!sent && IsActive && (replyBox?.IsFocused == true || inlineBox?.IsFocused == true))
+        AnnounceAlerts(data);
+        if (!sent && IsActive && (replyBox?.IsFocused == true || inlineBox?.IsFocused == true || AgentTyping))
         {
             waiting = data;
             return;
@@ -546,6 +567,7 @@ public sealed partial class TestListWindow : Window
             FillTab(data);
         }
         FillTotals(data);
+        FillViews(data);
         ClearButton.IsVisible = data.Count(TestItem.Works) > 0 && open == 0;
         UpdateFoldAll(data);
         if (focusReply && replyBox != null)
@@ -566,12 +588,17 @@ public sealed partial class TestListWindow : Window
 
     void FillTab(TestListData data)
     {
+        if (view == AgentsView)
+        {
+            FillAgents(data);
+            return;
+        }
         // everything with work reviews itself whole: the requests and everything to fix (the skill with no arguments)
-        var work = data.Items.Where(i => TabReview(SectionOf(i)) != null).ToList();
+        var work = view is "all" or "pending" ? data.Items.Where(i => TabReview(SectionOf(i)) != null).ToList() : [];
         if (work.Count > 0 && root != null && ReviewAllRow(work, Palette.AccentColor) is { } all) Rows.Children.Add(all);
         foreach (var (topic, sections) in Tree(data))
         {
-            string node = topic ?? NoTopic;
+            string node = Node(topic);
             // a search opens every topic, so what it found is in sight
             bool shut = search.Length == 0 && folded.Contains(node);
             var items = sections.SelectMany(x => x.Groups).SelectMany(g => g.Items).ToList();
@@ -581,7 +608,9 @@ public sealed partial class TestListWindow : Window
             // no section or group heads (asked by the user, #197: too much clutter): each line says its state in its chip
             foreach (var i in Ranked(items.Where(i => SectionOf(i) != DoneTabIndex))) inner.Children.Add(Line(i));
             var done = items.Where(i => SectionOf(i) == DoneTabIndex).ToList();
-            if (done.Count > 0)
+            // Terminado alone shows them without the fold: they are all there is
+            if (view == "done") foreach (var i in Ordered(done)) inner.Children.Add(Line(i));
+            else if (done.Count > 0)
             {
                 bool closed = search.Length == 0 && SectionShut(node, DoneTabIndex);
                 inner.Children.Add(DoneHead(node, done.Count, closed));
@@ -647,6 +676,52 @@ public sealed partial class TestListWindow : Window
         return b;
     }
 
+    /// <summary>Whether a ticket is in one of the <see cref="Views"/>. What an agent is on is only "En curso", whatever its state.</summary>
+    bool InView(TestItem i, string v) => v switch
+    {
+        "busy" => Busy(i),
+        "pending" => !Busy(i) && SectionOf(i) is FixTabIndex or RequestTabIndex,
+        "totest" => !Busy(i) && i.State == TestItem.Pending,
+        "done" => i.State == TestItem.Works,
+        AgentsView => false,
+        _ => true,
+    };
+
+    /// <summary>
+    /// The view picker over the list (#249): one segment per view with how many tickets it has (counting the search),
+    /// only on the list, not in a ticket or the history.
+    /// </summary>
+    void FillViews(TestListData data)
+    {
+        ViewBar.IsVisible = open == 0 && HistoryButton.IsChecked != true;
+        ViewRow.Children.Clear();
+        if (!ViewBar.IsVisible) return;
+        var found = data.Items.Where(Found).ToList();
+        foreach (var v in Views)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, HorizontalAlignment = HorizontalAlignment.Center };
+            row.Children.Add(new TextBlock { Text = Loc.T("test.list.view." + v), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+            if (v != "all")
+                row.Children.Add(new TextBlock
+                {
+                    Classes = { "mono" }, FontSize = 11, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center,
+                    // Agentes counts the sessions open
+                    Text = (v == AgentsView ? AgentAlert.Live(root).Count : found.Count(i => InView(i, v))).ToString(CultureInfo.CurrentCulture),
+                });
+            var b = new ToggleButton { Classes = { "seg" }, Content = row, Padding = new(4, 0), IsChecked = v == view, Focusable = false };
+            ToolTip.SetTip(b, Loc.T("test.list.view." + v + ".tip"));
+            AutomationProperties.SetName(b, Loc.T("test.list.view." + v));
+            b.Click += (_, _) =>
+            {
+                view = v;
+                try { AppConfig.Set(ViewKey, v); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                Refill();
+            };
+            ViewRow.Children.Add(b);
+        }
+    }
+
     /// <summary>The section a ticket is in (an index of <see cref="TabList"/>), or -1.</summary>
     static int SectionOf(TestItem item) => Array.FindIndex(TabList, t => t.Groups.Any(g => g.Match(item)));
 
@@ -666,7 +741,7 @@ public sealed partial class TestListWindow : Window
                 var groups = new List<(string, List<TestItem>)>();
                 foreach (var (match, key) in TabList[s].Groups)
                 {
-                    var items = Ordered(data.Items.Where(match).Where(i => i.Topic == topic).Where(Found)).ToList();
+                    var items = Ordered(data.Items.Where(match).Where(i => i.Topic == topic).Where(Found).Where(i => InView(i, view))).ToList();
                     if (items.Count > 0) groups.Add((key, items));
                 }
                 if (groups.Count > 0) sections.Add((s, groups));
@@ -702,7 +777,13 @@ public sealed partial class TestListWindow : Window
     }
 
     /// <summary>The topics the list shows now, as tree nodes.</summary>
-    List<string> ShownTopics(TestListData data) => [.. Tree(data).Select(t => t.Topic ?? NoTopic)];
+    List<string> ShownTopics(TestListData data) => [.. Tree(data).Select(t => Node(t.Topic))];
+
+    /// <summary>
+    /// A topic's fold key in the current view: each view keeps its own folds (asked by the user, #258), "Todo" with the
+    /// bare topic as before ("pending/mixer", "mixer").
+    /// </summary>
+    string Node(string? topic) => view == "all" ? topic ?? NoTopic : $"{view}/{topic ?? NoTopic}";
 
     /// <summary>
     /// Folds every topic in the list (asked by the user, #126), or opens them all when they are all folded already. The
@@ -781,7 +862,7 @@ public sealed partial class TestListWindow : Window
         };
         if (topic != null) ToolTip.SetTip(b, Loc.T("test.list.topic." + topic + ".tip"));
         AutomationProperties.SetName(b, TopicName(topic));
-        string node = topic ?? NoTopic;
+        string node = Node(topic);
         b.Click += (_, _) => ToggleFold(node);
         var work = items.Where(i => TabReview(SectionOf(i)) != null).ToList();
         if (work.Count == 0 || root == null) return b;
@@ -818,7 +899,7 @@ public sealed partial class TestListWindow : Window
         Grid.SetColumn(subject, 2);
         top.Children.Add(subject);
 
-        var under = new Grid { ColumnDefinitions = new("Auto,*,Auto"), Margin = new(LineIdWidth + 4, 0, 0, 0) };
+        var under = new Grid { ColumnDefinitions = new("Auto,*,Auto"), Margin = new(LineIdWidth + 4, LineGap, 0, 0) };
         var (chip, chipColor) = item.State == TestItem.Request ? (Loc.T("test.list.request.chip"), VioletKind) : StateChip(item);
         var stateChip = Badge(chip, false, chipColor);
         // a little taller than the other badges (asked by the user, #197: too small to read at a glance)
@@ -827,7 +908,7 @@ public sealed partial class TestListWindow : Window
         var marks = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         if (item.Unseen) marks.Children.Add(Badge(Loc.T("test.list.new"), false, Palette.AccentColor, strong: true));
         if (Starting(item)) marks.Children.Add(StartingBadge());
-        else if (TestList.Held(item, sessions)) marks.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy)));
+        else if (TestList.Held(item, sessions)) marks.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy), tip: TakenTip(LockLight.For(lights, item.TakenBy), item.TakenBy)));
         Grid.SetColumn(marks, 1);
         under.Children.Add(marks);
         var when = new TextBlock
@@ -838,23 +919,28 @@ public sealed partial class TestListWindow : Window
         Grid.SetColumn(when, 2);
         under.Children.Add(when);
 
-        var lines = new StackPanel { Spacing = 5 };
-        lines.Children.Add(top);
-        lines.Children.Add(under);
-        Control content = lines;
         bool open = expanded.Contains(item.Id);
         // what is new is worth reading before opening it; the rest stays in two lines
+        TextBlock? said = null;
         if (!open && item.Unseen && LastSaid(item) is { } m)
-            lines.Children.Add(new TextBlock
+            said = new TextBlock
             {
-                Classes = { "dim" }, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new(LineIdWidth + 4, 0, 0, 0),
+                Classes = { "dim" }, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new(LineIdWidth + 4, LineGap, 0, 0),
                 Text = Said(m),
-            });
+            };
+        // the whole card opens the ticket (asked by the user, #259): the button lies under the lines, over the card's
+        // padding too, and the texts let the click through to it; the arrow and Probar / Ver consola sit on top of it
         var b = new Button
         {
-            Classes = { "rowmain" }, Content = content, HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new(0), Background = Brushes.Transparent,
+            Classes = { "rowmain" }, HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
+            Padding = new(0), Background = Brushes.Transparent, Margin = new(0, -CardPadY, -CardPadRight, open ? -LineGap : -CardPadY),
         };
+        top.IsHitTestVisible = false;
+        stateChip.IsHitTestVisible = false;
+        when.IsHitTestVisible = false;
+        if (said != null) said.IsHitTestVisible = false;
+        // "en curso" keeps its tooltip (which file it waits for), and a click on it still opens the ticket
+        marks.Tapped += (_, _) => OpenTicket(item.Id);
         AutomationProperties.SetName(b, $"#{item.Id} {Subject(item)} · {chip}");
         // the last thing said, or who opened it (#157), without opening it; unfolded, it is all in sight
         if (!open && LastSaid(item) is { } last) ToolTip.SetTip(b, Said(last));
@@ -879,18 +965,34 @@ public sealed partial class TestListWindow : Window
             if (!expanded.Remove(item.Id)) expanded.Add(item.Id);
             Refill();
         };
-        var row = new Grid { ColumnDefinitions = new("Auto,*,Auto") };
-        row.Children.Add(fold);
-        Grid.SetColumn(b, 1);
+        // the title runs the whole width, over the column of Probar / Ver consola (asked by the user, #259)
+        var row = new Grid { ColumnDefinitions = new("Auto,*,Auto"), RowDefinitions = new("Auto,Auto,Auto") };
+        Grid.SetColumnSpan(b, 3);
+        Grid.SetRowSpan(b, 3);
         row.Children.Add(b);
-        // Probar, or Ver consola while an agent is on it (#172), beside the line, not inside it: the line's own click
-        // opens the ticket
+        Grid.SetColumn(top, 1);
+        Grid.SetColumnSpan(top, 2);
+        row.Children.Add(top);
+        Grid.SetColumn(under, 1);
+        Grid.SetRow(under, 1);
+        row.Children.Add(under);
+        if (said != null)
+        {
+            Grid.SetColumn(said, 1);
+            Grid.SetColumnSpan(said, 2);
+            Grid.SetRow(said, 2);
+            row.Children.Add(said);
+        }
+        Grid.SetRowSpan(fold, 3);
+        row.Children.Add(fold);
+        // Probar, or Ver consola while an agent is on it (#172), at the end of the second line, with the state and time
+        // (#204); a button of its own over the card's
         if ((SessionButton(item) ?? TryButton(item)) is { } side)
         {
-            // with the state, time and the rest of the second line (#204)
-            side.Margin = new(8, 0, 0, 0);
-            side.VerticalAlignment = lines.Children.Count > 2 ? VerticalAlignment.Center : VerticalAlignment.Bottom;
+            side.Margin = new(8, LineGap, 0, 0);
+            side.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(side, 2);
+            Grid.SetRow(side, 1);
             row.Children.Add(side);
         }
         Control body = row;
@@ -941,6 +1043,15 @@ public sealed partial class TestListWindow : Window
 
     /// <summary>Room for the number at the start of a line, so the chips line up.</summary>
     const double LineIdWidth = 34;
+
+    /// <summary>Space between the lines of a ticket in the list.</summary>
+    const double LineGap = 5;
+
+    /// <summary>
+    /// The compact card's padding above, below and on the right: the line's button reaches over it, so the whole card
+    /// opens the ticket (#259).
+    /// </summary>
+    const double CardPadY = 9, CardPadRight = 10;
 
     /// <summary>A message in one line: who, what, and its text.</summary>
     static string Said(TestMessage m) => $"{RoleName(m.Who)} · {MessageLabel(m)}{(m.Text is { } t ? ": " + t : "")}";
@@ -1012,7 +1123,7 @@ public sealed partial class TestListWindow : Window
         info.Children.Add(Badge(StateName(item.State), false, StateColor(item.State) ?? TabColor(tab)));
         if (item.Kind is { } k) info.Children.Add(Badge(Loc.T("test.list.kind." + k), false, KindColor(k)));
         if (Starting(item)) info.Children.Add(StartingBadge());
-        else if (TestList.Held(item, sessions)) info.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy)));
+        else if (TestList.Held(item, sessions)) info.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy), tip: TakenTip(LockLight.For(lights, item.TakenBy), item.TakenBy)));
         info.Children.Add(TopicBadge(item.Topic));
         if (item.Tries > 0) info.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = Loc.T("test.list.try", item.Tries), VerticalAlignment = VerticalAlignment.Center });
         if (Creator(item) is { } creator)
@@ -1402,8 +1513,9 @@ public sealed partial class TestListWindow : Window
     };
 
     /// <summary>
-    /// Tells of the "Nuevo" tickets not told yet: on the first list, what came while the bench was closed; later, what
-    /// an agent just added, sent back or said. Outside the window's focus the taskbar button flashes too.
+    /// Tells of the "Nuevo" tickets not told yet, in toasts (#260): on the first list, what came while the bench was
+    /// closed; later, what an agent just added, sent back or said. One toast per ticket, and more than
+    /// <see cref="MaxNewsToasts"/> at once in one. Outside the window's focus the taskbar button flashes too.
     /// </summary>
     void Announce(TestListData data)
     {
@@ -1411,24 +1523,102 @@ public sealed partial class TestListWindow : Window
         bool first = announced == null;
         var arrived = first ? fresh : fresh.Where(i => !announced!.Contains(i.Id)).ToList();
         announced = [.. fresh.Select(i => i.Id)];
+        UpdateBell(fresh);
+        // what was seen meanwhile is no news any more
+        foreach (int id in newsToasts.Keys.Where(id => !announced.Contains(id)).ToList())
+        {
+            newsToasts[id]();
+            newsToasts.Remove(id);
+        }
         // the ticket on the screen is no news (asked by the user, #143): it shows there, focused or not
         arrived.RemoveAll(i => i.Id == open && HistoryButton.IsChecked != true && IsVisible && WindowState != WindowState.Minimized);
-        if (arrived.Count == 0)
+        if (arrived.Count == 0) return;
+        string show = Loc.T("test.list.news.show");
+        if (arrived.Count > MaxNewsToasts)
         {
-            // what was seen meanwhile is no news any more
-            if (NewsBar.IsVisible && !announced.Contains(newsTarget)) NewsBar.IsVisible = false;
-            return;
+            int top = arrived[0].Id;
+            var lines = arrived.Take(MaxNewsToasts).Select(i => $"#{i.Id} · {Subject(i)}").ToList();
+            lines.Add(Loc.T("test.list.news.more", arrived.Count - MaxNewsToasts));
+            toasts.Show(string.Join('\n', lines), Loc.T("test.list.news.many", arrived.Count), action: (show, () => OpenTicket(top)));
         }
-        var top = arrived[0];
-        newsTarget = top.Id;
-        // the ticket's title, not what was said (asked by the user, #197: short; the ticket has the rest)
-        NewsText.Text = arrived.Count == 1
-            ? Loc.T("test.list.news.one", top.Id, Subject(top))
-            : Loc.T("test.list.news.many", arrived.Count, top.Id, Subject(top));
-        ToolTip.SetTip(NewsText, string.Join("\n", arrived.Select(i => $"#{i.Id} · {Subject(i)}")));
-        NewsBar.IsVisible = true;
+        else
+            // the ticket's title, not what was said (asked by the user, #197: short; the ticket has the rest)
+            foreach (var i in arrived)
+            {
+                int id = i.Id;
+                if (newsToasts.Remove(id, out var old)) old();
+                newsToasts[id] = toasts.Show(Subject(i), Loc.T("test.list.news.one", id), action: (show, () => OpenTicket(id)));
+            }
         // only what arrives while open: a bench that moves to a newer copy starts over and would blink at every build
         if (!IsActive && !first) Flash();
+    }
+
+    /// <summary>
+    /// Tells in a toast of each alert between agents that just arrived (#263): to whom and from whom, by their tickets,
+    /// and what it says; "Ver" opens the recipient's ticket. An ATENCIÓN stays until it is closed.
+    /// </summary>
+    void AnnounceAlerts(TestListData data)
+    {
+        alerts = AgentAlert.Load(root);
+        bool first = alertsTold == null;
+        List<AgentAlert> arrived = first ? [] : alerts.Where(a => !alertsTold!.Contains(a.Id)).ToList();
+        alertsTold = [.. alerts.Select(a => a.Id)];
+        foreach (var a in arrived)
+        {
+            int to = LockLight.TicketOf(data.Items, a.ToSession);
+            string title = to > 0 ? Loc.T("test.list.alert.to", to) : Loc.T("test.list.alert.title");
+            if (a.Urgent) title += " · " + Loc.T("test.list.lock.clash");
+            toasts.Show(AlertLine(data.Items, a), title, sticky: a.Urgent,
+                action: to > 0 ? (Loc.T("test.list.news.show"), () => OpenTicket(to)) : null);
+        }
+        if (arrived.Count > 0 && !IsActive) Flash();
+    }
+
+    /// <summary>An alert in one line: who sent it ("#60", "otra sesión", "vos") and what it says.</summary>
+    static string AlertLine(IReadOnlyList<TestItem> items, AgentAlert a)
+    {
+        int from = a.From == "" ? 0 : LockLight.TicketOf(items, a.From);
+        string who = a.From == "" ? Loc.T("test.list.alert.user") : from > 0 ? "#" + from : Loc.T("test.list.lock.other");
+        return Loc.T("test.list.alert.from", who, a.Text);
+    }
+
+    /// <summary>The badge's tooltip: the light, and below the newest alerts for that ticket's session (#263).</summary>
+    string TakenTip(LockLight light, string? takenBy)
+    {
+        var mine = AgentAlert.For(alerts, takenBy).Take(AlertTipMax).ToList();
+        if (mine.Count == 0) return LightTip(light);
+        var items = current?.Items ?? [];
+        return LightTip(light) + "\n\n" + Loc.T("test.list.alert.recent") + "\n" + string.Join('\n', mine.Select(a => "· " + AlertLine(items, a)));
+    }
+
+    /// <summary>The bell's count: every ticket still "Nuevo", told or not.</summary>
+    void UpdateBell(List<TestItem> fresh)
+    {
+        int n = fresh.Count;
+        BellBadge.IsVisible = n > 0;
+        BellCount.Text = n > 99 ? "99+" : n.ToString(CultureInfo.CurrentCulture);
+        ToolTip.SetTip(BellButton, n == 0 ? Loc.T("test.list.bell") : $"{Loc.T("test.list.bell")} · {Loc.T("test.list.news.many", n)}");
+    }
+
+    /// <summary>The bell's menu: the "Nuevo" tickets, newest first, each opens its ticket; and one click to see them all.</summary>
+    void ShowBellMenu()
+    {
+        var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        var fresh = current?.Items.Where(i => i.Unseen).OrderByDescending(i => i.Id).ToList() ?? [];
+        if (fresh.Count == 0)
+            menu.Items.Add(new MenuItem { Header = Loc.T("test.list.bell.none"), IsEnabled = false });
+        foreach (var i in fresh)
+        {
+            int id = i.Id;
+            menu.Items.Add(Item($"#{id} · {Subject(i)}", "", () => OpenTicket(id)));
+        }
+        if (fresh.Count > 1)
+        {
+            int[] ids = [.. fresh.Select(i => i.Id)];
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Item(Loc.T("test.list.bell.seen"), CheckGlyph, () => Save(() => TestList.See(path, ids))));
+        }
+        menu.ShowAt(BellButton);
     }
 
     /// <summary>The verdicts so far, each in its color, so the state of the whole bank reads at a glance.</summary>
@@ -1458,7 +1648,7 @@ public sealed partial class TestListWindow : Window
             Width = 40, Height = 40, CornerRadius = new(20), Background = Palette.Alpha(c, BadgeTint), HorizontalAlignment = HorizontalAlignment.Center,
             Child = new TextBlock { Classes = { "icon" }, Text = CheckGlyph, FontSize = 18, Foreground = Palette.Alpha(c, 1), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         });
-        box.Children.Add(new TextBlock { Classes = { "dim" }, Text = Loc.T(HistoryButton.IsChecked == true ? "test.list.history.empty" : search.Length > 0 ? "test.list.search.none" : "test.list.empty"), HorizontalAlignment = HorizontalAlignment.Center });
+        box.Children.Add(new TextBlock { Classes = { "dim" }, Text = Loc.T(HistoryButton.IsChecked == true ? "test.list.history.empty" : search.Length > 0 ? "test.list.search.none" : view != "all" ? "test.list.view.empty" : "test.list.empty"), HorizontalAlignment = HorizontalAlignment.Center });
         return box;
     }
 
@@ -1640,7 +1830,7 @@ public sealed partial class TestListWindow : Window
     /// for a file, red when it had to stop (a line that loops back, a command that changed another session's files);
     /// the tooltip says which file and who has it.
     /// </summary>
-    static Border TakenBadge(LockLight light, int count = 0)
+    static Border TakenBadge(LockLight light, int count = 0, string? tip = null)
     {
         var c = Palette.AccentColor;
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
@@ -1657,7 +1847,7 @@ public sealed partial class TestListWindow : Window
         if (light.State != LockLight.Level.Free) text += " · " + LightName(light);
         row.Children.Add(new TextBlock { FontSize = 11, Text = text, Foreground = Palette.Alpha(c, 1), VerticalAlignment = VerticalAlignment.Center });
         var badge = new Border { Background = Palette.Alpha(c, BadgeTint), CornerRadius = new(5), Padding = new(6, 1), VerticalAlignment = VerticalAlignment.Center, Child = row };
-        ToolTip.SetTip(badge, LightTip(light));
+        ToolTip.SetTip(badge, tip ?? LightTip(light));
         return badge;
     }
 
@@ -2105,7 +2295,7 @@ public sealed partial class TestListWindow : Window
             Background = Palette.Alpha(c, state == null ? 0.35 : 1),
         });
         // a line of the list is lower than the open ticket (#197)
-        var inner = new Border { Padding = compact ? new(6, 9, 10, 9) : new(9, 10, 12, 10), Child = body };
+        var inner = new Border { Padding = compact ? new(6, CardPadY, CardPadRight, CardPadY) : new(9, 10, 12, 10), Child = body };
         Grid.SetColumn(inner, 1);
         grid.Children.Add(inner);
         return new()

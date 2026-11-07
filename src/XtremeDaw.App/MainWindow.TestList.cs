@@ -15,21 +15,10 @@ public partial class MainWindow
 {
     static readonly TimeSpan TestListPoll = TimeSpan.FromSeconds(2);
     /// <summary><c>XTreme.exe [proyecto] --probar 12</c>: the bench's Probar (asked by the user, #143) opens the copy with that ticket's toast.</summary>
-    const string TryArg = "--probar";
+    const string TryArg = ShellOpen.TryArg;
 
     DateTime testListStamp;
     int testListSeen = -1;
-
-    /// <summary>The project on the command line: the first argument that is not an option (nor <see cref="TryArg"/>'s number).</summary>
-    public static string? ProjectArg(string[] args)
-    {
-        for (int i = 0; i < args.Length; i++)
-        {
-            if (args[i] == TryArg) i++;
-            else if (!args[i].StartsWith("--", StringComparison.Ordinal) && args[i].Length > 0) return args[i];
-        }
-        return null;
-    }
 
     static int TryFrom(string[] args)
     {

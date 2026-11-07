@@ -61,7 +61,7 @@ public sealed partial class TimelineView
                 if (loopRuns.Count == 0) loopRuns.Add(new LoopRun());
                 loopRuns.Add(LoopRunOf(i, source));
             }
-            if (fade || t.Track.Locked || t.Track.MidiClips is not { } clips) continue;
+            if (fade || t.Track.EditLocked || t.Track.MidiClips is not { } clips) continue;
             foreach (var c in clips)
             {
                 if (c == midi || !boxed.Contains(c.Id) || midiAlong.Contains(c)) continue;
@@ -101,7 +101,7 @@ public sealed partial class TimelineView
             };
         }
         if (midiHeld == null) return 0;
-        return midiTrimStart ? midiAtSec - midiFromSec : (midiBeats - midiFromBeats) * BeatSec;
+        return midiTrimStart ? midiAtSec - midiFromSec : SecPlus(midiFromSec, midiBeats) - SecPlus(midiFromSec, midiFromBeats);
     }
 
     /// <summary>Moves the edge of every other clip of the group by <see cref="GroupShift"/>, each within its own limits.</summary>
@@ -119,11 +119,11 @@ public sealed partial class TimelineView
             var g = midiGroup[c];
             if (kind == MidiEditKind.Trim)
             {
-                double end = g.FromSec + g.FromBeats * BeatSec;
-                double at = Math.Clamp(g.FromSec + d, 0, end - MidiClip.MinBeats * BeatSec);
-                midiGroup[c] = g with { AtSec = at, Beats = g.FromBeats - (at - g.FromSec) / BeatSec };
+                double end = SecPlus(g.FromSec, g.FromBeats);
+                double at = Math.Clamp(g.FromSec + d, 0, SecPlus(end, -MidiClip.MinBeats));
+                midiGroup[c] = g with { AtSec = at, Beats = BeatsBetween(at, end) };
             }
-            else midiGroup[c] = g with { Beats = Math.Clamp(g.FromBeats + d / BeatSec, MidiClip.MinBeats, MidiClip.MaxBeats) };
+            else midiGroup[c] = g with { Beats = Math.Clamp(BeatsBetween(g.FromSec, SecPlus(g.FromSec, g.FromBeats) + d), MidiClip.MinBeats, MidiClip.MaxBeats) };
         }
     }
 

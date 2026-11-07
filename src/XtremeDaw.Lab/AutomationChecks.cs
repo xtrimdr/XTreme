@@ -164,6 +164,50 @@ static class AutomationChecks
         sepP.Normalize();
         Say("carpeta: un separador no tiene carriles", sepP.Folders.All(x => x.Automation == null));
 
+        // a bus's lanes (#267): the track goes all to the bus, whose fader, pan, mute, send to another bus and slots follow them
+        static (Project P, Bus B) OnBus(params AutomationLane[] lanes)
+        {
+            var b = new Bus { Name = "B", Automation = [.. lanes] };
+            var t = new Track();
+            t.Channel.Output = b.Id;
+            return (With(t, b), b);
+        }
+        var busFader = Mix(OnBus(Lane(AutoTarget.Volume, (0, 1), (2, 0))).P);
+        Say("bus: el volumen sigue su carril", Near(busFader.L[At(1)], 0.5 * 0.375), $"{busFader.L[At(1)]:0.0000}");
+        double busJump = 0;
+        for (int i = 1; i < busFader.L.Length; i++) busJump = Math.Max(busJump, Math.Abs(busFader.L[i] - busFader.L[i - 1]));
+        Say("bus: el volumen no da saltos", busJump < 1e-3, $"{busJump:0.00000}");
+        var busMute = Mix(OnBus(Lane(AutoTarget.Mute, (0, 0), (1, 1))).P);
+        Say("bus: el mute es un escalón", Near(busMute.L[At(0.9)], 0.5) && Near(busMute.L[At(1.1)], 0), $"{busMute.L[At(0.9)]:0.000} -> {busMute.L[At(1.1)]:0.000}");
+        var busPan = Mix(OnBus(Lane(AutoTarget.Pan, (0, 0.5), (1, 0))).P);
+        Say("bus: el paneo sigue su carril", Near(busPan.R[At(1.5)], 0) && Near(busPan.L[At(1.5)], 1), $"L {busPan.L[At(1.5)]:0.000} R {busPan.R[At(1.5)]:0.000}");
+        var toBus = new Bus { Name = "C" };
+        var (busSendP, busSendB) = OnBus(Lane(AutoTarget.Send(toBus.Id), (0, 0), (2, 1)));
+        busSendB.Sends.Add(new Send { BusId = toBus.Id, Level = 0, On = true });
+        busSendP.Settings.Buses.Add(toBus);
+        var busSend = Mix(busSendP);
+        Say("bus: un envío a otro bus sigue su carril", Near(busSend.L[At(1)], 0.75), $"{busSend.L[At(1)]:0.000}");
+        var busSlot = InsertSlot.New(InsertSlot.EqKind);
+        busSlot.On = true;
+        var (busFxP, busFxB) = OnBus(Lane(AutoTarget.Fx(busSlot.Id, "out"), (0, 2.0 / 3), (0.5, 0.5), (2, 0.5)));
+        busFxB.Inserts = [busSlot];
+        var busFx = Mix(busFxP);
+        Say("bus: la perilla de un efecto sigue su carril", Near(busFx.L[At(1)], 0.5 * Math.Pow(10, -6.0 / 20)), $"{busFx.L[At(1)]:0.0000}");
+        var savedBus = ProjectLibrary.Clone(busFxP);
+        savedBus.Normalize();
+        Say("bus: sus carriles se guardan", savedBus.Settings.Buses[0].Automation is [{ Blocks.Count: 1 } busLane0] && busLane0.Target == AutoTarget.Fx(busSlot.Id, "out"));
+        var (busTempoP, busTempoB) = OnBus(Lane(AutoTarget.Pan, (0, 0), (1, 1)));
+        TempoFollow.Rescale(busTempoP, 2);
+        Say("bus: sus carriles siguen al tempo", Near(Automations.PositionAt(busTempoB.Automation![0], false, 1), 0.5), $"{Automations.PositionAt(busTempoB.Automation![0], false, 1):0.000}");
+        var (busUndoP, busUndoB) = OnBus();
+        busUndoB.Automation = null;
+        var busUndo = new UndoManager();
+        busUndo.Checkpoint(busUndoP);
+        Automations.Show(busUndoP.Settings.Buses[0], AutoTarget.Volume, 0.5);
+        bool busAdded = busUndoP.Settings.Buses[0].Automation is [_];
+        busUndo.Undo(busUndoP);
+        Say("bus: deshacer saca su carril", busAdded && busUndoP.Settings.Buses[0].Automation == null);
+
         var cut = new Track { Automation = [Lane(AutoTarget.Volume, (0, 0), (1, 1), (3, 0), (4, 1))] };
         Automations.CloseGap(cut, 1, 3);
         var left = cut.Automation![0];

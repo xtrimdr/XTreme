@@ -21,7 +21,9 @@ public static class AudioWarmUp
     {
         // the engine assembly (DSP, recording, the plugin bridge) and the window's real-time half (PlaybackEngine, LiveTrack)
         var types = typeof(XtremeDaw.Audio.Dsp.Compressor).Assembly.GetTypes()
-            .Concat(typeof(LiveTrack).Assembly.GetTypes().Where(t => t.Namespace is "XtremeDaw.App.Audio" or "XtremeDaw.App.Model"));
+            .Concat(typeof(LiveTrack).Assembly.GetTypes().Where(t => t.Namespace is "XtremeDaw.App.Audio" or "XtremeDaw.App.Model"))
+            // the click reads the tempo map on the audio thread
+            .Concat([typeof(XtremeDaw.Projects.TempoMap)]);
         const BindingFlags all = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
         foreach (var t in types)
         {

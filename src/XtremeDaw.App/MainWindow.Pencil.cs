@@ -58,7 +58,7 @@ public partial class MainWindow
     void PickPencilSample(SampleFile f)
     {
         if (f.Broken) return;
-        double sec = f.DurationSec > 0 ? f.DurationSec : 4 * 60 / Math.Max(1, Timeline.Bpm);
+        double sec = f.DurationSec > 0 ? f.DurationSec : Timeline.Tempo.BarStartSec(1);
         SetPencil(new PencilBrush(f.Name, SamplePath: f.Path, SampleSec: sec), quiet: true);
     }
 
@@ -84,7 +84,7 @@ public partial class MainWindow
 
     void RefusePencil(LiveTrack track)
     {
-        if (track.Track.Locked) ToastLocked(track.Track, null);
+        if (track.Track.EditLocked) ToastLocked(track.Track, null);
         else if (pencil == null) Toast(Loc.T("pencil.none"));
         else Toast(Loc.T(pencil.Notes != null ? "pencil.needsMidi" : "pencil.needsAudio", pencil.Name));
     }

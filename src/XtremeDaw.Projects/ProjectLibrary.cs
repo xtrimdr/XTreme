@@ -205,7 +205,7 @@ public static partial class ProjectLibrary
     public sealed record PickedFolder(PickedKind Kind, string Dir, IReadOnlyList<string> Found);
 
     /// <summary>Project subfolders: picking one of these means its parent.</summary>
-    static readonly string[] InnerDirs = [ProjectStore.MediaDir, ProjectStore.HistoryDir, ProjectStore.CacheDir, "exports"];
+    static readonly string[] InnerDirs = [ProjectStore.MediaDir, ProjectStore.HistoryDir, ProjectStore.CacheDir, Freezing.Dir, "exports"];
 
     /// <summary>The old web app's project file: those folders can't be opened here.</summary>
     const string WebProjectFile = "session.json";
@@ -379,6 +379,15 @@ public static partial class ProjectLibrary
             m.Audio = CopyMedia(m.Audio);
             m.Video = CopyMedia(m.Video);
         }
+        // the frozen tracks' renders (#240), at the same place
+        foreach (var t in copy.Tracks)
+        {
+            if (t.Freeze is not { } f) continue;
+            string from = Path.GetFullPath(Resolve(src, f.File)), to = Path.Combine(staging, f.File);
+            if (!File.Exists(from) || File.Exists(to)) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            if (!FileLinks.TryHardLink(to, from)) File.Copy(from, to);
+        }
         copy.Id = Ids.New("prj");
         copy.Name = name;
         copy.CreatedAt = copy.UpdatedAt = DateTime.UtcNow;
@@ -432,6 +441,8 @@ public static partial class ProjectLibrary
         {
             Directory.CreateDirectory(Path.Combine(staging, ProjectStore.MediaDir));
             var files = copy.Media.SelectMany(m => new[] { m.Audio, m.Video })
+                // the frozen tracks' renders (#240) come along, so they stay frozen
+                .Concat(copy.Tracks.Select(t => t.Freeze?.File))
                 .Where(f => !string.IsNullOrEmpty(f) && !Path.IsPathRooted(f))
                 .Select(f => f!)
                 .Distinct(StringComparer.OrdinalIgnoreCase)

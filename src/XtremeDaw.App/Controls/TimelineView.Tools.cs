@@ -145,7 +145,7 @@ public sealed partial class TimelineView
         rangeTracks.Clear();
         foreach (var r in rows)
         {
-            if (r.Folder != null || r.Lane != null || r.Track >= tracks.Count || r.Top + r.H <= lo || r.Top > hi) continue;
+            if (r.Folder != null || r.Lane != null || r.Bus != null || r.Track >= tracks.Count || r.Top + r.H <= lo || r.Top > hi) continue;
             string id = tracks[r.Track].Track.Id;
             if (!hidden.Contains(id)) rangeTracks.Add(id);
         }
@@ -167,7 +167,17 @@ public sealed partial class TimelineView
             // a right press only erases once it is a drag; the clip it started on goes too
             if (Math.Abs(lastPointer.X - down.X) < RightEraseSlop && Math.Abs(lastPointer.Y - down.Y) < RightEraseSlop) return;
             moved = true;
-            if (down.X >= HeaderW && AnyClipAt(HitTrack(down.Y), down.X) is { } first) erasing.Add(first);
+            if (autoEraseLane == null && eraseStrip == EraseStrip.None && down.X >= HeaderW && AnyClipAt(HitTrack(down.Y), down.X) is { } first) erasing.Add(first);
+        }
+        if (autoEraseLane != null)
+        {
+            DragAutoErase();
+            return;
+        }
+        if (eraseStrip != EraseStrip.None)
+        {
+            DragStripErase();
+            return;
         }
         int i = HitTrack(lastPointer.Y);
         if (lastPointer.X >= HeaderW && AnyClipAt(i, lastPointer.X) is { } c && erasing.Add(c)) moved = true;
@@ -208,7 +218,7 @@ public sealed partial class TimelineView
         else if (tool == TimelineTool.Split && lastPointer.X >= HeaderW && MidiClipAt(i, lastPointer.X) is { } m)
         {
             double at = SnappedSec(lastPointer.X);
-            if (MidiEditing.CanSplit(m, at, Bpm)) splitHover = (i, at);
+            if (MidiEditing.CanSplit(m, at, tempo)) splitHover = (i, at);
         }
         if (splitHover != before) InvalidateVisual();
     }

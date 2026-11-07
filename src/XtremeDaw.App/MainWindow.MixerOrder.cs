@@ -454,7 +454,7 @@ public partial class MainWindow
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 10, 0, 0),
             Content = new TextBlock { Classes = { "icon" }, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         eye.Click += (_, _) => FolderEdit(S(), x => x.HiddenInTimeline = !x.HiddenInTimeline, "hidden");
-        var box = new Border { Width = SeparatorW, Margin = new Thickness(StripGap / 2, StripGap), Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Cursor = new Cursor(StandardCursorType.Hand),
+        var box = new Border { Width = SeparatorW, Margin = MixerLooks.Joined ? default : new Thickness(StripGap / 2, StripGap), Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Cursor = new Cursor(StandardCursorType.Hand),
             Child = new Grid() };
         ((Grid)box.Child).Children.AddRange([.. glow, line, rotated, eye]);
         mx.Refresh.Add(() =>

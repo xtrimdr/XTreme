@@ -57,11 +57,14 @@
     <Compile Include="..\XtremeDaw.App\UiTheme.cs" Link="App\UiTheme.cs" />
     <Compile Include="..\XtremeDaw.App\AgentLauncher.cs" Link="App\AgentLauncher.cs" />
     <Compile Include="..\XtremeDaw.App\LockLight.cs" Link="App\LockLight.cs" />
+    <Compile Include="..\XtremeDaw.App\AgentAlert.cs" Link="App\AgentAlert.cs" />
     <Compile Include="..\XtremeDaw.App\Controls\Palette.cs" Link="App\Controls\Palette.cs" />
     <Compile Include="..\XtremeDaw.App\Controls\UiFonts.cs" Link="App\Controls\UiFonts.cs" />
     <Compile Include="..\XtremeDaw.App\Controls\ThemePicker.cs" Link="App\Controls\ThemePicker.cs" />
+    <Compile Include="..\XtremeDaw.App\Controls\ToastHost.cs" Link="App\Controls\ToastHost.cs" />
     <Compile Include="..\XtremeDaw.App\Dialogs\TestListWindow.axaml.cs" Link="App\Dialogs\TestListWindow.axaml.cs" DependentUpon="TestListWindow.axaml" />
     <Compile Include="..\XtremeDaw.App\Dialogs\TestListWindow.Images.cs" Link="App\Dialogs\TestListWindow.Images.cs" DependentUpon="TestListWindow.axaml" />
+    <Compile Include="..\XtremeDaw.App\Dialogs\TestListWindow.Agents.cs" Link="App\Dialogs\TestListWindow.Agents.cs" DependentUpon="TestListWindow.axaml" />
     <AvaloniaXaml Include="..\XtremeDaw.App\Dialogs\TestListWindow.axaml" Link="App\Dialogs\TestListWindow.axaml" />
     <!-- the app's own tokens and styles: x:Class App is this project's BenchApp.cs -->
     <AvaloniaXaml Include="..\XtremeDaw.App\App.axaml" Link="App\App.axaml" />

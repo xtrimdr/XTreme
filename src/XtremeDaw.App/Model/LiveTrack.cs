@@ -390,6 +390,22 @@ public sealed class LiveClip
 /// and the live meters. Timeline edits re-point <see cref="Track"/> and swap <see cref="Clips"/> for a new list
 /// (never changed in place: the audio thread may be walking the old one), keeping the chain's state.
 /// </summary>
+/// <summary>
+/// A frozen track's render as the engine plays it (<see cref="LiveTrack.Freeze"/>, #240): its audio (with peaks, for the
+/// lane's wave) from the song frame <see cref="AtFrame"/>, and the file it came from, how the window tells a new freeze.
+/// Immutable: a new freeze is a new one.
+/// </summary>
+public sealed class FrozenRender(MediaAudio audio, double atSec, string file)
+{
+    public MediaAudio Audio { get; } = audio;
+    public double AtSec { get; } = atSec;
+    public long AtFrame { get; } = (long)Math.Round(atSec * audio.SampleRate);
+    public string File { get; } = file;
+    public double EndSec => AtSec + Audio.LengthSec;
+    /// <summary>The render as a clip the timeline draws over the dimmed ones (its wave, cached like any clip's); never played.</summary>
+    public LiveClip Lane { get; } = new(new Clip { AtSec = atSec }, null, audio);
+}
+
 /// <summary>What a track's clips are: none with audio, all mono, all stereo, or both (<see cref="LiveTrack.Layout"/>).</summary>
 public enum ChannelLayout { None, Mono, Stereo, Mixed }
 
@@ -486,7 +502,26 @@ public sealed class LiveTrack
     public bool OffersTransition(LiveClip from, LiveClip to, bool video) =>
         video && Pictured(from, to) || ClipTransitions.Parse(to.Clip.Transition) != TransitionKind.Cut;
 
-    public double EndSec => Math.Max(MidiEndSec, Clips.Count == 0 ? 0 : Clips.Max(c => c.ClipEndSec));
+    public double EndSec => Math.Max(Math.Max(MidiEndSec, Clips.Count == 0 ? 0 : Clips.Max(c => c.ClipEndSec)), freeze?.EndSec ?? 0);
+
+    volatile FrozenRender? freeze;
+    /// <summary>
+    /// The frozen track's render (#240, <see cref="TrackFreeze"/>), loaded by the UI; null = it plays live. While set,
+    /// the block plays it instead of the clips and the instrument, and the chain has no slots: they are in the render.
+    /// Set it through <see cref="SetFreeze"/>, which hands the chain its slots again.
+    /// </summary>
+    public FrozenRender? Freeze => freeze;
+    /// <summary>The render's samples, for the export; null when the track plays live.</summary>
+    public ClipSound? FrozenSound => freeze?.Audio.Sound;
+    /// <summary>It plays its render (the window drops its plugins).</summary>
+    public bool PlaysFrozen => freeze != null;
+
+    /// <summary>Plays <paramref name="render"/> (null = live again) and gives the chain its slots, or none. UI thread.</summary>
+    public void SetFreeze(FrozenRender? render)
+    {
+        freeze = render;
+        ApplyInserts();
+    }
 
     volatile NoteSequence? notes;
     /// <summary>A MIDI track's notes in frames (<see cref="ChannelDsp.Notes"/>), swapped whole by <see cref="SetMidi"/>; null = none.</summary>
@@ -505,9 +540,13 @@ public sealed class LiveTrack
     /// <summary>The piano roll's notes on a track without an instrument: the test tone, through its chain like everything it plays.</summary>
     public NotePreview Preview { get; }
 
-    /// <summary>Takes the track's notes again at <paramref name="tempo"/> (after an edit or a tempo change). UI thread.</summary>
-    public void SetMidi(double tempo)
+    /// <summary>
+    /// Takes the track's notes again under the tempo map <paramref name="map"/> (after an edit or a tempo change); the
+    /// plugins, the arpeggiator and the synced effects get its initial tempo. UI thread.
+    /// </summary>
+    public void SetMidi(TempoMap map)
     {
+        double tempo = map.Bpm;
         // a VST3 effect follows the tempo (its synced delays and LFOs)
         bool retempo = tempo != bpm && Channel.Slots.Exists(s => s.Type == InsertSlot.VstKind);
         bpm = tempo;
@@ -515,8 +554,8 @@ public sealed class LiveTrack
         Keys.Transpose = Track.Transpose;
         Keys.Tempo = tempo;
         Keys.Arp = Track.Arp?.Live();
-        notes = ChannelDsp.Notes(Track, tempo, sampleRate);
-        MidiEndSec = Track.MidiClips is { Count: > 0 } mc ? mc.Max(c => c.EndSec(tempo)) : 0;
+        notes = ChannelDsp.Notes(Track, map, sampleRate);
+        MidiEndSec = Track.MidiClips is { Count: > 0 } mc ? mc.Max(c => c.EndSec(map)) : 0;
         if (instrument is { } player)
         {
             player.Notes = notes;
@@ -760,6 +799,13 @@ public sealed class LiveTrack
     /// <summary>Hands the slots to the chain (a spare the edit turned on becomes a slot first).</summary>
     public void ApplyInserts()
     {
+        if (freeze != null)
+        {
+            // the render already went through them
+            automator = null;
+            Chain.SetInserts([], fade: started);
+            return;
+        }
         Channel.AdoptSpares();
         var live = LiveVst.Of(Track.Id);
         automator = InsertAutomator.Create(Track, RmsDb, bpm, live, PlaybackEngine.FxBypass);
@@ -811,10 +857,35 @@ public sealed class LiveTrack
         bl.Clear();
         br.Clear();
         Chain.Frame = posFrame;
+        // a loop turning in the block: what follows the beat (the pump) jumps back with the sound (#256)
+        if (turnAt >= 0 && turnAt < n) Chain.Turn(turnAt, posFrame + turnAt - turnTo);
         var seq = notes;
         var inst = instrument;
         var own = native;
         long played;
+        if (freeze is { } frozen)
+        {
+            // a frozen track: its render, once or at both places of a seek or a loop's splice
+            if (fromFrame == NoSecondRead) AddFrozen(frozen, posFrame, n, bl, br, default);
+            else
+            {
+                AddFrozen(frozen, fromFrame, n, bl, br, wOut);
+                AddFrozen(frozen, posFrame, n, bl, br, wIn);
+            }
+            Keys.Skip(n);
+            if (fade.Length == n)
+                for (int i = 0; i < n; i++)
+                {
+                    bl[i] *= fade[i];
+                    br[i] *= fade[i];
+                }
+            tailLeft = TailFrames;
+            quietFrames = 0;
+            Preview.Mix(n, bl, br);
+            Output(n, anySolo, masterL, masterR, sendOffset);
+            Interlocked.Add(ref busyTicks, Stopwatch.GetTimestamp() - t0);
+            return;
+        }
         if (fromFrame == NoSecondRead)
         {
             AddClips(posFrame, n, bl, br, default);
@@ -872,7 +943,14 @@ public sealed class LiveTrack
 
     void MixIdleTimed(int n, bool anySolo, Span<float> masterL, Span<float> masterR, long t0)
     {
-        if (instrument is { } inst)
+        // frozen: its instrument doesn't play (the window closed it), the piano roll's keys still sound
+        if (freeze != null && !Preview.Active)
+        {
+            Keys.Skip(n);
+            Ring(n, anySolo, masterL, masterR);
+            return;
+        }
+        if (freeze == null && instrument is { } inst)
         {
             bool sounds = inst.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys);
             Interlocked.Add(ref instrumentTicks, Stopwatch.GetTimestamp() - t0);
@@ -881,7 +959,7 @@ public sealed class LiveTrack
             Keys.Skip(n);
             return;
         }
-        if (native is { } own)
+        if (freeze == null && native is { } own)
         {
             bool sounds = own.Idle(n, Chain.BufferL(n), Chain.BufferR(n), Keys, Chain.Frame);
             Interlocked.Add(ref instrumentTicks, Stopwatch.GetTimestamp() - t0);
@@ -953,7 +1031,7 @@ public sealed class LiveTrack
     }
 
     /// <summary>The engine runs <see cref="MixIdle"/> for it: an instrument, the keyboard or the piano roll still sounding, or its slots' tail.</summary>
-    public bool RunsIdle => instrument != null || native != null || Keys.Active || Preview.Active || tailLeft > 0;
+    public bool RunsIdle => freeze == null && (instrument != null || native != null || Keys.Active) || Preview.Active || tailLeft > 0;
 
     /// <summary>The chain over what the block filled in, into its output (its folder, a bus or the master) and its sends.</summary>
     void Output(int n, bool anySolo, Span<float> masterL, Span<float> masterR, int sendOffset)
@@ -969,6 +1047,22 @@ public sealed class LiveTrack
             if (bus == null) continue;
             Chain.AddSend(n, sends[k], bus.BufferL(sendOffset + n).Slice(sendOffset),
                 bus.BufferR(sendOffset + n).Slice(sendOffset));
+        }
+    }
+
+    /// <summary>Adds the render's samples for frames <c>[posFrame .. posFrame + n)</c>, times <paramref name="weight"/> if given.</summary>
+    static void AddFrozen(FrozenRender f, long posFrame, int n, Span<float> bl, Span<float> br, ReadOnlySpan<float> weight)
+    {
+        var l = f.Audio.L;
+        var r = f.Audio.R;
+        long src = posFrame - f.AtFrame;
+        if (src + n <= 0 || src >= l.Length) return;
+        int from = (int)Math.Max(0, -src), to = (int)Math.Min(n, l.Length - src);
+        for (int i = from; i < to; i++)
+        {
+            float w = weight.IsEmpty ? 1 : weight[i];
+            bl[i] += l[src + i] * w;
+            br[i] += r[src + i] * w;
         }
     }
 

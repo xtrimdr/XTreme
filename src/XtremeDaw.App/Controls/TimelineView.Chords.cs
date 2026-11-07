@@ -73,7 +73,7 @@ public sealed partial class TimelineView
     bool ChordStripOn => chordStripShown;
     double StripsH => ChordTop + (ChordStripOn ? ChordH : 0);
     /// <summary>The strips that are shown and the ruler's numbers under them.</summary>
-    public double RulerH => StripsH + RulerNumbersH;
+    public double RulerH => StripsH + RulerNumbersH + TempoStripHeight;
 
     void StripsChanged()
     {
@@ -118,7 +118,7 @@ public sealed partial class TimelineView
     public (double End, Rect Box)? ChordSlotAt(double sec)
     {
         if (!ChordStripOn || chords.Any(c => c.Sec <= sec && c.EndSec > sec)) return null;
-        double end = sec + 4 * 60 / Math.Max(1, Bpm);
+        double end = SecPlus(sec, tempo.BarBeats(tempo.BarAt(tempo.BeatAt(sec))));
         foreach (var c in chords)
             if (c.Sec > sec) { end = Math.Min(end, c.Sec); break; }
         return end - sec >= ProjectMarkers.MinChordSec ? (end, ChordBox(sec, end)) : null;
@@ -167,8 +167,7 @@ public sealed partial class TimelineView
                 chordMarks.Add(c.Id);
                 InvalidateVisual();
             }
-            ChordContextRequested?.Invoke(c, SnapAt(p.X), p);
-            e.Handled = true;
+            StartStripErase(e, EraseStrip.Chord, p, () => ChordContextRequested?.Invoke(c, SnapAt(p.X), p));
             return true;
         }
         if (e.ClickCount == 2)
@@ -289,7 +288,7 @@ public sealed partial class TimelineView
         {
             var c = chords[i];
             var box = ChordRect(c);
-            if (box.Right < HeaderW || box.X > W || c.Id == editingNameId) continue;
+            if (box.Right < HeaderW || box.X > W || c.Id == editingNameId || stripErasing.Contains(c.Id)) continue;
             bool marked = chordMarks.Contains(c.Id);
             ctx.DrawRectangle(marked ? Palette.AccentSoft : Palette.Raised, marked ? Palette.Pen(Palette.Accent) : null, box, 3, 3);
             var label = Palette.Text(NoteNames.Chord(c.Name), 11, marked ? Palette.Fg : Palette.Dim, Palette.Ui);
@@ -306,6 +305,7 @@ public sealed partial class TimelineView
         if (rangeStripShown) Label(RangeLabel, 0, RangeH);
         if (markerStripShown) Label(MarkersLabel, MarkerTop, MarkerH);
         if (ChordStripOn) Label(ChordsLabel, ChordTop, ChordH);
+        DrawTempoLabels(ctx);
 
         void Label(string text, double top, double h)
         {

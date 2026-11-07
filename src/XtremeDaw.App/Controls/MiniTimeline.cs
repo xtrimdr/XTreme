@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using XtremeDaw.App.Model;
+using XtremeDaw.Projects;
 
 namespace XtremeDaw.App.Controls;
 
@@ -18,7 +19,8 @@ public sealed class MiniTimeline : Control
     /// <summary>Height of the ruler over the bar, and the px its labels and ticks need between them.</summary>
     const double RulerH = 16, LabelPx = 44, BarLabelPx = 28, MinorPx = 5;
     IReadOnlyList<LiveTrack> tracks = [];
-    double playhead, duration, bpm = 120;
+    double playhead, duration;
+    TempoMap tempo = TempoMap.Constant(120).Prepare();
     bool recording, scrubbing, held, inBars = true;
     double downX;
     /// <summary>The ruler's labels, built once each, so a redraw while playing does not allocate.</summary>
@@ -38,7 +40,8 @@ public sealed class MiniTimeline : Control
     /// <summary>The ruler in bars and beats (true) or in minutes and seconds, like <see cref="TimelineView.RulerInBars"/>.</summary>
     public bool RulerInBars { get => inBars; set { if (inBars == value) return; inBars = value; InvalidateVisual(); } }
 
-    public double Bpm { get => bpm; set { if (bpm == value || value <= 0) return; bpm = value; InvalidateVisual(); } }
+    /// <summary>The song's tempo map: the bars follow its tempos and meters (#214).</summary>
+    public TempoMap Tempo { get => tempo; set { if (tempo == value) return; tempo = value.Prepare(); InvalidateVisual(); } }
 
     public void SetPlayhead(double sec, double durationSec, bool isRecording)
     {
@@ -91,11 +94,8 @@ public sealed class MiniTimeline : Control
         int subs;
         if (inBars)
         {
-            double beat = 60 / bpm, len = 4 * beat;
-            int n = 1;
-            while (n * len * pps < BarLabelPx && n < 1 << 20) n *= 2;
-            step = n * len;
-            (sub, subs) = n == 1 ? (beat, 4) : (len, n);
+            DrawBars(ctx, bar, pps, major, minor);
+            return;
         }
         else
         {
@@ -124,14 +124,54 @@ public sealed class MiniTimeline : Control
         }
     }
 
-    /// <summary>The i-th step's label: its bar number, or its time as the timeline's ruler writes it.</summary>
+    /// <summary>Bars mode: every bar from the tempo map, a number every few (as many as fit), the units of a lone bar's meter when they fit.</summary>
+    void DrawBars(DrawingContext ctx, Rect bar, double pps, IPen major, IPen minor)
+    {
+        double right = bar.Right, firstPx = (tempo.BarStartSec(1) - tempo.BarStartSec(0)) * pps;
+        if (!(firstPx > 0)) return;
+        int n = 1;
+        while (n * firstPx < BarLabelPx && n < 1 << 20) n *= 2;
+        bool every = firstPx >= MinorPx;
+        for (int b = 0; ; b += every ? 1 : n)
+        {
+            double at = tempo.BarStartBeat(b), x = Math.Round(bar.X + tempo.SecAt(at) * pps) + 0.5;
+            if (x > right) break;
+            if (b % n != 0)
+            {
+                ctx.DrawLine(minor, new Point(x, RulerH - 4), new Point(x, RulerH));
+                continue;
+            }
+            ctx.DrawLine(major, new Point(x, 3), new Point(x, RulerH));
+            var label = BarLabel(b + 1);
+            if (x + 3 + label.Length * 6 <= right + PadX) ctx.DrawText(label, 10, Palette.Faint, new Point(x + 3, 1), Palette.Mono);
+            if (n != 1) continue;
+            var (num, den) = tempo.MeterAt(b);
+            double unit = 4.0 / den;
+            if ((tempo.SecAt(at + unit) - tempo.SecAt(at)) * pps < MinorPx) continue;
+            for (int k = 1; k < num; k++)
+            {
+                double mx = Math.Round(bar.X + tempo.SecAt(at + k * unit) * pps) + 0.5;
+                if (mx > right) break;
+                ctx.DrawLine(minor, new Point(mx, RulerH - 4), new Point(mx, RulerH));
+            }
+        }
+    }
+
+    /// <summary>A bar's number as text, made once.</summary>
+    string BarLabel(int n)
+    {
+        long key = -n;
+        if (labels.TryGetValue(key, out var l)) return l;
+        return labels[key] = n.ToString();
+    }
+
+    /// <summary>The i-th step's label: its time as the timeline's ruler writes it.</summary>
     string Label(long i, double step)
     {
-        long key = inBars ? -1 - (long)Math.Round(i * step / (240 / bpm)) : (long)Math.Round(i * step * 1000) * 2 + (step < 1 ? 1 : 0);
+        long key = (long)Math.Round(i * step * 1000) * 2 + (step < 1 ? 1 : 0);
         if (labels.TryGetValue(key, out var l)) return l;
         double s = i * step;
-        l = inBars ? (-key).ToString()
-            : s >= 60 ? (step < 1 ? $"{(int)(s / 60)}:{s % 60:00.###}" : $"{(int)(s / 60)}:{s % 60:00}") : $"{s:0.###}s";
+        l = s >= 60 ? (step < 1 ? $"{(int)(s / 60)}:{s % 60:00.###}" : $"{(int)(s / 60)}:{s % 60:00}") : $"{s:0.###}s";
         labels[key] = l;
         return l;
     }

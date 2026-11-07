@@ -26,6 +26,8 @@ public sealed class MixerMeter : Control
     /// <summary>The marks' labels, built once (a render allocates no text).</summary>
     static readonly string[] MarkTexts = ScaleMarks.Select(db => db == 0 ? "0" : (-db).ToString()).ToArray();
     const double ScaleW = 14;
+    /// <summary>What the scale adds to the meter's width (px), for a strip that decides whether it shows.</summary>
+    public const double ScaleRoom = 2 + ScaleW;
     /// <summary>The readout's row and the clip light over the bar (px); the bar starts under them.</summary>
     const double ReadoutH = 11, LightH = 4, BarTop = ReadoutH + 1 + LightH + 3;
     /// <summary>Peaks above this light the clip light (dBFS), as in <see cref="StereoMeter"/>.</summary>

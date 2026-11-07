@@ -19,6 +19,17 @@ Una perilla puede llevar su color (`Knob.Tint`, el de la familia de su efecto): 
 marca con `KnobLooks.Tint` en vez del acento mientras dura su dibujo. El gráfico de cada efecto (`FxScope`) dibuja con
 líneas cortas y columnas de 1 px, sin geometrías; solo el de la modulación se redibuja solo, y solo mientras suena.
 
+## Etiquetas de los clips
+
+Todo lo que se escribe o se marca sobre un clip (íconos, pestañas, el nombre, el progreso de un trabajo) pide su lugar a
+la franja de arriba del clip (`ClipBand`, `TimelineView.ClipBand.cs`; pedido del usuario, #240: siempre algo terminaba
+tapado): `TakeLeft` / `TakeRight` en orden de importancia (congelada, insignia de medio, bucle, candado, al revés,
+tono, progreso) y el nombre ocupa lo que queda; lo que no entra no se dibuja. La franja ya deja libres la pestaña del
+borde, el final de los fundidos y la esquina del bucle. **Nunca dibujes una etiqueta en una posición fija sobre un
+clip**: sumala a la franja (audio en `DrawClip`, MIDI en `DrawMidiLabels`). Abajo del clip solo va la marca del corte
+de anclaje. Una pista congelada dibuja sus clips en dos capas (`ClipLayer`): el cuerpo apagado, la onda del render y
+después las etiquetas enteras.
+
 ## Medidores
 
 `StereoMeter`: ataque instantáneo, caída de 24 dB/s, pico retenido 1,5 s, rango −60 dB (−48 en los de pista). Acento
@@ -60,8 +71,8 @@ una vez. Respeta L/R (`SplitWave`), la ganancia y la curva del clip y el clip of
 ## Color de pista
 
 Cómo pinta el color de una pista en el timeline lo elige el usuario en Configuración → Apariencia (`TrackColorLooks`,
-#162): los clips de audio y MIDI (Tenue por defecto, Lleno, Solo onda, Barra de título; "trackColor.clips") y marcas
-que se prenden aparte (franja o tinte en el encabezado, carril teñido, selección en el color de la pista;
+#162): los clips de audio y MIDI (Tenue por defecto, Lleno, Solo onda, Barra de título; "trackColor.clips") y marcas que
+se prenden aparte (franja en el encabezado, encabezado teñido, carril teñido, selección en el color de la pista;
 "trackColor.marks"). Solo cambian las pistas con color; los clips offline y los que muestran fotogramas quedan como siempre. En el inspector, aparte (otra tarjeta): el encabezado (Línea y tinte por defecto, Solo línea, Lleno, Sin color;
 "trackColor.inspector") y marcas (franja al costado, secciones teñidas, íconos de sección en su color;
 "trackColor.inspectorMarks") y la flecha de la pista elegida al inspector (`InspectorPointer`, "trackColor.pointer",

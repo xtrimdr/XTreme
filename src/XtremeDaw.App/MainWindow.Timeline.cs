@@ -115,7 +115,8 @@ public partial class MainWindow
     {
         void Save() { timelinePrefs?.Stop(); timelinePrefs?.Start(); }
         var refresh = new List<Action>();
-        var list = new List<object> { new MenuItem { Header = Loc.T("grid.title"), IsEnabled = false, FontSize = 11 } };
+        var list = RulerMeterItems(point);
+        list.Add(new MenuItem { Header = Loc.T("grid.title"), IsEnabled = false, FontSize = 11 });
         foreach (var id in GridIds)
         {
             if (id == "bar" || SnapChoices.BreakBefore(id)) list.Add(new Separator());
@@ -381,6 +382,8 @@ public partial class MainWindow
             int index = st.Project.Tracks.FindIndex(t => t.Id == selected);
             // an edit may hand back a folder's id (a new folder, a moved one): it stays selected
             if (index < 0 && selected != null && st.Project.Folders.Any(f => f.Id == selected)) Timeline.SelectFolder(selected);
+            // a bus's lane edit (#267) keeps the bus selected
+            else if (index < 0 && selected != null && st.Project.Settings.Buses.Any(b => b.Id == selected)) SelectBus(selected);
             else Timeline.SelectClip(index, clipId);
         }
         catch (Exception e)
@@ -454,7 +457,7 @@ public partial class MainWindow
                 live.ApplyChannel();
             }
             else live = new LiveTrack(t, clips, PlaybackEngine.SampleRate);
-            live.SetMidi(p.Settings.Bpm);
+            live.SetMidi(p.Settings.TempoMap);
             live.SetProjectSettings(p.Settings);
             list.Add(live);
         }
@@ -463,12 +466,16 @@ public partial class MainWindow
         var dropped = liveClips.Values.Where(c => !used.Contains(c)).ToList();
         tracks = list;
         engine.UpdateTracks(list);
+        // the click follows the map: an edit of the tempo track (#214) only reaches the engine here
+        engine.Tempo = p.Settings.TempoMap;
+        SyncFreezes();
         SyncInstruments();
         SyncSamplers();
         SyncEffects();
         RefreshTranspose();
         Timeline.LengthSec = engine.LengthSec;
         ApplyRouting(p, list);
+        SyncBusRows();
         Timeline.UpdateTracks(list, p.Folders);
         UpdateResetHeights();
         Preview.SetProject(list, p.Settings);
@@ -799,7 +806,14 @@ public partial class MainWindow
     /// <summary>The new track menu at a point of the timeline: the empty space under the rows, by right click.</summary>
     void ShowNewTrackMenu(Point point)
     {
-        if (NewTrackItems() is { } list) OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
+        if (NewTrackItems() is not { } list) return;
+        // the empty space also brings the bus rows back (#267)
+        if (store is { Project.Settings.Buses.Count: > 0 })
+        {
+            list.Add(new Separator());
+            list.Add(BusRowsItem());
+        }
+        OpenTimelineMenu(Popup(list, 240), point, MenuHeight(list));
     }
 
     /// <summary>The new track menu above the + button at the foot of the headers; a second press closes it.</summary>
@@ -1036,7 +1050,7 @@ public partial class MainWindow
                 await EditTimeline(p => { right = ClipEditing.Split(p, id, at, clip.LengthSec); return track.Track.Id; }, "clip-split");
                 if (right != null) Timeline.SelectClip(Timeline.Selected, right);
             }, Shortcuts.First("split"), enabled && under && free));
-            list.Add(MenuAction(Loc.T("menu.renameClip.more"), () => { BeginClipRename(id, point); return Task.CompletedTask; }, enabled: enabled, icon: "\uE8AC"));
+            list.Add(MenuAction(Loc.T("menu.renameClip.more"), () => { BeginClipRename(id, point); return Task.CompletedTask; }, Shortcuts.Label("renameClip"), enabled: enabled, icon: "\uE8AC"));
             list.Add(new Separator());
             list.Add(MenuAction(Loc.T("menu.toStart"), () => Command(p => ClipEditing.ToStart(p, id, clip.LengthSec), "clip-moved"), enabled: enabled && free));
             // where clips overlap the last one shows: this is on only when one over it covers part of it
@@ -1132,7 +1146,7 @@ public partial class MainWindow
         list.Add(MenuAction(Loc.T("menu.paste"), PasteClips, Shortcuts.Label("paste"), enabled && clipboard != null, icon: "", tip: Loc.T("menu.paste.tip")));
         if (track.Track.IsMidi) list.Add(InsertPatternItem(track, enabled));
         list.Add(new Separator());
-        list.Add(MenuAction(Loc.T("menu.renameTrack.more"), () => { rename(); return Task.CompletedTask; }, enabled: enabled, icon: ""));
+        list.Add(MenuAction(Loc.T("menu.renameTrack.more"), () => { rename(); return Task.CompletedTask; }, Shortcuts.Label("renameClip"), enabled: enabled, icon: ""));
         if (look) list.Add(MenuAction(Loc.T("look.bus.menu"), () => { ShowTrackLook(track, anchor); return Task.CompletedTask; }, enabled: enabled, icon: "\ue790"));
         var refresh = new List<Action>();
         string trackId = track.Track.Id;
@@ -1144,6 +1158,7 @@ public partial class MainWindow
         if (!track.Track.IsMidi && track.Layout is ChannelLayout.Stereo or ChannelLayout.Mixed)
             list.Add(MenuCheck(Loc.T("menu.splitWave"), () => Now()?.Track.SplitWave == true,
                 () => { if (Now() is { } x) SetSplitWave(x, !x.Track.SplitWave); }, refresh, tip: Loc.T("menu.splitWave.tip"), enabled: enabled));
+        if (!track.Track.IsMidi) list.Add(FollowTempoItem(trackId, enabled, refresh));
         list.Add(TrackLockItem(trackId, enabled, refresh));
         list.AddRange(DuplicateTrackItems([trackId], enabled));
         list.Add(new Separator());
@@ -1156,7 +1171,7 @@ public partial class MainWindow
             }, enabled: enabled && !RecordingBusy, icon: ""));
         if (track.Track.IsMidi)
             list.Add(new MenuItem { Header = MenuHeader(Loc.T("vst.menu", InstrumentName(track.Track)), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }),
-                ItemsSource = InstrumentItems(track, enabled) });
+                ItemsSource = InstrumentItems(track, enabled), IsEnabled = !track.Track.Frozen });
         if (track.Track.IsMidi)
         {
             // its own menu, opened where this one was (it stays open to try one input after the other)
@@ -1171,7 +1186,8 @@ public partial class MainWindow
         list.Add(new MenuItem { Header = MenuHeader(Loc.T("send.menu"), sendsIcon), ItemsSource = SendChoices(RouterOf(track)), IsEnabled = enabled });
         var fxIcon = FxIcon.Create(FxIcon.Eq, 12);
         fxIcon.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
-        list.Add(new MenuItem { Header = MenuHeader(Loc.T("mix.list.fx"), fxIcon), ItemsSource = TrackFxItems(track, anchor), IsEnabled = enabled });
+        list.Add(new MenuItem { Header = MenuHeader(Loc.T("mix.list.fx"), fxIcon), ItemsSource = TrackFxItems(track, anchor), IsEnabled = enabled && !track.Track.Frozen });
+        list.Add(FreezeItem(track, enabled));
         list.Add(new MenuItem { Header = MenuHeader(Loc.T("auto.menu"), new TextBlock { Classes = { "icon" }, Text = "\uE9D2", FontSize = 12 }), ItemsSource = AutomationItems(track.Track), IsEnabled = enabled });
         list.Add(new Separator());
         list.AddRange(FolderItems(track, enabled));

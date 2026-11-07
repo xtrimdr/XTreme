@@ -14,6 +14,8 @@ static class Program
             if (Bench.ListFrom(args) is { } list) Bench.Open(list, !Bench.Quiet(args));
             return;
         }
+        // a .xtp opened from Windows while this XTreme is open goes to its window (ShellOpen)
+        if (ShellOpen.ProjectArg(args) is { Length: > 0 } file && ShellOpen.Forward(file)) return;
         // The ASIO callback is managed code, so every blocking GC stalls it: keep full collections in the background.
         // Short ones still stop it, so the UI avoids allocation bursts while audio runs (see MainWindow.mixerLayout),
         // and the server GC (XtremeDaw.App.csproj) makes them rare.

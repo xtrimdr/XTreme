@@ -150,10 +150,16 @@ public static class AudioImport
     /// </summary>
     public static Imported WriteIn(string projectDir, string name, float[] left, float[] right, int sampleRate)
     {
-        string mediaDir = Path.Combine(projectDir, ProjectStore.MediaDir);
-        Directory.CreateDirectory(mediaDir);
+        string dest = WriteWav(Path.Combine(projectDir, ProjectStore.MediaDir), name, left, right, sampleRate);
+        return new Imported(name, $"{ProjectStore.MediaDir}/{Path.GetFileName(dest)}", left.Length / (double)sampleRate, sampleRate, 2);
+    }
+
+    /// <summary>A new 32-bit float stereo WAV named after <paramref name="name"/> in <paramref name="dir"/>, through a temporary name; returns its path.</summary>
+    internal static string WriteWav(string dir, string name, float[] left, float[] right, int sampleRate)
+    {
+        Directory.CreateDirectory(dir);
         string stem = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
-        string dest = UniquePath(mediaDir, stem.Length == 0 ? "Audio" : stem, ".wav");
+        string dest = UniquePath(dir, stem.Length == 0 ? "Audio" : stem, ".wav");
         string tmp = dest + PartialCopy;
         try
         {
@@ -176,7 +182,7 @@ public static class AudioImport
                 file.Flush(true);
             }
             File.Move(tmp, dest);
-            return new Imported(name, $"{ProjectStore.MediaDir}/{Path.GetFileName(dest)}", left.Length / (double)sampleRate, sampleRate, 2);
+            return dest;
         }
         finally
         {

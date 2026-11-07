@@ -129,7 +129,8 @@ public sealed record LockLight(LockLight.Level State, string Path, int Place, in
                     // a new lock is a new file: its creation, not its last touch
                     'l' => File.GetCreationTimeUtc(f).Ticks,
                     'q' or 'r' => 1,
-                    't' => File.GetLastWriteTimeUtc(f).Ticks,
+                    // an alert between sessions (#263): a new one, and one the agent read
+                    't' or 'm' => File.GetLastWriteTimeUtc(f).Ticks,
                     _ => 0,
                 };
                 if (part != 0) stamp = unchecked(stamp * 31 + StringComparer.Ordinal.GetHashCode(name) + part);
@@ -139,8 +140,33 @@ public sealed record LockLight(LockLight.Level State, string Path, int Place, in
         return stamp;
     }
 
+    /// <summary>A file a session holds (#269): its path in the repository, the session and the owner (session/agent).</summary>
+    public sealed record Hold(string Path, string Session, string Owner);
+
+    /// <summary>Every file held now, by path (the bench's Agentes view, #269: what each session has).</summary>
+    public static List<Hold> Held(string? root)
+    {
+        var all = new List<Hold>();
+        if (root == null) return all;
+        try
+        {
+            var dir = System.IO.Path.Combine(root, ".claude", "bloqueos");
+            if (!Directory.Exists(dir)) return all;
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            foreach (var f in Directory.EnumerateFiles(dir, "l-*.json"))
+                if (Parse(f) is { } e && Str(e, "path") is { } path && Str(e, "session") is { Length: > 0 } session && !Stale(e, now))
+                    all.Add(new Hold(Rel(root, path), session, Str(e, "owner") ?? session));
+        }
+        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { }
+        all.Sort((a, b) => string.Compare(a.Path, b.Path, StringComparison.OrdinalIgnoreCase));
+        return all;
+    }
+
+    /// <summary>A session's title in Claude (see <see cref="Title"/>), "" when it has none.</summary>
+    public static string SessionTitle(string session) => Title(session);
+
     /// <summary>The ticket a session works on (the newest it took), 0 for one without a ticket.</summary>
-    static int TicketOf(IReadOnlyList<TestItem> items, string session)
+    public static int TicketOf(IReadOnlyList<TestItem> items, string session)
     {
         int found = 0;
         foreach (var i in items)

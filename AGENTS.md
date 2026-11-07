@@ -228,6 +228,15 @@ La cadena por pista, la automatización en el motor y los slots están en la [gu
    `tools\bloqueos.ps1 -Lista` muestra quién tiene qué y quién hace cola; antes de un script que reescribe muchos archivos, miralo.
    El hook deja además el estado de cada sesión (en cola, bloqueada, atención) en `.claude\bloqueos\t-*.json`, y el Banco
    lo muestra como un semáforo en el "en curso" del ticket que tomó (#167).
+   **Avisos entre sesiones** (pedido del usuario, #263): el hook te agrega al contexto, en tu próxima edición o comando,
+   los "Avisos de otras sesiones" (se liberó lo que esperabas, otra sesión tomó un archivo que cambiaste, un comando
+   ajeno cambió uno tuyo, una compilación falla en uno tuyo, un mensaje o un pedido). Tenelos en cuenta y seguí: si un
+   archivo tuyo cambió, volvé a leerlo; solo una **ATENCIÓN** te hace parar y avisarle al usuario. Un PEDIDO de un
+   archivo tuyo: soltalo apenas termines con él (`tools\bloqueos.ps1 -SueltaArchivo <ruta>`). Si estás en cola y lo
+   necesitás, `-PideArchivo <ruta>`; para avisar algo que afecta a otro, `-Avisa <#ticket|sesión|todos> -Texto "…"`
+   (corto; `-Atencion` solo si el otro tiene que parar). `-Buzon` lee los sin leer. Cada aviso queda además un día en
+   `.claude\bloqueos\avisos.jsonl`, que el Banco muestra en su vista **Agentes** (#269); desde ahí el usuario también te
+   escribe o te pide un archivo (llega como aviso del usuario).
 10. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.
 11. Las skills de este proyecto (`.claude/skills`) llevan el prefijo `xt_`, en la carpeta y en su `name`
    (`xt_revisar-workbench`; decisión del usuario, 2026-11-03). El mod `xt-panel` (`.claude/plugins/xt-panel`, del

@@ -25,6 +25,7 @@ static class ProjectCommands
         if (sub == "verificar-bucles") return ClipLoopChecks.Run();
         if (sub == "verificar-ab") return MixCompareChecks.Run();
         if (sub == "verificar-pasos") return StepChecks.Run();
+        if (sub == "verificar-tempo") return TempoMapChecks.Run();
         string? dir = a.Positional.Skip(1).FirstOrDefault();
         if (dir == null) throw new ArgumentException("Falta la carpeta del proyecto.");
         dir = Path.GetFullPath(dir);
@@ -217,6 +218,25 @@ static class ProjectCommands
                         store.TrackAudio(track, c, ap, loaded.Left, loaded.Right);
                         Console.WriteLine($"  {c.Id}: x{c.Stretch:0.###}, listo en {sw.Elapsed.TotalSeconds:0.0} s");
                     }
+                break;
+            case "tempo-mapa":
+                // the tempo track (#214): what lives in beats keeps its beat, the rest its seconds
+                if (id.Length == 0 && a.Get("compas") == null)
+                {
+                    Console.WriteLine(TempoMapChecks.Describe(p.Settings.TempoMap));
+                    return 0;
+                }
+                var now = p.Settings.TempoMap;
+                var asked = TempoMapChecks.Map(id.Length > 0 ? id : string.Join(",", now.Points.Select(x =>
+                    $"{x.Beat.ToString(System.Globalization.CultureInfo.InvariantCulture)}:{x.Bpm.ToString(System.Globalization.CultureInfo.InvariantCulture)}{(x.Ramp ? "~" : "")}")),
+                    a.Get("compas") ?? string.Join(",", now.Meters.Select(x => $"{x.Bar}:{x.Num}/{x.Den}")));
+                TempoFollow.SetMap(p, asked);
+                Console.WriteLine(TempoMapChecks.Describe(p.Settings.TempoMap));
+                break;
+            case "sigue-tempo":
+                var follower = p.Tracks.Find(t => t.Id == id) ?? throw new ArgumentException("No encontré esa pista.");
+                if (follower.IsMidi) throw new ArgumentException("sigue-tempo: una pista MIDI siempre sigue el tempo.");
+                follower.FollowTempo = value switch { "si" or "sí" => true, "no" => false, _ => throw new ArgumentException("sigue-tempo: pista si|no.") };
                 break;
             case "carpeta":
                 var fd = p.Folders.Find(f => f.Id == id) ?? throw new ArgumentException("No encontré esa carpeta.");
@@ -845,9 +865,9 @@ static class UndoChecks
         p.Exports.Add(new ExportRecord { File = "video.mp4" });
         p.AddLog("test");
         Check(history.Undo(p) && p.Tracks[0].Channel.Volume == 1 && !history.CanUndo, "el arrastre completo es un paso");
-        Check(ReferenceEquals(p.Media[0], media) && p.Name == "Nombre actual" && p.Exports.Count == 1 && p.Log.Count == 1 && p.Settings.Bpm == 140,
-            "medios, identidad, exports, log y tempo no se revierten");
-        Check(history.Redo(p) && p.Tracks[0].Channel.Volume == 0.2, "rehacer recupera el final del arrastre");
+        Check(ReferenceEquals(p.Media[0], media) && p.Name == "Nombre actual" && p.Exports.Count == 1 && p.Log.Count == 1 && p.Settings.Bpm == 110,
+            "medios, identidad, exports y log no se revierten; el tempo sí (#262)");
+        Check(history.Redo(p) && p.Tracks[0].Channel.Volume == 0.2 && p.Settings.Bpm == 140, "rehacer recupera el final del arrastre");
         history.Clear();
         history.Checkpoint(p, "pan");
         p.Tracks[0].Channel.Pan = 0.2;
@@ -914,6 +934,26 @@ static class UndoChecks
         var looks = ProjectStore.Parse("""{"tracks":[{"color":"#FB923C","icon":" drum-kit "},{"color":"naranja","icon":""},{"color":"#12345z"}]}""");
         Check(looks.Tracks[0].Color == "#fb923c" && looks.Tracks[0].Icon == "drum-kit", "color en minúsculas e ícono sin espacios");
         Check(looks.Tracks[1].Color == null && looks.Tracks[1].Icon == null && looks.Tracks[2].Color == null, "un color o ícono roto queda sin color / sin ícono");
+        // #262: the transport's tempo is a step, with everything it moved and its name in Historial → Pasos
+        history.Clear();
+        p.Tracks = [new Track { Clips = [new Clip { MediaId = media.Id, AtSec = 4 }] }];
+        p.Settings.LoopStartSec = 2;
+        p.Settings.LoopEndSec = 3;
+        double bpm0 = p.Settings.Bpm;
+        history.Checkpoint(p, "tempo");
+        TempoFollow.SetBpm(p, bpm0 * 2);
+        Check(Math.Abs(p.Tracks[0].Clips[0].AtSec - 2) < 1e-9 && Math.Abs(p.Settings.LoopStartSec!.Value - 1) < 1e-9, "el cambio de tempo mueve clips y bucle");
+        var named = history.Steps(p, _ => null);
+        Check(named.Count == 1 && named[0].Label.Text.Contains(((bpm0 * 2).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)) + " BPM"), "el paso se llama por el tempo nuevo");
+        Check(history.Undo(p) && p.Settings.Bpm == bpm0 && Math.Abs(p.Tracks[0].Clips[0].AtSec - 4) < 1e-9 && Math.Abs(p.Settings.LoopStartSec!.Value - 2) < 1e-9,
+            "deshacer el tempo vuelve el tempo, los clips y el bucle");
+        Check(history.Redo(p) && p.Settings.Bpm == bpm0 * 2 && Math.Abs(p.Tracks[0].Clips[0].AtSec - 2) < 1e-9, "rehacer el tempo");
+        history.Clear();
+        history.Checkpoint(p);
+        p.Tracks[0].Arp = new ArpSettings { On = true };
+        p.Tracks[0].Locked = true;
+        Check(history.Undo(p) && p.Tracks[0].Arp == null && !p.Tracks[0].Locked, "deshacer el arpegiador y el bloqueo de la pista");
+        p.Settings.LoopStartSec = p.Settings.LoopEndSec = null;
         Console.WriteLine($"Deshacer/rehacer: {checks} comprobaciones correctas (sin modificar archivos).");
         return 0;
     }

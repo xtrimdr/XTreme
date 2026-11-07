@@ -561,6 +561,7 @@ public partial class MainWindow
             {
                 foreach (var refresh in busRefresh) refresh();
                 RebuildInspectorChain(SlotsOf(bus), bus);
+                RebuildInspectorSends(bus);
             }
             noSelectionHint.Text = tracks.Any(t => t.Track.HasContent) ? Loc.T("insp.none.hint") : Loc.T("insp.none.empty");
             takeHead.IsVisible = sel != null && group == null;
@@ -602,7 +603,7 @@ public partial class MainWindow
                 if (group == null && c != null) foreach (var refresh in clipRefresh) refresh();
                 foreach (var refresh in sendRefresh) refresh();
             }
-            if (stripFolderNow != null) foreach (var refresh in sendRefresh) refresh();
+            if (stripFolderNow != null || bus != null) foreach (var refresh in sendRefresh) refresh();
             if (channel && group == null || bus != null || stripFolderNow != null) foreach (var refresh in chainRefresh) refresh();
             if (stripWanted) foreach (var refresh in stripRefresh) refresh();
         }

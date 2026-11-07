@@ -37,6 +37,8 @@ public sealed class Knob : Control
     public double? ArcFrom { get; init; }
     public double Size { get; private set; }
     public event Action<double>? Changed;
+    /// <summary>Whether it is being dragged now (the mixer's connections band keeps its rope while it is).</summary>
+    public bool Dragging => pointer != null;
 
     /// <summary>A look of its own instead of the chosen one (null = the chosen one).</summary>
     public string? Look { get; init; }

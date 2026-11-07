@@ -354,7 +354,7 @@
             "**Brush** ({key:toolPaint}): like the pencil, but dragging repeats it along the stretch.",
             "**Range** ({key:toolRange}): marks a section.",
             "**Split** ({key:toolSplit}): one click cuts the clip.",
-            "**Erase** ({key:toolErase}): removes what it touches. With any tool, right-click and drag over clips also removes them.",
+            "**Erase** ({key:toolErase}): removes what it touches. With any tool, right-click and drag removes what it touches: clips, automation blocks, tempo points, meter changes, markers, chords and the loop range. A right-click without dragging opens the menu.",
             "**Listen** ({key:toolListen}): hold down on a clip to hear that track alone.",
             "**Zoom** ({key:toolZoom}) and **Hand** ({key:toolHand}): zoom in and move the view."
           ],
@@ -468,7 +468,26 @@
             "To find an audio's tempo, right-click the clip → **Detect tempo**.",
             "Choose **Set the project to N BPM**. That moves the grid and stretches nothing."
           ],
-          "see": ["click", "scale"]
+          "see": ["click", "scale", "tempo-track"]
+        },
+        {
+          "id": "tempo-track",
+          "icon": "EC4A",
+          "title": "Tempo and meter changes",
+          "keywords": "tempo track ramp meter time signature 7/8 6/8 3/4 accelerando ritardando follow tempo",
+          "intro": "The tempo track changes the tempo and meter along the song.",
+          "steps": [
+            "Show it with its button next to the tools. The meter row is on top and the tempo curve below. Drag its bottom edge to make it taller.",
+            "Double-click the curve (or click with the Pencil) to add a point. Drag it in time and tempo: Alt moves it freely, Shift changes tempo only.",
+            "Right-click a point: **Ramp to next**, **Type tempo…** or **Delete** (also Del).",
+            "Double-click or right-click the meter row, or the ruler numbers, to change the meter from that bar."
+          ],
+          "notes": [
+            "The first point can't move in time or be deleted.",
+            "MIDI clips, markers, chords and tracks with **Follow tempo** keep their bar. Other audio tracks stay in seconds: turn on **Follow tempo** by right-clicking the track.",
+            "With tempo changes, the transport's **Tempo** box shows the tempo at the playhead; typing there changes the speed of the whole song."
+          ],
+          "see": ["tempo", "click"]
         },
         {
           "id": "markers-loop",
@@ -498,7 +517,7 @@
             "Double-click a track's name to rename it.",
             "Click its badge to choose color and icon. In the inspector, the square next to the name changes the color; on a folder, the button next to it gives that color to its tracks.",
             "Drag a track by its handle to move it.",
-            "**New track → Folder** groups tracks: drag them in by their handle.",
+            "**New track → Folder** groups tracks: drag them in by their handle. {key:folderGroup} puts the picked tracks, or those of the selected clips, in a new folder.",
             "Right-click the track → **Duplicate track** ({key:duplicateTrack}) copies it below with everything; **Duplicate without content**, only its sound.",
             "In the mixer, right-click the empty space → **New separator** puts one where you clicked; **Separator** in the header puts it after the selected channel. Double-click a separator to pick its color, or its name to rename it."
           ],
@@ -522,6 +541,24 @@
           "notes": [
             "Volume, fades and framing can still be changed."
           ]
+        },
+        {
+          "id": "freeze",
+          "icon": "E9CA",
+          "title": "Freeze a track",
+          "keywords": "freeze render cpu dsp load plugin instrument bounce",
+          "intro": "Renders a track's instrument and effects so they stop using DSP. The track's plugins close.",
+          "steps": [
+            "Click the snowflake {icon:E9CA} in the track header, or right-click the track (in the timeline or the mixer) → **Freeze**.",
+            "The snowflake stays lit and its clips show dimmed under the render's wave.",
+            "To change something, click the snowflake again, or right-click → **Unfreeze**."
+          ],
+          "notes": [
+            "Fader, pan, mute, solo and sends stay live and can be automated.",
+            "While frozen, its clips, notes, effects, instrument and Transpose can't be edited.",
+            "The render is saved in the project's freeze folder."
+          ],
+          "see": ["lock"]
         },
         {
           "id": "undo-versions",
@@ -597,7 +634,7 @@
             "The **⋯** or right-click turns it off, duplicates or removes it."
           ],
           "notes": [
-            "Built-in effects are grouped: **Dynamics**, **Classic compressors**, **EQ**, **Saturation**, **Modulation** and **Space and stereo**.",
+            "Built-in effects are grouped: **Dynamics**, **Classic compressors**, **EQ**, **Saturation**, **Modulation**, **Space and stereo** and **Mastering** (the mastering chain stages, in order).",
             "Clicking a built-in effect opens its window, under where you clicked. Move it by its bar; it stays open while you work and you can have several. Close it with its X or **Esc**. The expand button on its bar shows every control in panels; shrunk, only the main ones. Each effect remembers its size.",
             "Each effect has its own identity: what matters goes on big knobs, its graph sits on top (the reverb's tail, the delay's echoes, the modulation's wave, the saturation's curve, the stereo field, the tone effects' response) and it takes its family's color: violet for dynamics, green for tone, orange for drive, blue for space and pink for modulation."
           ],
@@ -653,7 +690,7 @@
           "id": "tonal",
           "icon": "E9D2",
           "title": "Tonal balance",
-          "keywords": "tonal balance spectrum mastering reference lows highs punch mid side",
+          "keywords": "tonal balance spectrum mastering reference lows highs punch mid side genre dubstep riddim trap reggaeton metal house techno drum bass lofi",
           "intro": "**Tonal balance** compares the mix's frequency balance with a target. It doesn't change the sound.",
           "steps": [
             "On the master or on any track or bus, click **+ Effect** → **Analysis** → **Tonal balance**. On the master it always goes last, after **Output**: it reads what goes out, limiter included.",
@@ -662,6 +699,7 @@
             "**Punch** is the low end's impact (crest factor under 120 Hz) against the target's range."
           ],
           "notes": [
+            "Genres: Pop, Rock, Metal, Country / Folk, R&B / Soul, Hip-hop, Trap, Reggaeton / Urban, Reggae, Electronic (EDM), House / Techno, Dubstep, Riddim, Deep dubstep (UK), Drum & bass, Lo-fi, Acoustic / Jazz and Orchestral / Classical. The three dubstep targets differ in sub, mids and limiting: the menu says how on each.",
             "The full view adds the mix's spectrum over the target's band.",
             "**Stereo / Mid / Side**: both sides, only the center or only the sides.",
             "**Response** is how long it averages (1 to 10 s). The reload button restarts the reading.",
@@ -780,6 +818,8 @@
           ],
           "notes": [
             "**PRE** takes the send before the fader: it keeps sounding if you lower the track.",
+            "A bus sends to other buses too, with the same **+** under **Sends** in its strip. A bus that would send the sound back to it isn't offered; its output always goes to the Master.",
+            "**Connections**, in the mixer's header, shows the selected channel's active sends under the strips: a line to each bus, with a knob for its level. With a bus selected, the sends that reach it too, fainter. Ropes leave from OUT and arrive at IN, on either side of the selected strip; at the other end, under each knob, IN or OUT too, and the arrow comes up into it. Under each bus the channel doesn't send to yet, **Send** makes that send at once. Drag the band's top edge to make it taller.",
             "When you stop, tails ring on until they fade. To silence them now, click **Cut audio** (the muted speaker in the transport) or press {key:cutAudio}: it also cuts notes left sounding."
           ],
           "see": ["add-fx", "mixer"]
@@ -792,8 +832,8 @@
           "intro": "Makes a control change by itself along the song.",
           "steps": [
             "Right-click the control → **Automate…**, or the track's or folder's menu → **Automation**. In a plugin: click **Automate** in its window's bar and move the parameter.",
-            "A lane appears under the track, or under the folder's row. A folder's lanes hide when it folds; **Show automation**, in its menu, shows or hides them.",
-            "Click adds a point, dragging moves it and double-click deletes it. Shift+drag draws.",
+            "A lane appears under the track, the folder's row or the bus's row. Buses have their rows at the end of the timeline; **Show buses in the timeline** (right click on a bus row or on the empty space) shows or hides them. A folder's lanes hide when it folds; **Show automation**, in its menu, shows or hides them.",
+            "Click adds a point, dragging moves it and double-click deletes it. Shift+drag draws. Right-drag erases the blocks it touches, as with clips.",
             "Drag the circle in the middle of a segment to set its tension: bend it, or change how many stairs, pulses or waves it has. Double-click sets it back to zero.",
             "Right-click a point or a segment → its shape: **Curve**, **Double curve**, **Hold**, **Stairs**, **Smooth stairs**, **Pulse** or **Wave**. A point's is the one of the segment coming into it.",
             "Drag a block's top right corner to loop it.",
@@ -1123,18 +1163,21 @@
           "id": "general-midi",
           "icon": "E8D6",
           "title": "General MIDI instruments",
-          "keywords": "general midi gm soundfont sf2 piano drums bass strings program native instrument import mid song tracks channel 10 generaluser envelope attack release filter brightness resonance sensitivity velocity transpose tune mono glide",
+          "keywords": "volume search compact fold list next previous bank banks fluidr3 musescore download general midi gm soundfont sf2 piano drums bass strings program native instrument import mid song tracks channel 10 generaluser envelope attack release filter brightness resonance sensitivity velocity transpose tune mono glide",
           "intro": "The 128 General MIDI instruments and the drum kits, with nothing to install.",
           "steps": [
             "Under **Instrument**, open **General MIDI**: each family (Pianos, Guitars, Basses…) has its 8 instruments, and **Drums** has the kits.",
-            "**Open its window** (in the inspector or the piano roll) shows the instrument's window: the families and kits on the left, their instruments on the right (a click picks one) and a keyboard to try it.",
-            "Below, the knobs change the sound over the bank's: **Envelope** (Attack, Decay, Sustain, Release), **Filter** (Brightness, Resonance, Vel. bright) and **Play** (Sensitivity, Transpose, Fine tune and, in **Mono**, Glide). At the centre it sounds as the bank does; a double click goes back there and **Reset** brings them all back.",
+            "**Open its window** (in the inspector or the piano roll) shows the instrument's window: on top, the one playing, ◀ ▶ for the previous or next one, the **Bank** and the instrument's **Volume**; below, the families and kits on the left, their instruments on the right (a click picks one), **Search instruments** and a keyboard to try it.",
+            "The list button, on top, folds the list away: the window shrinks and the instrument is picked from a menu by family.",
+            "In **Sound**, the knobs change the sound over the bank's, with the envelope and the filter drawn as they sound: **Envelope** (Attack, Decay, Sustain, Release), **Filter** (Brightness, Resonance, Vel. bright) and **Play** (Sensitivity, Transpose, Fine tune and, in **Mono**, Glide). At the centre it sounds as the bank does; a double click goes back there and **Reset** brings them all back.",
             "When you import a **.mid** to new tracks, each track takes the instrument the file asks for; the one on channel 10 takes the drums, with each key named in the piano roll.",
             "If the file has more than one track, **Import MIDI** asks which ones to bring. **All** and **None** tick or clear the list.",
-            "Each track takes the name it has in the file; without one, its instrument's."
+            "Each track takes the name it has in the file; without one, its instrument's.",
+            "**Bank**, at the top right of the window, picks the bank the track plays: **GeneralUser GS** (ships with the app), **FluidR3 GM** or **MuseScore General** (more complete: download them from there or in **Settings → Components**) or **Load .sf2…** for one of your own."
           ],
           "notes": [
-            "The sound is the **GeneralUser GS** bank, which comes with the app.",
+            "Unless you pick another, it plays the **GeneralUser GS** bank, which comes with the app.",
+            "Each track keeps its bank. If it is missing on another PC, it plays GeneralUser GS and the window says so.",
             "Changing the instrument keeps the knobs as they were. Transpose doesn't apply to drums.",
             "Importing onto a selected MIDI track puts the ticked tracks in a single clip. If that track plays the test tone, it takes the first one's instrument."
           ],
@@ -1220,11 +1263,7 @@
             "**Expression**, on the bottom bar, shows or hides the lower lane, and its dropdown picks what it shows: velocity, mod X, mod Y, pan or release. **View** shows other tracks in grey and puts a waveform behind the notes. Right-click a key to name it.",
             "In **Scale**, **MIDI keyboard to scale** lands what you play on the scale. **Arpeggiator**, in Tools, arpeggiates the keyboard and records what sounds."
           ],
-          "see": [
-            "midi-track",
-            "scales-chords",
-            "midi-keyboard"
-          ]
+          "see": ["midi-track", "scales-chords", "midi-keyboard"]
         },
         {
           "id": "midi-keyboard",
@@ -1381,7 +1420,8 @@
           ],
           "notes": [
             "The original is left as it is. Exports and saved versions are not copied.",
-            "To open it later, double-click the .xtp or use **Open…** in Projects.",
+            "To open it later, double-click the .xtp or use **Open…** in Projects. With XTreme open, it opens in that window in place of the current one.",
+            "If a double click does not open XTreme, use **Associate .xtp files with XTreme** in Settings → File association.",
             "WildTrack projects open with **Open…** too: choose their **guitarcam.json** and it becomes a .xtp."
           ],
           "see": ["new-project", "share-project"]
@@ -1454,7 +1494,7 @@
             "The layout button {icon:E80A} switches between **Classic** and **Vertical**.",
             "The two panel buttons hide the sides.",
             "{key:fullScreen} goes full screen.",
-            "In **Settings → Appearance** pick the style of the window's panels (flat, raised or raised with a gradient), of knobs, faders, meters and waveforms, how each track's color shows in the timeline (soft, solid, wave-only or title-bar clips; a stripe or tint on the header, a tinted lane and the selection in its color) and in the inspector (rule and tint, rule only, filled or no color; a stripe along the edge, tinted sections and section icons in its color), the interface's font, the numbers' font (values, times and the clock; also a 14-segment digital one and Orbitron) the **meter colors** (**Default**, or **Custom**: pick Low, Hot and Clip, or hit **Surprise me** to draw three that go together; they apply to every meter and look, and the thresholds stay the same) and the size, in px (also with **Ctrl +** and **Ctrl −**; **Ctrl 0** goes back to 100 %). **Reset**, above each one, takes it back to the factory setting."
+            "In **Settings → Appearance** pick the style of the window's panels (flat, raised or raised with a gradient), of knobs, faders, meters and waveforms, how each track's color shows in the timeline (soft, solid, wave-only or title-bar clips; the header with an edge, a band, tinted, filled or no color, a tinted lane and the selection in its color), how **folders** look (frame, a block of their color or a line at the side), the **mixer strips** (cards or joined; the channel color as an edge, a band, tinted, a filled header or none) and in the inspector (rule and tint, rule only, filled or no color; a stripe along the edge, tinted sections and section icons in its color), the interface's font, the numbers' font (values, times and the clock; also a 14-segment digital one and Orbitron) the **meter colors** (**Default**, or **Custom**: pick Low, Hot and Clip, or hit **Surprise me** to draw three that go together; they apply to every meter and look, and the thresholds stay the same) and the size, in px (also with **Ctrl +** and **Ctrl −**; **Ctrl 0** goes back to 100 %). **Reset**, above each one, takes it back to the factory setting."
           ],
           "settings": "view"
         },

@@ -89,7 +89,7 @@ public sealed class MidiClip
     public string Id { get; set; } = Ids.New("mid");
     /// <summary>Timeline time of its first beat.</summary>
     public double AtSec { get; set; }
-    /// <summary>How long it is, in beats (four per bar: the project's grid is always 4/4).</summary>
+    /// <summary>How long it is, in beats (quarter notes, whatever the meter: a bar of n/d holds n·4/d, <see cref="TempoMap"/>).</summary>
     public double LengthBeats { get; set; } = DefaultBeats;
     public List<MidiNote> Notes { get; set; } = [];
     /// <summary>The pattern this clip belongs to, its name and how long one pass is; null on a clip of its own.</summary>
@@ -115,7 +115,16 @@ public sealed class MidiClip
     /// <summary>The shortest clip (a sixteenth) and the longest one (1024 bars).</summary>
     public const double MinBeats = 0.25, MaxBeats = 4096;
 
+    /// <summary>Its length at one tempo all along (what the window still draws with, until it reads the map).</summary>
     public double LengthSec(double bpm) => LengthBeats * 60 / Math.Max(1, bpm);
+    /// <summary>The beat its start falls on.</summary>
+    public double StartBeat(TempoMap map) => map.BeatAt(AtSec);
+    /// <summary>Its length in seconds under the tempo map, from where it starts.</summary>
+    public double LengthSec(TempoMap map) => EndSec(map) - AtSec;
+    /// <summary>The timeline time of <paramref name="beat"/> beats into it.</summary>
+    public double SecOf(TempoMap map, double beat) => map.SecAt(map.BeatAt(AtSec) + beat);
+    /// <summary>How many beats into it the timeline time <paramref name="sec"/> is.</summary>
+    public double BeatOf(TempoMap map, double sec) => map.BeatAt(sec) - map.BeatAt(AtSec);
 
     /// <summary>One pass of its notes: the pattern's, its loop's, or the whole clip.</summary>
     public double CellBeats => PatternId != null && PatternBeats is > 0 ? PatternBeats.Value : LoopBeats is > 0 ? LoopBeats.Value : LengthBeats;
@@ -156,6 +165,7 @@ public sealed class MidiClip
         return copy;
     }
     public double EndSec(double bpm) => AtSec + LengthSec(bpm);
+    public double EndSec(TempoMap map) => SecOf(map, LengthBeats);
 
     internal void Normalize()
     {
@@ -377,11 +387,11 @@ public static class MidiEditing
     public static void TrimStart(Project p, string clipId, double atSec)
     {
         var (track, c) = Find(p, clipId);
-        if (track.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
+        if (track.EditLocked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
         if (c.PatternId != null) throw new ArgumentException(Texts.T("err.midi.trimPattern", "Un clip de patrón no se recorta por el inicio: sus notas cuentan desde su principio."));
-        double beatSec = 60 / Math.Max(1, p.Settings.Bpm), end = c.AtSec + c.LengthBeats * beatSec;
-        double at = ClipEditing.ToSample(Math.Clamp(atSec, 0, end - MidiClip.MinBeats * beatSec));
-        double cut = (at - c.AtSec) / beatSec;
+        var map = p.Settings.TempoMap;
+        double at = ClipEditing.ToSample(Math.Clamp(atSec, 0, c.SecOf(map, c.LengthBeats - MidiClip.MinBeats)));
+        double cut = c.BeatOf(map, at);
         WriteOut(c);
         c.Notes.RemoveAll(n => n.Beat - cut + n.Beats < MidiNote.MinBeats);
         foreach (var n in c.Notes)
@@ -403,7 +413,7 @@ public static class MidiEditing
     public static void Loop(Project p, string clipId, double lengthBeats)
     {
         var (track, c) = Find(p, clipId);
-        if (track.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
+        if (track.EditLocked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
         if (c.PatternId == null) c.LoopBeats ??= c.LengthBeats;
         c.LengthBeats = Math.Clamp(lengthBeats, MidiClip.MinBeats, MidiClip.MaxBeats);
         c.Normalize();
@@ -416,7 +426,7 @@ public static class MidiEditing
     public static void Pass(Project p, string clipId, double passBeats)
     {
         var (track, c) = Find(p, clipId);
-        if (track.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
+        if (track.EditLocked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
         if (c.PatternId != null || c.LoopBeats is not { } pass) return;
         double cell = Math.Clamp(passBeats, MidiClip.MinBeats, MidiClip.MaxBeats);
         c.LengthBeats = Math.Min(MidiClip.MaxBeats, c.LengthBeats * cell / pass);
@@ -478,7 +488,7 @@ public static class MidiEditing
         {
             var c = TryFind(p, id)!;
             start = Math.Min(start, c.AtSec);
-            end = Math.Max(end, c.EndSec(p.Settings.Bpm));
+            end = Math.Max(end, c.EndSec(p.Settings.TempoMap));
         }
         if (start > end) return [];
         double shift = ClipEditing.DuplicateShift(end - start, step);
@@ -530,6 +540,14 @@ public static class MidiEditing
         return beats >= least && c.LengthBeats - beats >= least;
     }
 
+    /// <summary>Whether a cut at <paramref name="atSec"/> leaves a clip's shortest on each side, under the tempo map.</summary>
+    public static bool CanSplit(MidiClip c, double atSec, TempoMap map)
+    {
+        double least = MidiClip.MinBeats - CutSlackSec * map.BpmAtSec(atSec) / 60;
+        double beats = c.BeatOf(map, atSec);
+        return beats >= least && c.LengthBeats - beats >= least;
+    }
+
     /// <summary>
     /// Splits a clip at a timeline time into two that sound exactly as the one did: through <see cref="ChannelDsp.Notes"/>
     /// they give the same notes in the same frames, to a plugin, the sampler and the test tone alike. A note the cut goes
@@ -544,10 +562,10 @@ public static class MidiEditing
     public static string Split(Project p, string clipId, double atSec)
     {
         var (track, c) = Find(p, clipId);
-        if (track.Locked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
-        double bpm = p.Settings.Bpm;
+        if (track.EditLocked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", track.Name));
+        var bpm = p.Settings.TempoMap;
         if (!CanSplit(c, atSec, bpm)) throw new ArgumentException(Texts.T("err.midi.splitEdge", "El corte tiene que caer dentro del clip, a más de una semicorchea de los bordes."));
-        foreach (var other in MidiPatterns.Together(p.Tracks.Where(t => !t.Locked), c))
+        foreach (var other in MidiPatterns.Together(p.Tracks.Where(t => !t.EditLocked), c))
             if (CanSplit(other, atSec, bpm)) Cut(p, Find(p, other.Id).Track, other, atSec, tie: true);
         return Cut(p, track, c, atSec, tie: true).Id;
     }
@@ -558,14 +576,14 @@ public static class MidiEditing
     /// </summary>
     static MidiClip Cut(Project p, Track track, MidiClip c, double atSec, bool tie)
     {
-        double beatSec = 60 / Math.Max(1, p.Settings.Bpm);
-        double at = ClipEditing.ToSample(atSec), beats = (at - c.AtSec) / beatSec, cell = c.CellBeats, seam = Math.Round(beats / cell) * cell;
+        var map = p.Settings.TempoMap;
+        double at = ClipEditing.ToSample(atSec), beats = c.BeatOf(map, at), cell = c.CellBeats, seam = Math.Round(beats / cell) * cell;
         MidiClip right;
-        if (c.PatternId != null && Math.Abs(beats - seam) * beatSec <= CutSlackSec)
+        if (c.PatternId != null && Math.Abs(c.SecOf(map, seam) - at) <= CutSlackSec)
         {
             beats = seam;
             right = c.Copy();
-            right.AtSec = ClipEditing.ToSample(c.AtSec + seam * beatSec);
+            right.AtSec = ClipEditing.ToSample(c.SecOf(map, seam));
         }
         else
         {
@@ -620,16 +638,17 @@ public static class MidiEditing
     /// </summary>
     public static int DeleteRange(Project p, Track track, double startSec, double endSec)
     {
-        if (track.Locked || track.MidiClips is not { } clips) return 0;
-        double bpm = Math.Max(1, p.Settings.Bpm), least = MidiClip.MinBeats - CutSlackSec * bpm / 60;
+        if (track.EditLocked || track.MidiClips is not { } clips) return 0;
+        var map = p.Settings.TempoMap;
         int changed = 0;
         foreach (var c in clips.ToList())
         {
-            double start = c.AtSec, end = c.EndSec(bpm);
+            double start = c.AtSec, end = c.EndSec(map);
             if (endSec <= start || startSec >= end) continue;
             changed++;
-            if ((end - endSec) * bpm / 60 >= least) Cut(p, track, c, endSec, tie: false);
-            if ((startSec - start) * bpm / 60 >= least) clips.Remove(Cut(p, track, c, startSec, tie: true));
+            double least = MidiClip.MinBeats - CutSlackSec * map.BpmAtSec(start) / 60;
+            if (c.LengthBeats - c.BeatOf(map, endSec) >= least) Cut(p, track, c, endSec, tie: false);
+            if (c.BeatOf(map, startSec) >= least) clips.Remove(Cut(p, track, c, startSec, tie: true));
             else clips.Remove(c);
         }
         return changed;
@@ -641,7 +660,7 @@ public static class MidiEditing
     {
         var (t, c) = Find(p, clipId);
         var copy = c.Copy();
-        copy.AtSec = ClipEditing.ToSample(c.AtSec + ClipEditing.DuplicateShift(c.EndSec(p.Settings.Bpm) - c.AtSec, step));
+        copy.AtSec = ClipEditing.ToSample(c.AtSec + ClipEditing.DuplicateShift(c.EndSec(p.Settings.TempoMap) - c.AtSec, step));
         (t.MidiClips ??= []).Add(copy);
         return copy.Id;
     }
@@ -681,6 +700,26 @@ public static class MidiEditing
             if (which != null && !which.Contains(n)) continue;
             double song = clipBeat + n.Beat;
             double snapped = ClipEditing.Snap(song, new SnapGrid(gridBeats, Bar: Subdivisions.BarBeats), false);
+            // a note pulled before the clip's start stays at its start
+            double beat = Math.Max(0, snapped - clipBeat);
+            if (Math.Abs(beat - n.Beat) < 1e-9) continue;
+            n.Beat = beat;
+            moved++;
+        }
+        return moved;
+    }
+
+    /// <summary>The same on the tempo map's grid: the steps start over at each bar, whatever its meter.</summary>
+    public static int Quantize(IList<MidiNote> notes, double clipAtSec, TempoMap map, double gridBeats, IReadOnlyCollection<MidiNote>? which = null)
+    {
+        if (gridBeats <= 0) return 0;
+        double clipBeat = map.BeatAt(clipAtSec);
+        int moved = 0;
+        foreach (var n in notes)
+        {
+            if (which != null && !which.Contains(n)) continue;
+            double song = clipBeat + n.Beat;
+            double snapped = map.SnapBeat(song, gridBeats);
             // a note pulled before the clip's start stays at its start
             double beat = Math.Max(0, snapped - clipBeat);
             if (Math.Abs(beat - n.Beat) < 1e-9) continue;
@@ -753,7 +792,7 @@ public static class MidiEditing
     public static int Quantize(Project p, string clipId, double gridBeats)
     {
         var (_, c) = Find(p, clipId);
-        int moved = Quantize(c.Notes, c.AtSec, p.Settings.Bpm, gridBeats);
+        int moved = Quantize(c.Notes, c.AtSec, p.Settings.TempoMap, gridBeats);
         c.Normalize();
         MidiPatterns.Sync(p, c);
         return moved;
@@ -765,8 +804,8 @@ public static class MidiEditing
     /// </summary>
     public static List<(double Sec, double LengthSec, int Pitch, int Velocity)> TakeNotes(Project p, Audio.Midi.MidiTake take, double startSec, double endSec, int sampleRate)
     {
-        double barSec = 4 * 60 / Math.Max(1, p.Settings.Bpm);
-        double barStart = Math.Floor(startSec / barSec + 1e-9) * barSec;
+        var map = p.Settings.TempoMap;
+        double barStart = map.SecAt(map.BarFloorBeat(map.BeatAt(startSec) + 1e-9));
         double sr = sampleRate;
         return take.Notes((long)Math.Round(barStart * sr), (long)Math.Round(endSec * sr)).Select(n => (n.Start / sr, n.Length / sr, n.Pitch, n.Velocity)).ToList();
     }
@@ -784,21 +823,24 @@ public static class MidiEditing
         if (played.Count == 0) return null;
         var t = p.Tracks.Find(x => x.Id == trackId) ?? throw new ArgumentException(Texts.T("err.midi.trackNotFound", "Pista no encontrada."));
         if (!t.IsMidi) throw new ArgumentException(Texts.T("err.midi.notMidi", "Los clips MIDI van en pistas MIDI."));
-        double bpm = Math.Max(1, p.Settings.Bpm);
-        double barSec = 4 * 60 / bpm;
-        double start = Math.Floor(Math.Max(0, fromSec) / barSec + 1e-9) * barSec;
-        double end = Math.Max(start + barSec, Math.Ceiling(Math.Max(toSec, played.Max(x => x.Sec + x.LengthSec)) / barSec - 1e-9) * barSec);
-        var clip = new MidiClip { AtSec = ClipEditing.ToSample(start), LengthBeats = (end - start) / 60 * bpm };
+        var map = p.Settings.TempoMap;
+        // from the bar where it began to the bar line after its last note (a note ending right on one adds no bar)
+        int first = map.BarAt(map.BeatAt(Math.Max(0, fromSec)) + 1e-9);
+        double last = map.BeatAt(Math.Max(toSec, played.Max(x => x.Sec + x.LengthSec)));
+        int bar = map.BarAt(last - 1e-6) + 1;
+        double startBeat = map.BarStartBeat(first), endBeat = map.BarStartBeat(Math.Max(first + 1, bar));
+        var clip = new MidiClip { AtSec = ClipEditing.ToSample(map.SecAt(startBeat)), LengthBeats = endBeat - startBeat };
         if (clipId != null) clip.Id = clipId;
+        double clipBeat = map.BeatAt(clip.AtSec);
         foreach (var (sec, len, pitch, velocity) in played)
             clip.Notes.Add(new MidiNote
             {
                 Pitch = pitch,
-                Beat = Math.Max(0, sec - clip.AtSec) / 60 * bpm,
-                Beats = Math.Max(MidiNote.MinBeats, len / 60 * bpm),
+                Beat = Math.Max(0, map.BeatAt(sec) - clipBeat),
+                Beats = Math.Max(MidiNote.MinBeats, map.BeatAt(sec + len) - map.BeatAt(sec)),
                 Velocity = velocity,
             });
-        if (gridBeats > 0) Quantize(clip.Notes, clip.AtSec, bpm, gridBeats);
+        if (gridBeats > 0) Quantize(clip.Notes, clip.AtSec, map, gridBeats);
         clip.Normalize();
         (t.MidiClips ??= []).Add(clip);
         return clip;
@@ -827,19 +869,21 @@ public static class MidiEditing
             t = AddTrackBelow(p, below);
             if (!string.IsNullOrWhiteSpace(name) && p.Tracks.All(x => x.Name != name)) t.Name = name;
         }
-        double bpm = Math.Max(1, p.Settings.Bpm);
+        var map = p.Settings.TempoMap;
         var clip = new MidiClip { AtSec = ClipEditing.ToSample(Math.Max(0, fromSec)) };
-        double shift = fromSec - clip.AtSec;
-        clip.LengthBeats = Math.Max(toSec - clip.AtSec, notes.Select(n => n.EndSec + shift).DefaultIfEmpty(0).Max()) / 60 * bpm;
+        double clipBeat = map.BeatAt(clip.AtSec);
+        // a note's seconds count from fromSec; its beats from the clip's start
+        double Beat(double sec) => map.BeatAt(fromSec + sec) - clipBeat;
+        clip.LengthBeats = map.BeatAt(Math.Max(toSec, fromSec + notes.Select(n => n.EndSec).DefaultIfEmpty(0).Max())) - clipBeat;
         foreach (var n in notes)
             clip.Notes.Add(new MidiNote
             {
                 Pitch = n.Pitch,
-                Beat = Math.Max(0, n.StartSec + shift) / 60 * bpm,
-                Beats = Math.Max(MidiNote.MinBeats, (n.EndSec - n.StartSec) / 60 * bpm),
+                Beat = Math.Max(0, Beat(n.StartSec)),
+                Beats = Math.Max(MidiNote.MinBeats, Beat(n.EndSec) - Beat(n.StartSec)),
                 Velocity = n.Velocity,
             });
-        if (gridBeats > 0) Quantize(clip.Notes, clip.AtSec, bpm, gridBeats);
+        if (gridBeats > 0) Quantize(clip.Notes, clip.AtSec, map, gridBeats);
         clip.Normalize();
         (t.MidiClips ??= []).Add(clip);
         return (t.Id, clip);
@@ -847,7 +891,7 @@ public static class MidiEditing
 
     /// <summary>The end of the last MIDI clip of the project, in seconds (0 without any).</summary>
     public static double EndSec(Project p) =>
-        p.Tracks.SelectMany(t => t.MidiClips ?? []).Select(c => c.EndSec(p.Settings.Bpm)).DefaultIfEmpty(0).Max();
+        p.Tracks.SelectMany(t => t.MidiClips ?? []).Select(c => c.EndSec(p.Settings.TempoMap)).DefaultIfEmpty(0).Max();
 }
 
 /// <summary>
@@ -939,11 +983,11 @@ public static class MidiPatterns
         var found = clipIds.Distinct().Select(id => MidiEditing.Find(p, id)).ToList();
         if (found.Count == 0) throw new ArgumentException(Texts.T("err.midi.clipNotFound", "Clip MIDI no encontrado."));
         if (found.Count == 1) return Create(p, found[0].Clip.Id);
-        if (found.Select(x => x.Track).FirstOrDefault(t => t.Locked) is { } locked)
+        if (found.Select(x => x.Track).FirstOrDefault(t => t.EditLocked) is { } locked)
             throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", locked.Name));
-        double bpm = p.Settings.Bpm, beatSec = 60 / Math.Max(1, bpm);
-        double start = found.Min(x => x.Clip.AtSec), end = found.Max(x => x.Clip.EndSec(bpm));
-        double beats = Math.Clamp((end - start) / beatSec, MidiClip.MinBeats, MidiClip.MaxBeats);
+        var map = p.Settings.TempoMap;
+        double start = found.Min(x => x.Clip.AtSec), startBeat = map.BeatAt(start);
+        double beats = Math.Clamp(found.Max(x => x.Clip.StartBeat(map) + x.Clip.LengthBeats) - startBeat, MidiClip.MinBeats, MidiClip.MaxBeats);
         string id = Ids.New("pat"), name = NewName(p);
         MidiClip? first = null;
         bool firstPart = true;
@@ -959,7 +1003,7 @@ public static class MidiPatterns
             firstPart = false;
             foreach (var (_, c) in group.OrderBy(x => x.Clip.AtSec))
             {
-                double shift = (c.AtSec - start) / beatSec;
+                double shift = c.StartBeat(map) - startBeat;
                 for (int pass = 0; pass < c.Passes; pass++)
                     foreach (var n in c.Notes)
                     {

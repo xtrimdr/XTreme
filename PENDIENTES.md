@@ -10,7 +10,6 @@ _Ideas y mejoras para la nativa._
 > **Foco:** la app sigue siendo para hacer videos de guitarra. Lo de DAW tiene que servir para eso
 > y no puede complicar el camino de "grabo, mezclo y exporto el video".
 
-- **Doble clic en un .xtp con XTreme abierto**: hoy abre otra ventana (y el mismo proyecto, en solo lectura). Que lo reciba la ventana abierta (una sola instancia, el archivo por un pipe) y pregunte si guarda el actual.
 
 ### Pedidas
 
@@ -118,7 +117,7 @@ Etapas (cada una sirve sola):
 - [ ] Importar proyectos de FL Studio (.flp) (pedido del usuario, 2026-11-01): una sola vía, crea un proyecto nuevo y
   avisa lo que no entró. Trae tempo y compás, notas de los patterns (pistas MIDI), colocación de la playlist, clips de
   audio y samples (copiados a `media/`), nombres, colores, volumen y paneo. Los plugins propios de FL no se pueden traer
-  (la pista queda con sus notas); el ruteo entre inserts no entra entero porque un bus sale solo al Master; los VST de
+  (la pista queda con sus notas); el ruteo entre inserts no entra entero porque la salida de un bus va solo al Master (los envíos entre buses sí, #264); los VST de
   terceros están por ver, y las automatizaciones quedan fuera de la primera etapa. Lector propio en C# en
   `XtremeDaw.Projects`, sin dependencias, con su comando de `xtlab`. El formato no está documentado y cambia con cada
   versión de FL: PyFLP (GPL v3) sirve como referencia, sin copiar su código. Hacen falta `.flp` reales del usuario para
@@ -228,6 +227,8 @@ XTreme ya tiene algo que el Fruity Limiter no trae por defecto: techo en pico re
 **Fase 2: lo que le sirve a la guitarra**
 - [ ] Amp y gabinete con impulsos propios (reusa el convolver), distorsión de pedal, transient, de-esser, filtro con LFO.
 - [ ] Modulación a tempo (velocidad en divisiones del compás) y presets de chorus, flanger, phaser y tremolo.
+- [ ] Pump y Delay siguen solo el primer tempo del proyecto: con cambios en la pista de tempo se corren después del
+  primero. Necesitan leer el mapa de tempo en el hilo de audio (`TempoMap` vive en Projects; Audio no lo ve). (#256)
 
 **Fase 3: creativos y de mezcla fina**
 - [ ] Reverb por convolución, stutter y gate por pasos, pitch en tiempo real, armonizador, vocoder, shifter de
@@ -341,11 +342,9 @@ _Ideas que surgieron charlando. Todas apuntan al video._
 Cruce del manual (`referencia/fender-studio-pro/manual-completo.md`) con el código, la ayuda y HECHO. Solo lo que no
 estaba anotado en otra sección (comping, afinación tipo Melodyne, congelar, MIDI learn, MIDI clock, Touch/Latch, amp
 sim, vocoder y partitura completa ya están arriba). Nada decidido: cada una se charla con el usuario antes de hacerla.
-Orden sugerido por impacto: pista de tempo y compás, pista de arreglo, bounce.
+Orden sugerido por impacto: pista de arreglo, bounce. Cada una tiene su pedido en el Banco (#214 a #248).
 
 Línea de tiempo y arreglo:
-- [ ] **Pista de tempo y de compás**: cambios de tempo (escalón o rampa) y de compás a lo largo del tema. Hoy hay un
-  solo `ProjectSettings.Bpm` y un compás; toca `TempoFollow`, la grilla, los clips MIDI, el estiramiento y el click.
 - [ ] **Pista de arreglo**: secciones con nombre (Intro, Estribillo…) que se mueven, duplican o borran con todo lo que
   tienen en todas las pistas. Los marcadores hoy solo marcan.
 - [ ] **Versiones del arreglo** (Scratch Pad): arreglos alternativos dentro del mismo proyecto.
@@ -399,8 +398,6 @@ de video y normalización ya están anotados arriba; el análisis amplía su alc
   reproducción y exportación; distinguirlo de las transiciones visuales.
 - [ ] **Rescatar audio recién tocado**: investigar un búfer opcional y preasignado para recuperar una
   idea sin haber apretado Grabar. Adaptación propia: la grabación retrospectiva del manual es MIDI.
-- [ ] **Congelar pistas al incorporar VST**: render temporal reversible para reducir DSP, conservando
-  originales y estado de plugins.
 
 ## Notas
 

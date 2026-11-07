@@ -3,8 +3,11 @@ using XtremeDaw.Audio;
 
 namespace XtremeDaw.Projects;
 
-/// <summary>A standard MIDI file as the project takes it: its first tempo (null = it has none) and its tracks with notes.</summary>
-public sealed record MidiFileData(double? Bpm, List<MidiFileTrack> Tracks);
+/// <summary>
+/// A standard MIDI file as the project takes it: its first tempo (null = it has none), its tracks with notes and its
+/// tempo and meter changes as a map from its start (#214; null = it has neither).
+/// </summary>
+public sealed record MidiFileData(double? Bpm, List<MidiFileTrack> Tracks, TempoMap? Map = null);
 
 /// <summary>
 /// A track of a MIDI file: notes in beats from its start, its length in whole bars, the GM program its channel asks for
@@ -21,9 +24,12 @@ public static class MidiFiles
 {
     /// <summary>Ticks per quarter of what we write: divides evenly by 2, 3, 4, 5, 6 and 8, enough for any grid of the roll.</summary>
     const int WritePpq = 960;
-    const int BeatsPerBar = 4;
+    /// <summary>A ramp of the map goes out as steps this long (beats), each as long as the ramp is there: a file has no ramps.</summary>
+    const double RampStepBeats = 0.25;
     /// <summary>Under a file's own rounding, so a note ending right on a bar doesn't add a bar.</summary>
     const double BeatEpsilon = 1e-9;
+    /// <summary>Beats before a bar line that still are the bar before it (over <see cref="TempoMap.BarAt"/>'s own slack).</summary>
+    const double BarSlack = 1e-6;
 
     /// <summary>The tempo and the tracks of a file; empty tracks are dropped. An unreadable file throws <see cref="ArgumentException"/>.</summary>
     public static MidiFileData Read(string path)
@@ -37,18 +43,19 @@ public static class MidiFiles
             var tracks = new List<MidiFileTrack>();
             double? bpm = null;
             var programs = Programs(file);
+            var map = Map(file, ppq);
             for (int i = 0; i < file.Events.Tracks; i++)
             {
                 var events = file.Events[i];
                 bpm ??= events.OfType<TempoEvent>().FirstOrDefault() is { MicrosecondsPerQuarterNote: > 0 } t ? Math.Round(60_000_000.0 / t.MicrosecondsPerQuarterNote, 3) : null;
-                if (file.FileFormat == 0) AddChannels(tracks, events, ppq, baseName, programs);
+                if (file.FileFormat == 0) AddChannels(tracks, events, ppq, baseName, programs, map);
                 else if (Notes(events, ppq, null) is { Count: > 0 } notes)
-                    tracks.Add(Track(TrackName(events), notes, events.OfType<NoteEvent>().First().Channel, programs));
+                    tracks.Add(Track(TrackName(events), notes, events.OfType<NoteEvent>().First().Channel, programs, map));
             }
             for (int i = 0; i < tracks.Count; i++)
                 if (tracks[i].Name.Length == 0)
                     tracks[i] = tracks[i] with { Name = tracks.Count == 1 ? baseName : GmName(tracks[i]) ?? Texts.T("midi.file.track", "Pista {0}", i + 1) };
-            return new MidiFileData(bpm, tracks);
+            return new MidiFileData(bpm, tracks, map);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or ArgumentException or InvalidOperationException or IndexOutOfRangeException or OverflowException)
         {
@@ -56,8 +63,41 @@ public static class MidiFiles
         }
     }
 
+    /// <summary>
+    /// Every tempo and time signature of the file (on whatever track), as a map from its start; null when it has none.
+    /// A file's tempos are steps. A time signature that falls inside a bar starts at the next bar line.
+    /// </summary>
+    static TempoMap? Map(MidiFile file, int ppq)
+    {
+        var tempos = new List<(long At, double Bpm)>();
+        var meters = new List<(long At, int Num, int Den)>();
+        for (int i = 0; i < file.Events.Tracks; i++)
+            foreach (var e in file.Events[i])
+            {
+                if (e is TempoEvent { MicrosecondsPerQuarterNote: > 0 } t) tempos.Add((t.AbsoluteTime, Math.Round(60_000_000.0 / t.MicrosecondsPerQuarterNote, 3)));
+                else if (e is TimeSignatureEvent s && s.Denominator is >= 0 and <= 5) meters.Add((s.AbsoluteTime, s.Numerator, 1 << s.Denominator));
+            }
+        if (tempos.Count == 0 && meters.Count == 0) return null;
+        var map = new TempoMap { Points = [.. tempos.OrderBy(x => x.At).Select(x => new TempoPoint { Beat = (double)x.At / ppq, Bpm = x.Bpm })] };
+        if (map.Points.Count == 0 || map.Points[0].Beat > 0) map.Points.Insert(0, new() { Beat = 0, Bpm = map.Points.Count > 0 ? map.Points[0].Bpm : 120 });
+        // the bars of the meters before each change say on which bar it lands
+        int bar = 0;
+        double from = 0, len = 4;
+        foreach (var (at, num, den) in meters.OrderBy(x => x.At))
+        {
+            double beat = (double)at / ppq;
+            int on = bar + (int)Math.Ceiling((beat - from) / len - BeatEpsilon);
+            map.Meters.Add(new() { Bar = on, Num = num, Den = den });
+            from += (on - bar) * len;
+            bar = on;
+            len = Math.Clamp(num, 1, TempoMap.MaxNum) * 4.0 / den;
+        }
+        map.Normalize();
+        return map;
+    }
+
     /// <summary>A type-0 file holds everything on one track: each channel becomes a track.</summary>
-    static void AddChannels(List<MidiFileTrack> tracks, IList<MidiEvent> events, int ppq, string baseName, Dictionary<int, int> programs)
+    static void AddChannels(List<MidiFileTrack> tracks, IList<MidiEvent> events, int ppq, string baseName, Dictionary<int, int> programs, TempoMap? map)
     {
         var channels = events.OfType<NoteEvent>().Select(e => e.Channel).Distinct().Order().ToList();
         string name = TrackName(events);
@@ -65,7 +105,7 @@ public static class MidiFiles
         {
             var notes = Notes(events, ppq, channel);
             if (notes.Count == 0) continue;
-            var track = Track("", notes, channel, programs);
+            var track = Track("", notes, channel, programs, map);
             string shown = channels.Count > 1 ? GmName(track) ?? Texts.T("midi.file.channel", "Canal {0}", channel) : name.Length > 0 ? name : baseName;
             tracks.Add(track with { Name = shown });
         }
@@ -74,11 +114,13 @@ public static class MidiFiles
     /// <summary>The GM channel of the drums (10, counted from 1 as NAudio does).</summary>
     const int DrumChannel = 10;
 
-    static MidiFileTrack Track(string name, List<MidiNote> notes, int channel, Dictionary<int, int> programs)
+    /// <summary>A track, as long as the whole bars its notes reach (bars of the file's meters, 4/4 without any).</summary>
+    static MidiFileTrack Track(string name, List<MidiNote> notes, int channel, Dictionary<int, int> programs, TempoMap? map)
     {
         double end = notes.Max(n => n.EndBeat);
-        return new MidiFileTrack(name, notes, Math.Max(1, Math.Ceiling(end / BeatsPerBar - BeatEpsilon)) * BeatsPerBar,
-            programs.TryGetValue(channel, out int program) ? program : null, channel == DrumChannel);
+        map ??= TempoMap.Constant(120);
+        double length = map.BarStartBeat(Math.Max(1, map.BarAt(end - BarSlack) + 1));
+        return new MidiFileTrack(name, notes, length, programs.TryGetValue(channel, out int program) ? program : null, channel == DrumChannel);
     }
 
     /// <summary>The first program change of each channel, wherever the file has it (often on a track of its own).</summary>
@@ -145,16 +187,37 @@ public static class MidiFiles
         return notes;
     }
 
+    /// <summary>A type-1 file at one tempo, in 4/4 (<see cref="Write(string, IEnumerable{ValueTuple{string, IReadOnlyList{MidiNote}}}, TempoMap)"/>).</summary>
+    public static void Write(string path, IEnumerable<(string Name, IReadOnlyList<MidiNote> Notes)> tracks, double bpm) =>
+        Write(path, tracks, TempoMap.Constant(Math.Clamp(bpm, TempoMap.MinBpm, TempoMap.MaxBpm)));
+
     /// <summary>
-    /// A type-1 file at <paramref name="bpm"/>: the first track holds the tempo, then one per item, named, on channel 1.
-    /// Muted notes aren't written. Atomic: an old file stays whole if this fails.
+    /// A type-1 file with the tempo map <paramref name="map"/> (beat 0 = the notes' 0; <see cref="TempoMap.From"/> gives
+    /// a clip's): the first track holds its tempos (a ramp as short steps) and meters, then one per item, named, on
+    /// channel 1. Muted notes aren't written. Atomic: an old file stays whole if this fails.
     /// </summary>
-    public static void Write(string path, IEnumerable<(string Name, IReadOnlyList<MidiNote> Notes)> tracks, double bpm)
+    public static void Write(string path, IEnumerable<(string Name, IReadOnlyList<MidiNote> Notes)> tracks, TempoMap map)
     {
         var events = new MidiEventCollection(1, WritePpq);
         events.AddTrack();
-        events.AddEvent(new TempoEvent((int)Math.Round(60_000_000 / Math.Max(1, bpm)), 0), 0);
-        events.AddEvent(new TimeSignatureEvent(0, BeatsPerBar, 2, 24, 8), 0);
+        for (int i = 0; i < map.Points.Count; i++)
+        {
+            var point = map.Points[i];
+            if (!point.Ramp || i + 1 >= map.Points.Count)
+            {
+                events.AddEvent(Tempo(point.Beat, point.Bpm), 0);
+                continue;
+            }
+            // each step lasts what the ramp lasts there, so every step's start falls where the ramp has it
+            double end = map.Points[i + 1].Beat;
+            for (double b = point.Beat; b < end - BeatEpsilon; b += RampStepBeats)
+            {
+                double next = Math.Min(end, b + RampStepBeats);
+                events.AddEvent(Tempo(b, 60 * (next - b) / (map.SecAt(next) - map.SecAt(b))), 0);
+            }
+        }
+        foreach (var m in map.Meters)
+            events.AddEvent(new TimeSignatureEvent(Tick(map.BarStartBeat(m.Bar)), m.Num, (int)Math.Log2(m.Den), 24 * 4 / m.Den, 8), 0);
         int index = 1;
         foreach (var (name, notes) in tracks)
         {
@@ -178,6 +241,16 @@ public static class MidiFiles
             if (File.Exists(temp)) File.Delete(temp);
         }
     }
+
+    static long Tick(double beat) => (long)Math.Round(Math.Max(0, beat) * WritePpq);
+
+    static TempoEvent Tempo(double beat, double bpm) => new((int)Math.Round(60_000_000 / Math.Max(1, bpm)), Tick(beat));
+
+    /// <summary>
+    /// Puts a read file's tempo map in the project (<see cref="TempoFollow.SetMap"/>: what lives in beats keeps its
+    /// beat), the file's start on the song's. False when the file has no tempo or meter of its own.
+    /// </summary>
+    public static bool UseTempo(Project p, MidiFileData data) => data.Map is { } map && TempoFollow.SetMap(p, map);
 
     static NoteOnEvent On(MidiNote n)
     {

@@ -14,8 +14,8 @@ public partial class MainWindow
     async Task SplitMidi(LiveTrack track, string clipId, double at)
     {
         if (store == null || MidiEditing.TryFind(store.Project, clipId) is not { } clip) return;
-        if (track.Track.Locked) { ToastLocked(track.Track); return; }
-        if (!MidiEditing.CanSplit(clip, at, store.Project.Settings.Bpm)) { Toast(Loc.T("midi.split.edge")); return; }
+        if (track.Track.EditLocked) { ToastLocked(track.Track); return; }
+        if (!MidiEditing.CanSplit(clip, at, store.Project.Settings.TempoMap)) { Toast(Loc.T("midi.split.edge")); return; }
         bool pattern = clip.PatternId != null;
         string? right = null;
         await EditTimeline(p => { right = MidiEditing.Split(p, clipId, at); return track.Track.Id; }, "midi-clip-split");
@@ -28,8 +28,9 @@ public partial class MainWindow
     Task SplitMidiAtPlayhead()
     {
         if (sel == null || store == null) return Task.CompletedTask;
-        double at = engine.PositionSec, bpm = store.Project.Settings.Bpm;
-        bool Inside(MidiClip c) => at > c.AtSec && at < c.EndSec(bpm);
+        double at = engine.PositionSec;
+        var map = store.Project.Settings.TempoMap;
+        bool Inside(MidiClip c) => at > c.AtSec && at < c.EndSec(map);
         var clips = sel.Track.MidiClips ?? [];
         if ((clips.Find(c => c.Id == Timeline.SelectedMidiId && Inside(c)) ?? clips.FindLast(Inside)) is { } clip) return SplitMidi(sel, clip.Id, at);
         Toast(Loc.T("timeline.split.nowhere"));
