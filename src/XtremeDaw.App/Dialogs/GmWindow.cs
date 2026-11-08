@@ -441,19 +441,16 @@ public sealed class GmWindow : Window
         filter.Set(Hz(hard), Hz(soft), Math.Pow(10, (resCb / 10 - 3.01) / 20));
     }
 
-    /// <summary>The bank options: the shipped one, each download (with its size while it isn't here), the track's own file and "Cargar .sf2…".</summary>
+    /// <summary>The bank options: each download (with its size while it isn't here; GeneralUser GS as null), the track's own file and "Cargar .sf2…".</summary>
     void ShowBanks(GmSettings g)
     {
         bankIds.Clear();
         var labels = new List<string>();
         var hints = new List<string?>();
-        bankIds.Add(null);
-        labels.Add(GmBank.DefaultName);
-        hints.Add(Loc.T("gm.bank.default.tip"));
         foreach (var d in GmBank.Downloads)
         {
             bool here = GmBank.Available(d.Id);
-            bankIds.Add(d.Id);
+            bankIds.Add(GmBank.IsDefault(d.Id) ? null : d.Id);
             labels.Add(here ? d.Name : Loc.T("gm.bank.download", d.Name, ComponentInstall.Size(d.Bytes)));
             hints.Add(Loc.T("gm.bank." + d.Id + ".tip"));
         }

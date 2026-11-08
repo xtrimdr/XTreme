@@ -20,8 +20,12 @@ public sealed class FxShell(ITrackInsert inner, int sampleRate) : ITrackInsert
     float on = 1, wet = 1, dry, gain = 1;
     bool set;
 
+    volatile FxTap? tap;
+
     public ITrackInsert Inner => inner;
     public string Kind => inner.Kind;
+    /// <summary>What goes in and out, for the effect's picture (#312); the window creates it, null otherwise.</summary>
+    public FxTap? Tap { get => tap; set => tap = value; }
     public int LatencySamples => inner.LatencySamples;
 
     /// <summary>Takes the slot's settings. The first time (a new slot, the export) it starts there, with no fade.</summary>
@@ -68,14 +72,18 @@ public sealed class FxShell(ITrackInsert inner, int sampleRate) : ITrackInsert
     {
         float toOn = wantOn, toWet = wantWet, toDry = wantDry, toGain = wantGain;
         float on0 = on, wet0 = wet, dry0 = dry, gain0 = gain;
+        var feed = tap;
+        bool watched = feed != null && feed.Watched;
         if (on0 == 0 && toOn == 0)
         {
             wet = toWet;
             dry = toDry;
             gain = toGain;
+            if (watched) feed!.Add(l, r, l, r);
             return;
         }
-        if (on0 == 1 && toOn == 1 && wet0 == 1 && toWet == 1 && dry0 == 0 && toDry == 0 && gain0 == 1 && toGain == 1)
+        bool plain = on0 == 1 && toOn == 1 && wet0 == 1 && toWet == 1 && dry0 == 0 && toDry == 0 && gain0 == 1 && toGain == 1;
+        if (plain && !watched)
         {
             inner.Process(l, r);
             return;
@@ -86,6 +94,11 @@ public sealed class FxShell(ITrackInsert inner, int sampleRate) : ITrackInsert
         l.CopyTo(dl);
         r.CopyTo(dr);
         inner.Process(l, r);
+        if (plain)
+        {
+            feed!.Add(dl, dr, l, r);
+            return;
+        }
         float step = n / (float)fade;
         float on1 = on = Step(on0, toOn, step);
         float wet1 = wet = Step(wet0, toWet, step);
@@ -99,6 +112,7 @@ public sealed class FxShell(ITrackInsert inner, int sampleRate) : ITrackInsert
             l[i] = dl[i] * (1 - p) + p * g * (dl[i] * d + l[i] * w);
             r[i] = dr[i] * (1 - p) + p * g * (dr[i] * d + r[i] * w);
         }
+        if (watched) feed!.Add(dl, dr, l, r);
     }
 }
 
@@ -217,8 +231,11 @@ public sealed class LimitInsert(int sampleRate) : ITrackInsert
     float drive = 1, wet = 1, dry, gain = 1;
     int at;
     bool set;
+    volatile FxTap? tap;
 
     public string Kind => TrackInserts.Limit;
+    /// <summary>What goes in (as late as the look-ahead, before the Empuje) and out, for its picture (#312); the window creates it.</summary>
+    public FxTap? Tap { get => tap; set => tap = value; }
     public int LatencySamples => limiter.Latency;
 
     /// <summary>Its settings; off, what comes out is the input, late by its look-ahead.</summary>
@@ -267,7 +284,13 @@ public sealed class LimitInsert(int sampleRate) : ITrackInsert
             drive = d;
         }
         limiter.Process(left, right);
+        Mix(left, right, n);
+        if (tap is { } feed && feed.Watched) feed.Add(dryL.AsSpan(0, n), dryR.AsSpan(0, n), left[..n], right[..n]);
+    }
 
+    /// <summary>Wet, Dry and the output over the limited block, gliding to where their knobs are.</summary>
+    void Mix(Span<float> left, Span<float> right, int n)
+    {
         float w0 = wet, d0 = dry, g0 = gain, w1 = wantWet, d1 = wantDry, g1 = wantGain;
         if (w0 == 1 && w1 == 1 && d0 == 0 && d1 == 0 && g0 == 1 && g1 == 1) return;
         float step = n * fadeStep;

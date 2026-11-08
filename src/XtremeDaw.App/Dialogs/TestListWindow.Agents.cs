@@ -181,6 +181,7 @@ public sealed partial class TestListWindow
         AgentsBigButton.IsVisible = root != null;
         int awaiting = live.Count(s => AgentTranscript.For(s).Waiting(root) != AgentTranscript.Wait.None);
         AgentsBigText.Text = awaiting > 0 ? Loc.T("test.list.agents.big.waiting", live.Count, awaiting) : Loc.T("test.list.agents.big", live.Count);
+        if (queue.Count > 0) AgentsBigText.Text += " " + Loc.T("test.list.agents.big.queued", queue.Count);
         if (agentsWindow is not { } w) return;
         var held = LockLight.Held(root);
         var snags = LockLight.Snags(root);
@@ -228,23 +229,21 @@ public sealed partial class TestListWindow
             var light = lights.TryGetValue(id, out var l) ? l : LockLight.Free;
             int files = held.Count(h => h.Session.Equals(id, StringComparison.OrdinalIgnoreCase));
             var wait = WaitOf(id);
-            string now = doing[id] = DoingOf(id, wait);
-            string state = light.State switch
-            {
-                LockLight.Level.Free when wait != AgentTranscript.Wait.None => Loc.T("test.list.agents.wait." + wait.ToString().ToLowerInvariant()),
-                LockLight.Level.Free when now != "" => now,
-                LockLight.Level.Free => Loc.T("test.list.agents.free"),
-                LockLight.Level.Waiting => Loc.T("test.list.lock.waiting"),
-                LockLight.Level.Blocked => Loc.T("test.list.lock.blocked"),
-                _ => Loc.T("test.list.lock.clash"),
-            };
-            string status = files > 0 ? $"{Cap(state)} · {AgentMap.Files(files)}" : Cap(state);
+            doing[id] = DoingOf(id, wait);
+            // #305: the node says only how many files the session is editing; its state shows in its color
+            // #315: the model and effort beside the file count
+            string status = AgentMap.Files(files);
+            if (models.TryGetValue(id, out var model)) status += " · " + model;
             return new AgentMap.Session(id, SessionName(data.Items, id), light.State, status, wait != AgentTranscript.Wait.None);
         }).ToList();
-        var files = held.Select(h => new AgentMap.File(h.Path, h.Session, h.Owner)).ToList();
+        // #305: only the files with a conflict (a wait or a clash) get a node, with the line from whoever holds them
+        var files = new List<AgentMap.File>();
         foreach (var n in snags)
-            if (n.Path != "" && !files.Exists(f => f.Path.Equals(n.Path, StringComparison.OrdinalIgnoreCase)))
-                files.Add(new AgentMap.File(n.Path, "", ""));
+        {
+            if (n.Path == "" || files.Exists(f => f.Path.Equals(n.Path, StringComparison.OrdinalIgnoreCase))) continue;
+            int at = held.FindIndex(x => x.Path.Equals(n.Path, StringComparison.OrdinalIgnoreCase));
+            files.Add(at >= 0 ? new AgentMap.File(held[at].Path, held[at].Session, held[at].Owner) : new AgentMap.File(n.Path, "", ""));
+        }
         w.Map.Show(new AgentMap.Snapshot(sessionsOnMap, files, snags));
         w.Count.Text = live.Count.ToString(CultureInfo.CurrentCulture);
 
@@ -471,7 +470,6 @@ public sealed partial class TestListWindow
         return text.Length > BriefText ? text[..(BriefText - 1)] + "…" : text;
     }
 
-    static string Cap(string s) => s.Length == 0 ? s : char.ToUpper(s[0], CultureInfo.CurrentCulture) + s[1..];
 
     string ToName(IReadOnlyList<TestItem> items, string s) => s == "" ? Loc.T("test.list.agents.all") : SessionName(items, s);
 

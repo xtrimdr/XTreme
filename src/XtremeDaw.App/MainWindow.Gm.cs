@@ -46,10 +46,10 @@ public partial class MainWindow
                 if (synth.Font != font || synth.Preset != preset || synth.Tone != tone) synth.Set(font, preset, tone);
             }
         }
-        // the shipped bank always: it is what plays while a track's own is read or missing
-        if (wanted.Count > 0) wanted.Add(GmBank.Default);
+        // the fallback always: it is what plays while a track's own is read or missing
+        if (wanted.Count > 0 && GmBank.FallbackKey is { } fallback) wanted.Add(fallback);
         foreach (var key in wanted)
-            if (!GmBank.IsLoaded(key) && !GmBank.Failed(key) && !gmLoading.Contains(key) && (GmBank.IsDefault(key) || GmBank.Available(key))) _ = LoadGmBank(key);
+            if (!GmBank.IsLoaded(key) && !GmBank.Failed(key) && !gmLoading.Contains(key) && GmBank.Available(key)) _ = LoadGmBank(key);
         GmBank.Keep(wanted);
         foreach (var (id, window) in gmWindows.ToList())
         {
@@ -59,15 +59,15 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// What a track plays: its bank once read; while it is read, what it already had (or the shipped bank); and the shipped
-    /// one when its own isn't on this PC. Null until the shipped one is read.
+    /// What a track plays: its bank once read; while it is read, what it already had (or the fallback); and the fallback
+    /// when its own isn't on this PC. Null until one of them is read, or with no bank on this PC.
     /// </summary>
     static SoundFont? GmFont(GmSettings g, GmSynth synth)
     {
         if (GmBank.IsLoaded(g.Bank)) return GmBank.Load(g.Bank);
-        bool waiting = !GmBank.IsDefault(g.Bank) && GmBank.Available(g.Bank) && !GmBank.Failed(g.Bank);
+        bool waiting = GmBank.Available(g.Bank) && !GmBank.Failed(g.Bank);
         if (waiting && synth.Font != null) return synth.Font;
-        return GmBank.Loaded ? GmBank.Load() : null;
+        return GmBank.Loaded ? GmBank.Load(GmBank.FallbackKey) : null;
     }
 
     readonly Dictionary<string, GmWindow> gmWindows = [];
@@ -116,14 +116,12 @@ public partial class MainWindow
     /// <summary>What the GM window says over the program: the bank loading or missing; null when it plays as chosen.</summary>
     string? GmNotice(GmSettings g)
     {
-        if (GmBank.Failed(null)) return Loc.T("gm.missing");
-        if (!GmBank.IsDefault(g.Bank))
-        {
-            if (!GmBank.Available(g.Bank)) return Loc.T("gm.bank.missing", GmBank.NameOf(g.Bank), GmBank.DefaultName);
-            if (GmBank.Failed(g.Bank)) return Loc.T("gm.bank.broken", GmBank.NameOf(g.Bank), GmBank.DefaultName);
-            if (!GmBank.IsLoaded(g.Bank)) return Loc.T("gm.bank.loading", GmBank.NameOf(g.Bank));
-        }
-        return GmBank.Loaded ? null : Loc.T("gm.loading");
+        if (GmBank.Available(g.Bank) && !GmBank.Failed(g.Bank))
+            return GmBank.IsLoaded(g.Bank) ? null : Loc.T("gm.bank.loading", GmBank.NameOf(g.Bank));
+        if (GmBank.FallbackKey is not { } fallback) return Loc.T("gm.missing");
+        string name = GmBank.NameOf(g.Bank), other = GmBank.NameOf(fallback);
+        if (!GmBank.IsLoaded(fallback)) return Loc.T("gm.bank.loading", other);
+        return GmBank.Available(g.Bank) ? Loc.T("gm.bank.broken", name, other) : Loc.T("gm.bank.missing", name, other);
     }
 
     async Task LoadGmBank(string key)
@@ -133,7 +131,7 @@ public partial class MainWindow
         RefreshGmWindows();
         var font = await Task.Run(() => GmBank.Load(key));
         gmLoading.Remove(key);
-        if (font == null) Toast(GmBank.IsDefault(key) ? Loc.T("gm.missing") : Loc.T("gm.bank.broken", GmBank.NameOf(key), GmBank.DefaultName));
+        if (font == null) Toast(GmBank.FallbackKey is { } other ? Loc.T("gm.bank.broken", GmBank.NameOf(key), GmBank.NameOf(other)) : Loc.T("gm.bank.unreadable", GmBank.NameOf(key)));
         SyncGms();
         InstrumentsChanged();
     }
@@ -150,11 +148,16 @@ public partial class MainWindow
         gms.Clear();
     }
 
-    /// <summary>Loading only while nothing plays yet: a track whose own bank is still being read already sounds with another.</summary>
-    TimelineView.InstrumentState GmState(GmSettings g) => GmBank.Failed(null) ? TimelineView.InstrumentState.Failed
-        : GmBank.Loaded ? TimelineView.InstrumentState.Ready : TimelineView.InstrumentState.Loading;
+    /// <summary>
+    /// Loading only while nothing plays yet: a track whose own bank is still being read already sounds with another. Failed
+    /// with no bank on this PC (silent until one is downloaded).
+    /// </summary>
+    TimelineView.InstrumentState GmState(GmSettings g) =>
+        GmBank.IsLoaded(g.Bank) || GmBank.Loaded ? TimelineView.InstrumentState.Ready
+        : GmBank.None && !(GmBank.Available(g.Bank) && !GmBank.Failed(g.Bank)) ? TimelineView.InstrumentState.Failed
+        : TimelineView.InstrumentState.Loading;
 
-    /// <summary>Sets the bank a MIDI track's GM instrument plays (null = the shipped one): one undo step.</summary>
+    /// <summary>Sets the bank a MIDI track's GM instrument plays (null = GeneralUser GS): one undo step.</summary>
     Task SetGmBank(string trackId, string? bank)
     {
         if (store == null || store.ReadOnly) return Task.CompletedTask;

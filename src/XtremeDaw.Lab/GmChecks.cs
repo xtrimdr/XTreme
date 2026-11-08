@@ -21,7 +21,7 @@ static class GmChecks
     {
         if (a.Positional.FirstOrDefault() == "comprobar") return Check() ? 0 : 1;
         string? bank = a.Get("banco");
-        var font = GmBank.Load(bank) ?? throw new ArgumentException($"No está el banco GM: {GmBank.PathOf(bank) ?? bank} (corré tools\\get-gm.ps1 y compilá, o bajalo en Complementos).");
+        var font = GmBank.Load(bank) ?? throw new ArgumentException($"No está el banco GM: {GmBank.PathOf(bank) ?? bank} (corré tools\\get-gm.ps1, o bajalo en Configuración → Componentes).");
         if (a.Positional.FirstOrDefault() == "presets")
         {
             Console.WriteLine($"{font.Name} · {font.Data.Length / 1_000_000.0:0.0} M muestras");
@@ -368,7 +368,7 @@ static class GmChecks
     /// <summary>With the app's bank there: a piano and a kit sound, quietly enough to leave room.</summary>
     static bool CheckBank()
     {
-        if (GmBank.Load() is not { } font)
+        if (GmBank.LoadOrDefault(null) is not { } font)
         {
             Console.WriteLine($"{"GM: banco de la app",-44} {"no está",14} {"",12}  (tools\\get-gm.ps1)");
             return true;
@@ -401,7 +401,7 @@ static class GmChecks
 
     /// <summary>
     /// The bank a track picks (#212): it keeps one name per bank, a download lives in the app's folder, and one that isn't
-    /// on this PC plays the shipped bank (in the export too) without losing the choice.
+    /// on this PC plays the first downloaded one (in the export too); GeneralUser GS is a download too (#304) without losing the choice.
     /// </summary>
     static bool CheckBankChoice()
     {
@@ -410,23 +410,24 @@ static class GmChecks
         var m = new GmSettings { Bank = " MuseScore " };
         m.Normalize();
         bool names = g.Bank == null && m.Bank == "musescore" && GmBank.PathOf("musescore") == Path.Combine(GmBank.DownloadDir, "MuseScore_General.sf2")
+            && GmBank.PathOf(null) == Path.Combine(GmBank.DownloadDir, "GeneralUser-GS.sf2") && GmBank.Download(null)?.Id == GmBank.Default
             && GmBank.PathOf("otro") == null && GmBank.NameOf(@"D:\Bancos\Mi Piano.sf2") == "Mi Piano";
         bool ok = Row("GM: banco elegido (nombres y lugar)", names ? "ok" : "mal", "ok", names);
         string gone = Path.Combine(Path.GetTempPath(), "xtlab-no-esta.sf2");
         var lost = new GmSettings { Bank = gone, Program = 0 };
         lost.Normalize();
         var rig = lost.Rig();
-        bool fallback = lost.Bank == gone && (GmBank.Load() is not { } shipped ? rig == null : rig?.Font == shipped);
+        bool fallback = lost.Bank == gone && (GmBank.LoadOrDefault(null) is not { } shipped ? rig == null : rig?.Font == shipped);
         ok &= Row("GM: banco que falta suena con el de la app", fallback ? "ok" : "mal", "ok", fallback);
         if (GmBank.Available(null))
         {
             // the shipped file by its path: another bank to the cache, read on its own
-            var own = new GmSettings { Bank = GmBank.Path };
+            var own = new GmSettings { Bank = GmBank.PathOf(null) };
             own.Normalize();
             var r = own.Rig();
             bool read = r != null && r.Font != GmBank.Load() && r.Font.Data.Length == GmBank.Load()!.Data.Length;
             GmBank.Keep([]);
-            ok &= Row("GM: .sf2 propio por su ruta", read ? "leído" : "no", "leído", read && !GmBank.IsLoaded(GmBank.Path) && GmBank.Loaded);
+            ok &= Row("GM: .sf2 propio por su ruta", read ? "leído" : "no", "leído", read && !GmBank.IsLoaded(GmBank.PathOf(null)) && GmBank.Loaded);
         }
         return ok;
     }

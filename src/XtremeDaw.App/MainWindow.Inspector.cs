@@ -186,11 +186,24 @@ public partial class MainWindow
     /// <summary>The room the stripe takes at the left: its inset, itself and the same gap after it.</summary>
     const double InspectorEdgeGutter = 2 * InspectorEdgeInsetX + TrackColorLooks.EdgeW;
 
-    /// <summary>The big EQ's draw loop fed from the selected track: the tap hangs on that track's chain only while the big
-    /// view is open, and the spectrum counts as live (the web's readSpectrum ok) while the transport plays.</summary>
+    /// <summary>The live spectrum's draw loop: it feeds the big EQ window (from the selected track) or, without one, the
+    /// EQ window last brought to the front (from its track, #312). The tap hangs on that track's chain only while one of
+    /// them is open, and the spectrum counts as live (the web's readSpectrum ok) while the transport plays.</summary>
     void TickInspectorSpectrum()
     {
-        var want = eqBig != null && SelectedInspectorClip != null ? sel : null;
+        EqEditor? target = eqBig;
+        LiveTrack? want = null;
+        if (target != null) want = SelectedInspectorClip != null ? sel : null;
+        else if (spectrumWindow is { Eq: { } eq } w)
+        {
+            target = eq;
+            foreach (var t in tracks) if (t.Track.Id == w.Owner.OwnerId) { want = t; break; }
+        }
+        if (spectrumEq != target)
+        {
+            spectrumEq?.PushSpectrum(null, Audio.PlaybackEngine.SampleRate);
+            spectrumEq = target;
+        }
         if (spectrumTrack != want)
         {
             if (spectrumTrack != null) spectrumTrack.Chain.Spectrum = null;
@@ -199,11 +212,14 @@ public partial class MainWindow
             spectrumFrom = spectrumTap.Written;
             if (want != null) want.Chain.Spectrum = spectrumTap;
         }
-        if (eqBig == null) return;
+        if (target == null) return;
         bool live = want != null && engine.Playing && spectrumTap.Written > spectrumFrom;
         if (live) spectrumTap.Read(spectrumBins);
-        eqBig?.PushSpectrum(live ? spectrumBins : null, Audio.PlaybackEngine.SampleRate);
+        target.PushSpectrum(live ? spectrumBins : null, Audio.PlaybackEngine.SampleRate);
     }
+
+    /// <summary>The EQ editor the spectrum went to last tick: one that stops getting it is cleared.</summary>
+    EqEditor? spectrumEq;
     LiveClip? SelectedInspectorClip => sel?.Clips.FirstOrDefault(c => c.Clip.Id == Timeline.SelectedClipId)
         ?? sel?.ShownClip ?? sel?.Clips.FirstOrDefault();
 
@@ -418,8 +434,11 @@ public partial class MainWindow
         takeSections.Children.Add(transpose);
         // the folded inspector's column still shows it, lit while the track is transposed
         sectionLooks["Transponer"] = (FxIcon.Transpose, () => PickTargets().Any(t => t.Track.Transpose != 0));
-        Slider(transpose, SectionTitle("Transponer"), -PitchShifter.MaxSemitones, PitchShifter.MaxSemitones, 1, 0,
-            () => PickLead.Track.Transpose, SetTranspose, TransposeText, Loc.T("insp.transpose.tip"), mixed: () => PicksDiffer(t => t.Track.Transpose), onRelease: true);
+        // a ruler from -24 to +24 with the interval it makes (asked by the user, #316)
+        var transposeScale = new TransposeScale(SectionTitle("Transponer"), IntervalText) { Margin = new Thickness(0, 2, 0, 4) };
+        transposeScale.Changed += v => { if (!syncing) SetTranspose(v); };
+        transpose.Children.Add(transposeScale);
+        inspectorRefresh.Add(() => transposeScale.Set(PickLead.Track.Transpose, PicksDiffer(t => t.Track.Transpose) ? Loc.T("insp.mixed") : null));
         InitTranspose();
         InitClipInspector();
         InitMidiInspector();

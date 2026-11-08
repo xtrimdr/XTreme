@@ -67,6 +67,53 @@ static class MidiSplitChecks
         ok &= CheckUndo();
         ok &= CheckPreview();
         ok &= CheckTrimStart();
+        ok &= CheckJoin();
+        return ok;
+    }
+
+    static bool JoinRow(string name, bool ok)
+    {
+        Console.WriteLine($"{"Unir: " + name,-62} {(ok ? "igual" : "DISTINTO")}");
+        return ok;
+    }
+
+    /// <summary>Joining MIDI clips (#311): one clip per track, sounding exactly as the pieces did, ties and loops included.</summary>
+    static bool CheckJoin()
+    {
+        var p = New(out var t);
+        var c = MidiEditing.AddClip(p, t.Id, 1, 8);
+        MidiEditing.SetNotes(p, c.Id, [Note(60, 1, 4), Note(64, 1, 4), Note(71, 2.75, 0.26), Note(72, 3, 1), Note(76, 7, 4), Note(77, 9, 1)]);
+        string sound = Sound(t);
+        var samples = Rendered(t, 8 * Sr);
+        string right = MidiEditing.Split(p, c.Id, Sec(c, 3));
+        MidiEditing.Split(p, right, Sec(MidiEditing.Find(p, right).Clip, 1));
+        var joined = MidiEditing.Join(p, [.. t.MidiClips!.Select(x => x.Id)]);
+        bool ok = JoinRow("dividido y unido, un clip que suena igual", joined.Count == 1 && t.MidiClips!.Count == 1 && t.MidiClips[0].LengthBeats == 8 && SameSound(t, sound, samples));
+        ok &= JoinRow("las notas atadas vuelven a ser una", t.MidiClips![0].Notes.All(n => !n.Tie) && t.MidiClips[0].Notes.Count(n => n.Pitch == 60) == 1);
+
+        // a looped clip and a gap: the passes are written out, the gap stays silent
+        var q = New(out var u);
+        var a = MidiEditing.AddClip(q, u.Id, 0, 8);
+        MidiEditing.SetNotes(q, a.Id, [Note(60, 0, 1), Note(62, 1, 1)]);
+        a.LoopBeats = 2;
+        var b = MidiEditing.AddClip(q, u.Id, 6, 4);
+        MidiEditing.SetNotes(q, b.Id, [Note(67, 0, 2)]);
+        var other = MidiEditing.AddClip(q, u.Id, 20, 4);
+        string looped = Sound(u);
+        var loopedSamples = Rendered(u, 12 * Sr);
+        MidiEditing.Join(q, [a.Id, b.Id]);
+        ok &= JoinRow("un bucle y un hueco suenan igual", u.MidiClips!.Count == 2 && a.LoopBeats == null && a.LengthBeats == 16 && a.Notes.Count == 9 && SameSound(u, looped, loopedSamples));
+        ok &= JoinRow("lo que no se eligió no se toca", u.MidiClips.Contains(other) && other.AtSec == 20);
+
+        bool Refuses(Action edit)
+        {
+            try { edit(); return false; }
+            catch (ArgumentException) { return true; }
+        }
+        var d = MidiEditing.AddClip(q, u.Id, 30, 4);
+        ok &= JoinRow("un clip solo no se une", Refuses(() => MidiEditing.Join(q, [d.Id])));
+        u.Locked = true;
+        ok &= JoinRow("una pista bloqueada no se une", Refuses(() => MidiEditing.Join(q, [d.Id, other.Id])) && u.MidiClips.Count == 3);
         return ok;
     }
 

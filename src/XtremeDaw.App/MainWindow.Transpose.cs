@@ -139,6 +139,16 @@ public partial class MainWindow
         return tag;
     }
 
+    /// <summary>The interval a transpose makes, as a musician says it: "5ª justa arriba", "Octava + 3ª menor abajo", "Original".</summary>
+    static string IntervalText(int semis)
+    {
+        if (semis == 0) return Loc.T("insp.transpose.none");
+        int a = Math.Abs(semis), octaves = a / 12, rest = a % 12;
+        string oct = octaves == 0 ? "" : octaves == 1 ? Loc.T("insp.interval.octave") : Loc.T("insp.interval.octaves", octaves);
+        string name = rest == 0 ? oct : octaves == 0 ? Loc.T($"insp.interval.{rest}") : Loc.T("insp.interval.plus", oct, Loc.T($"insp.interval.{rest}"));
+        return Loc.T(semis > 0 ? "insp.interval.up" : "insp.interval.down", name);
+    }
+
     static string TransposeText(double v) =>
         v == 0 ? Loc.T("insp.transpose.none") : Loc.T(Math.Abs(v) == 1 ? "insp.transpose.one" : "insp.transpose.value", $"{v:+0.##;-0.##}");
 

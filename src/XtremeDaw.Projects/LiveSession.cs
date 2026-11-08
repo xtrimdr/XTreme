@@ -20,6 +20,17 @@ namespace XtremeDaw.Projects;
 /// <para>The network runs on its own threads and only queues what arrives; the project is touched only in
 /// <see cref="Pump"/> and <see cref="Publish"/>, from the thread that owns it (the UI's). <see cref="Signal"/>
 /// says when there is something to pump.</para>
+/// <para>Who is who (asked by the user): the host gives each person their name in the session and a color
+/// (<see cref="ColorOf"/>, an index the window turns into one of its own), the same on every copy. Where each one is
+/// goes apart from the changes, as <see cref="LivePresence"/> (<see cref="Share"/>, <see cref="Presence"/>), and what
+/// each one is editing is read from their changes (<see cref="EditingBy"/>); none of it is saved. Their changes go
+/// into the undo's list by name (<see cref="UndoManager.Remote"/>), and a media brought in a session says by whom
+/// (<see cref="Media.AddedBy"/>).</para>
+/// <para>Plugins (the user's call): only what everybody has is used. Each copy tells the host which plugins it has
+/// (its <see cref="Catalog"/> and the project's that <see cref="HasPlugin"/>), the host hands everybody's lists to
+/// all, and <see cref="LackingIt"/> says who lacks one: the window doesn't let it be picked, and keeps one already in
+/// the project off on every copy (<see cref="LivePlugins"/>). The link's round trip is measured both ways
+/// (<see cref="LatencyOf"/>), on the network threads.</para>
 /// </summary>
 public sealed class LiveSession : IDisposable
 {
@@ -31,12 +42,37 @@ public sealed class LiveSession : IDisposable
     const int ChunkBytes = 512 << 10;
     /// <summary>Partial downloads end like this in media/ until they're whole.</summary>
     const string PartSuffix = ".descargando";
+    /// <summary>The least time between two presences sent (#291): a playhead goes at most ~15 times a second.</summary>
+    const long PresenceGapMs = 66;
+    /// <summary>How long what someone changed shows as being edited by them after their last change.</summary>
+    public const long EditHoldMs = 1500;
+    /// <summary>How often each link is pinged to measure its round trip.</summary>
+    static readonly TimeSpan PingEvery = TimeSpan.FromSeconds(1);
+    /// <summary>A round trip older than this (no answer since) shows as unknown.</summary>
+    const long LatencyStaleMs = 5000;
 
     sealed class Peer(LiveLink link)
     {
         public readonly LiveLink Link = link;
         public string Name = "";
         public bool Welcomed;
+        /// <summary>The last round trip (Stopwatch ticks) and when it came (Environment.TickCount64); written by the network thread.</summary>
+        long rtt = -1, rttAt;
+        public void Measured(long ticks)
+        {
+            Interlocked.Exchange(ref rtt, ticks);
+            Interlocked.Exchange(ref rttAt, Environment.TickCount64);
+        }
+        /// <summary>The round trip in ms, or null when none came lately.</summary>
+        public double? RttMs
+        {
+            get
+            {
+                long t = Interlocked.Read(ref rtt);
+                if (t < 0 || Environment.TickCount64 - Interlocked.Read(ref rttAt) > LatencyStaleMs) return null;
+                return t * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            }
+        }
         public void Send(LiveMessage m) => _ = SendSafe(m);
         async Task SendSafe(LiveMessage m)
         {
@@ -49,12 +85,17 @@ public sealed class LiveSession : IDisposable
 
     sealed record Hello(string Name, string App, int Format);
     sealed record Refusal(string Reason, string App, int Format);
-    public sealed record Welcome(long Rev, string Host, string Project, List<string> People);
+    /// <summary>What a guest gets on joining; <see cref="You"/> is its name in the session (another if its own was taken).</summary>
+    public sealed record Welcome(long Rev, string Host, string Project, List<string> People, string? You = null, Dictionary<string, int>? Colors = null);
     sealed record EditBody(JsonObject Patch);
     sealed record RevBody(long Rev, string Author, bool Mine, JsonObject Patch);
-    sealed record PeopleBody(List<string> People);
+    sealed record PeopleBody(List<string> People, Dictionary<string, int>? Colors = null);
     sealed record FileRequest(string Media, string Kind, string Name);
     sealed record FileChunk(string Media, string Kind, string Name, long Offset, long Total, bool Last);
+    sealed record HasBody(List<string> Plugins);
+    sealed record PluginsBody(Dictionary<string, List<string>> Has);
+    /// <summary>A ping (<see cref="Back"/> false) or its answer, with the sender's clock (Stopwatch ticks).</summary>
+    sealed record PingBody(long T, bool Back);
 
     public bool IsHost { get; }
     public LiveInvite Invite { get; }
@@ -83,6 +124,64 @@ public sealed class LiveSession : IDisposable
     readonly Dictionary<string, Peer> authors = [];
     readonly Dictionary<string, List<(Peer Who, FileRequest Req)>> waiting = [];
     readonly HashSet<string> asked = [];
+    /// <summary>Each person's color by name: the host's, kept after they leave so they get it back if they return; a guest's, as the host sent it.</summary>
+    Dictionary<string, int> colors = [];
+    /// <summary>Where the others are, by name; never this copy's own.</summary>
+    readonly Dictionary<string, LivePresence> presence = [];
+    /// <summary>What each of the others changed last (tracks, folders, buses, clips) and when (<see cref="Environment.TickCount64"/>).</summary>
+    readonly Dictionary<string, (HashSet<string> Ids, long At)> touched = [];
+    LivePresence? shared;
+    long sharedAt = long.MinValue / 2;
+    /// <summary>The media this copy already has: one that isn't here on <see cref="Publish"/> was brought by this person.</summary>
+    readonly HashSet<string> knownMedia = [];
+    /// <summary>The links to ping, swapped whole (the ping runs on its own thread).</summary>
+    volatile Peer[] pinged = [];
+    /// <summary>The plugins this copy has as last told (sorted keys, joined), so the same list isn't sent again.</summary>
+    string? hasSent;
+    /// <summary>The plugins each of the others has (<see cref="LivePlugins.Key"/>), by name; who hasn't said yet isn't there.</summary>
+    Dictionary<string, HashSet<string>> has = [];
+    /// <summary>The project's plugins as of the last change (their files).</summary>
+    List<string> projectPlugins = [];
+
+    /// <summary>Whether a plugin file is on this computer (<see cref="LivePlugins.Installed"/>); xtlab plays someone without one.</summary>
+    public Func<string, bool> HasPlugin { get; set; } = LivePlugins.Installed;
+
+    /// <summary>The plugin files this copy found (its scan), besides the project's: what the others may pick.</summary>
+    public Func<IEnumerable<string>>? Catalog { get; set; }
+
+    /// <summary>
+    /// Who in the session can't load the plugin at <paramref name="path"/>, this copy included; empty = everybody has it.
+    /// Someone who hasn't told what they have yet isn't counted.
+    /// </summary>
+    public List<string> LackingIt(string path)
+    {
+        var list = new List<string>();
+        string key = LivePlugins.Key(path);
+        foreach (var n in people)
+            if (n == Name ? !HasPlugin(path) : has.TryGetValue(n, out var set) && !set.Contains(key)) list.Add(n);
+        return list;
+    }
+
+    /// <summary>Someone lacks a plugin of the project (so it is off for everybody).</summary>
+    public bool LacksAny(string who)
+    {
+        foreach (var path in projectPlugins)
+            if (who == Name ? !HasPlugin(path) : has.TryGetValue(who, out var set) && !set.Contains(LivePlugins.Key(path))) return true;
+        return false;
+    }
+
+    /// <summary>The host's name (this copy's own when it hosts).</summary>
+    public string HostName => IsHost ? Name : host!.Name;
+
+    /// <summary>
+    /// The round trip of a link in ms: the host sees each guest's; a guest sees its own to the host (asked by its name
+    /// or the host's). Null when it isn't this copy's to know, or no answer came lately.
+    /// </summary>
+    public double? LatencyOf(string who)
+    {
+        if (IsHost) return who == Name ? null : Array.Find(pinged, p => p.Name == who)?.RttMs;
+        return who == Name || who == host!.Name ? host!.RttMs : null;
+    }
 
     LiveSession(bool isHost, LiveInvite invite, string name, string app, TcpListener? listener, Peer? host)
     {
@@ -93,6 +192,106 @@ public sealed class LiveSession : IDisposable
         this.listener = listener;
         this.host = host;
         people = [name];
+        if (isHost) colors[name] = 0;
+    }
+
+    /// <summary>The color index of someone in the session now (0 = the host's), or -1.</summary>
+    public int ColorOf(string who) => people.Contains(who) && colors.TryGetValue(who, out int c) ? c : -1;
+
+    /// <summary>Where each of the others is now, by name.</summary>
+    public IReadOnlyDictionary<string, LivePresence> Presence => presence;
+
+    /// <summary>The ids someone changed in the last <see cref="EditHoldMs"/>: what they are editing.</summary>
+    public IReadOnlyCollection<string> EditingBy(string who) =>
+        touched.TryGetValue(who, out var t) && Environment.TickCount64 - t.At < EditHoldMs ? t.Ids : [];
+
+    /// <summary>Everyone with something being edited now, and its ids.</summary>
+    public IEnumerable<(string Who, IReadOnlyCollection<string> Ids)> Editing()
+    {
+        long now = Environment.TickCount64;
+        foreach (var (who, t) in touched)
+            if (now - t.At < EditHoldMs) yield return (who, t.Ids);
+    }
+
+    /// <summary>Forgets edits older than <see cref="EditHoldMs"/>; true when one went, so its marks go too.</summary>
+    public bool ExpireEditing()
+    {
+        if (touched.Count == 0) return false;
+        long now = Environment.TickCount64;
+        bool any = false;
+        foreach (var (who, t) in touched)
+            if (now - t.At >= EditHoldMs) { touched.Remove(who); any = true; }
+        return any;
+    }
+
+    /// <summary>
+    /// Tells the others where this person is. Call it as often as it changes (a timer): what is the same as last time
+    /// isn't sent, and nothing goes sooner than <see cref="PresenceGapMs"/> after the last one: false when it came
+    /// too soon, to be made again.
+    /// </summary>
+    public bool Share(LivePresence p)
+    {
+        if (Ended) return true;
+        if (p.Who != Name) p = p with { Who = Name };
+        if (p == shared) return true;
+        long now = Environment.TickCount64;
+        if (now - sharedAt < PresenceGapMs) return false;
+        shared = p;
+        sharedAt = now;
+        var m = LiveMessage.Of(LiveKind.Presence, p);
+        if (IsHost) { foreach (var peer in peers) if (peer.Welcomed) peer.Send(m); }
+        else host!.Send(m);
+        return true;
+    }
+
+    /// <summary>A guest forgets the presence of whoever is no longer in.</summary>
+    bool DropGone()
+    {
+        bool any = false;
+        foreach (var who in presence.Keys) if (!people.Contains(who)) any |= presence.Remove(who);
+        foreach (var who in touched.Keys) if (!people.Contains(who)) any |= touched.Remove(who);
+        return any;
+    }
+
+    /// <summary>The ids a change touches: each track, folder or bus changed in itself, and each clip changed or added.</summary>
+    static void Touched(JsonObject patch, HashSet<string> ids)
+    {
+        foreach (var key in (string[])["tracks", "folders", "buses"])
+        {
+            if (patch[key]?["a"] is not JsonObject a) continue;
+            if (a["mod"] is JsonObject mod)
+                foreach (var (id, op) in mod)
+                {
+                    bool own = false;
+                    if (op is JsonObject item)
+                        foreach (var (k, v) in item)
+                        {
+                            if (k is "clips" or "midiClips" && v?["a"] is JsonObject clips) ArrayIds(clips, ids);
+                            else own = true;
+                        }
+                    if (own) ids.Add(id);
+                }
+            if (a["put"] is JsonArray put) PutIds(put, ids);
+        }
+    }
+
+    static void ArrayIds(JsonObject a, HashSet<string> ids)
+    {
+        if (a["mod"] is JsonObject mod) foreach (var (id, _) in mod) ids.Add(id);
+        if (a["put"] is JsonArray put) PutIds(put, ids);
+    }
+
+    static void PutIds(JsonArray put, HashSet<string> ids)
+    {
+        foreach (var n in put)
+            if (n is JsonObject o && o["id"] is JsonValue v && v.TryGetValue<string>(out var id)) ids.Add(id);
+    }
+
+    void Touch(string who, JsonObject patch)
+    {
+        var ids = new HashSet<string>();
+        Touched(patch, ids);
+        if (ids.Count > 0) touched[who] = (ids, Environment.TickCount64);
     }
 
     /// <summary>Starts hosting: listens and makes the invitation. Call <see cref="Start"/> with the project before pumping.</summary>
@@ -114,6 +313,7 @@ public sealed class LiveSession : IDisposable
         if (addresses != null) invite = invite with { Addresses = addresses };
         var s = new LiveSession(true, invite, name, appVersion, l, null);
         _ = s.AcceptLoop(l);
+        _ = s.PingLoop();
         return s;
     }
 
@@ -172,8 +372,10 @@ public sealed class LiveSession : IDisposable
                 if (answer.Kind != LiveKind.Welcome) throw new IOException("Respuesta inesperada");
                 var w = answer.Body<Welcome>();
                 var peer = new Peer(link) { Name = w.Host, Welcomed = true };
-                var s = new LiveSession(false, invite, name, appVersion, null, peer) { rev = w.Rev, people = w.People };
+                var s = new LiveSession(false, invite, w.You ?? name, appVersion, null, peer) { rev = w.Rev, people = w.People, colors = w.Colors ?? [] };
                 _ = s.ReadLoop(peer);
+                s.pinged = [peer];
+                _ = s.PingLoop();
                 return (s, w);
             }
             catch (Exception e) when (e is IOException or SocketException or OperationCanceledException && !ct.IsCancellationRequested)
@@ -198,6 +400,14 @@ public sealed class LiveSession : IDisposable
             {
                 var m = await peer.Link.Receive(stop.Token);
                 if (m.Kind == LiveKind.FileChunk) { ReceiveChunk(m); continue; }
+                if (m.Kind == LiveKind.Ping)
+                {
+                    // answered and measured right here: the queue would add the UI's delay to the link's
+                    var pb = m.Body<PingBody>();
+                    if (pb.Back) peer.Measured(System.Diagnostics.Stopwatch.GetTimestamp() - pb.T);
+                    else peer.Send(LiveMessage.Of(LiveKind.Ping, pb with { Back = true }));
+                    continue;
+                }
                 (m.Kind is LiveKind.Edit or LiveKind.Rev ? edits : inbox).Enqueue(new(peer, m));
                 Signal?.Invoke();
             }
@@ -208,6 +418,21 @@ public sealed class LiveSession : IDisposable
         Signal?.Invoke();
     }
 
+    /// <summary>Pings every link once a second, on its own thread, until the session ends.</summary>
+    async Task PingLoop()
+    {
+        using var timer = new PeriodicTimer(PingEvery);
+        try
+        {
+            do
+            {
+                var m = LiveMessage.Of(LiveKind.Ping, new PingBody(System.Diagnostics.Stopwatch.GetTimestamp(), false));
+                foreach (var p in pinged) p.Send(m);
+            } while (await timer.WaitForNextTickAsync(stop.Token));
+        }
+        catch (OperationCanceledException) { }
+    }
+
     /// <summary>
     /// Ties the session to its project and folder (where files go) and takes its state as the starting point. A guest
     /// asks the host for every file it lacks.
@@ -216,12 +441,20 @@ public sealed class LiveSession : IDisposable
     {
         dir = projectDir;
         view = LiveState.Capture(project);
+        knownMedia.Clear();
+        foreach (var m in project.Media) knownMedia.Add(m.Id);
         if (!IsHost)
             foreach (var m in project.Media) RequestMissing(m);
+        ShareCatalog(project);
     }
 
     /// <summary>Points the session at the project after it was reopened (same folder): nothing is sent.</summary>
-    public void Rebind(Project project) => view = LiveState.Capture(project);
+    public void Rebind(Project project)
+    {
+        view = LiveState.Capture(project);
+        knownMedia.Clear();
+        foreach (var m in project.Media) knownMedia.Add(m.Id);
+    }
 
     void RequestMissing(Media m)
     {
@@ -240,6 +473,44 @@ public sealed class LiveSession : IDisposable
         }
     }
 
+    static string Key(string media, string kind) => $"{media}/{kind}";
+
+    /// <summary>
+    /// Tells the others which plugins this copy has (its catalog and the project's it can load), when that changed: a
+    /// guest to the host, the host to everybody with the others' lists. Call it after a scan too. True when the lists
+    /// this copy knows changed.
+    /// </summary>
+    public bool ShareCatalog(Project project)
+    {
+        projectPlugins = [.. LivePlugins.All(project).Select(p => p.Path).Distinct(StringComparer.OrdinalIgnoreCase)];
+        if (Ended) return false;
+        var keys = new SortedSet<string>(StringComparer.Ordinal);
+        // the scan is believed as it is (no file looked at on every edit); the project's are checked
+        foreach (var path in Catalog?.Invoke() ?? []) keys.Add(LivePlugins.Key(path));
+        foreach (var path in projectPlugins)
+            if (HasPlugin(path)) keys.Add(LivePlugins.Key(path));
+        string now = string.Join('\n', keys);
+        if (now == hasSent) return false;
+        hasSent = now;
+        if (!IsHost)
+        {
+            host!.Send(LiveMessage.Of(LiveKind.Has, new HasBody([.. keys])));
+            return false;
+        }
+        has[Name] = [.. keys];
+        SendPlugins(null);
+        return true;
+    }
+
+    /// <summary>Host: everybody's lists, to everybody (or only to <paramref name="to"/>).</summary>
+    void SendPlugins(Peer? to)
+    {
+        var body = new PluginsBody(has.Where(h => people.Contains(h.Key)).ToDictionary(h => h.Key, h => h.Value.ToList()));
+        var m = LiveMessage.Of(LiveKind.Plugins, body);
+        if (to != null) { to.Send(m); return; }
+        foreach (var p in peers) if (p.Welcomed) p.Send(m);
+    }
+
     /// <summary>Files asked for that haven't arrived.</summary>
     public int Downloading => asked.Count;
 
@@ -250,6 +521,9 @@ public sealed class LiveSession : IDisposable
     public void Publish(Project project)
     {
         if (view == null || Ended) return;
+        // a take or an import that wasn't here was brought by this person; the others keep it with the name
+        foreach (var m in project.Media)
+            if (knownMedia.Add(m.Id)) m.AddedBy ??= Name;
         var now = LiveState.Capture(project);
         var patch = LiveDiff.Diff(view, now);
         view = now;
@@ -264,6 +538,7 @@ public sealed class LiveSession : IDisposable
             pending.Add(patch);
             host!.Send(LiveMessage.Of(LiveKind.Edit, new EditBody(patch)));
         }
+        ShareCatalog(project);
     }
 
     void Broadcast(JsonObject patch, Peer? author, string authorName)
@@ -273,7 +548,14 @@ public sealed class LiveSession : IDisposable
     }
 
     /// <summary>What a <see cref="Pump"/> did.</summary>
-    public sealed record PumpResult(bool Changed, List<string> Arrived, List<Media> NewMedia, bool PeopleChanged, bool Ended, string? LastAuthor);
+    public sealed record PumpResult(bool Changed, List<string> Arrived, List<Media> NewMedia, bool PeopleChanged, bool Ended, string? LastAuthor, bool PresenceChanged = false)
+    {
+        /// <summary>Who came in and who went since the last pump (never this copy itself): the window chimes and says so.</summary>
+        public List<string> Joined { get; init; } = [];
+        public List<string> Left { get; init; } = [];
+        /// <summary>Who has which plugin changed, or the project's plugins did (<see cref="LackingIt"/>).</summary>
+        public bool PluginsChanged { get; init; }
+    }
 
     /// <summary>
     /// Does what arrived, on the project's thread. With <paramref name="applyEdits"/> false (recording, a dialog that
@@ -283,22 +565,72 @@ public sealed class LiveSession : IDisposable
     {
         var arrived = new List<string>();
         var added = new List<Media>();
-        bool changed = false, peopleChanged = false;
+        bool changed = false, peopleChanged = false, presenceChanged = false, pluginsChanged = false;
+        List<string> joined = [], left = [];
         string? author = null;
         bool wasEnded = Ended;
         while (inbox.TryDequeue(out var item))
         {
             if (item.Arrived != null) { arrived.Add(item.Arrived); continue; }
-            if (item.Closed) { peopleChanged |= Left(item.From!); continue; }
+            if (item.Closed)
+            {
+                string who = item.From!.Name;
+                bool gone = Left(item.From!);
+                peopleChanged |= gone;
+                presenceChanged |= gone;
+                if (gone && IsHost)
+                {
+                    left.Add(who);
+                    has.Remove(who);
+                    SendPlugins(null);
+                }
+                pluginsChanged |= gone;
+                continue;
+            }
             var m = item.Message!;
             switch (m.Kind)
             {
-                case LiveKind.Hello when IsHost: peopleChanged |= Greet(item.From!, m.Body<Hello>(), project); break;
-                case LiveKind.Peers when !IsHost: people = m.Body<PeopleBody>().People; peopleChanged = true; break;
+                case LiveKind.Hello when IsHost:
+                    if (!Greet(item.From!, m.Body<Hello>(), project)) break;
+                    peopleChanged = true;
+                    joined.Add(item.From!.Name);
+                    break;
+                case LiveKind.Has when IsHost:
+                    if (!item.From!.Welcomed) break;
+                    has[item.From.Name] = [.. m.Body<HasBody>().Plugins ?? []];
+                    SendPlugins(null);
+                    pluginsChanged = true;
+                    break;
+                case LiveKind.Plugins when !IsHost:
+                    has = (m.Body<PluginsBody>().Has ?? []).Where(h => h.Key != Name).ToDictionary(h => h.Key, h => h.Value.ToHashSet());
+                    pluginsChanged = true;
+                    break;
+                case LiveKind.Peers when !IsHost:
+                    var pb = m.Body<PeopleBody>();
+                    foreach (var n in pb.People) if (n != Name && !people.Contains(n)) joined.Add(n);
+                    foreach (var n in people) if (n != Name && !pb.People.Contains(n)) left.Add(n);
+                    people = pb.People;
+                    if (pb.Colors != null) colors = pb.Colors;
+                    peopleChanged = true;
+                    presenceChanged |= DropGone();
+                    break;
+                case LiveKind.Presence:
+                    var pr = m.Body<LivePresence>();
+                    if (IsHost)
+                    {
+                        if (!item.From!.Welcomed) break;
+                        pr = pr with { Who = item.From.Name };
+                        var fwd = LiveMessage.Of(LiveKind.Presence, pr);
+                        foreach (var p in peers) if (p.Welcomed && p != item.From) p.Send(fwd);
+                    }
+                    if (pr.Who == Name || !people.Contains(pr.Who)) break;
+                    presence[pr.Who] = pr;
+                    presenceChanged = true;
+                    break;
                 case LiveKind.GetFile: Serve(item.From!, m.Body<FileRequest>(), project); break;
                 case LiveKind.Missing:
                     var miss = m.Body<FileRequest>();
-                    string key = miss.Media + "/" + miss.Kind;
+                    string key = Key(miss.Media, miss.Kind);
                     asked.Remove(key);
                     if (IsHost && waiting.Remove(key, out var stuck))
                         foreach (var (who, req) in stuck) who.Send(LiveMessage.Of(LiveKind.Missing, req));
@@ -319,8 +651,14 @@ public sealed class LiveSession : IDisposable
                 {
                     var patch = m.Body<EditBody>().Patch;
                     Publish(project);
-                    added.AddRange(ApplyPatch(project, undo, patch, []));
-                    foreach (var md in added) authors.TryAdd(md.Id, item.From!);
+                    added.AddRange(ApplyPatch(project, undo, patch, [], item.From!.Name));
+                    foreach (var md in added)
+                    {
+                        authors.TryAdd(md.Id, item.From!);
+                        md.AddedBy ??= item.From!.Name;
+                    }
+                    Touch(item.From!.Name, patch);
+                    presenceChanged = true;
                     rev++;
                     Broadcast(patch, item.From, item.From!.Name);
                     changed = true;
@@ -332,23 +670,50 @@ public sealed class LiveSession : IDisposable
                     rev = r.Rev;
                     if (r.Mine) { if (pending.Count > 0) pending.RemoveAt(0); continue; }
                     Publish(project);
-                    added.AddRange(ApplyPatch(project, undo, r.Patch, pending));
+                    added.AddRange(ApplyPatch(project, undo, r.Patch, pending, r.Author));
+                    if (r.Author != Name) Touch(r.Author, r.Patch);
+                    presenceChanged = true;
                     changed = true;
                     author = r.Author;
                 }
             }
         foreach (var md in added) RequestMissing(md);
-        return new(changed, [.. arrived.Select(a => a[..a.IndexOf('/')]).Distinct()], added, peopleChanged, Ended && !wasEnded, author);
+        if (changed && !Ended)
+        {
+            ShareCatalog(project);
+            // the project's plugins may be others now: what is off is looked at again
+            pluginsChanged = true;
+        }
+        if (Ended && presence.Count + touched.Count > 0)
+        {
+            presence.Clear();
+            touched.Clear();
+            presenceChanged = true;
+        }
+        return new(changed, [.. arrived.Select(a => a[..a.IndexOf('/')]).Distinct()], added, peopleChanged, Ended && !wasEnded, author, presenceChanged)
+        {
+            Joined = joined, Left = left, PluginsChanged = pluginsChanged,
+        };
     }
 
-    /// <summary>Someone else's change under this copy's pending ones; the kept undo states get it too.</summary>
-    List<Media> ApplyPatch(Project project, UndoManager? undo, JsonObject patch, List<JsonObject> mine)
+    /// <summary>
+    /// Someone else's change under this copy's pending ones; the kept undo states get it too, and the undo's list a
+    /// step by <paramref name="author"/>.
+    /// </summary>
+    List<Media> ApplyPatch(Project project, UndoManager? undo, JsonObject patch, List<JsonObject> mine, string author)
     {
+        string? before = undo != null ? UndoManager.Capture(project) : null;
         var next = (JsonObject)view!.DeepClone();
         LiveDiff.Apply(next, patch);
         foreach (var p in mine) LiveDiff.Apply(next, p);
         var added = LiveState.Apply(project, next);
+        foreach (var m in added) knownMedia.Add(m.Id);
         undo?.Rebase(LiveDiff.Without(patch, "media"));
+        if (undo != null)
+        {
+            string after = UndoManager.Capture(project);
+            if (after != before) undo.Remote(author, before!, after, id => project.FindMedia(id)?.Name);
+        }
         view = LiveState.Capture(project);
         return added;
     }
@@ -369,9 +734,15 @@ public sealed class LiveSession : IDisposable
         peer.Name = name;
         peers.Add(peer);
         people = [.. people, name];
+        Paint(name);
         peer.Welcomed = true;
-        peer.Send(LiveMessage.Of(LiveKind.Welcome, new Welcome(rev, Name, SharedCopy(project), people)));
+        pinged = [.. peers.Where(p => p.Welcomed)];
+        peer.Send(LiveMessage.Of(LiveKind.Welcome, new Welcome(rev, Name, SharedCopy(project), people, name, NowColors())));
         SendPeople();
+        SendPlugins(peer);
+        // where everybody is, so the newcomer sees it before anyone moves
+        if (shared != null) peer.Send(LiveMessage.Of(LiveKind.Presence, shared));
+        foreach (var pr in presence.Values) peer.Send(LiveMessage.Of(LiveKind.Presence, pr));
         return true;
     }
 
@@ -390,9 +761,32 @@ public sealed class LiveSession : IDisposable
         return o.ToJsonString(ProjectStore.Json);
     }
 
+    /// <summary>
+    /// Host: the color of someone who just joined: the one they had if they were here before and nobody took it,
+    /// otherwise the first free one.
+    /// </summary>
+    void Paint(string name)
+    {
+        var used = new HashSet<int>();
+        foreach (var n in people) if (n != name && colors.TryGetValue(n, out int c)) used.Add(c);
+        if (colors.TryGetValue(name, out int had) && !used.Contains(had)) return;
+        int free = 0;
+        while (used.Contains(free)) free++;
+        colors[name] = free;
+    }
+
+    /// <summary>The colors of who is in now.</summary>
+    Dictionary<string, int> NowColors()
+    {
+        var d = new Dictionary<string, int>();
+        foreach (var n in people) if (colors.TryGetValue(n, out int c)) d[n] = c;
+        return d;
+    }
+
     void SendPeople()
     {
-        foreach (var p in peers) if (p.Welcomed) p.Send(LiveMessage.Of(LiveKind.Peers, new PeopleBody(people)));
+        var colorsNow = NowColors();
+        foreach (var p in peers) if (p.Welcomed) p.Send(LiveMessage.Of(LiveKind.Peers, new PeopleBody(people, colorsNow)));
     }
 
     bool Left(Peer peer)
@@ -404,8 +798,11 @@ public sealed class LiveSession : IDisposable
             return true;
         }
         if (!peers.Remove(peer)) return false;
+        pinged = [.. peers.Where(p => p.Welcomed)];
         foreach (var (id, who) in authors.Where(a => a.Value == peer).ToList()) authors.Remove(id);
         people = [.. people.Where(n => n != peer.Name)];
+        presence.Remove(peer.Name);
+        touched.Remove(peer.Name);
         SendPeople();
         return true;
     }
@@ -487,7 +884,7 @@ public sealed class LiveSession : IDisposable
 
     void Arrived(FileChunk c)
     {
-        inbox.Enqueue(new(null, null, Arrived: c.Media + "/" + c.Kind));
+        inbox.Enqueue(new(null, null, Arrived: Key(c.Media, c.Kind)));
         Signal?.Invoke();
     }
 

@@ -164,6 +164,8 @@ public sealed partial class TestListWindow : Window
     const int AlertTipMax = 3;
     /// <summary>Which agents' sessions are running (#173): a ticket whose session ended is not "Tomado". Read once per fill.</summary>
     AgentSessions sessions = AgentSessions.None;
+    /// <summary>Each session's model and effort (#315), beside its "en curso" and on the Agentes map. Read once per fill.</summary>
+    Dictionary<string, string> models = [];
     string build = TestBuild.CopyName ?? "";
 
     /// <summary>
@@ -559,6 +561,7 @@ public sealed partial class TestListWindow : Window
         replyItem = null;
         inlineBox = null;
         sessions = AgentSessions.Read(root);
+        models = AgentLauncher.Models(root);
         Rows.Children.Clear();
         TicketBar.Child = null;
         TicketBar.IsVisible = false;
@@ -851,7 +854,7 @@ public sealed partial class TestListWindow : Window
             row.Children.Add(TakenBadge(worst, busy));
         }
         // an agent starting on some of them, as each ticket says it (#172)
-        else if (items.Any(Starting)) row.Children.Add(StartingBadge());
+        else if (items.Any(Starting)) row.Children.Add(StartingBadge(items.Where(Starting).All(Queued)));
         var b = new Button
         {
             Classes = { "rowmain" }, Content = row, HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -904,8 +907,12 @@ public sealed partial class TestListWindow : Window
         under.Children.Add(stateChip);
         var marks = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         if (item.Unseen) marks.Children.Add(Badge(Loc.T("test.list.new"), false, Palette.AccentColor, strong: true));
-        if (Starting(item)) marks.Children.Add(StartingBadge());
-        else if (TestList.Held(item, sessions)) marks.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy), tip: TakenTip(LockLight.For(lights, item.TakenBy), item.TakenBy)));
+        if (Starting(item)) marks.Children.Add(StartingBadge(Queued(item)));
+        else if (TestList.Held(item, sessions))
+        {
+            marks.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy), tip: TakenTip(LockLight.For(lights, item.TakenBy), item.TakenBy)));
+            if (ModelLabel(item.TakenBy) is { } model) marks.Children.Add(model);
+        }
         Grid.SetColumn(marks, 1);
         under.Children.Add(marks);
         var when = new TextBlock
@@ -1119,8 +1126,12 @@ public sealed partial class TestListWindow : Window
         info.Children.Add(Badge($"#{item.Id}", true, Palette.AccentColor));
         info.Children.Add(Badge(StateName(item.State), false, StateColor(item.State) ?? TabColor(tab)));
         if (item.Kind is { } k) info.Children.Add(Badge(Loc.T("test.list.kind." + k), false, KindColor(k)));
-        if (Starting(item)) info.Children.Add(StartingBadge());
-        else if (TestList.Held(item, sessions)) info.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy), tip: TakenTip(LockLight.For(lights, item.TakenBy), item.TakenBy)));
+        if (Starting(item)) info.Children.Add(StartingBadge(Queued(item)));
+        else if (TestList.Held(item, sessions))
+        {
+            info.Children.Add(TakenBadge(LockLight.For(lights, item.TakenBy), tip: TakenTip(LockLight.For(lights, item.TakenBy), item.TakenBy)));
+            if (ModelLabel(item.TakenBy) is { } model) info.Children.Add(model);
+        }
         info.Children.Add(TopicBadge(item.Topic));
         if (item.Tries > 0) info.Children.Add(new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = Loc.T("test.list.try", item.Tries), VerticalAlignment = VerticalAlignment.Center });
         if (Creator(item) is { } creator)
@@ -1848,6 +1859,16 @@ public sealed partial class TestListWindow : Window
         return badge;
     }
 
+    /// <summary>The model and effort of the session working on a ticket (#315), in dim mono beside its "en curso"; null when unknown.</summary>
+    TextBlock? ModelLabel(string? takenBy)
+    {
+        string label = AgentLauncher.ModelOf(models, takenBy);
+        if (label == "") return null;
+        var t = new TextBlock { Classes = { "dim", "mono" }, FontSize = 11, Text = label, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(t, Loc.T("test.list.model.tip"));
+        return t;
+    }
+
     static Color LightColor(LockLight.Level level) => level switch
     {
         LockLight.Level.Free => GreenState,
@@ -1947,7 +1968,7 @@ public sealed partial class TestListWindow : Window
     {
         if (root == null || item.State == TestItem.Works) return null;
         string prompt = TicketPrompt(item);
-        if (Starting(item)) return StartingChip();
+        if (Starting(item)) return StartingChip(Queued(item));
         // an agent already on it: no second one (asked by the user, #172); Ver consola brings that one forward
         if (TestList.Held(item, sessions)) return BusyChip();
         var pair = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
@@ -1984,6 +2005,7 @@ public sealed partial class TestListWindow : Window
     /// </summary>
     bool Starting(TestItem item)
     {
+        if (Queued(item)) return true;
         ExpireStarting();
         foreach (var (_, s) in starting)
             if (s.Ids.TryGetValue(item.Id, out var by) && by == item.TakenBy && TestList.Takeable(item)) return true;
@@ -1993,6 +2015,7 @@ public sealed partial class TestListWindow : Window
     /// <summary>Whether <paramref name="prompt"/> was launched a moment ago and some ticket it covers is still waiting for it.</summary>
     bool Starting(string prompt)
     {
+        if (Queued(prompt)) return true;
         ExpireStarting();
         if (!starting.TryGetValue(prompt, out var s)) return false;
         if (s.Ids.Count == 0) return true;
@@ -2005,7 +2028,7 @@ public sealed partial class TestListWindow : Window
     bool Busy(TestItem item) => Starting(item) || TestList.Held(item, sessions);
 
     /// <summary>"Iniciando…" in place of Revisar while its agent starts (#172): disabled, so a second one can't be opened.</summary>
-    static Control StartingChip() => Inert(StartingRow(), Loc.T("test.list.starting.tip"));
+    static Control StartingChip(bool queued = false) => Inert(StartingRow(queued), Loc.T(queued ? "test.list.queued.tip" : "test.list.starting.tip"));
 
     /// <summary>"En curso" in place of Revisar while an agent works on the ticket (asked by the user, #172).</summary>
     static Control BusyChip()
@@ -2028,9 +2051,16 @@ public sealed partial class TestListWindow : Window
     }
 
     /// <summary>The loader ring and "Iniciando…": the same ring as "Tomado", in the faint text.</summary>
-    static StackPanel StartingRow()
+    static StackPanel StartingRow(bool queued = false)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        // #318: one waiting for a place says "En cola", still, with a clock in place of the ring
+        if (queued)
+        {
+            row.Children.Add(new TextBlock { Classes = { "icon" }, Text = "", FontSize = 10, Foreground = Palette.Accent, VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(new TextBlock { Text = Loc.T("test.list.queued"), FontSize = 11, Foreground = Palette.Accent, VerticalAlignment = VerticalAlignment.Center });
+            return row;
+        }
         row.Children.Add(new Avalonia.Controls.Shapes.Arc
         {
             Classes = { "spin" }, Width = 10, Height = 10, StrokeThickness = 1.5, Stroke = Palette.Accent,
@@ -2041,11 +2071,11 @@ public sealed partial class TestListWindow : Window
     }
 
     /// <summary>The "Iniciando…" badge of a ticket whose agent is starting (#172), where "Tomado" goes once it takes it.</summary>
-    static Border StartingBadge()
+    static Border StartingBadge(bool queued = false)
     {
         var c = Palette.AccentColor;
-        var b = new Border { Background = Palette.Alpha(c, BadgeTint), CornerRadius = new(5), Padding = new(6, 1), VerticalAlignment = VerticalAlignment.Center, Child = StartingRow() };
-        ToolTip.SetTip(b, Loc.T("test.list.starting.tip"));
+        var b = new Border { Background = Palette.Alpha(c, BadgeTint), CornerRadius = new(5), Padding = new(6, 1), VerticalAlignment = VerticalAlignment.Center, Child = StartingRow(queued) };
+        ToolTip.SetTip(b, Loc.T(queued ? "test.list.queued.tip" : "test.list.starting.tip"));
         return b;
     }
 
@@ -2194,6 +2224,19 @@ public sealed partial class TestListWindow : Window
             ErrorText.Text = Loc.T("test.list.review.busy.tip");
             return false;
         }
+        // #318: past the most agents at once it waits its turn, and starts when one ends
+        if (ActiveAgents() >= MaxAgents)
+        {
+            Enqueue(prompt, desktop, items);
+            return true;
+        }
+        return Launch(prompt, desktop, items);
+    }
+
+    /// <summary>Starts the agent now, with no turn to wait; false (and the reason shown) if it could not.</summary>
+    bool Launch(string prompt, bool desktop, IReadOnlyList<TestItem> items)
+    {
+        if (root == null) return false;
         // #278: the console opens inside the bench; Windows Terminal only when that cannot start
         string? why = desktop && AgentLauncher.DesktopInstalled ? AgentLauncher.Run(root, prompt, true)
             : RunInBench(prompt) == null ? null : AgentLauncher.Run(root, prompt, false);

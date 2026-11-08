@@ -135,7 +135,8 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   Configuración → Guardado y exportación ("startup" en `config.json`). El proyecto sin lugar vive en
   `%APPDATA%\XTreme\sin-guardar\`, se guarda solo como cualquiera (lo grabado está en disco desde el principio) y no
   entra en recientes; arranca en Solo audio, como todo proyecto nuevo (pedido del usuario: el video se elige). Guardar (atajo, diskette o Archivo) pregunta dónde va
-  (Guardar como) y sigue en esa copia; el chip dice "Sin guardar" mientras tenga algo. Cerrar la ventana con algo
+  (Guardar como) y sigue en esa copia; el chip dice siempre "Sin guardar", nunca Guardando ni Guardado (#306: ese
+  guardado solo cuida lo grabado), y el diskette late mientras tenga algo. Cerrar la ventana con algo
   adentro pregunta (`UnsavedDialog`: Guardar…, o a la Papelera); vacío se borra sin preguntar. Si se abre otro
   proyecto, el sin lugar con algo queda en recientes. Si la app se cae, el próximo arranque en modo vacío lo abre de
   nuevo (`UntitledProjects.Leftover`, con un toast).
@@ -246,11 +247,15 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   archivos de otra sesión), que queda hasta su próxima acción. El tooltip dice qué archivo y quién lo tiene; el
   encabezado del tema muestra el peor. Los avisos entre agentes (#263; `AgentAlert`, que lee los
   `.claude\bloqueos\m-*.json` del hook) llegan como toast ("Aviso para el #60", de quién y qué dice; Ver abre ese
-  ticket; uno de atención queda hasta cerrarlo), y los últimos tres van en el tooltip del "en curso". La ventana
+  ticket; uno de atención queda hasta cerrarlo), y los últimos tres van en el tooltip del "en curso". Al lado del "en
+  curso" y en el nodo de cada sesión del mapa de Agentes va su modelo y nivel ("Opus 5.5 · medio", #315): el hook los lee
+  de la línea de comando de su `claude.exe` y los guarda en su `p-*.json` (`AgentLauncher.Models`); sin `--model` ni
+  `--effort` no se muestra nada. Las consolas del Banco arrancan siempre con Opus 5.5 en nivel medio (`AgentLauncher.ModelArgs`). La ventana
   **Agentes** (pedido del usuario, #269: para destrabar un atasco; #273: un mapa, en una ventana aparte, sin vista en el
   filtro; el botón de personas arriba, con cuántas sesiones hay abiertas; `TestListWindow.Agents.cs`, `AgentsWindow` y
   `AgentMap` en `TestListWindow.AgentMap.cs`) muestra arriba un mapa: cada sesión de Claude abierta (`AgentAlert.Live`)
-  a la izquierda, con su ticket y su semáforo, y a la derecha los archivos, los de cada sesión a su altura
+  a la izquierda, con su ticket, su semáforo y solo cuántos archivos está editando (#305), y a la derecha solo los
+  archivos con conflicto (una cola o un choque, #305), cada uno a la altura de la sesión que lo tiene
   (`LockLight.Held`). Una línea llena en el acento es un archivo que tiene; una amarilla punteada, su lugar en la cola de
   otro archivo, con el puesto y desde hace cuánto; una roja, una cola en círculo o un comando que cambió archivos ajenos
   (`LockLight.Snags`). El mapa se achica solo para entrar entero en su lugar (#286: `AgentMap.FitHeight`, el alto de su
@@ -274,8 +279,8 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   aparece en su conversación al instante (#283: el aviso no llega al transcript), en orden con el resto y con su estado:
   "Enviado · sin leer" hasta que el hook se lo da al agente (marca `read` en su `m-*.json`), y entonces "Leído". Una que recién arranca tiene
   su pestaña con el pedido hasta que el hook dice su sesión (`AgentLauncher.LiveProcesses`). En el mapa, una sesión que
-  trabaja dice qué hace (su última herramienta, "Pensando…" o "Escribiendo…"). Abajo del Banco, un botón grande
-  **Agentes** (pedido del usuario, #278) abre la ventana (en la sesión que te espera, o la primera) y dice cuántas sesiones hay abiertas y cuántas te esperan. Una sesión que espera
+  trabaja dice qué hace (su última herramienta, "Pensando…" o "Escribiendo…"). En el pie del Banco, al lado del tamaño del texto, el
+  botón **Agentes** (pedido del usuario, #278; ahí abajo y chico, #318) abre la ventana (en la sesión que te espera, o la primera) y dice cuántas sesiones hay abiertas, cuántas te esperan y cuántas en cola. Al lado, un slider pone el **máximo de agentes a la vez** (#318, `TestListWindow.Queue.cs`, "benchMaxAgents", 4 por defecto, de 1 a 10): cuentan las sesiones abiertas del proyecto y las consolas del Banco que arrancan; un Revisar que se pasa queda **En cola** (en sus tickets, en lugar de "Iniciando…") y arranca, de a uno, cuando termina otro. La cola vive mientras el Banco está abierto. Una sesión que espera
   al usuario se ve en el acento con su motivo: terminó su turno o la cortaron ("en espera de tu respuesta", del
   transcript), una pregunta abierta ("te hizo una pregunta") o un permiso ("espera tu permiso": el hook `espera`, en
   Notification, deja `u-<sesión>.json`, que cualquier línea nueva del transcript anula). Abajo, al lado de Historial, un slider cambia el tamaño
@@ -338,15 +343,54 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 ## Sesión en vivo (`MainWindow.Live.cs`, `Dialogs/LiveDialog`, #291)
 
 El botón **Sesión en vivo** de la barra del proyecto, a la izquierda de Exportar (`LiveButton`, clase `live`: contorno
-del acento; en una sesión se llena, un punto late y dice "En vivo · 3"; pedido del usuario), y Archivo → **Sesión en
+del acento; en una sesión se llena y dice "En vivo · 3"; pedido del usuario), y Archivo → **Sesión en
 vivo…** abren `LiveDialog` (ancho de formulario, sobre `Scrim`): sin sesión, el nombre (se recuerda, "liveName") y dos
 tarjetas (`Button.livepick`): **Crear sesión** (la abre en el acto y muestra qué pasar) o **Unirme** (el campo del código
 o link y **Unirse**; Volver o Esc regresa a las tarjetas); en una sesión, el código con Copiar código / Copiar link /
 Copiar IP y la IP (solo el anfitrión), quién está y **Finalizar sesión** (anfitrión) o **Salir de la sesión** (invitado).
 El menú dice cuántos hay ("Sesión en vivo (3)…"). Las herramientas del timeline se centran sin pisar este botón (`PlaceTools`). Cada edición (`MarkDirty`) sale 120 ms después (`LiveSoon`); lo que llega entra por
-`RestoreEdit`, como un deshacer, y no arma paso: el deshacer de cada uno saca solo sus pasos (`UndoManager.Rebase`).
+`RestoreEdit`, como un deshacer: el deshacer de cada uno saca solo sus pasos (`UndoManager.Rebase`), y Historial →
+Pasos lista los de los otros entre los propios, con su nombre (`UndoManager.Remote`; no se puede ir a ellos).
 Grabando no sale ni entra nada: espera a que termine la toma. El invitado recibe una copia nueva en la biblioteca;
 el audio llega después y sus clips pasan de offline a sonar (`ReloadArrived`). Abrir otro proyecto o cerrar sale de la sesión.
+
+**La animación del botón** (`Controls/LivePulse.cs`, pedido del usuario, #319): en una sesión, en lugar del ícono, un
+orbe por persona (hasta 8) en su color, unidos por una línea fina con un brillo que la recorre. Cada orbe respira; al
+entrar alguien su orbe aparece con un rebote y una onda, al irse se achica y un anillo se cierra sobre él. Mientras
+alguien toca o edita salen ondas de su orbe (lentas y tenues si solo corre su transporte, rojas y rápidas si graba, con
+un punto rojo adentro), y cada cambio suyo que llega (o que sale de esta copia) o cada vez que elige otra cosa destella
+un anillo. Lo mueve el timer de la presencia (`PresenceStep`, 33 ms); todo sale del reloj al dibujar, sin asignar.
+
+**Quién está dónde** (`MainWindow.Presence.cs`, `TimelineView.Presence.cs`; pedido del usuario): el anfitrión le da a
+cada uno un color fijo (`LiveSession.ColorOf`, `Palette.PersonColor`, 0 = el anfitrión). El nombre de cada uno, en una
+etiqueta de su color, va en la pista y el clip que tiene elegidos, en lo que está editando (leído de sus cambios,
+`LiveSession.EditingBy`: 1,5 s después del último), en la pista donde graba (con el punto rojo) o toca con el teclado; en
+el encabezado de pista va después del nombre y sus etiquetas, en el clip pide lugar a su franja (`ClipBand`), en el
+mixer va arriba de la tira, sin tomar clics. Con varios en lo mismo, "Ana +1". Su cabezal es una línea fina de su color con
+su nombre en la regla, mientras su transporte corre (en la capa que se mueve; sigue solo desde que llegó). Cada copia
+dice dónde está (`LivePresence`, un mensaje aparte) desde un timer de 33 ms, solo si algo cambió y como mucho ~15 por
+segundo; el cabezal, solo si se corrió de donde los otros lo dibujan. No se guarda ni se deshace, y se borra al salir. En
+Historial cada paso lleva el nombre de quién lo hizo y en Biblioteca cada toma el de quién la trajo (`Media.AddedBy`,
+`PersonBadge`): en su color si está en la sesión; fuera de una sesión, los pasos van sin nombre.
+
+**Quién está** (`LiveDialog.Rows`, pedido del usuario): en el diálogo, una fila por persona (caja `Raised`, radio 6) con
+su punto de color, el nombre ("(vos)" la propia), su rol (Anfitrión en acento, Invitado en gris), la latencia del link
+en mono (ida y vuelta, `LiveSession.LatencyOf`: el anfitrión ve la de cada invitado; el invitado, solo la suya; "—" si
+no llegó respuesta en 5 s) y abajo qué hace (Grabando, Tocando, Editando, Reproduciendo o Conectado, y "Le faltan
+plugins"). Se rearma si cambia quién está y cada segundo reescribe latencias y estados. Cada link se mide con un ping
+por segundo, en el hilo de la red. Cuando alguien entra o sale: un toast ("Ana entró a la sesión") y un sonido corto
+(`CueSounds`, dos notas suaves que suben o bajan, hechas en código; suenan por el camino del click,
+`PlaybackEngine.PlayCue`: nunca en una toma ni en la exportación, y no suenan mientras se graba ni sin driver abierto).
+
+**Plugins: solo los que tienen todos** (`MainWindow.LivePlugins.cs`, `LivePlugins`, decisión del usuario, #291): cada
+copia le dice al anfitrión qué plugins tiene (los que encontró al buscar plugins y los del proyecto que puede cargar, por
+su archivo; al entrar sin ninguno encontrado, busca), y el anfitrión les pasa a todos las listas de todos
+(`LiveSession.LackingIt`). Un plugin que a alguien le falta sale apagado en los menús de instrumento y de "+ Efecto",
+con un tooltip que dice quién no lo tiene. Uno que ya está en el proyecto (instrumento o slot VST3 de pista, carpeta o
+bus) queda apagado en todas las copias mientras falte en alguna: su proceso no corre, el efecto deja pasar el sonido y el
+instrumento calla (`LiveTrack.InstrumentOff`, sin el tono de prueba); el chip del instrumento, el inspector y el estado del
+slot dicen "Falta en Ana · apagado". Al instalarlo y buscar plugins, o al irse el que no lo tiene, se prende solo; fuera de
+la sesión todo suena. La exportación usa los plugins de esta PC, como siempre.
 
 ## Avisos y toasts
 
@@ -478,24 +522,23 @@ el audio llega después y sus clips pasan de offline a sonar (`ReloadArrived`). 
   efecto nativo desde su lista (`FxDefs`) más sus opciones (presets, modos), igual en el inspector, la ventanita del
   mixer y la del timeline; la celda de cada perilla (`FxCell`) es la misma que en Mastering. Las perillas se reparten el
   ancho y crecen con él (`FxGrid`). Lo fino del compresor va detrás de "Ajuste fino" y se abre solo en modo manual.
-  **Compacto y full** (pedido del usuario, #140; todos los nativos desde #186, menos el Bombeo, que tiene su panel; el EQ en full lleva el gráfico grande, `EqEditor(big)`): un efecto con
-  `FxDefs.Layout` abre su ventanita compacta (sus perillas principales, `FxLayout.Compact`, sin "Ajuste fino") o full
-  (`SlotFullW`, todo en paneles internos, `FxLayout.Rows`, cada uno tan ancho como su `Weight`; `@graph` y `@key` son el
-  gráfico y el sidechain). El botón de agrandar de su barra lo cambia (`ToggleFull`) y la ventana se rearma a su
-  tamaño, quieta donde está; cada slot recuerda el suyo (`InsertSlot.Full`, en el proyecto, sin deshacer). Mastering lo sigue mostrando
-  como antes (`full: null`).
+  **Siempre full** (pedido del usuario, #140, #186; sin vista compacta desde #312, menos el Bombeo, que tiene su panel; el EQ lleva el gráfico grande, `EqEditor(big)`): un efecto con
+  `FxDefs.Layout` abre su ventana full (`SlotFullW`, todo en paneles internos, `FxLayout.Rows`, cada uno tan ancho como su `Weight`; `@graph` y `@key` son el
+  gráfico y el sidechain). `FxLayout.Compact` e `InsertSlot.Full` quedan en el modelo sin uso en la ventana. **Sin huecos** (#312): cada fila es un `FxRow`
+  (todos sus paneles tan altos como el más alto) y cada panel un `FxFill`: el gráfico (`FxScope`, `CompGraph`) se estira con el alto que sobra y, sin gráfico,
+  las perillas crecen (`KnobGrid.FillMax`, hasta `FxKnobFillW`). Mastering lo sigue mostrando como antes (`full: null`).
   **Identidad de cada efecto** (pedido del usuario, #187): cada nativo lleva el color de su familia (`FxDefs.Family`,
   `Palette.FamilyColor`: violeta dinámica, verde tono, naranja saturación, azul espacio, rosa modulación) en el ícono, la barra
   del título (`FxPanel`), el arco de sus perillas (`Knob.Tint`; el estilo de perilla sigue siendo el de Apariencia) y los
   paneles internos; sus perillas protagonistas (`FxLayout.Hero`) van grandes (`FxHeroW`) en las dos vistas, el resto chicas al
   lado; y su gráfico (`FxScope`, `@scope` en `FxLayout`: la cola de la reverb, los ecos del delay, la onda de la modulación
   que corre mientras suena, la curva de la saturación, cinta, clipper y limitador con una senoidal, la puerta, el campo
-  estéreo y la respuesta de Limpieza, Color y Bandas) arriba en la compacta y en su panel en la full. Dibuja lo que dicen las
+  estéreo y la respuesta de Limpieza, Color y Bandas) en su panel. La reverb, más alta (`FxScopeReverbH`, #312): golpe seco con brillo, corchete del pre-delay, reflexiones tempranas que rebotan de lado a lado, cola con brillo que se apaga y chispas de difusión, L arriba y R abajo según el ancho, más blanca cuanto más brillante el tono. Dibuja lo que dicen las
   perillas, no la señal. Los compresores siguen con su `CompGraph`, el EQ con su editor (en la ventana del efecto, la banda elegida y su dinámica van en perillas, en dos paneles; en la vista completa, lado a lado bajo un gráfico de 220 px: `EqEditor` con `knobs`/`wide`) y el Bombeo con su panel.
   **Las opciones propias de cada efecto van en su panel** (pedido del usuario, #261): en la full, la nota del delay junto a
   sus ecos (`@division`), Estéreo / Ping-pong en Estéreo, Válvula / Cinta en Saturación, el modo del gate en Compuerta
-  (`@mode`) y LIM del compresor en Salida (`@lim`); en la compacta y en Mastering, en una fila bajo los presets
-  (`FxChoiceRow`; la nota del delay en una línea propia). **Cada parámetro con el control que le va** (pedido del usuario, #261): lo continuo, perilla; lo que tiene pocos valores fijos (hasta 8, `FxChoiceMaxSteps`: ratio, ataque y release del compresor de bus, ratio del FET y del VCA, knee, modo del Óptico, Time del Vari-Mu, etapas del phaser, nota del delay con "Libre"), botones a la vista sobre las perillas de su panel (`FxStepChoice`), que siguen su carril como una perilla. Lo de cada panel va en el orden de su lista y centrado en el alto que le da su fila; el panel con
+  (`@mode`) y LIM del compresor en Salida (`@lim`); en Mastering, en una fila bajo los presets
+  (`FxChoiceRow`; la nota del delay en una línea propia). **Cada parámetro con el control que le va** (pedido del usuario, #261): lo continuo, perilla; lo que tiene pocos valores fijos (hasta 8, `FxChoiceMaxSteps`: ratio, ataque y release del compresor de bus, ratio del FET y del VCA, knee, modo del Óptico, Time del Vari-Mu, etapas del phaser, nota del delay con "Libre"), botones a la vista sobre las perillas de su panel (`FxStepChoice`), que siguen su carril como una perilla. Lo de cada panel va en el orden de su lista y llena el alto que le da su fila; el panel con
   gráfico ocupa el ancho entero cuando a su lado quedaba un hueco (delay, reverb, gate, flanger, phaser).
   **Presets** (pedido del usuario, #141): todo efecto nativo lleva arriba su barra de presets (`PresetBar`), una banda
   propia igual en todos (#261): PRESET en el color de la familia, ◀ ▶ para recorrerlos (saltean "Personalizado"), el
@@ -528,7 +571,12 @@ el audio llega después y sus clips pasan de offline a sonar (`ReloadArrived`). 
   usuario): un ícono por sección en el orden en que suena (Mezcla, los slots, los envíos a buses, Transponer), con una rayita entre esos grupos, en acento si está prendida y tenue si no; un clic despliega el inspector y, en un efecto, abre su ventana. Se rearma solo cuando cambia la lista de secciones (`Section` guarda su ícono y su
   ON en `sectionLooks`).
 - **Transponer** (`MainWindow.Transpose.cs`, pedido del usuario): su propia tarjeta, después de Delay, con el ícono
-  `FxIcon.Transpose`. −12 a +12 semitonos en `Track.Transpose`, mismo largo; no tiene ON/OFF: en "Original" (0) la
+  `FxIcon.Transpose`. −24 a +24 semitonos en `Track.Transpose`, mismo largo. Se toca en una escala dibujada
+  (`TransposeScale`, #316): el nombre y el intervalo ("5ª justa arriba", `IntervalText`) a la izquierda, los semitonos
+  grandes a la derecha y una regla con una marca por semitono, las octavas marcadas y la segunda de cada lado
+  sombreada, encendida de 0 al valor. Clic o arrastre, ruedita (Shift: octava) o flechas (RePág/AvPág: octava) solo
+  muestran adónde va (el valor anterior queda como un anillo) y lo fijan al soltar o al quedarse quietas; doble clic o
+  Alt+clic: 0; no tiene ON/OFF: en "Original" (0) la
   tarjeta queda atenuada como un efecto apagado. Se calcula en segundo plano (`PitchShifter`, unos 4 s por 3 min en
   8 núcleos) y queda en `cache/`; los valores probados en la sesión quedan ahí (volver a uno es inmediato) y lo que no
   se usa se borra una vez al abrir el proyecto. Mientras tanto la pista suena como estaba y **se ve que está
@@ -667,7 +715,10 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   de una pista comparten su panel y se ve el de arriba (el último), igual en la preview (`LiveTrack.ShownClip`) y en
   la exportación (`ExportTakeSpec.Panel`).
 - **Arrastrar a otra pista** cambia la pista **y el tiempo** a la vez: el original queda atenuado y un fantasma
-  punteado marca dónde cae (`DrawGhost`). Con Ctrl se intercambia con el clip de abajo.
+  punteado marca dónde cae (`DrawGhost`). Con Ctrl se intercambia con el clip de abajo. Soltado debajo de la última
+  fila, un clip de audio o MIDI va a un canal nuevo de su tipo, al final (pedido del usuario, #309: un carril
+  «Canal nuevo» lo anuncia, `DrawNewTrackLane`; `TrackCopies.MoveToNew`: el MIDI lleva el mismo instrumento, nada más
+  del canal de origen).
 - **Grilla e imán** (pedido del usuario, 2026-11-03: los mismos nombres en todos lados, los de la industria): el imán, la
   grilla de la regla y los del piano roll usan los valores de `Subdivisions` (`SnapChoices`), de mayor a menor y con un
   separador entre grupos: Compás, 1/2 a 1/64; tresillos 1/2T a 1/32T; puntillos 1/2D a 1/16D. Un puntillo no entra
@@ -684,6 +735,8 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
 - **Shift+arrastrar el cuerpo de un clip lo copia** (pedido del usuario, como FL Studio; uno o varios, también a otra
   pista): el gesto es el de mover y al soltar queda una copia donde estaba (`cloning`, `DrawLeftBehind`, el contorno
   punteado; `MidiEditing.LeaveCopies`). Un clip bloqueado no se copia así. Fuera del cuerpo, Shift sigue marcando rangos.
+  **Shift+clic** en un clip, sin moverlo (#311), marca desde el clip elegido hasta ese: todos los que empiezan entre los
+  dos, en las pistas que van de una a otra (`BoxRange`, `shiftAnchor`).
 - **Imán a otros clips**: el selector al lado del imán (`SnapClipsBox`: No / Inicio / Final /
   Ambos, `snapToClips` en config.json, No de entrada) elige qué borde visible del clip que movés se pega a los bordes
   visibles de los otros, a menos de 8 px (`EdgePullPx`, `SnapEdges`). Con los dos imanes la grilla ubica el clip y el borde
@@ -751,7 +804,8 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   paso de deshacer (los clips se atenúan hasta soltar). **Escuchar**, mientras mantenés apretado sobre un clip, toca
   esa pista sola desde ahí (`LiveTrack.ListenSolo`: un solo del motor que no se guarda ni prende la S); al soltar se
   apaga con el fundido y el cabezal vuelve a donde estaba. **Zoom**: clic ×2, Alt+clic ÷2, arrastrar muestra ese tramo.
-  **Mano** arrastra la vista. Cada una tiene su puntero (`Controls/ToolCursors.cs`: el mismo ícono que su botón,
+  **Mano** arrastra la vista. Ctrl+clic en un clip lo suma a la selección o lo saca con cualquier herramienta salvo
+  Rango, Zoom y Mano (#311: con el Lápiz lo tomaba de pincel). Cada una tiene su puntero (`Controls/ToolCursors.cs`: el mismo ícono que su botón,
   blanco con borde negro; la mano sale del trazo de lucide porque Segoe no tiene). Teclas 1 a 9 en el orden de los botones (pedido del usuario, #135).
   **En los carriles de automatización** (#281, `Controls/TimelineView.AutoTools.cs`: un bloque responde a todo como un
   clip) Dividir corta el bloque (`Automations.Split`, con su línea), Borrar lo saca, Escuchar toca la pista del carril,
@@ -774,7 +828,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   prendido solo si otro lo tapa) lo pasa al final: arriba en el timeline, en la vista previa y en la exportación. El
   sonido no cambia: los dos suenan.
 - **Tono de un clip** (pedido del usuario): clic derecho → Tono, un submenú de −12 a +12 semitonos (`PitchItem`), con los
-  que estén en la selección. Se suma al Transponer de la pista hasta ±12 (`Clip.Pitch`, `Clip.SemitonesOn`), no cambia el
+  que estén en la selección. Se suma al Transponer de la pista hasta ±24 (`Clip.Pitch`, `Clip.SemitonesOn`), no cambia el
   largo y no toca el archivo; usa el mismo render y caché (`RefreshTranspose`). El clip lleva "+2" arriba a la derecha
   (`DrawPitchTab`). Un clip bloqueado no cambia de tono.
 - **Invertir** (pedido del usuario: reverse): clic derecho en un clip de audio, con los que estén en la selección; clic
@@ -1474,7 +1528,9 @@ Logic o Studio One). Sigue en PENDIENTES.
   rectángulo, mezclados con tomas): arrastrar uno marcado por el cuerpo los mueve a todos el mismo tiempo, cada uno en
   su pista (`ClipsMoved`, un solo paso de deshacer), y Supr, D y el clic derecho actúan sobre todos
   (`MidiEditing.DuplicateMany`: el bloque entero va justo después de sí mismo), también Ctrl+C / Ctrl+X / Ctrl+V
-  (`ClipClipboard.MidiItems`, pedido del usuario). **Dividir** (herramienta, Alt+X y clic derecho, `MainWindow.MidiSplit.cs`), **Borrar**, **Escuchar** y el rango también actúan sobre ellos.
+  (`ClipClipboard.MidiItems`, pedido del usuario). **Dividir** (herramienta, Alt+X y clic derecho, `MainWindow.MidiSplit.cs`), **Unir clips** (Ctrl+J y clic derecho sobre
+  varios marcados, #311: uno por pista, del primer inicio al último final, con bucles y patrones escritos como notas y
+  los huecos en silencio, `MidiEditing.Join`), **Borrar**, **Escuchar** y el rango también actúan sobre ellos.
   Una división nunca cambia lo que suena (decisión de diseño): la nota que cruza el corte queda en los dos pedazos, la de la derecha con
   `MidiNote.Tie`, que `NoteExpression.JoinTies` une a la que termina justo ahí con el mismo tono, en cualquier clip, antes de armar los eventos: un solo ataque, un solo release, el mismo glide. Sin
   nada que termine ahí es una nota común: al separar los pedazos vuelve a atacar, y una copia (`MidiClip.Copy`) no queda atada. En un clip de patrón, un corte en la raya de una vuelta deja dos clips
@@ -1571,7 +1627,7 @@ Logic o Studio One). Sigue en PENDIENTES.
 - **Sampler** (`MainWindow.Sampler.cs`, `Dialogs/SamplerWindow.cs`, `Track.Sampler`, pedido del usuario, 2026-11-02: lindo, funcional y fácil; un sample por ahora): en NATIVOS de la lista de instrumentos. Es una ventana por pista, en el lugar de la de un plugin ("Abrir la ventana", clic en el chip), flotando sobre la app (`Show(this)`), sin pestañas: todo a la vista. Arriba, nombre y datos del sample, Reverse, Normalizar, Cargar y Quitar, y la onda (`SamplerWaveView`): sin sample es el lugar donde soltar uno (o un clic para elegirlo; entra siempre vinculado, sin preguntar, también en el Granular: decisión del usuario, 2026-11-03); con sample se arrastran las banderas S y E (inicio y fin) y las L del loop, y las voces corren encima en una capa propia. La onda se acerca hasta ver cada muestra (pedido del usuario, 2026-11-02: clavar el loop en el cruce por cero): la ruedita hace zoom donde está el puntero, con un modificador la corre, arrastrar lo vacío la mueve y doble clic la muestra entera; de cerca dibuja el sonido mismo (no los picos), a la escala de lo que se ve, con su línea de cero. Debajo, "Ver todo", "Inicio del loop" y "Fin del loop" (van a esa bandera) e **Imán al cero** (`samplerZero` en config.json, prendido de entrada): toda bandera cae en el cruce hacia arriba más cercano de la suma de los canales, a menos de 50 ms (`SamplerSound.ZeroCrossing`), con Alt libre; prendido, de cerca los cruces se marcan con un círculo. Abajo, cuatro tarjetas: Reproducción (Nota / One shot, loop, Raíz, Detectado, Tono, Voces, Sigue la tecla, Legato, Fino, Glide, Crossfade), Amplificador (`SamplerEnvelopeView`: la envolvente con sus puntos arrastrables, A D S R, Volumen, Paneo, Vel), Filtro (tipo, Corte, Reso, Drive, su envolvente, Env, Tecla, Vel; atenuado sin filtro) y Modulación (forma, Tempo o Libre, LFO, Espera, a Tono, Filtro y Vol, y la envolvente de tono). Al pie, el teclado (`SamplerKeysView`): clic toca, más abajo más fuerte; clic derecho elige la raíz. Se apaga lo que no aplica (el loop en One shot, Legato y Glide con más de una voz, Crossfade salvo en loop hacia adelante, la perilla LFO con Tempo).
   Un archivo entra soltándolo en la ventana, soltándolo en una pista MIDI sin plugin (`InitImport`) o desde la Biblioteca ("Abrir en el sampler", en la pista elegida o en una nueva): se copia o vincula como una importación (`LoadSample`) y queda como `Media`. Un sample nuevo toma la raíz de su nombre ("Piano_C3") o de su sonido, ya afinado, y si no tiene altura y dura menos de 3 s queda en One shot. Detectado (pedido del usuario) muestra la nota y los cents del tramo entre S y E, se mide de nuevo al mover esas banderas (`MeasurePitch`) y dice "afinado" si la raíz y Fino dejan el sonido a menos de 2 cents; si no, el botón Afinar pone raíz y Fino. Mientras la ventana está al frente el teclado MIDI y el virtual tocan esa pista (`samplerFront`, `UpdateKeyTarget`) y los atajos siguen andando (`Shortcut`). Editar es un paso de deshacer por gesto (`EditSampler`, clave por perilla). Corte, Reso, Drive, Env, Volumen, Paneo y Tono, Filtro y Vol del LFO se automatizan: clic derecho en la perilla (`Automate`, que pasa por `AutomateOn`) o el submenú Sampler de Automatización de la pista; mientras suena, la perilla sigue su carril.
 - **Granular** (`MainWindow.Granular.cs`, `Dialogs/GranularWindow.cs`, `Track.Granular`, pedido del usuario, 2026-11-03: un granular como instrumento aparte): en NATIVOS, debajo del Sampler. Una ventana por pista como la del Sampler, sin pestañas. Arriba, nombre y datos del sample, Normalizar, Cargar y Quitar, y la onda (`SamplerWaveView`, la misma): las banderas S y E marcan la parte que recorre el cabezal y el cabezal de cada voz corre encima; "Ver todo" debajo. Cuatro tarjetas: Grano (`GrainShapeView`: la forma de los granos, de la misma tabla que el motor; Sync o Libre, Densidad, Tamaño, Jitter, Forma, Sesgo), Cabezal (Estirar / Recorrer, Posición, Velocidad, Spray, Sync y Reverse, BPM del sample; Velocidad, Sync, Reverse y BPM se apagan en Recorrer), Tono (Raíz, Tono, Voces, Sigue la tecla, Fino, Ancho) y Amplificador (la envolvente, A D S R, Volumen, Paneo, Vel). Al pie, el teclado. Un archivo entra soltándolo en la ventana o desde la Biblioteca ("Abrir en el granular"), por el mismo `LoadSample` del Sampler; un sample nuevo toma la raíz como en el Sampler. Editar es un paso de deshacer por gesto (`EditGranular`). Posición, Velocidad, Densidad, Tamaño, Jitter, Spray, Ancho, Volumen y Paneo se automatizan (clic derecho en la perilla o el submenú Granular de Automatización).
-- **General MIDI** (`MainWindow.Gm.cs`, `Track.Gm`, pedido del usuario, #200): en NATIVOS, debajo del Granular, un submenú con las 16 familias GM (8 programas cada una) y **Batería** con los kits GS; el tilde va en el programa y en el título de su familia. El desplegable del inspector y el chip del timeline cambian el programa (un paso de deshacer, `SetGm`); el tono queda. **Su ventana** (`Dialogs/GmWindow`, Abrir la ventana; rediseñada en #212): arriba, el ícono de la familia (`TrackIcons`), el nombre con número, familia y banco, ◀ ▶ (programa o kit vecino, da la vuelta), el botón de lista, **Banco** y la perilla **Volumen** (`GmSettings.VolumeDb`, −∞ a +12 dB, sobre lo que ya suena, con rampa por bloque; Restablecer no la toca). Debajo, la lista: familias y kits con su ícono a la izquierda, sus programas en mosaicos a la derecha y **Buscar instrumento** (nombre, familia o número). El botón de lista la pliega ("gmCompact" en `config.json`): la ventana se ajusta a su contenido y aparece un desplegable con un submenú por familia. Abajo, **Sonido** con **Restablecer** y tres tarjetas: Envolvente (gráfico `SamplerEnvelopeView` de solo lectura con la envolvente del preset en Do4 con el tono encima; A/D/S/R), Filtro (gráfico `GmFilterView`: la curva para una nota fuerte y, punteada, la más suave; Brillo, Resonancia, Brillo vel.) y Tocar (Sensibilidad, Transponer, Afinación, Glide en dos filas, con el chip Mono en su título); y el teclado. Escribir en la búsqueda no dispara atajos. Las perillas son sobre el banco (`GmTone`): las bipolares se imantan al centro, que es el sonido del banco; cada arrastre es un paso de deshacer (`EditGm`). En la batería Transponer queda deshabilitado; Glide, sin Mono. El banco (`GmBank`, GeneralUser GS en `gm\` junto al exe) se lee una vez en segundo plano; mientras tanto la pista dice que carga, y si falta, lo avisa. Al importar un `.mid` con más de una pista, **Importar MIDI** (`Dialogs/MidiImportDialog`) pregunta cuáles traer (todas marcadas, Todas / Ninguna); cada pista nueva toma su nombre del archivo (sin nombre, el de su instrumento), su programa GM y, en el canal 10, la batería con los nombres GM de sus teclas (`MidiFiles.Import`).
+- **General MIDI** (`MainWindow.Gm.cs`, `Track.Gm`, pedido del usuario, #200): en NATIVOS, debajo del Granular, un submenú con las 16 familias GM (8 programas cada una) y **Batería** con los kits GS; el tilde va en el programa y en el título de su familia. El desplegable del inspector y el chip del timeline cambian el programa (un paso de deshacer, `SetGm`); el tono queda. **Su ventana** (`Dialogs/GmWindow`, Abrir la ventana; rediseñada en #212): arriba, el ícono de la familia (`TrackIcons`), el nombre con número, familia y banco, ◀ ▶ (programa o kit vecino, da la vuelta), el botón de lista, **Banco** y la perilla **Volumen** (`GmSettings.VolumeDb`, −∞ a +12 dB, sobre lo que ya suena, con rampa por bloque; Restablecer no la toca). Debajo, la lista: familias y kits con su ícono a la izquierda, sus programas en mosaicos a la derecha y **Buscar instrumento** (nombre, familia o número). El botón de lista la pliega ("gmCompact" en `config.json`): la ventana se ajusta a su contenido y aparece un desplegable con un submenú por familia. Abajo, **Sonido** con **Restablecer** y tres tarjetas: Envolvente (gráfico `SamplerEnvelopeView` de solo lectura con la envolvente del preset en Do4 con el tono encima; A/D/S/R), Filtro (gráfico `GmFilterView`: la curva para una nota fuerte y, punteada, la más suave; Brillo, Resonancia, Brillo vel.) y Tocar (Sensibilidad, Transponer, Afinación, Glide en dos filas, con el chip Mono en su título); y el teclado. Escribir en la búsqueda no dispara atajos. Las perillas son sobre el banco (`GmTone`): las bipolares se imantan al centro, que es el sonido del banco; cada arrastre es un paso de deshacer (`EditGm`). En la batería Transponer queda deshabilitado; Glide, sin Mono. El banco (`GmBank`; todos se bajan, ninguno viene con la app, #304: en **Banco** cada uno dice "bajar" y su tamaño hasta que está) se lee una vez en segundo plano; mientras tanto la pista dice que carga; sin su banco suena con el primero bajado, y sin ninguno calla y lo avisa. Al importar un `.mid` con más de una pista, **Importar MIDI** (`Dialogs/MidiImportDialog`) pregunta cuáles traer (todas marcadas, Todas / Ninguna); cada pista nueva toma su nombre del archivo (sin nombre, el de su instrumento), su programa GM y, en el canal 10, la batería con los nombres GM de sus teclas (`MidiFiles.Import`).
 - **Instrumento o efecto** (`VstPluginInfo.IsInstrument`): la búsqueda (`xtvsthost --scan`) crea cada plugin y le
   pregunta sus entradas: de audio principales (un sidechain no cuenta) y de notas. Toma notas y no audio → instrumento;
   toma audio y no notas → efecto, diga lo que diga su categoría; las dos cosas (un afinador por MIDI, un synth con

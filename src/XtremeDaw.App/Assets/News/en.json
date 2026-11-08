@@ -1,6 +1,66 @@
 {
   "releases": [
     {
+      "version": "0.9.22",
+      "items": [
+        {
+          "icon": "E9D9",
+          "title": "Effects that show the signal",
+          "text": "While playing, each native effect's graph shows what it does to the signal: the wave going in and out in **Saturation**, **Tape**, **Soft clip** and **Limiter**, the **Gate**'s history against its threshold, a goniometer in **Width**, the spectrum in the tone effects and the real tail in **Reverb** and **Delay**, with how many dB it lifts or cuts."
+        },
+        {
+          "icon": "E716",
+          "title": "Animated live session",
+          "text": "In a session, the **Live session** button shows each participant in their color: they arrive with a ripple, fade out when they leave and pulse while they play, edit or record."
+        },
+        {
+          "icon": "E790",
+          "title": "Theme adjustments",
+          "text": "The theme picker adds **Brightness**, **Contrast**, **Saturation** and **Warmth** over the background and accent. The whole theme is also in **Settings → Appearance**, along with **Tron Legacy**, which leaves the picker."
+        },
+        {
+          "icon": "E8D6",
+          "title": "Transpose from −24 to +24",
+          "text": "**Transpose** reaches two octaves either way and is set on a new scale: it shows the semitones in large type and the interval (\"Perfect 5th up\"). Wheel: one semitone; with Shift, an octave."
+        },
+        {
+          "icon": "E9E9",
+          "title": "Effects always in full",
+          "text": "Every built-in effect's window opens with all its controls, no compact view, and its panels use their whole height: graphs stretch and knobs grow. The reverb shows its space in more detail."
+        },
+        {
+          "icon": "E8B3",
+          "title": "Join MIDI clips",
+          "text": "Mark several MIDI clips and **Ctrl+J** (or right-click → **Join clips**) leaves one per track, sounding the same. **Shift+click** on a clip marks from the selected one to that one."
+        },
+        {
+          "icon": "E716",
+          "title": "Live session: who does what",
+          "text": "Each person has a color: their name shows on the track, clip or mixer strip they're on and their playhead shows on the timeline. Every **History** step shows who made it and every **Library** take who brought it. Only plugins everyone has are used: one someone lacks stays off for everyone until they install it. A notice and a sound tell who joins or leaves, and the list shows each one's role, latency and status."
+        },
+        {
+          "icon": "E896",
+          "title": "General MIDI banks of your choice",
+          "text": "No General MIDI bank comes with the app: **GeneralUser GS**, **FluidR3 GM** and **MuseScore General** download from **Bank**, in the instrument's window, or in **Settings → Components**. The installer is smaller."
+        },
+        {
+          "icon": "E710",
+          "title": "Create a bus from the sends",
+          "text": "With no buses in the project, the sends' **+** offers **New send bus**: it creates one and the track already sends to it."
+        },
+        {
+          "icon": "E8EE",
+          "title": "Loop up to the last clip",
+          "text": "With the loop on and no A–B range, it repeats up to where the last clip ends. With the loop off, playback no longer stops at the end: it goes on until you stop it."
+        },
+        {
+          "icon": "E710",
+          "title": "A clip makes its own track",
+          "text": "Drag an audio or MIDI clip under the last track: **New track** shows up, and dropping it there makes one of the same kind with the clip in it. A MIDI one keeps the same instrument."
+        }
+      ]
+    },
+    {
       "version": "0.9.21",
       "items": [
         {

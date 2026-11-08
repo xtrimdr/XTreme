@@ -313,9 +313,7 @@ código o link, solo con la misma versión. El anfitrión ordena los cambios; en
 Cómo está hecho: `LiveSession`, `LiveDiff`, `LiveState`, `LiveLink`, `LiveInvite` (Projects) y `MainWindow.Live.cs`.
 
 - [ ] El link `xtreme://unirse/…` se copia pero no abre XTreme solo: falta registrar el protocolo (instalador) y leerlo al arrancar.
-- [ ] Ver quién está tocando qué (el nombre sobre la pista o el clip que edita otro).
 - [ ] Sin red directa: hole punching con el código o un servidor de paso (Cloudflare, Oracle Always Free), si hace falta.
-- [ ] Plugins VST3: su estado viaja como dato, pero si el otro no tiene el plugin instalado queda sin sonar.
 - [ ] Si el anfitrión se va, la sesión termina: pasarle el lugar a otro de los que quedan.
 
 ### Separar en stems: antes de publicarlo

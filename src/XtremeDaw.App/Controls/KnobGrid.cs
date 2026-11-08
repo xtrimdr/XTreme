@@ -17,6 +17,15 @@ public sealed class KnobGrid(IReadOnlyList<Knob> knobs, double cellW, double cel
 
     int columns = FreeColumns;
 
+    /// <summary>
+    /// The biggest its knobs grow to when it is given more height than it needs (an effect's full view, #312: a short
+    /// panel beside a tall one fills its height with bigger knobs instead of leaving a hole); 0 = they follow the width only.
+    /// </summary>
+    public double FillMax { get; init; }
+
+    /// <summary>The room a knob keeps from its cell's sides when it grows.</summary>
+    const double FillSide = 14;
+
     int Visible()
     {
         int n = 0;
@@ -46,6 +55,22 @@ public sealed class KnobGrid(IReadOnlyList<Knob> knobs, double cellW, double cel
             ch = Math.Max(ch, c.DesiredSize.Height);
         }
         int rows = (visible + columns - 1) / columns;
+        if (FillMax > size && rows > 0 && !double.IsInfinity(available.Height) && available.Height > ch * rows && !double.IsInfinity(cell))
+        {
+            double grown = Math.Min(Math.Min(FillMax, cell - FillSide), size + available.Height / rows - ch);
+            if (grown > size + 1)
+            {
+                foreach (var k in knobs) k.Resize(Math.Floor(grown));
+                cw = ch = 0;
+                foreach (var c in Children)
+                {
+                    if (!c.IsVisible) continue;
+                    c.Measure(new Size(cell, available.Height));
+                    cw = Math.Max(cw, c.DesiredSize.Width);
+                    ch = Math.Max(ch, c.DesiredSize.Height);
+                }
+            }
+        }
         return new Size(cw * columns, ch * rows);
     }
 

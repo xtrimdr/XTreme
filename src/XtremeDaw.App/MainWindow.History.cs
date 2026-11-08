@@ -311,6 +311,13 @@ public partial class MainWindow
             var offline = Badge(Loc.T("hist.kind.offline"), "");
             ToolTip.SetTip(offline, st.Resolve(m.Video) is { } picture && !File.Exists(picture) ? picture : st.Resolve(m.Audio));
         }
+        // who brought it, when a shared session said so (#291)
+        if (m.AddedBy is { } by)
+        {
+            var person = PersonBadge(by);
+            ToolTip.SetTip(person, Loc.T("hist.addedBy.tip", by));
+            tags.Children.Add(person);
+        }
         if (!inTimeline) Badge(Loc.T("hist.unusedBadge"));
         var info = new TextBlock
         {

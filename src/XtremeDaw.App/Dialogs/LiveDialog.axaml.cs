@@ -1,5 +1,10 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using XtremeDaw.App.Controls;
 using XtremeDaw.Projects;
 
 namespace XtremeDaw.App.Dialogs;
@@ -7,7 +12,8 @@ namespace XtremeDaw.App.Dialogs;
 /// <summary>
 /// The live session (#291), from its button beside Exportar. With no session, two choices: Crear sesión (it starts
 /// right away and shows the code, the link and the address to pass on) or Unirme (a field for the code or link); in
-/// one, what to pass on (the host's), who is in and Finalizar. It only asks: the window (<c>MainWindow.Live.cs</c>)
+/// one, what to pass on (the host's), who is in (one row each: their color, name, role, the link's latency where this
+/// copy measures it, and what they are doing) and Finalizar. It only asks: the window (<c>MainWindow.Live.cs</c>)
 /// does the joining and hosting through <see cref="InviteRequested"/>, <see cref="JoinRequested"/> and
 /// <see cref="LeaveRequested"/>. Esc or a click outside closes it.
 /// </summary>
@@ -85,8 +91,78 @@ public sealed partial class LiveDialog : UserControl
         InviteBox.Text = session.Invite.Code;
         CopyIpButton.IsEnabled = session.Invite.Addresses.Count > 0;
         AddressText.Text = Loc.T("live.addresses", string.Join(" · ", session.Invite.Addresses), session.Invite.Port);
-        PeopleText.Text = string.Join(" · ", session.People);
+        Rows(session);
         StateText.Text = state ?? "";
+    }
+
+    /// <summary>A person's row: the parts that change, kept so a refresh only rewrites their text.</summary>
+    sealed record Row(string Who, Ellipse Dot, TextBlock Latency, TextBlock Status);
+
+    readonly List<Row> rows = [];
+
+    /// <summary>The people list: rebuilt when who is in changes, otherwise only its colors, latencies and states.</summary>
+    void Rows(LiveSession s)
+    {
+        if (!rows.Select(r => r.Who).SequenceEqual(s.People))
+        {
+            rows.Clear();
+            PeopleList.Children.Clear();
+            foreach (var who in s.People) PeopleList.Children.Add(NewRow(s, who));
+        }
+        foreach (var r in rows)
+        {
+            r.Dot.Fill = new SolidColorBrush(Palette.PersonColor(Math.Max(0, s.ColorOf(r.Who))));
+            r.Latency.Text = s.LatencyOf(r.Who) is { } ms ? Loc.T("live.latency", ms < 1 ? "<1" : $"{ms:0}")
+                : s.IsHost && r.Who != s.Name || !s.IsHost && r.Who == s.Name ? "—" : "";
+            r.Status.Text = StatusOf(s, r.Who);
+        }
+    }
+
+    Control NewRow(LiveSession s, string who)
+    {
+        bool me = who == s.Name, isHost = who == s.HostName;
+        var dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        var name = new TextBlock
+        {
+            Text = me ? Loc.T("live.you", who) : who, FontSize = 12.5, FontWeight = FontWeight.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+        };
+        var role = new Border
+        {
+            Background = isHost ? Palette.AccentSoft : Palette.Hover, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1, 6, 2),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0),
+            Child = new TextBlock { Text = Loc.T(isHost ? "live.role.host" : "live.role.guest"), FontSize = 11, Foreground = isHost ? Palette.Accent : Palette.Dim },
+        };
+        var latency = new TextBlock { Classes = { "dim", "mono" }, MinWidth = 56, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+        var status = new TextBlock { FontSize = 11, Foreground = Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(18, 2, 0, 0) };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto") };
+        grid.Children.Add(dot);
+        Grid.SetColumn(name, 1);
+        grid.Children.Add(name);
+        Grid.SetColumn(role, 2);
+        grid.Children.Add(role);
+        Grid.SetColumn(latency, 3);
+        grid.Children.Add(latency);
+        Grid.SetRow(status, 1);
+        Grid.SetColumnSpan(status, 4);
+        grid.Children.Add(status);
+        rows.Add(new(who, dot, latency, status));
+        return new Border
+        {
+            Background = Palette.Raised, BorderBrush = Palette.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 7), Child = grid,
+        };
+    }
+
+    /// <summary>What someone is doing, from where they are (<see cref="LiveSession.Presence"/>), and whether plugins are missing for them.</summary>
+    static string StatusOf(LiveSession s, string who)
+    {
+        string doing = s.Presence.TryGetValue(who, out var pr) && pr.Recording ? Loc.T("live.status.recording")
+            : pr?.Playing != null ? Loc.T("live.status.playing")
+            : s.EditingBy(who).Count > 0 ? Loc.T("live.status.editing")
+            : pr?.Rolling == true ? Loc.T("live.status.rolling")
+            : Loc.T("live.status.connected");
+        return s.LacksAny(who) ? doing + " · " + Loc.T("live.status.lacks") : doing;
     }
 
     /// <summary>A line of trouble (couldn't connect, another version), or null to take it away.</summary>

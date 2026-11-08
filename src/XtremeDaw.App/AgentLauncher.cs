@@ -20,6 +20,11 @@ static class AgentLauncher
     public const string ReviewSkill = "xt_revisar-workbench";
     /// <summary>The desktop app's link: a new Code session with its folder and the message prefilled (never sent).</summary>
     const string DesktopLink = "claude://code/new";
+    /// <summary>
+    /// Model and effort of every console session (decisión del usuario, #315: always Opus, medium effort), passed on the
+    /// command line so neither the account's default nor the host session's variables (dropped) decide it.
+    /// </summary>
+    static readonly string[] ModelArgs = ["--model", "claude-opus-5-5", "--effort", "medium"];
 
     /// <summary>
     /// Whether the desktop app is installed: the Store's package (its data folder, <c>%LOCALAPPDATA%\Packages\Claude_*</c>),
@@ -173,6 +178,7 @@ static class AgentLauncher
         }
         else start.ArgumentList.Add("/k");
         start.ArgumentList.Add(ClaudeExe());
+        foreach (var a in ModelArgs) start.ArgumentList.Add(a);
         // default (least verbose) view on purpose (#148: --verbose was too much; Ctrl+O's screen cannot be the startup view)
         start.ArgumentList.Add(prompt);
         // once Claude ends: if the agent left the file (it finished well), the console goes; otherwise it stays to read
@@ -201,7 +207,7 @@ static class AgentLauncher
         DropHostSession(start);
         string flag = Path.Combine(Path.GetTempPath(), $"xt-cerrar-{Guid.NewGuid():N}");
         start.Environment[CloseVar] = flag;
-        string line = Quote(ClaudeExe()) + " " + Quote(prompt);
+        string line = Quote(ClaudeExe()) + " " + string.Join(' ', ModelArgs) + " " + Quote(prompt);
         try
         {
             return (Terminal.ConsoleSession.Start(prompt, line, root, start.Environment, flag), null);
@@ -299,6 +305,65 @@ static class AgentLauncher
         catch (Exception x) when (x is IOException or UnauthorizedAccessException) { }
         return list;
     }
+
+    /// <summary>
+    /// Each written-down session's model and effort (#315), as the hook read them from its claude.exe's command line,
+    /// in the bench's words ("Opus 5.5 · medio"); a session started without them is left out. A handful of small files.
+    /// </summary>
+    public static Dictionary<string, string> Models(string? root)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (root == null) return map;
+        try
+        {
+            var dir = Path.Combine(root, ".claude", "bloqueos");
+            if (!Directory.Exists(dir)) return map;
+            foreach (var f in Directory.EnumerateFiles(dir, "p-*.json"))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(f));
+                    var e = doc.RootElement;
+                    if (!e.TryGetProperty("session", out var s) || s.GetString() is not { Length: > 0 } session) continue;
+                    string model = e.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String ? ModelName(m.GetString()!) : "";
+                    string effort = e.TryGetProperty("effort", out var x) && x.ValueKind == JsonValueKind.String ? EffortName(x.GetString()!) : "";
+                    string label = model != "" && effort != "" ? $"{model} · {effort}" : model + effort;
+                    if (label != "") map[session] = label;
+                }
+                catch (Exception x) when (x is JsonException or IOException or UnauthorizedAccessException or InvalidOperationException) { }
+            }
+        }
+        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { }
+        return map;
+    }
+
+    /// <summary>The label of the session that took a ticket (<c>agent:1a2b3c4d</c>, its first characters), "" when unknown.</summary>
+    public static string ModelOf(Dictionary<string, string> models, string? takenBy)
+    {
+        const string Agent = "agent:";
+        if (takenBy is not { Length: > 6 } || !takenBy.StartsWith(Agent, StringComparison.Ordinal)) return "";
+        string prefix = takenBy[Agent.Length..];
+        foreach (var (session, label) in models)
+            if (session.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return label;
+        return "";
+    }
+
+    /// <summary>"claude-opus-5-5" → "Opus 5.5", "sonnet" → "Sonnet"; a name it does not know stays as it came.</summary>
+    static string ModelName(string id)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(id, @"^(?:claude-)?(opus|sonnet|haiku|fable)(?:-(\d+)(?:-(\d{1,2}))?)?(?:-\d{8})?(\[1m\])?$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!m.Success) return id;
+        string name = char.ToUpperInvariant(m.Groups[1].Value[0]) + m.Groups[1].Value[1..].ToLowerInvariant();
+        if (m.Groups[2].Success) name += " " + m.Groups[2].Value + (m.Groups[3].Success ? "." + m.Groups[3].Value : "");
+        return m.Groups[4].Success ? name + " 1M" : name;
+    }
+
+    static string EffortName(string effort) => effort.ToLowerInvariant() switch
+    {
+        "low" or "medium" or "high" or "xhigh" or "max" => Loc.T("test.list.effort." + effort.ToLowerInvariant()),
+        _ => effort,
+    };
 
     /// <summary>
     /// Brings forward the window of the Claude process <paramref name="pid"/> (#164): its console (in Windows Terminal,

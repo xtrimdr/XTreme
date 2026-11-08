@@ -258,7 +258,7 @@
           "keywords": "clip drag shorten fade in out edges stretch",
           "intro": "A clip is a piece of a recorded channel. Trimming doesn't touch the file.",
           "steps": [
-            "To **move** it, drag the clip, onto another track too.",
+            "To **move** it, drag the clip, onto another track too. Drop it under the last track and it goes to a **new track** of the same kind (a MIDI one, with the same instrument).",
             "To **trim** it, drag the lower handle on an edge.",
             "To **stretch** it without changing the pitch, hold **Ctrl** and drag that handle. The label shows the speed against the recording. The clip goes quiet until its sound is ready.",
             "To **fade**, drag the upper handle on an edge.",
@@ -277,7 +277,7 @@
           "id": "split-copy",
           "icon": "E8C6",
           "title": "Split, duplicate, copy and paste",
-          "keywords": "cut scissors paste repeat",
+          "keywords": "cut scissors paste repeat join glue merge",
           "intro": "Works on the selected clip or on all the marked ones.",
           "steps": [
             "Put the playhead where you want to cut and split with {key:split}.",
@@ -287,6 +287,7 @@
           ],
           "notes": [
             "On a MIDI clip, a note across the cut stays in both pieces and keeps sounding as one.",
+            "To join MIDI clips, mark them and use {key:joinClips} or right-click → Join clips: one clip per track is left, from the first to the last, sounding the same.",
             "On a pattern, cut on the line between two passes to keep both pieces linked. Anywhere else, the right piece becomes a clip of its own."
           ],
           "see": ["select-many", "tools", "move-trim", "loop-clip"]
@@ -319,6 +320,7 @@
           "steps": [
             "Drag on the empty part of the tracks or of an automation lane: everything the rectangle touches is marked, automation blocks too.",
             "**Ctrl+click** on a clip or a block adds or removes it.",
+            "**Shift+click** on a clip marks from the selected clip to that one, on the tracks between them.",
             "Drag a marked block by its top strip and everything marked moves.",
             "Drag one marked clip by its body and they all move; with Shift a copy of each stays where it was.",
             "Drag an edge, a fade or the loop of a marked clip or block and they all change the same way.",
@@ -502,7 +504,8 @@
             "Add a marker at the playhead with {key:marker}, or double-click the markers strip.",
             "Jump between markers with {key:prevMarker} and {key:nextMarker}.",
             "Drag in the range strip to mark the A–B range. The loop turns on. Double-click that strip to clear it.",
-            "Toggle the loop with {key:loop}. {key:loopIn} and {key:loopOut} set A and B at the playhead."
+            "Toggle the loop with {key:loop}. {key:loopIn} and {key:loopOut} set A and B at the playhead.",
+            "With the loop on and no A–B range, it repeats from the start to where the last clip ends. With the loop off, playback goes on past the end until you stop it."
           ],
           "notes": [
             "To write a chord, double-click the chords strip and type its name. Double-click a chord to rename it. Drag it to move it, or drag an edge to make it longer or shorter; with several marked, they move together.",
@@ -643,7 +646,7 @@
           ],
           "notes": [
             "Built-in effects are grouped: **Dynamics**, **Classic compressors**, **EQ**, **Saturation**, **Modulation**, **Space and stereo** and **Mastering** (the mastering chain stages, in order).",
-            "Clicking a built-in effect opens its window, under where you clicked. Move it by its bar; it stays open while you work and you can have several. Close it with its X or **Esc**. The expand button on its bar shows every control in panels; shrunk, only the main ones. Each effect remembers its size.",
+            "Clicking a built-in effect opens its window, under where you clicked. Move it by its bar; it stays open while you work and you can have several. Close it with its X or **Esc**. It shows every control, in panels.",
             "Each effect has its own identity: what matters goes on big knobs, its graph sits on top (the reverb's tail, the delay's echoes, the modulation's wave, the saturation's curve, the stereo field, the tone effects' response) and it takes its family's color: violet for dynamics, green for tone, orange for drive, blue for space and pink for modulation."
           ],
           "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
@@ -761,7 +764,7 @@
           "id": "comp-presets",
           "icon": "E8FD",
           "title": "Choose a compressor preset",
-          "keywords": "compressor preset vocal bass drums kick snare percussion piano synth strings winds bus mix voice-over podcast categories expand compact full panels threshold ratio attack release",
+          "keywords": "compressor preset vocal bass drums kick snare percussion piano synth strings winds bus mix voice-over podcast categories panels threshold ratio attack release",
           "intro": "The compressor starts at **Default** and has presets by instrument and by use. They apply right away.",
           "steps": [
             "Add a **Compressor** to the track.",
@@ -772,7 +775,7 @@
           ],
           "notes": [
             "**General** works on any sound.",
-            "The compressor's window shows the main controls: **Amount**, **Gain** and **Wet**. The expand button on its bar opens it with every control in panels: **Dynamics**, **Timing**, **Output**, **Built-in EQ** and **Sidechain**. Each compressor remembers its size."
+            "The compressor's window shows every control in panels: **Dynamics**, **Timing**, **Output**, **Built-in EQ** and **Sidechain**."
           ],
           "see": ["add-fx", "guitar-tone", "fx-presets"]
         },
@@ -877,11 +880,11 @@
           "intro": "Changes the pitch without changing the length.",
           "steps": [
             "Select the track.",
-            "In the inspector, drag the **Transpose** value (in the clip section) up or down, use the wheel or double-click to type it: −12 to +12 semitones.",
+            "In the inspector, under **Transpose** (in the clip section), click or drag along the scale, use the wheel (Shift: an octave) or the arrow keys: −24 to +24 semitones. The top shows how far it is transposed and the interval (\"Perfect 5th up\"); double-click goes back to the original.",
             "Wait for the notice: while it computes, the track sounds as before."
           ],
           "notes": [
-            "To change **a single clip**: right-click the clip → **Pitch**. It adds to the track's, up to ±12."
+            "To change **a single clip**: right-click the clip → **Pitch**. It goes from −12 to +12 and adds to the track's, up to ±24."
           ],
           "see": ["tempo"]
         },
@@ -1182,11 +1185,11 @@
             "When you import a **.mid** to new tracks, each track takes the instrument the file asks for; the one on channel 10 takes the drums, with each key named in the piano roll.",
             "If the file has more than one track, **Import MIDI** asks which ones to bring. **All** and **None** tick or clear the list.",
             "Each track takes the name it has in the file; without one, its instrument's.",
-            "**Bank**, at the top right of the window, picks the bank the track plays: **GeneralUser GS** (ships with the app), **FluidR3 GM** or **MuseScore General** (more complete: download them from there or in **Settings → Components**) or **Load .sf2…** for one of your own."
+            "**Bank**, at the top right of the window, picks the bank the track plays: **GeneralUser GS** (the lightest), **FluidR3 GM** or **MuseScore General** (more complete). Download them from there or in **Settings → Components** or **Load .sf2…** for one of your own."
           ],
           "notes": [
-            "Unless you pick another, it plays the **GeneralUser GS** bank, which comes with the app.",
-            "Each track keeps its bank. If it is missing on another PC, it plays GeneralUser GS and the window says so.",
+            "No bank comes with the app: until you download one, the track is silent and says so. Unless you pick another, it plays **GeneralUser GS**.",
+            "Each track keeps its bank. If it is missing on another PC, it plays another of the downloaded ones and the window says so.",
             "Changing the instrument keeps the knobs as they were. Transpose doesn't apply to drums.",
             "Importing onto a selected MIDI track puts the ticked tracks in a single clip. If that track plays the test tone, it takes the first one's instrument."
           ],
@@ -1476,6 +1479,9 @@
             "They pass the **code**, the **link** or the **IP** on (Copy code / Copy link / Copy IP).",
             "Each guest clicks **Live session → Join**, pastes the code and clicks **Join**: they get a copy of the project with its audio, kept in their projects.",
             "Everyone edits everything; each one listens on their own (Play, solos and the audio interface are each one's). What's recorded reaches the others when the take ends.",
+            "Each person has a color. Their name shows on the track and clip they have selected, on what they are editing and on the track they record or play on; their playhead shows as a line in their color while they play. In **History**, each step shows who made it (each person undoes only their own); in **Library**, each take shows who brought it.",
+            "A session only uses plugins everyone has. One someone lacks is greyed out in the menus and says who doesn't have it. If it was already in the project (an instrument or effect on a track, a folder or a bus), it stays off for everyone, showing «Missing on name · off», until everyone has it: the effect lets the sound through and the instrument is silent. Once it's installed, scan for plugins again and it turns on by itself.",
+            "In the session each person shows with their color, role, connection latency and what they're doing. A notice and a short sound tell you when someone joins or leaves.",
             "Everyone needs the same XTreme version and the same network, or a VPN such as Tailscale or ZeroTier. While it lasts, the button says **Live** and how many are in; from there, **End session** (host) or **Leave session** (guest), which keeps your copy as it is."
           ],
           "see": ["share-project"]
@@ -1512,10 +1518,10 @@
           "id": "look",
           "icon": "E771",
           "title": "Change the color and layout",
-          "keywords": "theme accent appearance vertical panels hide full screen knobs style neumorphic faders meters waveforms font typeface numbers digital segment lcd orbitron tron legacy whole theme colors gradient custom surprise reset factory size scale zoom",
+          "keywords": "theme accent appearance vertical panels hide full screen knobs style neumorphic faders meters waveforms font typeface numbers digital segment lcd orbitron tron legacy brightness contrast saturation warmth whole theme colors gradient custom surprise reset factory size scale zoom",
           "intro": "Most of it is in the title bar.",
           "steps": [
-            "The theme picker chooses the accent color and background. **Tron Legacy**, under Whole themes, changes everything at once: background, accent, panels, knobs, faders, meters, waves and numbers; each part can be changed afterwards.",
+            "The theme picker chooses the accent color and background, and adjusts them: **Brightness**, **Contrast**, **Saturation** and **Warmth** (double-click one to reset it to 0). The same is in **Settings → Appearance → General → Theme**, which also has **Tron Legacy**, under Whole themes, that changes everything at once: background, accent, panels, knobs, faders, meters, waves and numbers; each part can be changed afterwards.",
             "The layout button {icon:E80A} switches between **Classic** and **Vertical**.",
             "The two panel buttons hide the sides.",
             "{key:fullScreen} goes full screen.",

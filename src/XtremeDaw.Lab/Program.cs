@@ -178,7 +178,7 @@ static class Program
               samples listar carpeta [--buscar "kick 808"]   los samples de una carpeta, como los busca la Biblioteca
               samples leer archivo         decodifica un archivo y dice cómo (nativo o por FFmpeg)
               transponer archivo.wav [--semitonos 2] [--salida x_+2st.wav]
-                                           cambia el tono sin cambiar el largo (de -12 a +12, admite fracciones = cents),
+                                           cambia el tono sin cambiar el largo (de -24 a +24, admite fracciones = cents),
                                            como el Transponer de la pista: vocoder de fase PVDR + remuestreo sinc
               estirar archivo.wav [--razon 1.25 | --de 120 --a 100] [--semitonos 0] [--salida x_x1.25.wav] [--comprobar]
                                            cambia el largo sin cambiar el tono, como un clip que sigue el tempo

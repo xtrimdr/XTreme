@@ -267,7 +267,22 @@ public partial class MainWindow
             refresh.Add(() => ToolTip.SetTip(item, Tip()));
             items.Add(item);
         }
-        if (items.Count == 0) items.Add(new MenuItem { Header = Loc.T("send.none"), IsEnabled = false, FontSize = 11 });
+        if (items.Count == 0)
+        {
+            items.Add(new MenuItem { Header = Loc.T("send.none"), IsEnabled = false, FontSize = 11 });
+            // with no bus to send to, offer one (#307): a new bus that this strip (or its group) already sends to, in one undo step
+            items.Add(MenuAction(Loc.T("send.newBus"), () =>
+            {
+                BusesEdit(p =>
+                {
+                    if (r.Get() is not { } x || ProjectBuses.Add(p) is not { } b) return false;
+                    ProjectBuses.ShowSend(p, x, b.Id, true);
+                    if (r.Group is { } group) foreach (var other in group()) ProjectBuses.ShowSend(p, other, b.Id, true);
+                    return true;
+                });
+                return Task.CompletedTask;
+            }, enabled: store is { ReadOnly: false }, icon: "", tip: Loc.T("send.newBus.tip")));
+        }
         return items;
     }
 

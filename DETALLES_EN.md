@@ -64,6 +64,8 @@ Spanish by default; the language is chosen in Settings.
 | X | timeline / mixer |
 | Alt+X or Insert / D or Ctrl+B | split the clip at the playhead / duplicate it |
 | Shift+drag a clip | copy it: the original stays where it was |
+| Shift+click a clip | select from the selected clip to that one |
+| Ctrl+J | join the selected MIDI clips (one per track) |
 | Shift+Q | align the selected clips to the grid |
 | Ctrl+A / Ctrl+D | select all clips / clear the selection |
 | Del | remove the clip (or the empty track); with a range, delete it |

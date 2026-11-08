@@ -13,6 +13,8 @@ namespace XtremeDaw.Projects;
 /// coalescing per nonempty key.
 /// Native only: every step keeps when it was made, Historial → Pasos lists them with a name (<see cref="Steps"/>, named
 /// by <see cref="EditSteps"/> from the states on both sides) and a click goes straight to any of them (<see cref="JumpTo"/>).
+/// In a shared session (#291) the others' changes are listed too, by their author (<see cref="Remote"/>), among this
+/// user's steps by time; they are only told, never undone here (each one undoes their own).
 /// </summary>
 public sealed class UndoManager(TimeProvider? timeProvider = null)
 {
@@ -113,8 +115,68 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
         return (states, steps);
     }
 
-    /// <summary>One step of Historial → Pasos: <see cref="Position"/> after it is <see cref="Index"/>; undone ones are not <see cref="Done"/>.</summary>
-    public sealed record Step(int Index, DateTime At, EditSteps.Label Label, bool Done);
+    /// <summary>
+    /// One step of Historial → Pasos: <see cref="Position"/> after it is <see cref="Index"/>; undone ones are not
+    /// <see cref="Done"/>. Someone else's change in a shared session has its <see cref="Author"/> and no place to go
+    /// to (<see cref="Index"/> &lt; 0); this user's own have none.
+    /// </summary>
+    public sealed record Step(int Index, DateTime At, EditSteps.Label Label, bool Done, string? Author = null);
+
+    /// <summary>The others' changes kept for the list (#291), at most <see cref="Capacity"/>; a burst by one person is one step.</summary>
+    readonly List<RemoteStep> others = [];
+
+    /// <summary>
+    /// Someone else's change, named once its burst is over: the open one (the last) keeps its states on both sides until
+    /// then, the closed ones only their name.
+    /// </summary>
+    sealed class RemoteStep(string author, DateTime at, string before, string after, Func<string, string?> mediaName)
+    {
+        public readonly string Author = author;
+        public DateTime At = at;
+        public string? Before = before, After = after;
+        public Func<string, string?>? MediaName = mediaName;
+        public EditSteps.Label? Label;
+        /// <summary>Still taking the next change of its burst.</summary>
+        public bool Open = true;
+
+        public EditSteps.Label Name()
+        {
+            if (Before != null) Label = EditSteps.Describe(Before, After!, MediaName!);
+            if (!Open) (Before, After, MediaName) = (null, null, null);
+            return Label!;
+        }
+    }
+
+    /// <summary>
+    /// A change by <paramref name="author"/> in a shared session (#291), from <paramref name="before"/> to
+    /// <paramref name="after"/> (<see cref="Capture"/> states): listed by <see cref="Steps"/> under their name. Their
+    /// changes that come one after the other within <see cref="RemoteMergeWindow"/>, with no step of this user's in
+    /// between (a fader drag goes as a few a second), make one step.
+    /// </summary>
+    public void Remote(string author, string before, string after, Func<string, string?> mediaName)
+    {
+        var now = clock.GetUtcNow().UtcDateTime;
+        var last = others.Count > 0 ? others[^1] : null;
+        if (last is { Open: true } && last.Author == author && now - last.At < RemoteMergeWindow && (undo.Count == 0 || undo[^1].At <= last.At))
+        {
+            last.After = after;
+            last.At = now;
+        }
+        else
+        {
+            if (last is { Open: true })
+            {
+                last.Open = false;
+                last.Name();
+            }
+            others.Add(new(author, now, before, after, mediaName));
+            if (others.Count > Capacity) others.RemoveAt(0);
+        }
+        Version++;
+    }
+
+    /// <summary>How close two changes by the same person go to be one step in the list.</summary>
+    static readonly TimeSpan RemoteMergeWindow = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Every step kept, oldest first, each with its name (worked out once and remembered while its states stay).
@@ -139,7 +201,17 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
             }
             list.Add(new(i + 1, steps[i].At, label, i < undo.Count));
         }
-        return list;
+        if (others.Count == 0) return list;
+        // the others' changes among these by time
+        var merged = new List<Step>(list.Count + others.Count);
+        int at = 0;
+        foreach (var o in others)
+        {
+            while (at < list.Count && list[at].At <= o.At) merged.Add(list[at++]);
+            merged.Add(new(-1, o.At, o.Name(), true, o.Author));
+        }
+        while (at < list.Count) merged.Add(list[at++]);
+        return merged;
     }
 
     void Apply(Project project, string json)
@@ -222,6 +294,7 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
     public void Clear()
     {
         remote.Clear();
+        others.Clear();
         undo.Clear();
         redo.Clear();
         labels.Clear();

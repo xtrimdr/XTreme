@@ -11,8 +11,11 @@ namespace XtremeDaw.App.Controls;
 /// An effect's own picture (asked by the user, #187: each native effect with an identity, like the compressor's graph):
 /// the reverb's tail, the delay's echoes, a modulation's wave (moving while the song plays), a saturation's curve with a
 /// sine through it, the gate's and the limiter's transfer, the stereo field and the tone effects' response. It draws
-/// what the knobs say, not the signal: the panel puts the effect's values in <see cref="Values"/> on every edit (in the
-/// order of <see cref="Inputs"/>) and calls <see cref="InvalidateVisual"/>. Its color is the effect family's
+/// what the knobs say: the panel puts the effect's values in <see cref="Values"/> on every edit (in the order of
+/// <see cref="Inputs"/>) and calls <see cref="InvalidateVisual"/>. Over it, while the track sounds, what the effect is doing
+/// to the signal (#312, from its <see cref="FxTap"/>): the real wave in and out and a cloud on the transfer curve, the gate's
+/// level history, a goniometer in the stereo field, the output's spectrum under a tone response and the real level behind
+/// a reverb's or delay's picture, with how much it lifts or cuts in dB. Its color is the effect family's
 /// (<see cref="Tint"/>). Nothing in <see cref="Render"/> allocates: short lines with cached pens, fills as 1 px columns.
 /// </summary>
 public sealed class FxScope : Control
@@ -48,18 +51,64 @@ public sealed class FxScope : Control
 
     const int MaxInputs = 6;
 
+    /// <summary>Ticks without a new point after which the live layer goes (the track stopped sounding): about 0.3 s.</summary>
+    const int QuietTicks = 10;
+
+    /// <summary>The running effect's tap (#312: what it is doing to the wave, drawn over what its knobs say); null while the
+    /// slot isn't in the engine.</summary>
+    public Func<FxTap?>? Live { get; init; }
+
+    FxTap? tap;
+    int lastWritten = -1, quiet = QuietTicks;
+    /// <summary>The output's spectrum, for the tone effects only (null for the rest).</summary>
+    readonly float[]? bins;
+    int readTenths = int.MinValue;
+    string readText = "";
+
     public FxScope(string kind, double height)
     {
         Kind = kind;
         Height = height;
         ClipToBounds = true;
-        timer.Tick += (_, _) =>
-        {
-            if (Running?.Invoke() != true) return;
-            phase = (DateTime.UtcNow - born).TotalSeconds;
-            InvalidateVisual();
-        };
+        if (kind is TrackInserts.Clean or TrackInserts.Color or TrackInserts.Bands) bins = new float[SpectrumTap.Bins];
+        timer.Tick += (_, _) => Tick();
     }
+
+    /// <summary>Keeps the tap fed while it shows, redraws when a new point came (or the signal went), and moves a modulation's
+    /// wave while the song plays.</summary>
+    void Tick()
+    {
+        bool redraw = false;
+        tap = Live?.Invoke();
+        if (tap != null)
+        {
+            tap.Watch();
+            if (bins != null && tap.Spectrum == null) tap.Spectrum = new SpectrumTap();
+            int w = tap.Written;
+            if (w != lastWritten)
+            {
+                lastWritten = w;
+                quiet = 0;
+                redraw = true;
+                tap.Spectrum?.Read(bins ?? []);
+            }
+            else if (quiet < QuietTicks && ++quiet == QuietTicks) redraw = true;
+        }
+        else if (quiet < QuietTicks)
+        {
+            quiet = QuietTicks;
+            redraw = true;
+        }
+        if (FxDefs.Family(Kind) == FxFamily.Mod && Running?.Invoke() == true)
+        {
+            phase = (DateTime.UtcNow - born).TotalSeconds;
+            redraw = true;
+        }
+        if (redraw) InvalidateVisual();
+    }
+
+    /// <summary>Whether there is signal to draw: the tap got a point in the last few ticks.</summary>
+    bool Fresh => tap != null && quiet < QuietTicks && tap.Written > 0;
 
     /// <summary>Whether a kind has a picture (the compressors have their graph, the EQ its editor, the pump its panel).</summary>
     public static bool Has(string kind) => Inputs(kind).Length > 0;
@@ -84,7 +133,7 @@ public sealed class FxScope : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        if (FxDefs.Family(Kind) == FxFamily.Mod) timer.Start();
+        timer.Start();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -120,55 +169,122 @@ public sealed class FxScope : Control
 
     // --- the reverb's tail -----------------------------------------------------------------------
 
+    /// <summary>How long the reverb's picture shows at least, and how far past the decay it goes.</summary>
+    const double TailSpanMin = 2.5, TailSpanOver = 1.2;
+
     /// <summary>
-    /// The dry hit, the pre-delay gap, a few early reflections and the tail falling 60 dB over the decay, mirrored like a
-    /// waveform: as wide as the stereo width, as grainy as the tone is bright.
+    /// The reverb as a room seen in time (asked by the user, #312: it should catch the eye): the dry hit, the pre-delay
+    /// gap with its bracket, the early reflections bouncing between the sides and the tail falling 60 dB over the decay,
+    /// glowing where it starts and fading out, with sparks of diffusion in it. The left channel above the line and the
+    /// right under it: alike when narrow, each its own when wide. A bright tone grains it and lights it towards white.
     /// </summary>
     void Tail(DrawingContext ctx, Rect r, double decay, double pre, double tone, double width)
     {
-        double span = Math.Max(2.5, pre + decay * 1.2);
+        decay = Math.Max(0.05, decay);
+        double span = Math.Max(TailSpanMin, pre + decay * TailSpanOver);
         double mid = r.Center.Y, half = r.Height / 2;
-        ctx.DrawLine(GridPen, new Point(r.Left, mid), new Point(r.Right, mid));
         double X(double t) => r.Left + t / span * r.Width;
-        ctx.DrawLine(Stroke(0.5, 2), new Point(r.Left + 1, mid - half * 0.95), new Point(r.Left + 1, mid + half * 0.95));
-        double grain = Math.Clamp((tone - 1000) / 17000, 0, 1);
-        double spread = 0.55 + 0.45 * Math.Clamp(width, 0, 1);
-        var fill = Ink(0.28);
+        double bright = Math.Clamp((tone - 1000) / 17000, 0, 1);
+        double stereo = Math.Clamp(width, 0, 1);
+        double spread = 0.6 + 0.4 * stereo;
+        // the tint lit towards white as the tone opens, in eight steps (a cached brush per step, not per value)
+        double lift = Math.Round(bright * 8) / 8 * 0.45;
+        var hot = Color.FromRgb((byte)(Tint.R + (255 - Tint.R) * lift), (byte)(Tint.G + (255 - Tint.G) * lift), (byte)(Tint.B + (255 - Tint.B) * lift));
+
+        // a grid of seconds, the stronger line every second
+        for (double s = 0.5; s < span; s += 0.5)
+        {
+            double gx = Math.Round(X(s)) + 0.5;
+            ctx.DrawLine(Math.Abs(s - Math.Round(s)) < 0.01 ? AxisPen : GridPen, new Point(gx, r.Top), new Point(gx, r.Bottom));
+        }
+        ctx.DrawLine(GridPen, new Point(r.Left, mid), new Point(r.Right, mid));
+
+        // the tail's body: a column per pixel, each side with its own grain, brightest where it starts
+        static double Hash(double i)
+        {
+            double n = Math.Sin(i * 12.9898) * 43758.5453;
+            return n - Math.Floor(n);
+        }
         int cols = (int)r.Width;
+        double peak = half * 0.88 * spread;
         for (int i = 0; i < cols; i++)
         {
             double t = i / (double)cols * span - pre;
             if (t < 0) continue;
-            double db = -60 * t / Math.Max(0.05, decay);
-            if (db < -60) break;
-            double a = 1 + db / 60;
-            // a fixed hash, not random: the picture doesn't shimmer between redraws
-            double n = Math.Sin(i * 12.9898) * 43758.5453;
-            n -= Math.Floor(n);
-            a *= 1 - grain * 0.45 * n;
-            double h = half * 0.85 * a * spread;
+            double fall = 1 - t / decay;
+            if (fall <= 0) break;
+            double env = fall * fall * (3 - 2 * fall) * 0.35 + fall * 0.65;
+            double nl = Hash(i), nr = Hash(i + 0.37);
+            // narrow: both sides the same; wide: each its own
+            nr = nl + (nr - nl) * stereo;
+            double hl = peak * env * (1 - bright * 0.5 * nl);
+            double hr = peak * env * (1 - bright * 0.5 * nr);
+            double glow = 0.1 + 0.5 * fall * fall;
+            var pen = Palette.Pen(Palette.Alpha(Tint, Math.Round(glow * 32) / 32));
             double x = r.Left + i + 0.5;
-            ctx.DrawLine(Palette.Pen(fill), new Point(x, mid - h), new Point(x, mid + h));
+            ctx.DrawLine(pen, new Point(x, mid - hl), new Point(x, mid + hr));
+            // sparks of diffusion: denser early, lit with the tone
+            if (Hash(i * 1.618) < 0.18 + 0.3 * fall)
+            {
+                double up = Hash(i + 0.71), down = Hash(i + 0.53);
+                var spark = Palette.Pen(Palette.Alpha(hot, Math.Round((0.35 + 0.6 * fall) * 16) / 16), 1.5, PenLineCap.Round);
+                double y1 = mid - hl * up, y2 = mid + hr * down;
+                ctx.DrawLine(spark, new Point(x, y1), new Point(x, y1 - 1));
+                ctx.DrawLine(spark, new Point(x, y2), new Point(x, y2 + 1));
+            }
         }
-        // the envelope over it
-        var pen = Stroke();
+
+        // the envelope, glowing: a wide faint stroke under the line
+        IPen glowWide = Stroke(0.12, 7), glowNear = Stroke(0.28, 3.5), core = Palette.Pen(Palette.Alpha(hot, 1), 1.75, PenLineCap.Round);
         Point prevTop = default, prevBot = default;
         for (int k = 0; k <= Steps; k++)
         {
             double t = k / (double)Steps * decay;
-            double a = 1 - t / Math.Max(0.05, decay);
-            var top = new Point(X(pre + t), mid - half * 0.85 * a * spread);
-            var bot = new Point(top.X, mid + half * 0.85 * a * spread);
-            if (k > 0) { ctx.DrawLine(pen, prevTop, top); ctx.DrawLine(pen, prevBot, bot); }
+            double fall = 1 - t / decay;
+            double env = fall * fall * (3 - 2 * fall) * 0.35 + fall * 0.65;
+            var top = new Point(X(pre + t), mid - peak * env);
+            var bot = new Point(top.X, mid + peak * env);
+            if (k > 0)
+            {
+                ctx.DrawLine(glowWide, prevTop, top); ctx.DrawLine(glowWide, prevBot, bot);
+                ctx.DrawLine(glowNear, prevTop, top); ctx.DrawLine(glowNear, prevBot, bot);
+                ctx.DrawLine(core, prevTop, top); ctx.DrawLine(core, prevBot, bot);
+            }
             prevTop = top; prevBot = bot;
         }
-        // early reflections, right after the pre-delay
-        for (int k = 0; k < 5; k++)
+
+        // the dry hit: white, with its glow
+        double hx = r.Left + 2;
+        ctx.DrawLine(Palette.Pen(Palette.Alpha(Colors.White, 0.12), 7, PenLineCap.Round), new Point(hx, mid - half * 0.92), new Point(hx, mid + half * 0.92));
+        ctx.DrawLine(Palette.Pen(Palette.Alpha(Colors.White, 0.85), 2, PenLineCap.Round), new Point(hx, mid - half * 0.92), new Point(hx, mid + half * 0.92));
+
+        // the pre-delay: a bracket from the hit to where the room answers
+        double px = X(pre);
+        if (px - hx > 6)
         {
-            double t = pre + decay * (0.01 + k * 0.018);
-            double h = half * (0.7 - k * 0.1) * spread;
-            ctx.DrawLine(Stroke(0.85, 1.5), new Point(X(t), mid - h), new Point(X(t), mid + h));
+            double by = r.Top + 3;
+            var dash = Palette.Dashed(Ink(0.7), 1);
+            ctx.DrawLine(dash, new Point(hx + 3, by), new Point(px, by));
+            ctx.DrawLine(Stroke(0.7, 1), new Point(px, by - 2), new Point(px, by + 4));
         }
+
+        // early reflections right after the pre-delay, bouncing from one side to the other as wide as the width
+        var glowRef = Stroke(0.2, 5);
+        for (int k = 0; k < 7; k++)
+        {
+            double t = pre + decay * (0.008 + k * 0.016 * (1 + 0.35 * Hash(k + 3)));
+            double h = half * (0.82 - k * 0.09) * spread;
+            double skew = (k % 2 == 0 ? 1 : -1) * stereo * 0.35;
+            var a = new Point(X(t), mid - Math.Min(half * 0.95, h * (1 + skew)));
+            var b = new Point(a.X, mid + h * (1 - skew));
+            ctx.DrawLine(glowRef, a, b);
+            ctx.DrawLine(Palette.Pen(Palette.Alpha(hot, 0.95 - k * 0.08), 1.5, PenLineCap.Round), a, b);
+        }
+
+        // where it is 60 dB down: the decay's end
+        double ex = X(pre + decay);
+        if (ex < r.Right - 2) ctx.DrawLine(Palette.Dashed(Ink(0.45), 1), new Point(ex, r.Top), new Point(ex, r.Bottom));
+        if (Fresh) LiveLevel(ctx, r, span);
     }
 
     // --- the delay's echoes ----------------------------------------------------------------------
@@ -204,6 +320,7 @@ public sealed class FxScope : Control
             }
             else ctx.DrawLine(pen, new Point(x, mid - half * a), new Point(x, mid + half * a));
         }
+        if (Fresh) LiveLevel(ctx, r, span);
     }
 
     // --- a modulation's wave ---------------------------------------------------------------------
@@ -276,8 +393,16 @@ public sealed class FxScope : Control
             if (i > 0) ctx.DrawLine(pen, prev, p);
             prev = p;
         }
+        bool live = Fresh;
+        if (live) Cloud(ctx, plot, tap!);
         if (wave.Width < 24) return;
         double mid = wave.Center.Y, half = sq / 2;
+        if (live)
+        {
+            Scope(ctx, wave, mid, half, pen);
+            Readout(ctx, wave, tap!);
+            return;
+        }
         int n = Math.Max(Steps, (int)wave.Width);
         var inPen = Palette.Pen(Palette.Alpha(Colors.White, 0.22), 1.25, PenLineCap.Round);
         Point pi = default, po = default;
@@ -289,6 +414,133 @@ public sealed class FxScope : Control
             var a2 = new Point(a1.X, mid - F(s) * half);
             if (i > 0) { ctx.DrawLine(inPen, pi, a1); ctx.DrawLine(pen, po, a2); }
             pi = a1; po = a2;
+        }
+    }
+
+    // --- live layers (#312) ---------------------------------------------------------------------
+
+    /// <summary>Sample pairs the transfer's cloud shows: the last 20 ms.</summary>
+    const int CloudPairs = 256;
+    /// <summary>Sample pairs the scope spans across its width: 85 ms at 48 kHz, a few turns of a low note.</summary>
+    const int ScopePairs = 1024;
+    /// <summary>Level points read for the lift or cut written in a corner: the last 85 ms.</summary>
+    const int ReadPoints = 16;
+    /// <summary>The level range the live histories draw, dBFS.</summary>
+    const double LiveLo = -60;
+
+    static double LevelUnit(double db) => Math.Clamp((db - LiveLo) / -LiveLo, 0, 1);
+
+    /// <summary>
+    /// Each recent sample on the transfer square, what came in against what went out, the newest brightest: where the
+    /// signal lands on the curve now (a sound that only grazes the bend shows it).
+    /// </summary>
+    void Cloud(DrawingContext ctx, Rect plot, FxTap t)
+    {
+        int end = t.PairsWritten, from = Math.Max(0, end - CloudPairs);
+        double sq = plot.Width;
+        for (int i = from; i < end; i++)
+        {
+            t.ReadPair(i, out float x, out float y, out _, out _);
+            double age = (end - i) / (double)CloudPairs;
+            var pen = Palette.Pen(Palette.Alpha(Colors.White, age < 0.25 ? 0.9 : age < 0.6 ? 0.5 : 0.25), 2.5, PenLineCap.Round);
+            var p = new Point(plot.Left + (Math.Clamp(x, -1, 1) + 1) / 2 * sq, plot.Center.Y - Math.Clamp(y, -1, 1) * sq / 2);
+            ctx.DrawLine(pen, p, new Point(p.X + 0.25, p.Y));
+        }
+    }
+
+    /// <summary>
+    /// An oscilloscope of the last <see cref="ScopePairs"/> samples at full scale: what came in, faint, and what goes out
+    /// in the family's color, so a clipped or bent top can be seen against the ceiling's lines.
+    /// </summary>
+    void Scope(DrawingContext ctx, Rect wave, double mid, double half, IPen outPen)
+    {
+        var t = tap!;
+        int end = t.PairsWritten, cols = Math.Max(1, (int)wave.Width);
+        int from = Math.Max(0, end - ScopePairs);
+        double per = (end - from) / (double)cols;
+        if (per <= 0) return;
+        var inPen = Palette.Pen(Palette.Alpha(Colors.White, 0.28), 1.25, PenLineCap.Round);
+        ctx.DrawLine(GridPen, new Point(wave.Left, mid), new Point(wave.Right, mid));
+        for (int c = 0; c < cols; c++)
+        {
+            int a = from + (int)(c * per), b = Math.Max(a + 1, from + (int)((c + 1) * per));
+            float inLo = 1, inHi = -1, outLo = 1, outHi = -1;
+            for (int i = a; i < b && i < end; i++)
+            {
+                t.ReadPair(i, out float x, out float y, out _, out _);
+                if (x < inLo) inLo = x;
+                if (x > inHi) inHi = x;
+                if (y < outLo) outLo = y;
+                if (y > outHi) outHi = y;
+            }
+            if (inHi < inLo) continue;
+            double px = wave.Left + c + 0.5;
+            ctx.DrawLine(inPen, new Point(px, mid - Math.Clamp(inHi, -1.2, 1.2) * half), new Point(px, mid - Math.Clamp(inLo, -1.2, 1.2) * half + 0.5));
+            ctx.DrawLine(outPen, new Point(px, mid - Math.Clamp(outHi, -1.2, 1.2) * half), new Point(px, mid - Math.Clamp(outLo, -1.2, 1.2) * half + 0.5));
+        }
+    }
+
+    /// <summary>
+    /// How much the effect lifts (+) or cuts (−) the loudest of the last few points, in the corner of <paramref name="r"/>;
+    /// nothing while what comes in is under the floor. Its text is rebuilt only when its tenth changes.
+    /// </summary>
+    void Readout(DrawingContext ctx, Rect r, FxTap t)
+    {
+        int end = t.Written;
+        float inMax = FxTap.Floor, outMax = FxTap.Floor;
+        for (int i = Math.Max(0, end - ReadPoints); i < end; i++)
+        {
+            t.ReadPoint(i, out float a, out float b);
+            if (a > inMax) inMax = a;
+            if (b > outMax) outMax = b;
+        }
+        if (inMax <= LiveLo) return;
+        int tenths = (int)Math.Round(Math.Clamp(outMax - inMax, -99, 99) * 10);
+        if (tenths != readTenths)
+        {
+            readTenths = tenths;
+            readText = tenths == 0 ? "0 dB" : (tenths / 10.0).ToString("+0.0;-0.0") + " dB";
+        }
+        var text = Palette.Text(readText, 11, Palette.Dim, Palette.Mono);
+        ctx.DrawText(text, new Point(r.Right - text.Width - 2, r.Bottom - text.Height));
+    }
+
+    /// <summary>
+    /// The real level of the last seconds behind a reverb's or a delay's picture, the newest at the right: what goes out as
+    /// a faint band around the middle (its tail as it really falls) and what came in as a line on top of it.
+    /// </summary>
+    void LiveLevel(DrawingContext ctx, Rect r, double span)
+    {
+        var t = tap!;
+        double sec = Math.Min(span, FxTap.Points * t.PointSec * 0.95);
+        double x0 = r.Right - sec / span * r.Width;
+        int cols = Math.Max(1, (int)((r.Right - x0) / 2));
+        int end = t.Written;
+        double per = sec / t.PointSec / cols;
+        double mid = r.Center.Y, half = r.Height / 2 * 0.95;
+        var outPen = Palette.Pen(Palette.Alpha(Colors.White, 0.16), 2);
+        var inPen = Palette.Pen(Palette.Alpha(Colors.White, 0.6), 1.25, PenLineCap.Round);
+        Point prev = default;
+        bool started = false;
+        for (int c = 0; c < cols; c++)
+        {
+            int to = end - (int)Math.Round((cols - 1 - c) * per);
+            int from = Math.Max(0, to - Math.Max(1, (int)Math.Round(per)));
+            if (to <= from) { started = false; continue; }
+            float inMax = FxTap.Floor, outMax = FxTap.Floor;
+            for (int i = from; i < to; i++)
+            {
+                t.ReadPoint(i, out float a, out float b);
+                if (a > inMax) inMax = a;
+                if (b > outMax) outMax = b;
+            }
+            double x = x0 + c * 2 + 1;
+            double hOut = LevelUnit(outMax) * half;
+            if (hOut > 0.5) ctx.DrawLine(outPen, new Point(x, mid - hOut), new Point(x, mid + hOut));
+            var p = new Point(x, mid - LevelUnit(inMax) * half);
+            if (started) ctx.DrawLine(inPen, prev, p);
+            prev = p;
+            started = true;
         }
     }
 
@@ -345,9 +597,30 @@ public sealed class FxScope : Control
             prev = p;
         }
         var wave = new Rect(plot.Right + Gap, r.Top, Math.Max(0, r.Right - plot.Right - Gap), r.Height);
+        bool live = Fresh;
+        if (live)
+        {
+            // where the signal is now on the curve: the loudest of the last few points
+            var t = tap!;
+            int end = t.Written;
+            float inNow = FxTap.Floor, outNow = FxTap.Floor;
+            for (int i = Math.Max(0, end - ReadPoints); i < end; i++)
+            {
+                t.ReadPoint(i, out float a, out float b);
+                if (a > inNow) inNow = a;
+                if (b > outNow) outNow = b;
+            }
+            if (inNow > lo) ctx.DrawEllipse(Palette.Fg, null, new Point(Px(inNow), Py(outNow)), 3.5, 3.5);
+        }
         if (wave.Width < 24) return;
         double ty = wave.Bottom - (threshold - lo) / -lo * wave.Height;
         ctx.DrawLine(dash, new Point(wave.Left, ty), new Point(wave.Right, ty));
+        if (live)
+        {
+            GateHistory(ctx, wave, lo);
+            Readout(ctx, wave, tap!);
+            return;
+        }
         int cols = (int)wave.Width;
         var under = Palette.Pen(Palette.Alpha(Colors.White, 0.1));
         var over = Palette.Pen(Ink(0.55));
@@ -359,6 +632,40 @@ public sealed class FxScope : Control
             double y = wave.Bottom - (db - lo) / -lo * wave.Height;
             double x = wave.Left + i + 0.5;
             ctx.DrawLine(db >= threshold ? over : under, new Point(x, wave.Bottom), new Point(x, y));
+        }
+    }
+
+    /// <summary>How much the gate's history shows, in level points (about 4 s).</summary>
+    const int GateSpan = 768;
+
+    /// <summary>
+    /// The gate's last seconds, the newest at the right: what came in as a faint column and what went out over it in the
+    /// family's color, so where it shut (only the faint column left) and how it opens can be seen against the threshold.
+    /// </summary>
+    void GateHistory(DrawingContext ctx, Rect wave, double lo)
+    {
+        var t = tap!;
+        int end = t.Written, first = Math.Max(0, end - GateSpan);
+        int cols = Math.Max(1, (int)(wave.Width / 2));
+        double per = GateSpan / (double)cols;
+        double Y(double db) => wave.Bottom - (Math.Clamp(db, lo, 0) - lo) / -lo * wave.Height;
+        var inPen = Palette.Pen(Palette.Alpha(Colors.White, 0.14), 2);
+        var outPen = Palette.Pen(Ink(0.6), 2);
+        for (int c = 0; c < cols; c++)
+        {
+            int to = end - (int)Math.Round((cols - 1 - c) * per);
+            int from = Math.Max(first, to - Math.Max(1, (int)Math.Round(per)));
+            if (to <= from) continue;
+            float inMax = FxTap.Floor, outMax = FxTap.Floor;
+            for (int i = from; i < to; i++)
+            {
+                t.ReadPoint(i, out float a, out float b);
+                if (a > inMax) inMax = a;
+                if (b > outMax) outMax = b;
+            }
+            double x = wave.Left + c * 2 + 1;
+            if (inMax > lo) ctx.DrawLine(inPen, new Point(x, wave.Bottom), new Point(x, Y(inMax)));
+            if (outMax > lo) ctx.DrawLine(outPen, new Point(x, wave.Bottom), new Point(x, Y(outMax)));
         }
     }
 
@@ -400,6 +707,49 @@ public sealed class FxScope : Control
             double share = Math.Log(monoBass / 20) / Math.Log(StereoWidth.MonoBassMaxHz / 20);
             ctx.DrawLine(Palette.Pen(Palette.Alpha(Colors.White, 0.55), 3, PenLineCap.Round), c, new Point(c.X, c.Y - rad * (0.2 + 0.5 * share)));
         }
+        if (Fresh) Gonio(ctx, r, c, rad);
+    }
+
+    /// <summary>Sample pairs the goniometer shows (every second one drawn): 85 ms at 48 kHz.</summary>
+    const int GonioPairs = 1024;
+
+    /// <summary>
+    /// What goes out as a half goniometer over the fan: the middle up, the sides across, scaled to its loudest point, so
+    /// a mono sound is a line up the middle and a wide one spreads like the fan. On top, the correlation from −1 to +1,
+    /// in the mute color when the sides cancel each other.
+    /// </summary>
+    void Gonio(DrawingContext ctx, Rect r, Point c, double rad)
+    {
+        var t = tap!;
+        int end = t.PairsWritten, from = Math.Max(0, end - GonioPairs);
+        double peak = 0, lr = 0, ll = 0, rr = 0;
+        for (int i = from; i < end; i++)
+        {
+            t.ReadPair(i, out _, out _, out float l, out float rt);
+            peak = Math.Max(peak, Math.Max(Math.Abs(l + rt), Math.Abs(rt - l)) / 2);
+            lr += l * rt;
+            ll += l * l;
+            rr += rt * rt;
+        }
+        if (peak < 1e-4) return;
+        double scale = rad * 0.9 / peak;
+        for (int i = from; i < end; i += 2)
+        {
+            t.ReadPair(i, out _, out _, out float l, out float rt);
+            double m = (l + rt) / 2, s = (rt - l) / 2;
+            if (m < 0) { m = -m; s = -s; }
+            double age = (end - i) / (double)GonioPairs;
+            var pen = Palette.Pen(Palette.Alpha(Colors.White, age < 0.3 ? 0.75 : 0.35), 2, PenLineCap.Round);
+            var p = new Point(c.X + s * scale, c.Y - m * scale);
+            ctx.DrawLine(pen, p, new Point(p.X + 0.25, p.Y));
+        }
+        double corr = ll > 1e-9 && rr > 1e-9 ? Math.Clamp(lr / Math.Sqrt(ll * rr), -1, 1) : 1;
+        double w = Math.Min(r.Width * 0.4, 120), y = r.Top + 2.5;
+        ctx.DrawLine(AxisPen, new Point(r.Center.X - w / 2, y), new Point(r.Center.X + w / 2, y));
+        ctx.DrawLine(GridPen, new Point(r.Center.X, y - 2), new Point(r.Center.X, y + 2));
+        double cx = r.Center.X + corr * w / 2;
+        var mark = corr < 0 ? Palette.Pen(Palette.Mute, 3, PenLineCap.Round) : Stroke(1, 3);
+        ctx.DrawLine(mark, new Point(cx, y - 2), new Point(cx, y + 2));
     }
 
     // --- tone responses --------------------------------------------------------------------------
@@ -413,6 +763,7 @@ public sealed class FxScope : Control
     {
         const double range = 12;
         FreqGrid(ctx, r);
+        if (Fresh) Spectrum(ctx, r);
         double mid = r.Center.Y;
         ctx.DrawLine(AxisPen, new Point(r.Left, mid), new Point(r.Right, mid));
         bool clean = Kind == TrackInserts.Clean;
@@ -447,6 +798,39 @@ public sealed class FxScope : Control
         return gain * Math.Exp(-o * o);
     }
 
+    /// <summary>The level range of the output's spectrum, dB as <see cref="SpectrumTap.Read"/> gives it.</summary>
+    const double SpecLo = -100, SpecHi = -15;
+
+    /// <summary>
+    /// The output's spectrum behind a tone effect's response, on the same axis (20 Hz to 20 kHz): a faint fill and its
+    /// edge, each column the loudest bin under it, so what the effect leaves of the low end or the presence shows as it plays.
+    /// </summary>
+    void Spectrum(DrawingContext ctx, Rect r)
+    {
+        if (bins == null) return;
+        double binHz = PlaybackSampleRate / (double)SpectrumTap.FftSize;
+        int cols = (int)r.Width;
+        var fill = Palette.Pen(Palette.Alpha(Colors.White, 0.07));
+        var edge = Palette.Pen(Palette.Alpha(Colors.White, 0.32), 1.25, PenLineCap.Round);
+        Point prev = default;
+        for (int i = 0; i < cols; i++)
+        {
+            int k0 = (int)(FreqAt(i / (double)cols) / binHz), k1 = (int)(FreqAt((i + 1) / (double)cols) / binHz);
+            k0 = Math.Clamp(k0, 1, SpectrumTap.Bins - 1);
+            k1 = Math.Clamp(k1, k0, SpectrumTap.Bins - 1);
+            float db = float.MinValue;
+            for (int k = k0; k <= k1; k++) if (bins[k] > db) db = bins[k];
+            double u = Math.Clamp((db - SpecLo) / (SpecHi - SpecLo), 0, 1);
+            var p = new Point(r.Left + i + 0.5, r.Bottom - u * r.Height);
+            if (u > 0) ctx.DrawLine(fill, new Point(p.X, r.Bottom), p);
+            if (i > 0) ctx.DrawLine(edge, prev, p);
+            prev = p;
+        }
+    }
+
+    /// <summary>The engine's rate, which the spectrum's bins are spaced by.</summary>
+    const double PlaybackSampleRate = 48000;
+
     void FreqGrid(DrawingContext ctx, Rect r)
     {
         foreach (double f in (ReadOnlySpan<double>)[100, 1000, 10000])
@@ -460,6 +844,7 @@ public sealed class FxScope : Control
     void Bands(DrawingContext ctx, Rect r, double[] v)
     {
         FreqGrid(ctx, r);
+        if (Fresh) Spectrum(ctx, r);
         double X(double f) => r.Left + Math.Log(Math.Clamp(f, FLo, FHi) / FLo) / Math.Log(FHi / FLo) * r.Width;
         double x1 = X(v[4]), x2 = X(v[5]);
         var dash = Palette.Dashed(Ink(0.6), 1);

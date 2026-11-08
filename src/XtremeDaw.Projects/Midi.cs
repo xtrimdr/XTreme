@@ -669,6 +669,65 @@ public static class MidiEditing
     }
 
     /// <summary>
+    /// Joins MIDI clips (asked by the user, #311): on each track with two or more of them, one clip from the earliest
+    /// start to the latest end, the earliest one's, in place of them all. What each one sounded goes in as notes where it
+    /// sounded: a loop's or a pattern's passes written out (the joined clip plays once and leaves its pattern), what
+    /// wasn't heard dropped, and a note a split left tied to one that ends right there in the same tone is one note
+    /// again. The gaps between them stay silent, so nothing changes in what sounds. Locked tracks are left alone. Returns
+    /// the joined clips' ids; throws when no track had two clips to join.
+    /// </summary>
+    public static List<string> Join(Project p, IEnumerable<string> clipIds)
+    {
+        var map = p.Settings.TempoMap;
+        var ids = clipIds.ToHashSet();
+        var joined = new List<string>();
+        foreach (var track in p.Tracks)
+        {
+            if (track.EditLocked || track.MidiClips is not { } clips) continue;
+            var picked = clips.Where(c => ids.Contains(c.Id)).OrderBy(c => c.AtSec).ToList();
+            if (picked.Count < 2) continue;
+            var first = picked[0];
+            double startBeat = first.StartBeat(map), endSec = picked.Max(c => c.EndSec(map));
+            var notes = new List<MidiNote>();
+            foreach (var c in picked)
+            {
+                double offset = c.StartBeat(map) - startBeat;
+                for (int pass = 0; pass < c.Passes; pass++)
+                    foreach (var n in c.Notes)
+                    {
+                        if (!c.Heard(n, pass, out double from, out double to) || to - from <= 0) continue;
+                        var copy = n.Copy();
+                        copy.Beat = offset + from;
+                        copy.Beats = to - from;
+                        // a pass starts its notes again; only the clip's own start goes on from what came before
+                        copy.Tie = n.Tie && pass == 0 && n.Beat < NoteSlack;
+                        notes.Add(copy);
+                    }
+            }
+            notes.Sort(MidiNote.Order);
+            // a tie whose note now ends right there in this clip: the two are one note again
+            for (int k = notes.Count - 1; k >= 0; k--)
+            {
+                var tie = notes[k];
+                if (!tie.Tie) continue;
+                var held = notes.LastOrDefault(n => n != tie && n.Pitch == tie.Pitch && Math.Abs(n.EndBeat - tie.Beat) <= NoteSlack);
+                if (held == null) continue;
+                held.Beats = tie.EndBeat - held.Beat;
+                notes.RemoveAt(k);
+            }
+            first.LengthBeats = map.BeatAt(endSec) - startBeat;
+            first.Notes = notes;
+            first.PatternId = first.PatternName = first.PatternPart = null;
+            first.PatternBeats = first.LoopBeats = null;
+            foreach (var c in picked.Skip(1)) clips.Remove(c);
+            first.Normalize();
+            joined.Add(first.Id);
+        }
+        if (joined.Count == 0) throw new ArgumentException(Texts.T("err.midi.joinFew", "Elegí dos o más clips MIDI de una misma pista para unirlos."));
+        return joined;
+    }
+
+    /// <summary>
     /// Takes what is between two timeline times out of a track's MIDI clips, like <see cref="ClipEditing.DeleteRange"/>
     /// does with takes (and calls this): the rest stays where it was, leaving a gap. A clip inside goes whole, and so does
     /// a piece left shorter than <see cref="MidiClip.MinBeats"/>. A note that sticks out of the range keeps what is left

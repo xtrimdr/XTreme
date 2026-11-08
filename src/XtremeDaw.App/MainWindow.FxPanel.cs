@@ -1,4 +1,3 @@
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -25,6 +24,10 @@ public partial class MainWindow
     const double FxKnobW = 36, FxKnobBigW = 44, FxBigCellW = 76;
     /// <summary>A hero knob (#187: what carries the effect, as on a hardware unit), and its picture's height in each view.</summary>
     const double FxHeroW = 68, FxScopeCompactH = 64, FxScopeFullH = 96;
+    /// <summary>The reverb's picture in its full view, taller than the others' (#312: the space is what it sells).</summary>
+    const double FxScopeReverbH = 136;
+    /// <summary>The biggest a small knob grows to in a full view's short panel (#312), still under a hero's.</summary>
+    const double FxKnobFillW = 58;
 
     /// <summary>A knob with its label on top and its value under it, in the effect panels and the Mastering view.
     /// What it does (<paramref name="tip"/>) shows over the label, never over the knob: there it would cover the drag.</summary>
@@ -183,8 +186,8 @@ public partial class MainWindow
     }
 
     /// <summary>A grid of knobs that deals out its width (<see cref="KnobGrid"/>).</summary>
-    static KnobGrid FxGrid(List<Knob> knobs, double top = 2) =>
-        new(knobs, FxCellW, FxCellMinW, FxBigCellW, FxKnobW, FxKnobBigW) { Margin = new Thickness(0, top, 0, 0) };
+    static KnobGrid FxGrid(List<Knob> knobs, double top = 2, double fillMax = 0) =>
+        new(knobs, FxCellW, FxCellMinW, FxBigCellW, FxKnobW, FxKnobBigW) { Margin = new Thickness(0, top, 0, 0), FillMax = fillMax };
 
     /// <summary>A segmented choice (the modes of a saturation, a gate or a delay) that fills the width it has.</summary>
     Control FxSegments((string Id, string Label, string? Tip)[] items, Func<string> get, Action<string> pick, List<Action> refresh)
@@ -350,7 +353,7 @@ public partial class MainWindow
         Control KnobRow(string[] ids, double top)
         {
             var knobs = new List<Knob>();
-            var grid = FxGrid(knobs, 0);
+            var grid = FxGrid(knobs, 0, full ? FxKnobFillW : 0);
             var heroes = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             foreach (string pid in ids)
             {
@@ -392,17 +395,19 @@ public partial class MainWindow
             body.Children.Add(Knobs(layout.Compact, 2));
             return;
         }
+        double scopeH = kind == InsertSlot.ReverbKind ? FxScopeReverbH : FxScopeFullH;
         foreach (var row in layout.Rows)
         {
-            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(string.Join(",", row.Select(g => g.Weight.ToString(CultureInfo.InvariantCulture) + "*"))) };
+            var grid = new FxRow([.. row.Select(g => g.Weight)], FxInnerGap);
             for (int i = 0; i < row.Length; i++)
             {
                 var g = row[i];
                 var title = new TextBlock { Classes = { "label" }, Text = Loc.T(g.Label) };
                 if (tint is { } t) title.Foreground = Palette.Alpha(t, 0.85);
                 // what goes in the panel in the order its list says, the knobs next to each other in one row; under the
-                // title, centered in the height the row gives it (#261: a short panel beside a tall one was left with a hole)
-                var stack = new StackPanel { Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+                // title, filling the height the row gives it (#312: a short panel beside a tall one grows its picture or
+                // its knobs into it, no hole left)
+                var stack = new FxFill();
                 var run = new List<string>();
                 void Flush()
                 {
@@ -413,7 +418,15 @@ public partial class MainWindow
                 {
                     if (!pid.StartsWith('@')) { run.Add(pid); continue; }
                     Flush();
-                    if (Part(pid, FxScopeFullH) is { } c) stack.Children.Add(c);
+                    if (Part(pid, scopeH) is not { } c) continue;
+                    // a graph draws to its bounds: its height is the least it takes, and the panel's spare height is its too
+                    if (c is FxScope or CompGraph && !double.IsNaN(c.Height))
+                    {
+                        c.MinHeight = c.Height;
+                        c.Height = double.NaN;
+                        stack.Grow(c);
+                    }
+                    else stack.Children.Add(c);
                 }
                 Flush();
                 var content = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
@@ -422,9 +435,7 @@ public partial class MainWindow
                 stack.Margin = new Thickness(0, 6, 0, 0);
                 content.Children.Add(stack);
                 var panel = new Border { Child = content, Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
-                    BorderBrush = tint is { } b ? Palette.Alpha(b, FxInnerTintLine) : Palette.Line, Background = Palette.Alpha(Palette.AppColor, FxInnerAlpha),
-                    Margin = new Thickness(i == 0 ? 0 : FxInnerGap, 0, 0, 0) };
-                Grid.SetColumn(panel, i);
+                    BorderBrush = tint is { } b ? Palette.Alpha(b, FxInnerTintLine) : Palette.Line, Background = Palette.Alpha(Palette.AppColor, FxInnerAlpha) };
                 grid.Children.Add(panel);
             }
             body.Children.Add(grid);
@@ -465,7 +476,7 @@ public partial class MainWindow
     /// </summary>
     FxScope ScopeOf(SlotOwner o, string id, string kind, double height, Color tint, List<Action> refresh)
     {
-        var scope = new FxScope(kind, height) { Tint = tint, Running = () => engine.Playing, Margin = new Thickness(0, 2, 0, 2) };
+        var scope = new FxScope(kind, height) { Tint = tint, Running = () => engine.Playing, Live = () => TapOf(o.Insert(id)), Margin = new Thickness(0, 2, 0, 2) };
         FxParam?[] inputs = [.. FxScope.Inputs(kind).Select(pid => Array.Find(FxDefs.Params(kind), p => p.Id == pid))];
         refresh.Add(() =>
         {
@@ -481,6 +492,17 @@ public partial class MainWindow
         });
         return scope;
     }
+
+    /// <summary>
+    /// The running effect's tap for its picture (#312), created the first time a picture asks: an effect nobody looks at
+    /// keeps none and copies nothing.
+    /// </summary>
+    static FxTap? TapOf(ITrackInsert? insert) => insert switch
+    {
+        FxShell s => s.Tap ??= new FxTap(Audio.PlaybackEngine.SampleRate),
+        LimitInsert l => l.Tap ??= new FxTap(Audio.PlaybackEngine.SampleRate),
+        _ => null,
+    };
 
     /// <summary>
     /// What a compressor, a gate or the pump listens to (its sidechain): its own input or another track, by name. A track that

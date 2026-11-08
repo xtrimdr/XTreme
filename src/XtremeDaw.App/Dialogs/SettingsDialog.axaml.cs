@@ -922,7 +922,10 @@ public sealed partial class SettingsDialog : UserControl
         Resettable(looks, () => KnobLooks.Current == KnobLooks.Default, () => KnobLooks.Set(KnobLooks.Default),
             h => KnobLooks.Changed += h, h => KnobLooks.Changed -= h, SyncKnobs);
 
-        // the rest of the looks build their own pickers (samples drawn by the same code, applied live)
+        // the rest of the looks build their own pickers (samples drawn by the same code, applied live); first the theme,
+        // the same controls as the top bar's popover plus the whole themes (#317)
+        general.Children.Insert(0, LookCard("theme", new ThemeEditor(presets: true) { MaxWidth = 440, HorizontalAlignment = HorizontalAlignment.Left },
+            () => UiTheme.Current == UiTheme.Default, () => UiTheme.Apply(UiTheme.Default), h => UiTheme.Changed += h, h => UiTheme.Changed -= h));
         general.Children.Add(LookCard("panels", PanelLooks.Picker(), () => PanelLooks.Current == PanelLooks.Default,
             () => PanelLooks.Set(PanelLooks.Default), h => PanelLooks.Changed += h, h => PanelLooks.Changed -= h));
         controls.Children.Add(LookCard("faders", FaderLooks.Picker(), () => FaderLooks.Current == FaderLooks.Default,

@@ -33,6 +33,35 @@ public static partial class TrackCopies
         return [.. pairs.Select(x => x.Copy.Id)];
     }
 
+    /// <summary>
+    /// A clip dropped under the last track lands on a new track of its kind (asked by the user, #309): a take's on an
+    /// empty audio track (with a video panel if its old one had one), a MIDI clip's on a MIDI track with the same
+    /// instrument, so it sounds the same. Nothing else of the old track comes along. The new track goes last, outside
+    /// any folder. Returns its id.
+    /// </summary>
+    public static string MoveToNew(Project p, string clipId)
+    {
+        if (MidiEditing.TryFind(p, clipId) != null)
+        {
+            var (from, _) = MidiEditing.Find(p, clipId);
+            if (from.EditLocked) throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", from.Name));
+            string made = MidiEditing.AddTrack(p);
+            var t = p.Tracks.Find(x => x.Id == made)!;
+            t.Instrument = from.Instrument == null ? null : ProjectLibrary.Clone(from.Instrument);
+            t.Sampler = from.Sampler == null ? null : ProjectLibrary.Clone(from.Sampler);
+            t.Granular = from.Granular == null ? null : ProjectLibrary.Clone(from.Granular);
+            t.Gm = from.Gm == null ? null : ProjectLibrary.Clone(from.Gm);
+            if (from.Icon != null) t.Icon = from.Icon;
+            MidiEditing.MoveToTrack(p, clipId, made);
+            return made;
+        }
+        var (track, clip) = ClipEditing.Find(p, clipId);
+        // refused before the track is made, so a locked clip leaves nothing behind
+        ClipEditing.Unlocked(track, clip);
+        string id = ClipEditing.AddEmpty(p, track.Video);
+        return ClipEditing.MoveToTrack(p, clipId, id);
+    }
+
     /// <summary>A copy of <paramref name="t"/> with new ids everywhere, not yet in the project.</summary>
     static Track Copy(Track t, bool content)
     {

@@ -783,6 +783,7 @@ public partial class MainWindow
             mixerKey = key;
             mixerNameFoot = MixerOptions.NameAtFoot;
             BuildStrips(stripW);
+            ApplyMixerPresence();
         }
         mx = mixerLayout;
         ApplyMixerHeights();
@@ -1955,7 +1956,7 @@ public partial class MainWindow
     };
 
     /// <summary>One slot's panel by its kind, for its window (<see cref="ShowSlotWindow"/>).</summary>
-    void SlotPanel(StackPanel fx, SlotOwner o, InsertSlot slot, int nth)
+    void SlotPanel(StackPanel fx, SlotOwner o, InsertSlot slot, int nth, Action<EqEditor>? onEq = null)
     {
         var menu = SlotMenuButton(o, slot.Id);
         if (slot.Type == InsertSlot.VstKind)
@@ -1964,18 +1965,12 @@ public partial class MainWindow
             return;
         }
         string id = slot.Id;
+        // every native effect opens in its full view (asked by the user, #312: no compact view any more)
         bool sized = FxDefs.Layout(slot.Type) != null;
-        Control extra = menu;
-        if (sized)
-        {
-            var size = SlotHeadButton(slot.Full ? "" : "", Loc.T(slot.Full ? "fx.full.off" : "fx.full.on"));
-            size.Click += (_, _) => ToggleFull(o, id);
-            extra = new StackPanel { Orientation = Orientation.Horizontal, Children = { size, menu } };
-        }
         var panel = FxPanel(fx, SlotTitle(SlotName(slot.Type), nth), slot.Type, () => o.Slot(id)?.On == true, () => SlotEdit(o, id, s => s.On = !s.On, "on"),
-            on => Loc.T(on ? "mix.list.off" : "mix.list.on"), extra);
+            on => Loc.T(on ? "mix.list.off" : "mix.list.on"), menu);
         panel.Body.Spacing = 8;
-        FxBody(panel.Body, o, slot, mx.Refresh, full: sized ? slot.Full : null);
+        FxBody(panel.Body, o, slot, mx.Refresh, onEq, full: sized ? true : null);
     }
 
     /// <summary>
@@ -1992,18 +1987,6 @@ public partial class MainWindow
             slot.Wet = TrackFxWet;
             slot.Dry = 1;
         }
-    }
-
-    /// <summary>
-    /// Switches a slot between its compact and full view (#140) and rebuilds its window at the new size. A view choice:
-    /// saved with the project, never an undo step (a folder's fold works the same way).
-    /// </summary>
-    void ToggleFull(SlotOwner o, string id)
-    {
-        if (o.Slot(id) is not { } s) return;
-        s.Full = !s.Full;
-        MarkDirty();
-        if (slotWindows.TryGetValue(o.OwnerId + "/" + id, out var w)) w.Rebuild();
     }
 
     // what a panel reads while its slot is already gone (removed, an undo) and the strips aren't rebuilt yet
@@ -2242,7 +2225,12 @@ public partial class MainWindow
         public required string Id { get; init; }
         public List<Action> Refresh { get; set; } = [];
         public Action Rebuild { get; set; } = () => { };
+        /// <summary>Its EQ's editor, when it is an EQ's window: it can draw its track's live spectrum.</summary>
+        public EqEditor? Eq { get; set; }
     }
+
+    /// <summary>The EQ window the live spectrum feeds when no big EQ window takes it: the last one brought to the front.</summary>
+    SlotWindow? spectrumWindow;
 
     /// <summary>The effects' open windows by owner and slot: like a VST3's, several at once (asked by the user, #140).</summary>
     readonly Dictionary<string, SlotWindow> slotWindows = [];
@@ -2336,22 +2324,18 @@ public partial class MainWindow
         void Build()
         {
             if (o.Slot(id) is not { } slot) return;
-            bool built = slot.Full;
-            double width = slot.Full && FxDefs.Layout(slot.Type) != null ? SlotFullW : SlotWindowW;
+            double width = FxDefs.Layout(slot.Type) != null ? SlotFullW : SlotWindowW;
             var saved = mx;
             var own = new MixerLayout();
             host.Children.Clear();
             host.Width = width;
             scroll.Width = width + 10 + 2 + SlotScrollRoom;
             mx = own;
-            try { SlotPanel(host, o, slot, nth); }
+            w.Eq = null;
+            try { SlotPanel(host, o, slot, nth, e => w.Eq = e); }
             finally { mx = saved; }
-            // an undo can bring back the other size, and a rename the other name: the window follows them
-            own.Refresh.Add(() =>
-            {
-                Title();
-                if (o.Slot(id) is { } now && now.Full != built) Dispatcher.UIThread.Post(() => { if (slotWindows.ContainsKey(key)) w.Rebuild(); });
-            });
+            // a rename (or its undo) brings another name: the window follows it
+            own.Refresh.Add(Title);
             bool was = syncing;
             syncing = true;
             try { foreach (var r in own.Refresh) r(); }
@@ -2397,7 +2381,10 @@ public partial class MainWindow
         window.Closed += (_, _) =>
         {
             if (slotWindows.TryGetValue(key, out var now) && now == w) slotWindows.Remove(key);
+            if (spectrumWindow == w) spectrumWindow = null;
         };
+        // the last EQ window brought to the front is the one the live spectrum feeds (#312)
+        window.Activated += (_, _) => { if (w.Eq != null) spectrumWindow = w; };
         slotWindows[key] = w;
         window.Show(this);
     }

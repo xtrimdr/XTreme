@@ -46,10 +46,13 @@ public partial class MainWindow
     void InitInstruments()
     {
         Timeline.InstrumentStateOf = InstrumentStateOf;
+        Timeline.InstrumentNoteOf = id => lackNotes.TryGetValue(id, out var note) ? note : null;
         Timeline.InstrumentMenuRequested += (t, at) => ShowInstrumentMenu(t, at);
         Timeline.InstrumentWindowRequested += OpenInstrumentWindow;
         // a scan (here or in Configuración → Plugins) or a plugin hidden there: the lists catch up
         PluginScan.Changed += InstrumentsChanged;
+        // in a shared session the others learn what this copy has now (#291)
+        PluginScan.Changed += ShareLiveCatalog;
     }
 
     static string FailKey(string trackId, PluginRef p) => trackId + "|" + p.Path + "|" + p.ClassId;
@@ -66,6 +69,7 @@ public partial class MainWindow
         if (tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Gm is { } gm) return GmState(gm);
         var plugin = tracks.FirstOrDefault(t => t.Track.Id == trackId)?.Track.Instrument;
         if (plugin == null) return TimelineView.InstrumentState.TestTone;
+        if (PluginOff(plugin)) return TimelineView.InstrumentState.Failed;
         return instrumentFailed.Contains(FailKey(trackId, plugin)) ? TimelineView.InstrumentState.Failed : TimelineView.InstrumentState.Loading;
     }
 
@@ -108,7 +112,8 @@ public partial class MainWindow
         var wanted = new Dictionary<string, PluginRef>();
         foreach (var t in tracks)
             // a frozen track's instrument is in its render: its process closes (#240)
-            if (t.Track.IsMidi && t.Track.Instrument is { } plugin && !FreezeHolds(t.Track)) wanted[t.Track.Id] = plugin;
+            // and one someone in a shared session lacks stays off for everybody (#291)
+            if (t.Track.IsMidi && t.Track.Instrument is { } plugin && !FreezeHolds(t.Track) && !PluginOff(plugin)) wanted[t.Track.Id] = plugin;
         foreach (var (id, loaded) in instruments.ToList())
             if (!wanted.TryGetValue(id, out var w) || !w.SamePlugin(loaded.Plugin)) DropInstrument(id);
         foreach (var t in tracks)
@@ -384,7 +389,11 @@ public partial class MainWindow
         {
             var item = MenuCheck(label, () => p == null ? track.Track.Instrument == null && track.Track.Sampler == null && track.Track.Granular == null && track.Track.Gm == null : SamePlugin(track.Track.Instrument, p), () => _ = SetInstrument(track, p), refresh, tip: tip);
             item.IsEnabled = enabled;
-            if (p != null) PluginThumbView.AddTip(item, p);
+            if (p != null)
+            {
+                PluginThumbView.AddTip(item, p);
+                MarkLacking(item, p);
+            }
             return item;
         }
         MenuItem Native()
@@ -519,13 +528,14 @@ public partial class MainWindow
         {
             var item = MenuAction(label, () => NewInstrumentTrack(p.Name, t => t.Instrument = PluginCatalog.Ref(p)), enabled: enabled);
             PluginThumbView.AddTip(item, p);
+            MarkLacking(item, p);
             return item;
         });
         items.Add(new Separator());
         items.Add(MenuAction(Loc.T(PluginScan.Visible.Any(p => p.IsInstrument) ? "vst.scan" : "vst.scan.first"), ScanPlugins,
             enabled: !PluginScan.Running, tip: Loc.T("vst.scan.tip")));
         items.Add(MenuAction(Loc.T("vst.manage.menu"), () => { Settings.Show("plugins"); return Task.CompletedTask; }, tip: Loc.T("vst.manage.tip")));
-        var menu = new MenuItem { Header = MenuHeader(Loc.T("menu.trackInstrument"), new TextBlock { Text = "", Classes = { "icon" }, FontSize = 12 }), ItemsSource = items };
+        var menu = new MenuItem { Header = MenuHeader(Loc.T("menu.trackInstrument"), AddIcon("kind:midi")), ItemsSource = items };
         ToolTip.SetTip(menu, Loc.T("menu.trackInstrument.hint"));
         ToolTip.SetShowDelay(menu, (int)MenuTipDelay.TotalMilliseconds);
         return menu;
@@ -603,6 +613,7 @@ public partial class MainWindow
             _ => Loc.T("vst.testTone.tip"),
         };
         midiNowInfo.Text = PluginScan.Running ? Loc.T("vst.scanning") : midiNowInfo.Text;
+        if (plugin != null && LackNote(plugin) is { } off) midiNowInfo.Text = off;
         if (t.Track.Sampler != null && store != null)
             midiNowInfo.Text = state switch
             {
@@ -622,7 +633,8 @@ public partial class MainWindow
             {
                 TimelineView.InstrumentState.Failed => Loc.T("gm.missing"),
                 TimelineView.InstrumentState.Loading => Loc.T("gm.loading"),
-                _ => Loc.T("gm.ready"),
+                _ => Loc.T("gm.ready", XtremeDaw.Audio.Dsp.GmBank.NameOf(XtremeDaw.Audio.Dsp.GmBank.Available(t.Track.Gm.Bank) && !XtremeDaw.Audio.Dsp.GmBank.Failed(t.Track.Gm.Bank)
+                    ? t.Track.Gm.Bank : XtremeDaw.Audio.Dsp.GmBank.FallbackKey)),
             };
         midiPick.IsEnabled = store is { ReadOnly: false };
         midiOpen.IsVisible = plugin != null || t.Track.Sampler != null || t.Track.Granular != null || t.Track.Gm != null;

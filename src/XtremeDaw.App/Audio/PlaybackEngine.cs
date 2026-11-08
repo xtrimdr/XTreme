@@ -254,6 +254,10 @@ public sealed class PlaybackEngine : IDisposable
     /// </summary>
     public void SetMidiListeners(MidiListener[] list) => midiListeners = list;
 
+    /// <summary>
+    /// The transport's loop. On, it repeats the A–B range, or the whole song (0 to where the last clip ends) without
+    /// one; off, playback goes on past the end of the song until stopped (asked by the user, #308).
+    /// </summary>
     public bool Loop
     {
         get => loop;
@@ -737,7 +741,8 @@ public sealed class PlaybackEngine : IDisposable
         stopping = false;
         if (playing) return; // a fade-out pause still in flight: it fades back in where it is
         rolling = false;
-        if (endFrame > 0 && Interlocked.Read(ref position) >= endFrame) Seek(loop && loopRange is { } lr ? lr.Start / (double)SampleRate : 0);
+        // past the end, the loop starts its lap; without it, playback goes on from where it is (#308)
+        if (loop && endFrame > 0 && Interlocked.Read(ref position) >= endFrame) Seek(loopRange is { } lr ? lr.Start / (double)SampleRate : 0);
         long pos = Interlocked.Read(ref position);
         Interlocked.CompareExchange(ref pendingSeek, NoSeek, pos); // a seek made while stopped already moved it
         playStartSec = Math.Max(0.0, pos / (double)SampleRate);
@@ -1440,13 +1445,9 @@ public sealed class PlaybackEngine : IDisposable
                     heard.Turn(loopStart, pos - loopStart);
                     Interlocked.Exchange(ref position, loopStart);
                 }
-                else if (!isRec && atEnd)
-                {
-                    Interlocked.Exchange(ref position, pos);
-                    playing = false;
-                }
                 else
                 {
+                    // without the loop the song's end does not stop it: it plays on until stopped (#308)
                     Interlocked.Exchange(ref position, pos);
                 }
             }
@@ -1626,6 +1627,12 @@ public sealed class PlaybackEngine : IDisposable
 
     /// <summary>Plays one click of the current sound and volume, playing or not (the web's playClick from the sound menu).</summary>
     public void PreviewClick(bool accent = true) => Volatile.Write(ref previewClick, accent ? clickHi : clickLo);
+
+    /// <summary>
+    /// Plays a short mono sound once through the click's path (a cue of the window: someone joined or left a shared
+    /// session), playing or not; never in a take or an export. <paramref name="mono"/> isn't copied: don't change it.
+    /// </summary>
+    public void PlayCue(float[] mono) => Volatile.Write(ref previewClick, mono);
 
     public void SetClickSound(ClickSound s, double volumeDb = 0)
     {

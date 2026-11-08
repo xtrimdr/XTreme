@@ -120,11 +120,17 @@ public partial class MainWindow
     /// <summary>Called from <see cref="Tick"/>: cheap string checks, the controls only change when the state does.</summary>
     void TickTopBar()
     {
-        // dirty waits for a save only after each edit; in the other modes it is "Sin guardar" until it goes
+        // dirty waits for a save only after each edit; in the other modes it is "Sin guardar" until it goes.
+        // Without a place it is always "Sin guardar" (#306): its own saves only keep takes safe in AppData, where the
+        // user can't find it, so "Guardando…" or "Guardado" would say it is somewhere it isn't
+        bool untitled = Untitled;
         string state = store == null ? "none" : store.ReadOnly ? "readonly" : saveFailure != null ? "error"
+            : untitled ? "unsaved"
             : !saving.IsCompleted || dirty && SaveMode.Mode == SaveMode.OnEdit ? "saving"
-            // without a place it isn't saved where the user can find it until "Guardar" asks where
-            : dirty || Untitled && UntitledProjects.HasContent(store.Project) ? "unsaved" : "saved";
+            : dirty ? "unsaved" : "saved";
+        // the diskette glows when there is something to save: an empty project without a place has nothing yet
+        bool pending = state == "error" || state == "unsaved" && (!untitled || UntitledProjects.HasContent(store!.Project));
+        if (pending != SaveButton.Classes.Contains("pending")) SaveButton.Classes.Set("pending", pending);
         if (state != saveStateShown)
         {
             saveStateShown = state;
@@ -134,7 +140,6 @@ public partial class MainWindow
             SaveText.Text = state switch { "error" => Loc.T("title.saveError"), "saving" => Loc.T("title.saving"), "unsaved" => Loc.T("title.unsaved"), "readonly" => Loc.T("title.readOnly"), _ => Loc.T("title.saved") };
             SaveText.Foreground = state switch { "error" => Palette.Rec, "saving" or "unsaved" => Palette.Dim, _ => Palette.Faint };
             SaveButton.IsEnabled = state is "unsaved" or "error";
-            SaveButton.Classes.Set("pending", SaveButton.IsEnabled);
             SaveButton.Classes.Set("failed", state == "error");
             ToolTip.SetTip(SessionChip, store == null ? Loc.T("title.projects") : Loc.T("title.project.tip", store.Dir));
         }

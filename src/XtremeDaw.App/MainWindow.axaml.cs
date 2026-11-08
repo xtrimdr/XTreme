@@ -779,6 +779,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 await SplitAtPlayhead();
                 return;
+            case "joinClips":
+                e.Handled = true;
+                await JoinMidi();
+                return;
             case "duplicate" or "delete" or "deleteClose" or "copy" or "cut" or "paste" or "selectAll" or "deselect" or "alignGrid":
                 e.Handled = true;
                 await RunEdit(action);

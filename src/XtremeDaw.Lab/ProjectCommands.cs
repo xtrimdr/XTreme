@@ -195,7 +195,7 @@ static class ProjectCommands
                 // like the inspector's Transponer: the track's semitones, and its takes rendered into the cache now
                 var tt = p.Tracks.Find(t => t.Id == id) ?? throw new ArgumentException("No encontré esa pista.");
                 double semis = double.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
-                if (Math.Abs(semis) > XtremeDaw.Audio.Dsp.PitchShifter.MaxSemitones) throw new ArgumentException("transponer: de -12 a +12 semitonos.");
+                if (Math.Abs(semis) > XtremeDaw.Audio.Dsp.PitchShifter.MaxSemitones) throw new ArgumentException("transponer: de -24 a +24 semitonos.");
                 tt.Transpose = Math.Round(semis, 2);
                 foreach (var c in tt.Clips)
                 {

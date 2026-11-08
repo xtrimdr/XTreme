@@ -620,6 +620,12 @@ public sealed class LiveTrack
         }
     }
 
+    /// <summary>
+    /// Its instrument plugin is off in a shared session (#291: someone there lacks it): its notes are silent instead of
+    /// playing the test tone. Set by the UI; the audio thread reads it once per block.
+    /// </summary>
+    public volatile bool InstrumentOff;
+
     volatile InstrumentPlayer? instrument;
     /// <summary>
     /// The instrument plugin that plays the notes instead of the test tone (<see cref="InstrumentPlayer"/>), set by the
@@ -859,7 +865,7 @@ public sealed class LiveTrack
         Chain.Frame = posFrame;
         // a loop turning in the block: what follows the beat (the pump) jumps back with the sound (#256)
         if (turnAt >= 0 && turnAt < n) Chain.Turn(turnAt, posFrame + turnAt - turnTo);
-        var seq = notes;
+        var seq = InstrumentOff ? null : notes;
         var inst = instrument;
         var own = native;
         long played;

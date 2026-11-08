@@ -75,7 +75,7 @@ tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba
 - Sin MVVM ni bindings: code-behind con controles con nombre. No metas un framework sin que el usuario lo pida.
 - Sin dependencias nuevas de NuGet sin preguntar. Hoy: Avalonia 11.3, NAudio 2.2, FFmpeg.AutoGen 9.0 y ONNX Runtime
   con DirectML (`Microsoft.ML.OnnxRuntime.DirectML`, decisión del usuario: sus versiones van atrás de las del paquete común; para Extraer MIDI, con el modelo de Basic Pitch de Spotify, Apache 2.0, `lib\basic-pitch`,
-  `tools\get-basic-pitch.ps1`: decisión del usuario). El banco General MIDI es GeneralUser GS (uso y redistribución libres, `lib\gm`, `tools\get-gm.ps1`, va en el instalador; decisión del usuario, #200: un reproductor de SF2 propio, sin NuGet). Fuera de NuGet, el
+  `tools\get-basic-pitch.ps1`: decisión del usuario). Los bancos General MIDI (GeneralUser GS, FluidR3 GM, MuseScore General) son descargas opcionales, ninguno va en el instalador (pedido del usuario, #304; un reproductor de SF2 propio, sin NuGet, #200). Fuera de NuGet, el
   SDK de VST3 de Steinberg (MIT, `lib\vst3sdk`, `tools\get-vst3sdk.ps1`) para `xtvsthost.exe` (decisión del usuario).
 - **Los detalles de cada parte están en su guía** (lista de arriba): se cargan solas al leer un archivo de esa carpeta.
   La ventana usa el modelo y el motor todo el tiempo: si tu cambio los toca desde `App`, leé antes el apartado que
@@ -194,7 +194,9 @@ La cadena por pista, la automatización en el motor y los slots están en la [gu
    - **Al terminar bien, la sesión se cierra** (pedido del usuario, #143): si estás seguro de que todo salió bien (lo
      tuyo fue con `-Arregla` o `-Comenta` sin error y no queda nada que preguntar), lo que ibas a decir en el chat va en
      el ticket, y tu último paso es `tools\cerrar-sesion.ps1`: cierra la consola que abrió el Banco (fuera de ella no
-     hace nada). Con una pregunta o algo a medias, no: el usuario te tiene que leer. Un subagente nunca lo corre.
+     hace nada). Con una pregunta o algo a medias, no: el usuario te tiene que leer. No haberlo visto en la app (no
+     podés hacer clics ni capturar la ventana) no es algo a medias: lo prueba el usuario desde el Banco, así que decilo
+     en el ticket y cerrá igual (#313: quedaban consolas abiertas que ya no esperaban nada). Un subagente nunca lo corre.
    - Lo que anotás, devolvés o comentás llega al Banco como **Nuevo** y se anuncia: es lo que el usuario lee primero,
      así que va corto, concreto y dice cómo probarlo.
    - El usuario saca ítems y limpia los que andan desde el Banco: que un número ya no esté no es un error; el historial

@@ -267,12 +267,13 @@
             <StackPanel x:Name="ToolStrip" Orientation="Horizontal" Spacing="2" />
           </Border>
 
-          <!-- the live session (#291): create one or join one; while on, a beating dot and how many are in -->
+          <!-- the live session (#291): create one or join one; while on, everyone's orbs (LivePulse) and how many are in -->
           <Button Grid.Column="4" x:Name="LiveButton" Classes="live" Margin="0,0,8,0" ToolTip.Tip="{loc:T live.button.tip}" AutomationProperties.Name="{loc:T live.session}">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <Grid VerticalAlignment="Center">
                 <TextBlock x:Name="LiveButtonIcon" Classes="icon" Text="&#xE716;" FontSize="13" Foreground="{StaticResource Accent}" />
-                <Ellipse x:Name="LiveDot" Classes="livedot" Width="7" Height="7" Fill="{StaticResource Accent}" IsVisible="False" />
+                <!-- #319: one orb per person, reacting to who joins, leaves, plays and edits -->
+                <c:LivePulse x:Name="LivePulse" IsVisible="False" />
               </Grid>
               <TextBlock x:Name="LiveButtonText" Text="{loc:T live.button}" />
             </StackPanel>

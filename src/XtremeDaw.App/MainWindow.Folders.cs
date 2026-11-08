@@ -656,7 +656,7 @@ public partial class MainWindow
         }
         if (presets.Count == 0)
             items.Add(new MenuItem { IsEnabled = false, Header = new TextBlock { Text = Loc.T("preset.none"), FontSize = 11, TextWrapping = TextWrapping.Wrap, MaxWidth = 220 } });
-        return new MenuItem { Header = MenuHeader(Loc.T("preset.menu"), new TextBlock { Text = "", Classes = { "icon" }, FontSize = 12 }), ItemsSource = items };
+        return new MenuItem { Header = MenuHeader(Loc.T("preset.menu"), AddIcon("")), ItemsSource = items };
     }
 
     /// <summary>

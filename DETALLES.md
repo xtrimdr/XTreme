@@ -22,9 +22,10 @@ Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `xtlab`. Lo g
 - Para **Extraer MIDI**: el modelo de Basic Pitch (Spotify, Apache 2.0, ~230 KB) en `lib\basic-pitch`, que baja
   `tools\get-basic-pitch.ps1` (fuera de git). El build lo copia a `basic-pitch\` junto al exe; sin él, "Extraer MIDI"
   queda deshabilitado y lo dice. Corre con ONNX Runtime (NuGet).
-- Para el instrumento **General MIDI**: el banco GeneralUser GS (S. Christian Collins, uso y redistribución libres,
-  ~31 MB) en `lib\gm`, que baja `tools\get-gm.ps1` (fuera de git). El build lo copia a `gm\` junto al exe y va en el
-  instalador; sin él, una pista General MIDI avisa que falta y calla.
+- Para el instrumento **General MIDI**: ningún banco va con la app ni en el instalador (#304). GeneralUser GS (~31 MB,
+  uso y redistribución libres), FluidR3 GM y MuseScore General se bajan desde la ventana del instrumento o en
+  Configuración → Componentes, a `%APPDATA%\XTreme\gm`; sin ninguno, una pista General MIDI avisa y calla. Para que
+  `xtlab` tenga uno con qué probar, `tools\get-gm.ps1` baja GeneralUser GS a esa misma carpeta.
 - Para **Separar en stems**: los modelos de Demucs (Meta, ~425 MB) en `lib\demucs`, que arma `tools\get-demucs.ps1`
   (fuera de git, necesita [uv](https://docs.astral.sh/uv/)). El build los copia a `demucs\` junto al exe, pero no van en
   el instalador: la licencia de los pesos no está clara. Sin ellos, la opción queda deshabilitada y lo dice.
@@ -83,6 +84,8 @@ todas las teclas van a XTreme, salvo con **Teclas al plugin** prendido en su bar
 | X | timeline / mixer |
 | Alt+X o Insert / D o Ctrl+B | dividir el clip en el cabezal / duplicarlo (o los marcados, en bloque) |
 | Shift+arrastrar un clip | copiarlo: el original queda en su lugar |
+| Shift+clic en un clip | marcar desde el clip elegido hasta ese |
+| Ctrl+J | unir los clips MIDI marcados (uno por pista) |
 | Shift+Q | alinear los clips elegidos a la grilla |
 | Ctrl+A / Ctrl+D | marcar todos los clips / sacar la selección |
 | Q | cuantizar al imán del piano roll: las notas elegidas (o todas) en el piano roll, o los clips MIDI elegidos |
@@ -221,7 +224,7 @@ la consola, sin abrir la ventana.
 | `vst bucle "nombre" [--bloque 256] [--vueltas 4]` | un bucle en un instrumento, en bloques del driver a tiempo real: mide cuánto se corre el primer tiempo de cada vuelta (sabiendo el bucle de antes y como un salto) y que una nota que cruza B no quede prendida |
 | `vst efecto "nombre" [--entrada x.wav] [--segundos 4] [--bloque 256] [--tarde] [--toma] [--apagado]` | pasa audio (o acordes de prueba) por un efecto como la exportación y en vivo, en bloques del driver a tiempo real; escribe los dos WAV y comprueba que en vivo llega justo un bloque después (lo que cuenta la compensación de latencia). `--tarde` llama cada bloque apenas terminó el anterior, así el plugin nunca llega a tiempo: tiene que salir entero, un bloque más tarde |
 | `vst parametros "nombre" [--mover "parámetro"] [--segundos 2]` | lista lo que el plugin deja automatizar; con `--mover`, pasa un carril de 0 a 1 por ese parámetro como la exportación y comprueba que el sonido cambia |
-| `midi comprobar` | el sonido de las notas: igual en cualquier tamaño de bloque, termina con el release, la exportación suena como la reproducción y el clip pasa a notas con el tempo; y el teclado: una tecla suena como la nota escrita, el pedal, las tomas, cuantizar y el clip grabado; la toma cortada: mata un proceso a mitad de toma (`midi cortar carpeta`) y comprueba que al abrir vuelvan las notas; dividir y borrar rango con y sin patrón, notas que cruzan el corte y deshacer; y el tono de prueba por la cadena de la pista, sin asignar (también corre en `comprobar-dsp`) |
+| `midi comprobar` | el sonido de las notas: igual en cualquier tamaño de bloque, termina con el release, la exportación suena como la reproducción y el clip pasa a notas con el tempo; y el teclado: una tecla suena como la nota escrita, el pedal, las tomas, cuantizar y el clip grabado; la toma cortada: mata un proceso a mitad de toma (`midi cortar carpeta`) y comprueba que al abrir vuelvan las notas; dividir, unir y borrar rango con y sin patrón, notas que cruzan el corte y deshacer; y el tono de prueba por la cadena de la pista, sin asignar (también corre en `comprobar-dsp`) |
 | `transponer archivo.wav [--semitonos 2] [--salida x.wav]` | cambia el tono sin cambiar el largo, como el Transponer de la pista (de −12 a +12, admite cents) |
 | `estirar archivo.wav [--razon 1.25 \| --de 120 --a 100] [--semitonos 0] [--salida x.wav] [--comprobar]` | cambia el largo sin cambiar el tono, como un clip que sigue el tempo; `--comprobar` corre solo sus filas de `comprobar-dsp` |
 | `proyecto editar carpeta tempo bpm` | cambia el tempo con todo en su compás y deja los clips estirados en `cache/` |

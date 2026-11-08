@@ -35,7 +35,7 @@ static class TransposeCommands
         bool ok = true;
 
         // a sine lands on the exact new frequency, at the same level and length
-        foreach (double semis in new[] { 7.0, -5.0, 12.0, -12.0, 0.5 })
+        foreach (double semis in new[] { 7.0, -5.0, 12.0, -12.0, 24.0, -24.0, 0.5 })
         {
             var sine = Tone(Sr * 3, i => 0.5 * Math.Sin(2 * Math.PI * 440 * i / Sr));
             var (l, _) = PitchShifter.Shift(sine, sine, semis);

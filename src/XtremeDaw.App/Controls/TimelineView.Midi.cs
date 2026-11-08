@@ -46,6 +46,8 @@ public sealed partial class TimelineView
     public event Action<LiveTrack>? InstrumentWindowRequested;
     /// <summary>How each MIDI track's instrument is doing, by track id (the window knows its processes).</summary>
     public Func<string, InstrumentState>? InstrumentStateOf { get; set; }
+    /// <summary>What a track's instrument chip says instead of its plugin's name ("Falta: … · lo tiene …", #291); null = its name. Read on every frame: no building.</summary>
+    public Func<string, string?>? InstrumentNoteOf { get; set; }
 
     public enum InstrumentState { TestTone, Loading, Ready, Failed }
 
@@ -95,7 +97,8 @@ public sealed partial class TimelineView
             InstrumentState.Ready => Palette.Accent, InstrumentState.Loading => Palette.Dim,
             InstrumentState.Failed => Palette.Mute, _ => Palette.Faint,
         };
-        string name = t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Granular != null ? Loc.T("granular.name") : t.Track.Instrument?.Name ?? t.Track.Gm?.Name ?? Loc.T("vst.testTone");
+        string name = InstrumentNoteOf?.Invoke(t.Track.Id)
+            ?? (t.Track.Sampler != null ? Loc.T("sampler.name") : t.Track.Granular != null ? Loc.T("granular.name") : t.Track.Instrument?.Name ?? t.Track.Gm?.Name ?? Loc.T("vst.testTone"));
         ctx.DrawText(name, 11, brush, new Point(r.X + 8, r.Center.Y - 7), ready ? Palette.UiBold : Palette.Ui, Math.Max(0, r.Width - ChipArrowW - 10));
         double ax = r.Right - ChipArrowW;
         ctx.DrawLine(Palette.Pen(ready ? Palette.Alpha(Palette.AccentColor, 0.3) : Palette.Line), new Point(ax + 0.5, r.Y + 5), new Point(ax + 0.5, r.Bottom - 5));
@@ -331,7 +334,8 @@ public sealed partial class TimelineView
         var t = tracks[i];
         if (t.Track.MidiClips is not { } clips) return;
         foreach (var c in clips)
-            if (c != midiHeld || midiOver == i || midiOver < 0) DrawMidiClip(ctx, t, c, y, RowH(t.Track), W, c == midiHeld && moved, layer);
+            // held over the empty space it is drawn in the new track's lane instead (#309)
+            if (c != midiHeld || (midiOver == i || midiOver < 0) && !(toNewTrack && moved)) DrawMidiClip(ctx, t, c, y, RowH(t.Track), W, c == midiHeld && moved, layer);
     }
 
     /// <summary>The held clip over another MIDI track, drawn there.</summary>
@@ -416,6 +420,7 @@ public sealed partial class TimelineView
         if (!band.Shown) return;
         double start = band.Left;
         if (t.Freeze != null && band.TakeLeft(FrozenChipW, out var frozen)) DrawFrozenChip(ctx, frozen);
+        DrawClipPresence(ctx, ref band, c.Id);
         // every repeat says it is one, as on an audio repeat (#253), unless its icon would land on the chips at the start
         for (int pass = Math.Max(1, firstPass); pass * cell < length - 1e-9; pass++)
         {
@@ -475,7 +480,15 @@ public sealed partial class TimelineView
     void MidiPressed(int i, Point p, PointerPressedEventArgs e)
     {
         var c = MidiClipAt(i, p.X);
-        if (e.ClickCount == 2)
+        // Ctrl+click adds the clip or takes it out, also when it comes quick after the last click: a double click
+        // would open the piano roll and drop what was boxed (#311)
+        if (c != null && (modifiers & KeyModifiers.Control) != 0)
+        {
+            ToggleBoxed(c.Id, SelectionSeed());
+            e.Handled = true;
+            return;
+        }
+        if (e.ClickCount == 2 && (c == null || (modifiers & KeyModifiers.Shift) == 0))
         {
             if (c != null) MidiClipOpenRequested?.Invoke(tracks[i], c.Id);
             else MidiClipCreateRequested?.Invoke(tracks[i], Math.Max(0, ClipEditing.Snap(Sec(p.X), Grid, (modifiers & KeyModifiers.Alt) != 0)));
@@ -492,12 +505,6 @@ public sealed partial class TimelineView
             StartBox(e);
             return;
         }
-        if ((modifiers & KeyModifiers.Control) != 0)
-        {
-            ToggleBoxed(c.Id, SelectionSeed());
-            e.Handled = true;
-            return;
-        }
         // the nearer edge wins when both are in reach (a short clip)
         midiLoop = OnMidiLoop(i, c, p);
         midiPass = !midiLoop && OnMidiPass(c, p.X);
@@ -506,19 +513,30 @@ public sealed partial class TimelineView
         midiEdge = midiLoop || !midiTrimStart && !midiPass && OnMidiEdge(c, p.X);
         bool edge = midiEdge || midiTrimStart || midiPass;
         cloning = (modifiers & KeyModifiers.Shift) != 0 && !edge;
+        shiftAnchor = cloning ? RangeAnchor() : null;
         if (midiEdge && (modifiers & KeyModifiers.Shift) == 0)
             midiAlong.UnionWith(UseOf(c).Where(o => Math.Abs(o.LengthBeats - c.LengthBeats) < 1e-9));
         // a boxed clip grabbed by its body carries the other boxed ones; by its edge or its loop, it edits them all
         bool group = !midiPass && GroupEdits(c.Id);
         midiCarrying = group && !edge;
-        SelectedMidiId = c.Id;
         if (group)
         {
+            SelectedMidiId = c.Id;
             SelectOne(i);
             if (midiCarrying) StartCarry(null);
             else StartGroup(midiLoop ? ClipEditMode.Loop : midiTrimStart ? ClipEditMode.TrimStart : ClipEditMode.TrimEnd, i, null, c);
         }
-        else Select(i);
+        // a Shift+click keeps what is selected until it is let go (it boxes the range) or drags (it clones this one)
+        else if (shiftAnchor != null)
+        {
+            string id = c.Id;
+            pendingSelect = () => SelectMidiClip(i, id);
+        }
+        else
+        {
+            SelectedMidiId = c.Id;
+            Select(i);
+        }
         midiHeld = c;
         midiFromSec = midiAtSec = c.AtSec;
         midiFromBeats = midiBeats = c.LengthBeats;
@@ -543,6 +561,7 @@ public sealed partial class TimelineView
         if (midiHeld == null) return;
         double dxPx = lastPointer.X - down.X + scrollX - downScrollX;
         if (!moved && Math.Abs(dxPx) < 3 && Math.Abs(lastPointer.Y - down.Y) < 3) return;
+        if (!moved) RunPendingSelect();
         // a pattern's clip dragged by its body brings its other instruments: only now, so a click still picks it alone
         if (!moved && !midiEdge && !midiPass && !midiCarrying && UseOf(midiHeld) is { Count: > 0 } use)
         {
@@ -597,7 +616,9 @@ public sealed partial class TimelineView
             // lands on a line, like a take
             midiAtSec = Math.Max(0, ClipEditing.Snap(midiFromSec + dxPx / pps, grid, free));
             int over = HitTrack(lastPointer.Y);
-            if (over >= 0 && over < tracks.Count && tracks[over].Track.IsMidi) midiOver = over;
+            toNewTrack = InEmptySpace(lastPointer.Y);
+            if (toNewTrack) midiOver = fromIndex;
+            else if (over >= 0 && over < tracks.Count && tracks[over].Track.IsMidi) midiOver = over;
         }
         DragGroup();
     }
@@ -629,7 +650,7 @@ public sealed partial class TimelineView
         var c = midiHeld;
         if (c == null || !moved) return null;
         if (midiPass) return midiCell != c.LoopBeats ? (c.Id, c.AtSec, midiBeats, null, false, false, midiCell) : null;
-        string? to = midiOver >= 0 && midiOver < tracks.Count && midiOver != fromIndex ? tracks[midiOver].Track.Id : null;
+        string? to = toNewTrack ? NewTrackTarget : midiOver >= 0 && midiOver < tracks.Count && midiOver != fromIndex ? tracks[midiOver].Track.Id : null;
         resizedAlong = [.. midiAlong.Select(o => o.Id)];
         return midiAtSec != c.AtSec || midiBeats != c.LengthBeats || to != null ? (c.Id, midiAtSec, midiBeats, to, midiTrimStart, midiLoop && c.PatternId == null, null) : null;
     }
@@ -695,6 +716,74 @@ public sealed partial class TimelineView
         else if (Selected >= 0 && Selected < tracks.Count && SelectedClipId != null && tracks[Selected].Clips.Any(c => c.Clip.Id == SelectedClipId))
             s.Add(SelectedClipId);
         return s;
+    }
+
+    /// <summary>
+    /// What a Shift+click on a clip's body measures its range from (#311): the selected MIDI clip, else the selected
+    /// track's take, as it was before the press; null when nothing was. A Shift+drag still clones.
+    /// </summary>
+    string? shiftAnchor;
+
+    /// <summary>
+    /// The selection a Ctrl or Shift press on a clip would make, held back (#311): a click without moving boxes (or
+    /// toggles) on release, so what was selected stays on screen meanwhile; a drag makes it as it starts.
+    /// </summary>
+    Action? pendingSelect;
+
+    void RunPendingSelect()
+    {
+        var run = pendingSelect;
+        pendingSelect = null;
+        run?.Invoke();
+    }
+
+    string? RangeAnchor()
+    {
+        if (SelectedMidiId != null && LaneOf(SelectedMidiId) >= 0) return SelectedMidiId;
+        if (Selected >= 0 && Selected < tracks.Count && SelectedClipId != null && tracks[Selected].Clips.Any(c => c.Clip.Id == SelectedClipId)) return SelectedClipId;
+        return null;
+    }
+
+    /// <summary>Where a take or a MIDI clip starts on the timeline, or null.</summary>
+    double? StartOf(int lane, string id)
+    {
+        if (lane < 0 || lane >= tracks.Count) return null;
+        if (tracks[lane].Clips.FirstOrDefault(c => c.Clip.Id == id) is { } take) return Window(take).Start;
+        return tracks[lane].Track.MidiClips?.FirstOrDefault(c => c.Id == id)?.AtSec;
+    }
+
+    /// <summary>
+    /// Shift+click on a clip (#311, asked by the user): boxes every clip, takes and MIDI alike, on the tracks from
+    /// <paramref name="anchor"/>'s to <paramref name="clicked"/>'s that starts from where the first of the two starts to
+    /// where the other one starts. The clicked one stays the selected one. False when there was no range to box.
+    /// </summary>
+    bool BoxRange(string anchor, string clicked)
+    {
+        int a = LaneOf(anchor), b = LaneOf(clicked);
+        if (StartOf(a, anchor) is not { } from || StartOf(b, clicked) is not { } to) return false;
+        (double lo, double hi) = from <= to ? (from, to) : (to, from);
+        var set = new HashSet<string>();
+        for (int i = Math.Min(a, b); i <= Math.Max(a, b); i++)
+        {
+            foreach (var c in tracks[i].Clips)
+                if (Window(c).Start is var s && s >= lo - 1e-9 && s <= hi + 1e-9) set.Add(c.Clip.Id);
+            foreach (var m in tracks[i].Track.MidiClips ?? [])
+                if (m.AtSec >= lo - 1e-9 && m.AtSec <= hi + 1e-9) set.Add(m.Id);
+        }
+        set.Add(anchor);
+        set.Add(clicked);
+        if (set.Count < 2) return false;
+        boxed.Clear();
+        boxed.UnionWith(set);
+        selectedBlock = null;
+        if (IsMidiClip(clicked)) SelectedMidiId = clicked;
+        else
+        {
+            SelectedMidiId = null;
+            SelectedClipId = clicked;
+        }
+        SelectOne(b);
+        return true;
     }
 
     /// <summary>The lane of a take or a MIDI clip, or -1.</summary>

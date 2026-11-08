@@ -77,6 +77,31 @@ static class ClipChecks
         left.Clips.Add(second);
         ClipEditing.MoveToTrack(p, original.Id, left.Id, second.Id);
         Check(left.Clips[0].Id == original.Id && right.Clips[0].Id == second.Id && second.AtSec == 8, "intercambio sin mover los tiempos");
+        // dropped under the last track, a clip lands on a new one of its kind (#309)
+        {
+            var q = new Project { Media = [media], Tracks = [new Track { Name = "Voz", Video = false }] };
+            var take = new Clip { MediaId = media.Id, AtSec = 3 };
+            q.Tracks[0].Clips.Add(take);
+            q.Tracks[0].Channel.Pan = 0.5;
+            string made = TrackCopies.MoveToNew(q, take.Id);
+            var nt = q.Tracks[^1];
+            Check(q.Tracks.Count == 2 && nt.Id == made && !nt.IsMidi && !nt.Video && nt.Clips.Count == 1 && nt.Clips[0].Id == take.Id && Near(take.AtSec, 3)
+                && q.Tracks[0].Clips.Count == 0 && nt.Channel.Pan == 0, "un clip soltado bajo la última pista va a una pista de audio nueva, sin sus ajustes");
+            var synth = q.Tracks.Find(t => t.Id == MidiEditing.AddTrack(q, "Piano"))!;
+            synth.Gm = new GmSettings { Program = 5 };
+            var mc = new MidiClip { AtSec = 2, LengthBeats = 4 };
+            synth.MidiClips!.Add(mc);
+            string madeMidi = TrackCopies.MoveToNew(q, mc.Id);
+            var nm = q.Tracks[^1];
+            Check(nm.Id == madeMidi && nm.IsMidi && nm.Gm?.Program == 5 && !ReferenceEquals(nm.Gm, synth.Gm) && nm.MidiClips!.Count == 1 && synth.MidiClips.Count == 0,
+                "un clip MIDI va a una pista MIDI nueva con el mismo instrumento");
+            var stuckNew = new Clip { MediaId = media.Id, AtSec = 1, Locked = true };
+            nt.Clips.Add(stuckNew);
+            int beforeNew = q.Tracks.Count;
+            bool refusedNew = false;
+            try { TrackCopies.MoveToNew(q, stuckNew.Id); } catch (ArgumentException) { refusedNew = true; }
+            Check(refusedNew && q.Tracks.Count == beforeNew, "un clip bloqueado no deja una pista vacía");
+        }
         left.Clips.Add(new Clip { MediaId = media.Id, AtSec = 12 });
         ClipEditing.RemoveClip(p, original.Id);
         Check(left.Clips.Count == 1 && left.Name == "Base" && p.Media.Count == 1, "quitar un clip no quita otros ni borra medios");

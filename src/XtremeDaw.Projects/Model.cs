@@ -47,7 +47,6 @@ public sealed class Project
     public List<ChordMarker> ChordMarkers { get; set; } = [];
     public List<ExportRecord> Exports { get; set; } = [];
     public List<LogEntry> Log { get; set; } = [];
-
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 
     public Media? FindMedia(string id) => Media.Find(m => m.Id == id);
@@ -67,8 +66,11 @@ public sealed class Project
         Exports.RemoveAll(e => e == null);
         foreach (var e in Exports) e.TakeIds ??= [];
         Media.RemoveAll(m => m == null);
+        foreach (var m in Media) m.AddedBy = string.IsNullOrWhiteSpace(m.AddedBy) ? null : m.AddedBy.Trim();
         Tracks.RemoveAll(t => t == null);
         foreach (var t in Tracks) t.Normalize();
+        // a shared session's stand-in renders were dropped (#291, the user's call): their entry and files go
+        Extra?.Remove("renders");
         TrackFolders.Normalize(this);
         ProjectBuses.Normalize(this);
         ProjectMarkers.Normalize(this);
@@ -580,6 +582,11 @@ public sealed class Media
     public long AudioBytes { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public long VideoBytes { get; set; }
+    /// <summary>
+    /// Who brought it in a shared session (#291: the person's name there, shown in Biblioteca); null = not known (it came
+    /// before a session, or outside one). Set once, by the session, and never changed after.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? AddedBy { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 

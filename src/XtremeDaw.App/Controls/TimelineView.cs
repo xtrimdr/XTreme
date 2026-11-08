@@ -85,8 +85,8 @@ public sealed partial class TimelineView : Control
     public Func<LiveClip, float?>? ToMidiProgress { get; set; }
     /// <summary>How far "Separar en stems" is on a clip (0 to 1); null when it isn't separating that clip.</summary>
     public Func<LiveClip, float?>? StemsProgress { get; set; }
-    /// <summary>"-12" to "+12", made once so a header with a transposed track allocates nothing per frame.</summary>
-    static readonly string[] TransposeTags = [.. Enumerable.Range(-12, 25).Select(v => $"{v:+0;-0;0}")];
+    /// <summary>"-24" to "+24", made once so a header with a transposed track allocates nothing per frame.</summary>
+    static readonly string[] TransposeTags = [.. Enumerable.Range(-24, 49).Select(v => $"{v:+0;-0;0}")];
     /// <summary>"0" to "100", the knobs' readouts, made once so drawing allocates nothing.</summary>
     static readonly string[] Hundreds = [.. Enumerable.Range(0, 101).Select(v => $"{v}")];
     /// <summary>A send knob's edit from a header: track, <see cref="SendPrefix"/> + bus, toggle on/off, new level (a level above 0 also turns it on).</summary>
@@ -246,6 +246,13 @@ public sealed partial class TimelineView : Control
     Point down;
     double downScrollX, downScrollY;
     int fromIndex = -1, overIndex = -1;
+    /// <summary>
+    /// The dragged clip (a take's or a MIDI one) is over the empty space under the last row: dropped there it goes to a
+    /// new track of its kind (asked by the user, #309). Shown as a "new track" lane right under the rows.
+    /// </summary>
+    bool toNewTrack;
+    /// <summary>The target a drop on <see cref="toNewTrack"/> sends with <see cref="ClipEditCommitted"/> and <see cref="MidiClipChanged"/>.</summary>
+    public const string NewTrackTarget = "+new";
     LiveClip? dragged;
     Clip? original, preview;
     ClipEditMode dragMode;
@@ -1136,6 +1143,12 @@ public sealed partial class TimelineView : Control
 
     int HitTrack(double y) => HitRow(y) is { Folder: null, Lane: null } r ? r.Track : -1;
 
+    /// <summary>Whether <paramref name="y"/> is in the empty space under every row (and the take being recorded on a new track).</summary>
+    bool InEmptySpace(double y) => y >= RulerH && y - RulerH + scrollY >= contentH + ExtraRows * laneH;
+
+    /// <summary>The "new track" lane a clip dropped in the empty space lands on (#309): right under the rows, the shared height.</summary>
+    Rect NewTrackLane(double W) => new(HeaderW, LaneY(tracks.Count + ExtraRows), Math.Max(0, W - HeaderW), laneH);
+
     // the reorder gesture: a track or a folder, where it was and where it will land
     string? dragTrackId;
     /// <summary>The tracks carried (the grabbed one, or every picked one when it is picked), in the order they are drawn.</summary>
@@ -1308,7 +1321,7 @@ public sealed partial class TimelineView : Control
         TrackHeightChanged?.Invoke(laneH);
         InvalidateVisual();
     }
-    Clip DisplayClip(LiveClip clip) => dragged == clip && preview != null && overIndex == fromIndex ? preview
+    Clip DisplayClip(LiveClip clip) => dragged == clip && preview != null && overIndex == fromIndex && !toNewTrack ? preview
         : carriedPreview.TryGetValue(clip, out var along) ? along : clip.Clip;
     ClipEnvelope.ClipWindow Window(LiveClip clip, Clip? value = null)
     {
@@ -1517,7 +1530,8 @@ public sealed partial class TimelineView : Control
                 Palette.Faint, new Point(HeaderW + 24, RulerH + 90));
         }
         if (cloning && moved) DrawLeftBehind(ctx, W, H);
-        if (dragged != null && preview != null && overIndex >= 0 && overIndex != fromIndex && !swapping)
+        if (toNewTrack && moved) DrawNewTrackLane(ctx, W, H);
+        else if (dragged != null && preview != null && overIndex >= 0 && overIndex != fromIndex && !swapping)
             DrawGhost(ctx, W, H);
         else if (dragged != null && overIndex >= 0 && overIndex != fromIndex)
         {
@@ -1585,6 +1599,31 @@ public sealed partial class TimelineView : Control
             double lx = Math.Clamp(box.X + 8, HeaderW + 8, Math.Max(HeaderW + 8, W - label.Width - 8));
             ctx.DrawRectangle(Palette.Alpha(Palette.AppColor, 0.75), null, new Rect(lx - 4, box.Y + 3, label.Width + 8, label.Height + 2), 3, 3);
             ctx.DrawText(label, new Point(lx, box.Y + 4));
+        }
+    }
+
+    /// <summary>
+    /// The "new track" lane under the rows while a clip is held over the empty space (#309): a take shows where it will
+    /// land as a dashed box, like over another track; a MIDI clip is drawn there whole.
+    /// </summary>
+    void DrawNewTrackLane(DrawingContext ctx, double W, double H)
+    {
+        var lane = NewTrackLane(W);
+        using (ctx.PushClip(new Rect(HeaderW, RulerH, Math.Max(0, W - HeaderW), Math.Max(0, H - RulerH))))
+        {
+            ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.06), Palette.Dashed(Palette.Accent, 1.5), lane.Deflate(1), 5, 5);
+            if (dragged != null && preview != null)
+            {
+                var w = Window(dragged, preview);
+                double x0 = X(w.Start), x1 = X(w.End);
+                ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.18), Palette.Dashed(Palette.Accent, 1.5), new Rect(x0, lane.Y + 5, Math.Max(2, x1 - x0), lane.Height - 10), 5, 5);
+            }
+            else if (midiHeld != null && fromIndex >= 0 && fromIndex < tracks.Count)
+                DrawMidiClip(ctx, tracks[fromIndex], midiHeld, lane.Y, lane.Height, W, true);
+            var label = Palette.Text(Loc.T("timeline.toNewTrack"), 11, Palette.Accent, Palette.UiBold);
+            double lx = Math.Max(HeaderW + 10, W - label.Width - 16);
+            ctx.DrawRectangle(Palette.Alpha(Palette.AppColor, 0.75), null, new Rect(lx - 4, lane.Y + 7, label.Width + 8, label.Height + 2), 3, 3);
+            ctx.DrawText(label, new Point(lx, lane.Y + 8));
         }
     }
 
@@ -2407,7 +2446,7 @@ public sealed partial class TimelineView : Control
         var color = c.Offline ? OfflineColor : tint ?? Palette.AccentColor;
         bool silent = t.Silenced || anySoloed && !t.Soloed;
         // the clip being carried to another track stays dimmed where it was until it is dropped
-        bool carried = dragged == c && overIndex >= 0 && overIndex != fromIndex && !swapping;
+        bool carried = dragged == c && (overIndex >= 0 && overIndex != fromIndex && !swapping || toNewTrack);
         using var opacity = ctx.PushOpacity((!c.Offline && silent ? 0.5 : 1) * (carried ? 0.35 : 1) * (erasing.Contains(c.Clip.Id) ? ErasingOpacity : 1));
         // the web shows the filmstrip from SHOW_THUMBS_AT; audio-only media (native only) keeps the plain clip
         bool thumbs = showVideo && t.Track.Video && !c.Offline && lh >= ShowThumbsAt && c.VideoPath != null;
@@ -2486,6 +2525,7 @@ public sealed partial class TimelineView : Control
                 var band = BandOf(clip, x0, x1, fadeInX, fadeOutX, W);
                 if (t.Freeze != null && band.TakeLeft(FrozenChipW, out var frozen)) DrawFrozenChip(ctx, frozen);
                 if (!c.Offline && band.TakeRight(MediaBadgeW, out var badge)) DrawMediaBadge(ctx, badge, c.VideoPath != null);
+                DrawClipPresence(ctx, ref band, c.Clip.Id);
                 // a repeat of a loop says so with the loop icon at its start, as while it was dragged (#253)
                 if (model.LoopOf != null && band.TakeLeft(LoopGlyphW, out var loop)) DrawLoopGlyph(ctx, 10, Palette.Alpha(color, 1), new Point(loop.X, loop.Y - 1));
                 if (locked && band.TakeRight(ClipTabW, out var lockTab)) DrawClipTab(ctx, lockTab, "");
@@ -2820,7 +2860,7 @@ public sealed partial class TimelineView : Control
     static void DrawPitchTab(DrawingContext ctx, Rect tab, double pitch)
     {
         ctx.DrawRectangle(Palette.Alpha(Palette.AppColor, 0.75), null, tab, 4, 4);
-        var t = Palette.Text(TransposeTags[Math.Clamp((int)Math.Round(pitch), -12, 12) + 12], 10, Palette.Accent, Palette.Mono);
+        var t = Palette.Text(TransposeTags[Math.Clamp((int)Math.Round(pitch), -24, 24) + 24], 10, Palette.Accent, Palette.Mono);
         t.Draw(ctx, new Point(tab.Center.X - t.Width / 2, tab.Center.Y - t.Height / 2));
     }
 
@@ -3147,6 +3187,11 @@ public sealed partial class TimelineView : Control
         // (a frozen one says so with its lit freeze toggle, #240)
         bool padlock = t.Track.Locked && editingNameId != t.Track.Id && !RecordingInto(i);
         if (padlock) nameW = Math.Max(0, nameW - LockW);
+        // someone else on this track in a shared session (#291): their tag after the rest, while the name keeps its least
+        var someone = editingNameId != t.Track.Id && !RecordingInto(i) ? RowPresence(t.Track.Id) : null;
+        double someoneW = someone != null ? PresenceTagW(someone) : 0;
+        if (someone != null && nameW - someoneW - TagGap >= NameMinW) nameW -= someoneW + TagGap;
+        else someone = null;
         if (RecordingInto(i))
         {
             ctx.DrawText(Loc.T("timeline.recording"), 13, Palette.Rec, new Point(nameX, hy + 11), Palette.Ui, nameW);
@@ -3167,12 +3212,14 @@ public sealed partial class TimelineView : Control
                 var tag = TransposeTag(t, progress == null ? Palette.Accent : Palette.Faint);
                 ctx.DrawText(tag, new Point(r.X + 18, r.Center.Y - tag.Height / 2));
             }
+            double after = tags.Transpose.Width > 0 ? tags.Transpose.Right : tags.Layout.Width > 0 ? tags.Layout.Right
+                : nameX + Math.Min(Palette.Text(t.Track.Name, 12.5, Palette.Fg, Palette.UiBold).Width, tags.NameRoom);
             if (padlock)
             {
-                double after = tags.Transpose.Width > 0 ? tags.Transpose.Right : tags.Layout.Width > 0 ? tags.Layout.Right
-                    : nameX + Math.Min(Palette.Text(t.Track.Name, 12.5, Palette.Fg, Palette.UiBold).Width, nameW);
                 ctx.DrawText("", 11, Palette.Faint, new Point(after + 5, hy + 13), Icons);
+                after += LockW;
             }
+            if (someone != null) DrawPresenceTag(ctx, new Rect(after + TagGap, hy + 10, someoneW, TagH), someone);
         }
         if (chip) DrawInputChip(ctx, InputRect(i), InputLabel!(t), Hot(InputRect(i)));
 
@@ -3216,7 +3263,7 @@ public sealed partial class TimelineView : Control
         if (!MetersOnLayer) DrawMeters(ctx, i);
     }
 
-    static Avalonia.Media.TextFormatting.TextLayout TransposeTag(LiveTrack t, IBrush brush) => Palette.Text(TransposeTags[Math.Clamp((int)Math.Round(t.Track.Transpose), -12, 12) + 12], 10.5, brush, Palette.Mono);
+    static Avalonia.Media.TextFormatting.TextLayout TransposeTag(LiveTrack t, IBrush brush) => Palette.Text(TransposeTags[Math.Clamp((int)Math.Round(t.Track.Transpose), -24, 24) + 24], 10.5, brush, Palette.Mono);
 
     public static readonly string[] LayoutKeys = ["", "layout.mono", "layout.stereo", "layout.mixed"];
     /// <summary>The name keeps at least this much before the channel badge gives up its place.</summary>
@@ -3376,6 +3423,7 @@ public sealed partial class TimelineView : Control
                 double rx = Math.Round(X(returnMark)) + 0.5;
                 ctx.DrawLine(Palette.Dashed(Palette.Alpha(Palette.AccentColor, 0.7), 1), new Point(rx, StripsH), new Point(rx, H));
             }
+            DrawPresenceCursors(ctx, H);
             double px = X(Playhead);
             var playColor = Recording ? Palette.Rec : Palette.Accent;
             var pen = Palette.Pen(playColor, 1.5);
@@ -3664,7 +3712,13 @@ public sealed partial class TimelineView : Control
             // Shift+drag over a lane selects a range, like the Rango tool (native only); on a clip it clones the clip
             StartRange(i, p, e);
         }
-        else if (p.X >= HeaderW && tracks[i].Track.IsMidi) MidiPressed(i, p, e);
+        else if (p.X >= HeaderW && tracks[i].Track.IsMidi)
+        {
+            // MidiPressed decides the selection itself: falling through to the Select below dropped what Ctrl had
+            // just boxed (#311)
+            MidiPressed(i, p, e);
+            return;
+        }
         else if (p.X >= HeaderW)
         {
             var clip = ClipAt(i, p.X);
@@ -3675,7 +3729,8 @@ public sealed partial class TimelineView : Control
                 e.Handled = true;
                 return;
             }
-            if (e.ClickCount == 2)
+            // with Ctrl or Shift a quick second click still picks a clip (#311)
+            if (e.ClickCount == 2 && (clip == null || (modifiers & (KeyModifiers.Control | KeyModifiers.Shift)) == 0))
             {
                 SelectClip(i, clip?.Clip.Id);
                 SeekRequested?.Invoke(Math.Max(0, ClipEditing.Snap(Sec(p.X), Grid, (modifiers & KeyModifiers.Alt) != 0)));
@@ -3688,7 +3743,9 @@ public sealed partial class TimelineView : Control
                 StartBox(e);
                 return;
             }
-            cloning = (modifiers & KeyModifiers.Shift) != 0 && e.ClickCount == 1 && OnClipBody(i, p);
+            cloning = (modifiers & KeyModifiers.Shift) != 0 && OnClipBody(i, p);
+            // a Shift+click without moving boxes from the selected clip to this one (#311)
+            shiftAnchor = cloning ? RangeAnchor() : null;
             if (!cloning && HitHandle(clip, p) == ClipEditMode.Move && CurvePointAt(i, clip, p) is var point and >= 0)
             {
                 StartCurve(i, clip, point, e);
@@ -3708,7 +3765,7 @@ public sealed partial class TimelineView : Control
                 return;
             }
             // with Ctrl, a click (released without moving) adds the clip to the selection or takes it out
-            toggleBase = (modifiers & KeyModifiers.Control) != 0 && e.ClickCount == 1 ? SelectionSeed() : null;
+            toggleBase = (modifiers & KeyModifiers.Control) != 0 ? SelectionSeed() : null;
             // a boxed clip grabbed by its body carries the other boxed ones; by an edge, a fade or its loop, it edits them all
             bool group = GroupEdits(clip.Clip.Id);
             if (group)
@@ -3716,6 +3773,12 @@ public sealed partial class TimelineView : Control
                 SelectedClipId = clip.Clip.Id;
                 SelectOne(i);
                 if (dragMode == ClipEditMode.Move) StartCarry(clip);
+            }
+            // a Ctrl or Shift click decides on release: what is selected stays on screen until then (#311)
+            else if (toggleBase != null || shiftAnchor != null)
+            {
+                string id = clip.Clip.Id;
+                pendingSelect = () => SelectClip(i, id);
             }
             else SelectClip(i, clip.Clip.Id);
             dragged = clip;
@@ -4056,6 +4119,7 @@ public sealed partial class TimelineView : Control
             if (!moved && Math.Abs(dxPx) < 3 && Math.Abs(lastPointer.Y - down.Y) < 3) return;
             bool wasMoved = moved;
             moved = true;
+            if (!wasMoved) RunPendingSelect();
             if (gesture == "box") UpdateBox();
             else if (gesture == "reorder")
             {
@@ -4111,6 +4175,7 @@ public sealed partial class TimelineView : Control
             else if (dragged != null && original != null)
             {
                 int lane = HitTrack(lastPointer.Y);
+                toNewTrack = dragMode == ClipEditMode.Move && InEmptySpace(lastPointer.Y);
                 overIndex = dragMode == ClipEditMode.Move && lane >= 0 && lane < tracks.Count ? lane : fromIndex;
                 // Ctrl over another track swaps with the clip under the pointer, as in the web (the time stays); without
                 // it the clip lands on that track at the time under the pointer, shown by a ghost (native only).
@@ -4137,8 +4202,9 @@ public sealed partial class TimelineView : Control
         string kind = gesture;
         var value = preview;
         int from = fromIndex, to = overIndex;
-        string? target = kind == "clip" && to >= 0 && to != from ? tracks[to].Track.Id : null;
-        var extractTo = target != null && tracks[to].Track.IsMidi && dragged != null ? (Clip: dragged, Track: tracks[to]) : default;
+        bool toNew = toNewTrack && moved && (kind == "clip" && dragged != null || kind == "midi" && midiHeld != null);
+        string? target = kind == "clip" && toNew ? NewTrackTarget : kind == "clip" && to >= 0 && to != from ? tracks[to].Track.Id : null;
+        var extractTo = target != null && !toNew && tracks[to].Track.IsMidi && dragged != null ? (Clip: dragged, Track: tracks[to]) : default;
         string? swap = swapId;
         bool changed = moved;
         var landed = drop;
@@ -4161,7 +4227,9 @@ public sealed partial class TimelineView : Control
         bool stayed = kind == "clip" ? value?.AtSec == original?.AtSec && target == null : midiCarry || autoCarrying ? carryShift == 0 : midi == null;
         clones = cloning && changed && !stayed && extractTo.Clip == null ? CloneIds(kind) : [];
         var toggle = toggleBase;
-        var menu = kind == "erase" && !changed ? rightMenu : null;
+        var anchor = shiftAnchor;
+        var pending = pendingSelect;
+        var menu =kind == "erase" && !changed ? rightMenu : null;
         // the new height is applied while the dragged one still holds: applied after, the rows below went back to the
         // old height for a moment and glided from there, so everything jumped on release
         if (kind == "row-height" && changed && heightDrag is { } rh) RowHeightRequested?.Invoke(rh.Id, rh.H);
@@ -4183,6 +4251,10 @@ public sealed partial class TimelineView : Control
         if (kind == "box" && changed) EndBox();
         // Ctrl+click on a take adds it or takes it out (with Ctrl held, a drag still swaps it with another track's clip)
         if (toggle != null && !changed && grabbedId != null) ToggleBoxed(grabbedId, toggle);
+        // Shift+click on a clip without moving it: from the selected clip to this one (#311)
+        else if (anchor != null && !changed && grabbedId != null && anchor != grabbedId && BoxRange(anchor, grabbedId)) { }
+        // a Shift+click with no range to box selects just that clip
+        else if (pending != null && !changed) pending();
         else if (group is { } g)
         {
             // a click on an edge without moving it leaves just that clip selected, like one on its body
@@ -4269,7 +4341,9 @@ public sealed partial class TimelineView : Control
         dragged = null;
         original = preview = null;
         cloning = false;
+        shiftAnchor = null;
         toggleBase = null;
+        pendingSelect = null;
         ClearMidiGesture();
         carriedAlong.Clear();
         carriedPreview.Clear();
@@ -4281,6 +4355,7 @@ public sealed partial class TimelineView : Control
         curvePoint = -1;
         swapId = null;
         swapping = false;
+        toNewTrack = false;
         fromIndex = overIndex = -1;
         dragScroll.Stop();
         pointer?.Capture(null);

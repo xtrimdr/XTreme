@@ -9,14 +9,32 @@ namespace XtremeDaw.App;
 /// <summary>
 /// UI themes, port of the web app's theme.ts: always dark, an accent color plus a surface palette (the greys,
 /// tinted). Applied live to the App.axaml brushes, to <see cref="Palette"/> and to the Fluent accent colors.
-/// Same as the web except it adds nine accent presets, three dark and six mid-grey surface palettes, and is remembered
-/// in the program's config ("theme") instead of localStorage.
+/// Same as the web except it adds nine accent presets, three dark and six mid-grey surface palettes and four adjustments
+/// (brightness, contrast, saturation, warmth; #317), and is remembered in the program's config ("theme") instead of
+/// localStorage.
 /// </summary>
 static class UiTheme
 {
     public sealed record Surface(string Id, string Name, Color App, Color Panel, Color Raised, Color Hover, Color Line, Color Fg, Color Dim, Color Faint);
 
-    public sealed record Settings(string Accent, string Surface);
+    /// <summary>
+    /// The accent, the surface palette and four adjustments over them (asked by the user, #317), each -1..1 with 0 as the
+    /// palette comes: <see cref="Brightness"/> lifts or darkens the backgrounds, <see cref="Contrast"/> spreads or
+    /// closes the layers and texts away from the window's background, <see cref="Saturation"/> tints the surfaces and
+    /// the accent more or less, <see cref="Warmth"/> turns the surfaces warmer (amber) or cooler (blue).
+    /// </summary>
+    public sealed record Settings(string Accent, string Surface, double Brightness = 0, double Contrast = 0, double Saturation = 0, double Warmth = 0)
+    {
+        public bool Adjusted => Brightness != 0 || Contrast != 0 || Saturation != 0 || Warmth != 0;
+
+        /// <summary>The same colors, with no adjustment.</summary>
+        public Settings Plain => this with { Brightness = 0, Contrast = 0, Saturation = 0, Warmth = 0 };
+    }
+
+    /// <summary>How far each adjustment goes at its end (±1): the backgrounds' lightness moves up to 0.12, the distance of
+    /// layers and texts from the background up to ±40 %, the saturation down to grey or up to double, the warmth up to
+    /// 14 levels of red against blue on the backgrounds (half on the texts, so they stay neutral enough to read).</summary>
+    const double BrightnessSpan = 0.12, ContrastSpan = 0.4, WarmthSpan = 14;
 
     static Surface S(string id, string name, params string[] c) => new(id, name,
         Color.Parse(c[0]), Color.Parse(c[1]), Color.Parse(c[2]), Color.Parse(c[3]), Color.Parse(c[4]), Color.Parse(c[5]), Color.Parse(c[6]), Color.Parse(c[7]));
@@ -76,10 +94,48 @@ static class UiTheme
         {
             if (AppConfig.Get(ConfigKey) is { } json && JsonSerializer.Deserialize<Settings>(json, ProjectStore.Json) is { } t
                 && IsHex(t.Accent) && Surfaces.Any(s => s.Id == t.Surface))
-                return t with { Accent = t.Accent.ToLowerInvariant() };
+                return t with
+                {
+                    Accent = t.Accent.ToLowerInvariant(), Brightness = Unit(t.Brightness), Contrast = Unit(t.Contrast),
+                    Saturation = Unit(t.Saturation), Warmth = Unit(t.Warmth),
+                };
         }
         catch (JsonException) { }
         return Default;
+    }
+
+    static double Unit(double v) => double.IsFinite(v) ? Math.Clamp(v, -1, 1) : 0;
+
+    /// <summary>The surface with the theme's adjustments applied (see <see cref="Settings"/>); as it is with none.</summary>
+    public static Surface Adjust(Surface s, Settings t)
+    {
+        if (!t.Adjusted) return s;
+        double b = Unit(t.Brightness) * BrightnessSpan, k = 1 + Unit(t.Contrast) * ContrastSpan, sat = 1 + Unit(t.Saturation);
+        double w = Unit(t.Warmth) * WarmthSpan;
+        // contrast pivots on the window's background, once brightened: the layers and texts move away from it or closer
+        double app = Math.Clamp(s.App.ToHsl().L + b, 0, 1);
+        Color Tone(Color c, bool background)
+        {
+            var hsl = c.ToHsl();
+            double l = background ? Math.Clamp(hsl.L + b, 0, 1) : hsl.L;
+            l = Math.Clamp(app + (l - app) * k, 0, 1);
+            var o = new HslColor(1, hsl.H, Math.Clamp(hsl.S * sat, 0, 1), l).ToRgb();
+            double ww = background ? w : w / 2;
+            return Color.FromRgb((byte)Math.Clamp(Math.Round(o.R + ww), 0, 255), o.G, (byte)Math.Clamp(Math.Round(o.B - ww), 0, 255));
+        }
+        return s with
+        {
+            App = Tone(s.App, true), Panel = Tone(s.Panel, true), Raised = Tone(s.Raised, true), Hover = Tone(s.Hover, true),
+            Line = Tone(s.Line, true), Fg = Tone(s.Fg, false), Dim = Tone(s.Dim, false), Faint = Tone(s.Faint, false),
+        };
+    }
+
+    /// <summary>The accent with the theme's saturation (the other adjustments are the surfaces').</summary>
+    static Color AdjustAccent(Color c, Settings t)
+    {
+        if (t.Saturation == 0) return c;
+        var hsl = c.ToHsl();
+        return new HslColor(1, hsl.H, Math.Clamp(hsl.S * (1 + Unit(t.Saturation)), 0, 1), hsl.L).ToRgb();
     }
 
     static double Luminance(Color c)
@@ -113,11 +169,22 @@ static class UiTheme
         return (Color.Parse(warm ? "#60a5fa" : "#f59e0b"), Color.Parse(green ? "#22d3ee" : "#22c55e"));
     }
 
+    /// <summary>Remembers the current theme (in the background, in order, so the last pick is the one that stays).</summary>
+    public static void Save()
+    {
+        string json = JsonSerializer.Serialize(Current, ProjectStore.Json);
+        saving = saving.ContinueWith(_ =>
+        {
+            try { AppConfig.Set(ConfigKey, json); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* the theme still applies for this session */ }
+        }, TaskScheduler.Default);
+    }
+
     /// <summary>Applies the theme everywhere; <paramref name="persist"/> also remembers it (in the background).</summary>
     public static void Apply(Settings theme, bool persist = true)
     {
-        var surface = Surfaces.FirstOrDefault(s => s.Id == theme.Surface) ?? Surfaces[0];
-        var accent = IsHex(theme.Accent) ? Color.Parse(theme.Accent) : Color.Parse(Default.Accent);
+        var surface = Adjust(Surfaces.FirstOrDefault(s => s.Id == theme.Surface) ?? Surfaces[0], theme);
+        var accent = AdjustAccent(IsHex(theme.Accent) ? Color.Parse(theme.Accent) : Color.Parse(Default.Accent), theme);
         var onAccent = Luminance(accent) > 0.3 ? Color.Parse("#0b0b0d") : Colors.White;
         Current = theme;
         var (mute, inTune) = StateColors(accent);
@@ -161,16 +228,7 @@ static class UiTheme
             r["SystemAccentColorLight3"] = Mix(accent, Colors.White, 0.6);
         }
 
-        if (persist)
-        {
-            string json = JsonSerializer.Serialize(theme, ProjectStore.Json);
-            // in order, so the last pick is the one that stays
-            saving = saving.ContinueWith(_ =>
-            {
-                try { AppConfig.Set(ConfigKey, json); }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* the theme still applies for this session */ }
-            }, TaskScheduler.Default);
-        }
+        if (persist) Save();
         Changed?.Invoke();
     }
 }

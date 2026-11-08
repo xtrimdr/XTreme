@@ -61,6 +61,7 @@
     <Compile Include="..\XtremeDaw.App\AgentTranscript.cs" Link="App\AgentTranscript.cs" />
     <Compile Include="..\XtremeDaw.App\Terminal\*.cs" Link="App\Terminal\%(Filename)%(Extension)" />
     <Compile Include="..\XtremeDaw.App\Dialogs\TestListWindow.Consoles.cs" Link="App\Dialogs\TestListWindow.Consoles.cs" DependentUpon="TestListWindow.axaml" />
+    <Compile Include="..\XtremeDaw.App\Dialogs\TestListWindow.Queue.cs" Link="App\Dialogs\TestListWindow.Queue.cs" DependentUpon="TestListWindow.axaml" />
     <Compile Include="..\XtremeDaw.App\Controls\Palette.cs" Link="App\Controls\Palette.cs" />
     <Compile Include="..\XtremeDaw.App\Controls\UiFonts.cs" Link="App\Controls\UiFonts.cs" />
     <Compile Include="..\XtremeDaw.App\Controls\ThemePicker.cs" Link="App\Controls\ThemePicker.cs" />

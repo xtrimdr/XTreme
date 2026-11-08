@@ -68,7 +68,8 @@
           <TextBlock x:Name="AddressText" Classes="dim mono" TextWrapping="Wrap" />
         </StackPanel>
         <TextBlock Classes="label" Text="{loc:T live.people}" Margin="0,4,0,0" />
-        <TextBlock x:Name="PeopleText" TextWrapping="Wrap" />
+        <!-- one row per person: color, name, role, latency and what they are doing (LiveDialog.Rows) -->
+        <StackPanel x:Name="PeopleList" Spacing="4" />
         <TextBlock x:Name="StateText" Classes="dim" TextWrapping="Wrap" />
       </StackPanel>
 

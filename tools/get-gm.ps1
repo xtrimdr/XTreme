@@ -1,15 +1,15 @@
-# Baja el banco General MIDI (GeneralUser GS v2, de S. Christian Collins) a lib\gm, fuera de git como los DLL de FFmpeg.
-# Es el sonido del instrumento General MIDI nativo (GmSynth): ~31 MB y su licencia (uso libre, también comercial, y se
-# puede redistribuir con un programa), de un commit fijo para que todos usen el mismo banco. Va en el instalador.
-# Correlo de nuevo con -Reemplazar para bajarlo otra vez.
+# Baja el banco General MIDI GeneralUser GS v2 (de S. Christian Collins) a %APPDATA%\XTreme\gm, el mismo lugar donde lo
+# deja la app al bajarlo desde Configuración → Componentes. No va con la app ni en el instalador (todos los bancos son
+# descargas opcionales, #304): esto es para que xtlab tenga un banco con qué probar. Un commit fijo, así todos usan el
+# mismo banco (GmBank.Downloads tiene su tamaño y su SHA-256). Correlo de nuevo con -Reemplazar para bajarlo otra vez.
 param(
     [string]$Commit = '684543d5e5efaef08d02be50dcda8d552478fa60',
     [switch]$Reemplazar
 )
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $PSScriptRoot -Parent
-$dest = Join-Path $root 'lib\gm'
+$dest = Join-Path $env:APPDATA 'XTreme\gm'
 $bank = Join-Path $dest 'GeneralUser-GS.sf2'
+$sha = '9575028C7A1F589F5770FCCC8CFF2734566AF40CD26ED836944E9A5152688CFE'
 
 if ((Test-Path $bank) -and -not $Reemplazar) {
     Write-Host "Ya está: $bank (usá -Reemplazar para bajarlo de nuevo)"
@@ -20,7 +20,6 @@ $base = "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/$Commit"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $part = "$bank.part"
 Invoke-WebRequest "$base/GeneralUser-GS.sf2" -OutFile $part -UseBasicParsing
-if ((Get-Item $part).Length -lt 30MB) { Remove-Item $part; throw 'El banco bajó incompleto.' }
+if ((Get-FileHash $part -Algorithm SHA256).Hash -ne $sha) { Remove-Item $part; throw 'El banco bajó incompleto o distinto.' }
 Move-Item -Force $part $bank
-Invoke-WebRequest "$base/documentation/LICENSE.txt" -OutFile (Join-Path $dest 'LICENSE-GeneralUser-GS.txt') -UseBasicParsing
 Write-Host "Banco General MIDI en $dest" -ForegroundColor Green

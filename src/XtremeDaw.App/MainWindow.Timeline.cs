@@ -288,6 +288,8 @@ public partial class MainWindow
             {
                 MidiEditing.LeaveCopies(p, clones);
                 ClipEditing.Replace(p, clip);
+                // dropped under the last row: a new track of its kind (#309)
+                if (target == TimelineView.NewTrackTarget) return TrackCopies.MoveToNew(p, clip.Id);
                 if (target != null) return ClipEditing.MoveToTrack(p, clip.Id, target, swap);
                 return ClipEditing.Find(p, clip.Id).Track.Id;
             }, clones.Count > 0 ? "clip-duplicated" : "clip-edited", clip.Id);
@@ -698,7 +700,33 @@ public partial class MainWindow
     /// "nueva pista" entries were noise).</summary>
     static readonly TimeSpan MenuTipDelay = TimeSpan.FromSeconds(1);
 
-    static MenuItem MenuAction(string label, Func<Task> action, string? hint = null, bool enabled = true, bool danger = false, string? icon = null, string? tip = null)
+    /// <summary>An icon with a small "+" at its lower right: the entries of the new track menu add something (asked by
+    /// the user, #314). A glyph, or "kind:audio" / "kind:midi" / "kind:video" for the track kind's stroked icon
+    /// (<see cref="TrackIcons.KindIcon"/>: the waveform and the keys the rest of the app shows for those tracks).</summary>
+    static Control AddIcon(string glyph)
+    {
+        // 12 wide like a plain menu glyph, so the labels line up; the "+" hangs past it into the gap
+        var icon = new Panel { Width = 12, Height = 14, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+        if (glyph.StartsWith(KindPrefix, StringComparison.Ordinal))
+            icon.Children.Add(new Avalonia.Controls.Shapes.Path
+            {
+                Data = TrackIcons.KindIcon(glyph[KindPrefix.Length..]), Stretch = Avalonia.Media.Stretch.Uniform, Width = 12, Height = 12,
+                Stroke = Palette.Dim, StrokeThickness = 1.3, StrokeLineCap = Avalonia.Media.PenLineCap.Round, StrokeJoin = Avalonia.Media.PenLineJoin.Round,
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+            });
+        else icon.Children.Add(new TextBlock { Text = glyph, Classes = { "icon" }, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center });
+        icon.Children.Add(new TextBlock
+        {
+            Text = "", Classes = { "icon" }, FontSize = 7, FontWeight = Avalonia.Media.FontWeight.Bold, Foreground = Palette.Accent,
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, -4, -3),
+        });
+        return icon;
+    }
+
+    /// <summary>How <see cref="AddIcon"/> is asked for a track kind's icon instead of a glyph.</summary>
+    const string KindPrefix = "kind:";
+
+    static MenuItem MenuAction(string label, Func<Task> action, string? hint = null, bool enabled = true, bool danger = false, string? icon = null, string? tip = null, bool add = false)
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         // a grid, not a stack: a long label trims before the hint instead of running under it
@@ -708,6 +736,7 @@ public partial class MainWindow
             Width = 12, Height = 12, Stroke = Palette.Dim, StrokeThickness = 1, HorizontalAlignment = HorizontalAlignment.Left,
             StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 2, 2 }, VerticalAlignment = VerticalAlignment.Center,
         });
+        else if (icon != null && add) text.Children.Add(AddIcon(icon));
         else if (icon != null) text.Children.Add(new TextBlock { Text = icon, Classes = { "icon" }, FontSize = 12 });
         var name = new TextBlock { Text = label, FontSize = 12, Foreground = danger ? Palette.Rec : Palette.Fg, VerticalAlignment = VerticalAlignment.Center, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
         if (icon != null) Grid.SetColumn(name, 1);
@@ -852,21 +881,21 @@ public partial class MainWindow
         var list = new List<object>();
         string tip = Loc.T("menu.emptyTrack.hint");
         if (AudioOnly)
-            list.Add(MenuAction(Loc.T("menu.emptyTrack"), () => EditTimeline(p => ClipEditing.AddEmpty(p, false), "track-added"), enabled: enabled, icon: "empty", tip: tip));
+            list.Add(MenuAction(Loc.T("menu.emptyTrack"), () => EditTimeline(p => ClipEditing.AddEmpty(p, false), "track-added"), enabled: enabled, icon: "kind:audio", tip: tip, add: true));
         else
         {
-            list.Add(MenuAction(Loc.T("menu.trackVideo"), () => EditTimeline(p => ClipEditing.AddEmpty(p, true), "track-added"), enabled: enabled, icon: "empty", tip: tip));
-            list.Add(MenuAction(Loc.T("menu.trackAudio"), () => EditTimeline(p => ClipEditing.AddEmpty(p, false), "track-added"), enabled: enabled, icon: "empty", tip: tip));
+            list.Add(MenuAction(Loc.T("menu.trackVideo"), () => EditTimeline(p => ClipEditing.AddEmpty(p, true), "track-added"), enabled: enabled, icon: "kind:video", tip: tip, add: true));
+            list.Add(MenuAction(Loc.T("menu.trackAudio"), () => EditTimeline(p => ClipEditing.AddEmpty(p, false), "track-added"), enabled: enabled, icon: "kind:audio", tip: tip, add: true));
         }
-        list.Add(MenuAction(Loc.T("menu.trackMidi"), NewMidiTrack, enabled: enabled, icon: "", tip: Loc.T("menu.trackMidi.hint")));
+        list.Add(MenuAction(Loc.T("menu.trackMidi"), NewMidiTrack, enabled: enabled, icon: "kind:midi", add: true, tip: Loc.T("menu.trackMidi.hint")));
         list.Add(NewInstrumentTrackMenu(enabled));
-        list.Add(MenuAction(Loc.T("menu.folder"), () => NewFolder(), enabled: enabled, icon: "", tip: Loc.T("menu.folder.hint")));
+        list.Add(MenuAction(Loc.T("menu.folder"), () => NewFolder(), enabled: enabled, icon: "", add: true, tip: Loc.T("menu.folder.hint")));
         var presets = PresetSubmenu(enabled);
         ToolTip.SetTip(presets, Loc.T("preset.menu.hint"));
         ToolTip.SetShowDelay(presets, (int)MenuTipDelay.TotalMilliseconds);
         list.Add(presets);
         list.Add(new Separator());
-        list.Add(MenuAction(Loc.T("menu.import"), PickAudioToImport, enabled: CanImport(), icon: "", tip: Loc.T("menu.import.hint")));
+        list.Add(MenuAction(Loc.T("menu.import"), PickAudioToImport, enabled: CanImport(), icon: "", add: true, tip: Loc.T("menu.import.hint")));
         return list;
     }
 
@@ -1123,11 +1152,14 @@ public partial class MainWindow
     }
 
     /// <summary>The clip's "Tono": semitones of its own, on top of the track's Transponer; every value is one entry, so a change is one step and one render.</summary>
+    /// <summary>The clip's Tono menu lists an octave either way: two would be 49 entries (the track's Transponer reaches two).</summary>
+    const int ClipPitchMenu = 12;
+
     MenuItem PitchItem(LiveTrack track, LiveClip clip, List<string> boxed, bool enabled)
     {
         var refresh = new List<Action>();
         var choices = new List<object>();
-        for (int v = (int)PitchShifter.MaxSemitones; v >= -PitchShifter.MaxSemitones; v--)
+        for (int v = ClipPitchMenu; v >= -ClipPitchMenu; v--)
         {
             double semis = v;
             choices.Add(MenuCheck(TransposeText(semis), () => clip.Clip.Pitch == semis, () => _ = SetClipPitch(track, clip, boxed, semis), refresh));

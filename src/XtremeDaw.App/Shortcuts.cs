@@ -49,6 +49,7 @@ static class Shortcuts
         new("delete", Loc.T("sc.group.editing"), Loc.T("sc.delete"), [G(Key.Delete)]),
         new("split", Loc.T("sc.group.editing"), Loc.T("sc.split"), [G(Key.X, KeyModifiers.Alt), G(Key.Insert)]),
         new("duplicate", Loc.T("sc.group.editing"), Loc.T("sc.duplicate"), [G(Key.D), G(Key.B, KeyModifiers.Control)]),
+        new("joinClips", Loc.T("sc.group.editing"), Loc.T("sc.joinClips"), [G(Key.J, KeyModifiers.Control)]),
         new("alignGrid", Loc.T("sc.group.editing"), Loc.T("sc.alignGrid"), [G(Key.Q, KeyModifiers.Shift)]),
         new("selectAll", Loc.T("sc.group.editing"), Loc.T("sc.selectAll"), [G(Key.A, KeyModifiers.Control)]),
         new("deselect", Loc.T("sc.group.editing"), Loc.T("sc.deselect"), [G(Key.D, KeyModifiers.Control)]),

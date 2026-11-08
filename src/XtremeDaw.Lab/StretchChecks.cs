@@ -212,14 +212,14 @@ static class StretchChecks
         ClipEditing.SetPitch(p, clip.Id, 3.4);
         bool adds = clip.Pitch == 3 && clip.SemitonesOn(p.Tracks[0]) == 5;
         ClipEditing.SetPitch(p, clip.Id, 40);
-        adds &= clip.Pitch == 12 && clip.SemitonesOn(p.Tracks[0]) == PitchShifter.MaxSemitones;
+        adds &= clip.Pitch == PitchShifter.MaxSemitones && clip.SemitonesOn(p.Tracks[0]) == PitchShifter.MaxSemitones;
         TransposeCommands.Row("Tono del clip: suma al de la pista", adds ? "igual" : "distinto", "igual", adds);
 
         var history = new UndoManager();
         history.Checkpoint(p, "gain");
         ClipEditing.SetPitch(p, clip.Id, -5);
         history.Undo(p);
-        bool undo = p.Tracks[0].Clips[0].Pitch == 12;
+        bool undo = p.Tracks[0].Clips[0].Pitch == PitchShifter.MaxSemitones;
         TransposeCommands.Row("Deshacer vuelve al tono del clip", undo ? "igual" : "distinto", "igual", undo);
 
         var kept = p.Tracks[0].Clips[0];
@@ -230,7 +230,7 @@ static class StretchChecks
         TransposeCommands.Row("Un clip bloqueado no cambia de tono", refused ? "igual" : "distinto", "igual", refused);
 
         string json = System.Text.Json.JsonSerializer.Serialize(kept, ProjectStore.Json);
-        bool stored = System.Text.Json.JsonSerializer.Deserialize<Clip>(json, ProjectStore.Json)!.Pitch == 12
+        bool stored = System.Text.Json.JsonSerializer.Deserialize<Clip>(json, ProjectStore.Json)!.Pitch == PitchShifter.MaxSemitones
             && !System.Text.Json.JsonSerializer.Serialize(new Clip(), ProjectStore.Json).Contains("pitch")
             && new Clip { MediaId = "m", Pitch = 2 }.TakeKey() != new Clip { MediaId = "m" }.TakeKey();
         TransposeCommands.Row("Tono del clip: se guarda y separa tomas", stored ? "igual" : "distinto", "igual", stored);

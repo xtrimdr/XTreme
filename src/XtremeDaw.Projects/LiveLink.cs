@@ -109,7 +109,9 @@ public sealed class LiveLink : IDisposable
 /// <summary>The kinds of message of a shared session (<see cref="LiveSession"/>).</summary>
 public enum LiveKind : byte
 {
-    Hello = 1, Welcome = 2, Refuse = 3, Edit = 4, Rev = 5, Peers = 6, GetFile = 7, FileChunk = 8, Missing = 9,
+    Hello = 1, Welcome = 2, Refuse = 3, Edit = 4, Rev = 5, Peers = 6, GetFile = 7, FileChunk = 8, Missing = 9, Presence = 10,
+    /// <summary>The plugins a copy has (to the host), everybody's (from the host), a ping or its answer.</summary>
+    Has = 11, Plugins = 12, Ping = 13,
 }
 
 /// <summary>One message: its kind, a JSON body and, for a piece of a file, its bytes.</summary>

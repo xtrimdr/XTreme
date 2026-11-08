@@ -32,6 +32,8 @@ public sealed class EqEditor : StackPanel
     readonly StackPanel dynBox = new() { Spacing = 10 };
     readonly DispatcherTimer liveTimer = new() { Interval = TimeSpan.FromMilliseconds(LiveMs) };
     readonly double[] liveDb = new double[TrackEq.BandCount];
+    /// <summary>The selected band's dynamics now: its level against the threshold and how far it moves (#312).</summary>
+    readonly EqDynMeter dynMeter;
     /// <summary>How often the graph reads what the dynamics are doing.</summary>
     const int LiveMs = 33;
     /// <summary>The big window's graph: how tall it starts and the least it gets.</summary>
@@ -148,6 +150,7 @@ public sealed class EqEditor : StackPanel
         ToolTip.SetTip(dynButton, Loc.T("eq.dyn.tip"));
         dynButton.Content = Loc.T("eq.dyn");
         dynButton.Click += (_, _) => Patch(selected, b => { b.Dyn = !b.Dyn; b.On = true; });
+        dynMeter = new EqDynMeter(tint) { Margin = new Thickness(0, 2, 0, 0) };
         dynThreshold = new InspectorSlider(Loc.T("eq.dyn.threshold"), EqDynamics.ThresholdMinDb, 0, 0.5, EqDynamics.DefaultThresholdDb, v => $"{v:0.0} dB", v => Patch(selected, b => b.DynThreshold = v));
         dynRange = new InspectorSlider(Loc.T("eq.dyn.range"), -EqDynamics.RangeMaxDb, EqDynamics.RangeMaxDb, 0.5, EqDynamics.DefaultRangeDb, v => $"{v:+0.0;-0.0;0.0} dB", v => Patch(selected, b => b.DynRange = v),
             Loc.T("eq.dyn.range.tip"));
@@ -158,6 +161,7 @@ public sealed class EqEditor : StackPanel
             Children.Add(freq); Children.Add(gain); Children.Add(q);
             Children.Add(slope);
             Children.Add(dynButton);
+            dynBox.Children.Add(dynMeter);
             dynBox.Children.Add(dynThreshold); dynBox.Children.Add(dynRange); dynBox.Children.Add(dynAttack); dynBox.Children.Add(dynRelease);
             Children.Add(dynBox);
             if (!big) Children.Add(new TextBlock { Text = Loc.T("eq.help"),
@@ -200,7 +204,7 @@ public sealed class EqEditor : StackPanel
         dynTitle.Children.Add(dynLabel);
         Grid.SetColumn(dynButton, 1);
         dynTitle.Children.Add(dynButton);
-        dynPanel = Inner(new StackPanel { Spacing = 6, Children = { dynTitle, dynKnobs } }, tint);
+        dynPanel = Inner(new StackPanel { Spacing = 6, Children = { dynTitle, dynKnobs, dynMeter } }, tint);
 
         if (wide)
         {
@@ -250,6 +254,7 @@ public sealed class EqEditor : StackPanel
             moved = true;
         }
         if (moved) graph.SetDynamics(liveDb);
+        dynMeter.Show(insert?.Eq.DynamicLevelDb(selected) ?? EqDynMeter.FloorDb, selected < liveDb.Length ? liveDb[selected] : 0);
     }
 
     /// <summary>One frame of the live spectrum (dB per bin, as <see cref="SpectrumTap.Read"/> gives it), or null while
@@ -304,6 +309,7 @@ public sealed class EqEditor : StackPanel
         dynButton.Classes.Set("on", b.Dyn && !cut);
         dynBox.IsVisible = b.Dyn && !cut;
         dynThreshold.Set(b.DynThreshold); dynRange.Set(b.DynRange); dynAttack.Set(b.DynAttackMs); dynRelease.Set(b.DynReleaseMs);
+        dynMeter.SetBand(b.DynThreshold, b.DynRange, b.Dyn && !cut);
         for (int k = 0; k < Slopes.Length; k++) slopeButtons[k].Classes.Set("on", Slopes[k] == b.Slope);
         if (kFreq != null)
         {
@@ -323,6 +329,82 @@ public sealed class EqEditor : StackPanel
         }
         graph.Set(eq, selected);
         filling = false;
+    }
+}
+
+/// <summary>
+/// What a dynamic band of the EQ is doing now (#312): on top, its own stretch of the spectrum against the threshold (the
+/// part over it in the "goes over" color, the threshold a tick); under it, how far the band moves, to the left for a cut
+/// and to the right for a boost, over the reach its range gives. Drawn by hand, nothing allocated per frame: the texts come
+/// from tables made once.
+/// </summary>
+sealed class EqDynMeter : Control
+{
+    /// <summary>The level bar's floor (dBFS); the band's level under it reads as nothing.</summary>
+    public const double FloorDb = -60;
+    const double BarH = 6, RowH = 14, LabelW = 64, ValueW = 52;
+    double threshold = EqDynamics.DefaultThresholdDb, range = EqDynamics.DefaultRangeDb, level = FloorDb, gain;
+    bool on;
+    readonly Color? tint;
+    readonly string levelLabel = Loc.T("eq.dyn.meter.level").ToUpperInvariant(), gainLabel = Loc.T("eq.dyn.meter.gain").ToUpperInvariant();
+    static readonly string[] GainTexts = [.. Enumerable.Range(-180, 361).Select(t => $"{t / 10.0:+0.0;-0.0;0.0} dB")];
+    static readonly string[] LevelTexts = [.. Enumerable.Range(0, 61).Select(d => d == 60 ? "-∞ dB" : $"{-d} dB")];
+
+    public EqDynMeter(Color? tint)
+    {
+        this.tint = tint;
+        Height = RowH * 2 + 2;
+        IsHitTestVisible = false;
+    }
+
+    /// <summary>A gain from the table (tenths of a dB, ±18).</summary>
+    public static string GainText(double db) => GainTexts[Math.Clamp((int)Math.Round(db * 10), -180, 180) + 180];
+
+    public void SetBand(double thresholdDb, double rangeDb, bool dynOn)
+    {
+        threshold = thresholdDb; range = rangeDb; on = dynOn;
+        InvalidateVisual();
+    }
+
+    /// <summary>The band's level and its move now; only redrawn if one changed enough to see.</summary>
+    public void Show(double levelDb, double gainDb)
+    {
+        levelDb = Math.Max(FloorDb, levelDb);
+        if (Math.Abs(levelDb - level) < 0.25 && Math.Abs(gainDb - gain) < 0.05) return;
+        level = levelDb; gain = gainDb;
+        InvalidateVisual();
+    }
+
+    public override void Render(DrawingContext ctx)
+    {
+        double w = Bounds.Width, x0 = LabelW, bw = Math.Max(10, w - LabelW - ValueW - 6);
+        var color = tint ?? Palette.AccentColor;
+        var labelBrush = tint is { } t ? Palette.Alpha(t, 0.85) : Palette.Faint;
+        double y1 = (RowH - BarH) / 2, y2 = RowH + 2 + (RowH - BarH) / 2;
+        double opacity = on ? 1 : 0.4;
+        using var _ = ctx.PushOpacity(opacity);
+
+        // the band's level against the threshold
+        ctx.DrawText(levelLabel, 9, labelBrush, new Point(0, y1 - 4));
+        ctx.DrawRectangle(Palette.Hover, null, new Rect(x0, y1, bw, BarH), 2, 2);
+        double Lx(double db) => x0 + Math.Clamp((db - FloorDb) / -FloorDb, 0, 1) * bw;
+        double lx = Lx(level), tx = Lx(threshold);
+        if (lx > x0) ctx.DrawRectangle(Palette.Alpha(color, 0.75), null, new Rect(x0, y1, Math.Min(lx, tx) - x0, BarH), 2, 2);
+        if (lx > tx) ctx.DrawRectangle(Palette.Mute, null, new Rect(tx, y1, lx - tx, BarH), 2, 2);
+        ctx.DrawLine(Palette.Pen(Palette.Fg, 2), new Point(tx, y1 - 3), new Point(tx, y1 + BarH + 3));
+        ctx.DrawText(LevelTexts[Math.Clamp((int)Math.Round(-level), 0, 60)], 9, Palette.Dim, new Point(x0 + bw + 6, y1 - 4), Palette.Mono);
+
+        // how far the band moves: left cuts, right boosts, from the middle; the range's reach behind it
+        ctx.DrawText(gainLabel, 9, labelBrush, new Point(0, y2 - 4));
+        ctx.DrawRectangle(Palette.Hover, null, new Rect(x0, y2, bw, BarH), 2, 2);
+        double mid = x0 + bw / 2, half = bw / 2, max = EqDynamics.RangeMaxDb;
+        double Gx(double db) => mid + Math.Clamp(db / max, -1, 1) * half;
+        double rx = Gx(range);
+        ctx.DrawRectangle(Palette.Alpha(color, 0.2), null, new Rect(Math.Min(mid, rx), y2, Math.Abs(rx - mid), BarH));
+        double gx = Gx(gain);
+        if (Math.Abs(gx - mid) >= 0.5) ctx.DrawRectangle(Palette.Fg, null, new Rect(Math.Min(mid, gx), y2, Math.Abs(gx - mid), BarH));
+        ctx.DrawLine(Palette.Pen(Palette.Dim), new Point(mid + 0.5, y2 - 2), new Point(mid + 0.5, y2 + BarH + 2));
+        ctx.DrawText(GainText(gain), 9, Palette.Dim, new Point(x0 + bw + 6, y2 - 4), Palette.Mono);
     }
 }
 
@@ -388,6 +470,15 @@ sealed class EqGraph : Control
     EqBandSpec[] currentBands = [];
     /// <summary>What each band's dynamics are doing now (dB).</summary>
     double[] dynamics = new double[TrackEq.BandCount];
+    /// <summary>The static curve at each of the <see cref="Points"/> columns (dB), what the live curve is drawn against.</summary>
+    readonly double[] staticDb = new double[Points];
+    /// <summary>The curve as the dynamic bands have it now and the stretch between it and the static one (#312: like the
+    /// dynamic bands of a pro EQ, what moves and by how much, up or down); null while every band is at rest.</summary>
+    StreamGeometry? liveCurve, liveFill;
+    readonly BiquadSpec[] dynSpecs = new BiquadSpec[TrackEq.BandCount];
+    const int Points = 256;
+    /// <summary>Under this (dB) a dynamic band counts as at rest on the graph.</summary>
+    const double LiveRestDb = 0.05;
     public event Action<int>? Selected;
     public event Action<int, Action<EqBand>>? Edited;
     readonly bool interactive;
@@ -408,7 +499,42 @@ sealed class EqGraph : Control
     public void SetDynamics(double[] db)
     {
         dynamics = db;
+        BuildLive();
         InvalidateVisual();
+    }
+
+    /// <summary>The live curve: each dynamic band adds what it is doing now as a bell or a shelf of that gain at its
+    /// frequency (what <see cref="EqDynamics"/> adds back, near enough to read), on top of the static curve.</summary>
+    void BuildLive()
+    {
+        liveCurve = liveFill = null;
+        int n = 0;
+        for (int i = 0; i < eq.Bands.Count && i < dynamics.Length; i++)
+        {
+            var b = eq.Bands[i];
+            if (!eq.On || !b.On || !b.Dyn || b.Type is "highpass" or "lowpass" || Math.Abs(dynamics[i]) < LiveRestDb) continue;
+            dynSpecs[n++] = new BiquadSpec(BiquadSpec.ParseType(b.Type), Math.Clamp(b.Freq, TrackEq.MinHz, TrackEq.MaxHz),
+                Math.Clamp(b.Q, TrackEq.QMin, TrackEq.QMax), dynamics[i]);
+        }
+        if (n == 0 || Bounds.Width <= 0) return;
+        liveCurve = new StreamGeometry();
+        liveFill = new StreamGeometry();
+        using (var line = liveCurve.Open())
+        using (var fill = liveFill.Open())
+        {
+            for (int i = 0; i < Points; i++)
+            {
+                double x = i / (Points - 1.0) * Bounds.Width, db = staticDb[i];
+                for (int k = 0; k < n; k++) db += Biquad.ResponseDb(dynSpecs[k], 48000, F(x));
+                var p = new Point(x, Math.Clamp(Y(db), -2, Height + 2));
+                if (i == 0) { line.BeginFigure(p, false); fill.BeginFigure(p, true); }
+                else { line.LineTo(p); fill.LineTo(p); }
+            }
+            for (int i = Points - 1; i >= 0; i--)
+                fill.LineTo(new Point(i / (Points - 1.0) * Bounds.Width, Math.Clamp(Y(staticDb[i]), -2, Height + 2)));
+            line.EndFigure(false);
+            fill.EndFigure(true);
+        }
     }
 
     public void Set(EqSettings value, int index)
@@ -417,7 +543,7 @@ sealed class EqGraph : Control
         eq = value; selected = index;
         var bands = eq.Bands.Select(b => EqBandSpec.FromStrings(b.On, b.Type, b.Freq, b.Gain, b.Q, b.Slope)).ToArray();
         if (selectionChanged || !bands.SequenceEqual(currentBands)) { currentBands = bands; Rebuild(); }
-        else InvalidateVisual();
+        else { BuildLive(); InvalidateVisual(); }
     }
     protected override void OnSizeChanged(SizeChangedEventArgs e) { base.OnSizeChanged(e); Rebuild(); }
     void Rebuild()
@@ -427,10 +553,11 @@ sealed class EqGraph : Control
         curve = new StreamGeometry();
         using (var g = curve.Open())
         {
-            for (int i = 0; i < 256; i++)
+            for (int i = 0; i < Points; i++)
             {
-                double x = i / 255.0 * Bounds.Width;
+                double x = i / (Points - 1.0) * Bounds.Width;
                 double db = specs.Sum(s => Biquad.ResponseDb(s, 48000, F(x)));
+                staticDb[i] = db;
                 var p = new Point(x, Math.Clamp(Y(db), -2, Height + 2));
                 if (i == 0) g.BeginFigure(p, false); else g.LineTo(p);
             }
@@ -439,6 +566,7 @@ sealed class EqGraph : Control
         totalFill = Fill(specs);
         var band = selected < currentBands.Length ? TrackEq.BandSpecs(currentBands[selected]) : (BiquadSpec.Flat, BiquadSpec.Flat);
         selectedFill = Fill([band.Item1, band.Item2]);
+        BuildLive();
         InvalidateVisual();
     }
     StreamGeometry Fill(BiquadSpec[] specs)
@@ -488,6 +616,9 @@ sealed class EqGraph : Control
     }
     static double Hz(double x, double w) => 20 * Math.Pow(1000, x / w);
     static readonly IBrush SpectrumFill = Palette.Alpha(Colors.White, 0.07);
+    /// <summary>The live curve of the dynamic bands: white over the accent's static curve, so up and down read apart from it.</summary>
+    static readonly IBrush LiveFill = Palette.Alpha(Colors.White, 0.16);
+    static readonly IPen LiveLine = Palette.Pen(Palette.Alpha(Colors.White, 0.85), 1.5);
     static readonly IPen SpectrumLine = Palette.Pen(Palette.Alpha(Colors.White, 0.18));
     /// <summary>The grid and its labels, made once: the graph redraws every frame while the spectrum moves.</summary>
     static readonly double[] GridHz = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
@@ -528,6 +659,11 @@ sealed class EqGraph : Control
         if (interactive) ctx.DrawGeometry(Palette.Alpha(Palette.AccentColor, .16), null, selectedFill);
         ctx.DrawGeometry(Palette.Alpha(Palette.AccentColor, eq.On ? .1 : .04), null, totalFill);
         ctx.DrawGeometry(null, Palette.Pen(eq.On ? Palette.Accent : Palette.Dim, interactive ? 2 : 1.5), curve);
+        if (liveFill != null && liveCurve != null)
+        {
+            ctx.DrawGeometry(LiveFill, null, liveFill);
+            ctx.DrawGeometry(null, LiveLine, liveCurve);
+        }
         if (!interactive)
         {
             for (int i = 0; i < eq.Bands.Count; i++)
@@ -541,7 +677,13 @@ sealed class EqGraph : Control
             if (b.On && b.Dyn && b.Type is not ("highpass" or "lowpass"))
             {
                 ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.5), 3), p, new Point(p.X, Y(b.Gain + b.DynRange)));
-                if (i < dynamics.Length && Math.Abs(dynamics[i]) >= 0.05) ctx.DrawEllipse(Palette.Fg, null, new Point(p.X, Y(b.Gain + dynamics[i])), 3, 3);
+                if (i < dynamics.Length && Math.Abs(dynamics[i]) >= LiveRestDb)
+                {
+                    var now = new Point(p.X, Y(b.Gain + dynamics[i]));
+                    ctx.DrawEllipse(Palette.Fg, null, now, 3, 3);
+                    // how much it moves now, beside its dot
+                    ctx.DrawText(EqDynMeter.GainText(dynamics[i]), 9, Palette.Fg, new Point(now.X + 6, now.Y - 6), Palette.Mono);
+                }
             }
             if (i == selected) ctx.DrawEllipse(null, Palette.Pen(Palette.Fg, 1.5), p, r + 3, r + 3);
             ctx.DrawEllipse(b.On ? Palette.Accent : Palette.App, b.On ? null : Palette.Pen(Palette.Dim), p, r, r);

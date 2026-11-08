@@ -103,11 +103,12 @@ public partial class MainWindow
         }
         bool editable = !st.ReadOnly && !restoring && !RecordingBusy && !Projects.IsVisible;
         int at = undo.Position;
+        // in a shared session every step says whose it is (#291): this user's own, or the one who made it
         var list = new StackPanel { Margin = new Thickness(-16, -4) };
         for (int i = steps.Count - 1; i >= 0 && steps.Count - i <= stepsShown; i--)
         {
             var s = steps[i];
-            list.Children.Add(StepRow(s.Index, s.Label.Icon, s.Label.Parts, s.At, s.Index == at, s.Done, editable));
+            list.Children.Add(StepRow(s.Index, s.Label.Icon, s.Label.Parts, s.At, s.Index == at, s.Done, editable, live == null ? null : s.Author ?? live.Name));
         }
         if (steps.Count <= stepsShown)
         {
@@ -131,9 +132,13 @@ public partial class MainWindow
         "origin" => "", "loop" => "", _ => "",
     };
 
-    /// <summary>One step: where it leads, lit if it is where the project is now, greyed if it was undone.</summary>
-    Control StepRow(int index, string icon, IReadOnlyList<ProjectHistory.Part> parts, DateTime? at, bool current, bool done, bool editable)
+    /// <summary>
+    /// One step: where it leads, lit if it is where the project is now, greyed if it was undone; with its author's badge
+    /// in a shared session. Someone else's (<paramref name="index"/> &lt; 0) leads nowhere: they undo it themselves.
+    /// </summary>
+    Control StepRow(int index, string icon, IReadOnlyList<ProjectHistory.Part> parts, DateTime? at, bool current, bool done, bool editable, string? author = null)
     {
+        bool theirs = index < 0;
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 10, Opacity = done ? 1 : 0.5 };
         var glyph = HistoryIcon(StepGlyph(icon), 12, current ? Palette.Accent : Palette.Faint);
         glyph.VerticalAlignment = VerticalAlignment.Top;
@@ -147,18 +152,18 @@ public partial class MainWindow
             text.Inlines!.Add(run);
         }
         Grid.SetColumn(text, 1); grid.Children.Add(text);
+        var side = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Top };
+        if (author != null) side.Children.Add(PersonBadge(author));
         if (at is { } t)
-        {
-            var time = new TextBlock { Classes = { "mono" }, FontSize = 10, Foreground = Palette.Faint, Text = t.ToLocalTime().ToString("HH:mm"), Margin = new Thickness(0, 1, 0, 0) };
-            Grid.SetColumn(time, 2); grid.Children.Add(time);
-        }
+            side.Children.Add(new TextBlock { Classes = { "mono" }, FontSize = 10, Foreground = Palette.Faint, Text = t.ToLocalTime().ToString("HH:mm"), Margin = new Thickness(0, 1, 0, 0) });
+        Grid.SetColumn(side, 2); grid.Children.Add(side);
         var row = new Button
         {
             Classes = { "ghost", "rowmain" }, Content = grid, Padding = new Thickness(14, 6, 16, 6), CornerRadius = new CornerRadius(0),
             HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, IsEnabled = editable || current,
         };
-        ToolTip.SetTip(row, Loc.T(current ? "steps.here" : done ? "steps.back" : "steps.forward"));
-        row.Click += async (_, _) => { if (!current) await JumpToStep(index); };
+        ToolTip.SetTip(row, theirs ? Loc.T("steps.theirs", author ?? "") : Loc.T(current ? "steps.here" : done ? "steps.back" : "steps.forward"));
+        row.Click += async (_, _) => { if (!current && !theirs) await JumpToStep(index); };
         return new Border
         {
             Child = row, BorderThickness = new Thickness(2, 0, 0, 0),

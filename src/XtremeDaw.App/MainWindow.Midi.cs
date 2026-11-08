@@ -109,7 +109,9 @@ public partial class MainWindow
                 MidiEditing.LeaveCopies(p, clones);
                 MidiEditing.Place(p, clipId, atSec, beats);
                 foreach (string id in along) MidiEditing.Place(p, id, MidiEditing.Find(p, id).Clip.AtSec, beats);
-                if (toTrack != null) MidiEditing.MoveToTrack(p, clipId, toTrack);
+                // dropped under the last row: a new MIDI track with the same instrument (#309)
+                if (toTrack == TimelineView.NewTrackTarget) TrackCopies.MoveToNew(p, clipId);
+                else if (toTrack != null) MidiEditing.MoveToTrack(p, clipId, toTrack);
                 return trackId = MidiEditing.Find(p, clipId).Track.Id;
             }, clones.Count > 0 ? "midi-clip-duplicated" : "midi-clip-moved");
             Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
@@ -773,6 +775,9 @@ public partial class MainWindow
             MenuAction(Loc.T("menu.copy"), () => CopySelection(cut: false), Shortcuts.Label("copy")),
             MenuAction(Loc.T("menu.duplicate"), () => boxed.Count > 1 ? DuplicateClips(boxed) : DuplicateMidiClip(clipId), Shortcuts.Label("duplicate"), enabled),
             MenuAction(Loc.T("menu.split"), () => SplitMidi(track, clipId, at), Shortcuts.First("split"), enabled && under && !track.Track.EditLocked),
+            // on several boxed MIDI clips of a track: one clip (#311)
+            MenuAction(Loc.T("midi.join"), JoinMidi, Shortcuts.Label("joinClips"), enabled && boxed.Count > 1 && JoinableMidi().Count > 1,
+                tip: boxed.Count > 1 ? null : Loc.T("midi.join.tip")),
             MenuAction(Loc.T("menu.renameClip.more"), () => { BeginClipRename(clipId, point); return Task.CompletedTask; }, Shortcuts.Label("renameClip"), enabled: enabled, icon: "\uE8AC",
                 tip: MidiEditing.TryFind(store.Project, clipId)?.PatternId != null ? Loc.T("menu.renameClip.pattern") : null),
             new Separator(),

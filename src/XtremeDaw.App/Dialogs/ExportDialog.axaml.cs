@@ -1469,7 +1469,8 @@ public sealed partial class ExportDialog : UserControl
         {
             var lt = liveTracks?.FirstOrDefault(x => x.Track.Id == trk.Id);
             // a frozen track plays its render (#240); without its file it plays live, like in the window
-            if (trk.Freeze is { } freeze && (lt?.FrozenSound is { } fs ? (fs.L, fs.R) : Freezing.Load(store.Dir, freeze, sampleRate)) is ({ } fl, { } fr))
+            if (trk.Freeze is { } freeze
+                && (lt?.Freeze?.File == freeze.File && lt.FrozenSound is { } fs ? (fs.L, fs.R) : Freezing.Load(store.Dir, freeze, sampleRate)) is ({ } fl, { } fr))
             {
                 mixTracks.Add(ChannelDsp.Track(p, nodes, trk, [Freezing.Clip(fl, fr, freeze.AtSec, sampleRate)], -24, frozen: true));
                 continue;

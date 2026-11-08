@@ -170,9 +170,10 @@ public sealed class StemsComponent() : OptionalComponent("stems")
 }
 
 /// <summary>
-/// The bigger General MIDI banks (<see cref="Dsp.GmBank.Downloads"/>, asked by the user, #212): each one is a package of
-/// its own, so it costs only what is wanted. They download to <see cref="Dsp.GmBank.DownloadDir"/> and each GM track
-/// picks its bank; the app plays without them (GeneralUser GS comes with it).
+/// The General MIDI banks (<see cref="Dsp.GmBank.Downloads"/>, asked by the user, #212; all of them, GeneralUser GS too,
+/// since #304): each one is a package of its own, so it costs only what is wanted. They download to
+/// <see cref="Dsp.GmBank.DownloadDir"/> and each GM track picks its bank; without any, GM tracks are silent and say so.
+/// Not offered at startup: only who uses the GM instrument needs them.
 /// </summary>
 public sealed class GmBanksComponent() : OptionalComponent("gm")
 {

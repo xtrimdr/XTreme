@@ -75,6 +75,15 @@ public sealed partial class TimelineView
     bool ToolPressed(int i, Point p, PointerPressedEventArgs e)
     {
         bool lane = i >= 0 && i < tracks.Count;
+        // Ctrl+click on a clip adds it to the selection or takes it out with any tool that acts on clips, not only with
+        // Seleccionar (#311: with the Lápiz, the usual tool for MIDI, it made the clip the brush instead)
+        if (lane && (modifiers & KeyModifiers.Control) != 0 && tool is not (TimelineTool.Hand or TimelineTool.Zoom or TimelineTool.Range)
+            && AnyClipAt(i, p.X) is { } hit)
+        {
+            ToggleBoxed(hit, SelectionSeed());
+            e.Handled = true;
+            return true;
+        }
         switch (tool)
         {
             case TimelineTool.Hand:

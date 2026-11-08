@@ -77,7 +77,7 @@ en git ni en el instalador (`CopyToPublishDirectory="Never"`): la licencia de lo
 
 ## Componentes opcionales
 
-`XtremeDaw.Audio/Components.cs`: lo que la app puede no tener (FFmpeg, modelos de stems, bancos General MIDI más grandes: estos no se ofrecen al arrancar, `AskAtStart`). Uno nuevo se suma a `Components.All` y a sus textos `component.<id>.*`; se instala siempre por `ComponentInstall.Run` (uno a la vez, con progreso y cancelación) y se muestra con `ComponentList`. Lo que depende de él queda deshabilitado con un aviso. Las descargas pasan por `FileDownload` (`.part`, reanudación, SHA-256). Los modelos de stems no se alojan (decisión del usuario): se bajan los `.th` de Meta y `StemConverter` arma el ONNX en `%APPDATA%\XTreme\demucs` desde `lib\demucs-graphs` (grafos sin pesos, `tools\make-demucs-templates.py`). Tienen sus propios términos: nunca digas que son MIT.
+`XtremeDaw.Audio/Components.cs`: lo que la app puede no tener (FFmpeg, modelos de stems, bancos General MIDI, todos, #304: estos no se ofrecen al arrancar, `AskAtStart`). Uno nuevo se suma a `Components.All` y a sus textos `component.<id>.*`; se instala siempre por `ComponentInstall.Run` (uno a la vez, con progreso y cancelación) y se muestra con `ComponentList`. Lo que depende de él queda deshabilitado con un aviso. Las descargas pasan por `FileDownload` (`.part`, reanudación, SHA-256). Los modelos de stems no se alojan (decisión del usuario): se bajan los `.th` de Meta y `StemConverter` arma el ONNX en `%APPDATA%\XTreme\demucs` desde `lib\demucs-graphs` (grafos sin pesos, `tools\make-demucs-templates.py`). Tienen sus propios términos: nunca digas que son MIT.
 
 ## Decodificar
 

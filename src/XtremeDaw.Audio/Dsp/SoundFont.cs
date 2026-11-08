@@ -454,28 +454,31 @@ public sealed class SoundFont
     }
 }
 
-/// <summary>A bigger GM bank the app offers to download (<see cref="GmBank.Downloads"/>, the component "gm").</summary>
+/// <summary>A GM bank the app offers to download (<see cref="GmBank.Downloads"/>, the component "gm").</summary>
 /// <param name="Id">What a track keeps in <c>GmSettings.Bank</c>; the window's text is <c>component.package.gm.{Id}</c>.</param>
 public sealed record GmDownload(string Id, string Name, string File, string Url, long Bytes, string Sha256);
 
 /// <summary>
-/// The GM banks a track can play (asked by the user, #212): the one the app ships (GeneralUser GS,
-/// <c>tools\get-gm.ps1</c>, next to the exe in <c>gm\</c>), the bigger ones the component "gm" downloads to
-/// <c>%APPDATA%\XTreme\gm</c> (<see cref="Downloads"/>, both MIT) and any .sf2 of the user, by its whole path. A bank is
-/// named by its id (null = the shipped one) or that path. Each is read once on first use and kept for every track and
-/// export until no track wants it (<see cref="Keep"/>: the big ones are hundreds of MB in memory). Any thread; the first
-/// caller pays the read.
+/// The GM banks a track can play (asked by the user, #212): the ones the component "gm" downloads to
+/// <c>%APPDATA%\XTreme\gm</c> (<see cref="Downloads"/>; none ships with the app, asked by the user, #304) and any .sf2
+/// of the user, by its whole path. A bank is named by its id (null = GeneralUser GS, the default) or that path. A track
+/// whose bank isn't here plays the first download that is (<see cref="FallbackKey"/>); with none, it is silent and says
+/// so. Each is read once on first use and kept for every track and export until no track wants it (<see cref="Keep"/>:
+/// the big ones are hundreds of MB in memory). Any thread; the first caller pays the read.
 /// </summary>
 public static class GmBank
 {
-    public const string FileName = "GeneralUser-GS.sf2";
-    /// <summary>The shipped bank's id; a track keeps null for it.</summary>
+    /// <summary>The default bank's id; a track keeps null for it.</summary>
     public const string Default = "generaluser";
     public const string DefaultName = "GeneralUser GS";
 
-    /// <summary>What the component offers, smallest first. Both MIT; fixed files, checked by size and SHA-256.</summary>
+    /// <summary>What the component offers, smallest first (the first one is also the fallback). Fixed files, checked by size and SHA-256.</summary>
     public static readonly GmDownload[] Downloads =
     [
+        // free to use and redistribute (its LICENSE.txt), from a fixed commit of its author's repository
+        new(Default, DefaultName, "GeneralUser-GS.sf2",
+            "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2",
+            32319396, "9575028C7A1F589F5770FCCC8CFF2734566AF40CD26ED836944E9A5152688CFE"),
         new("fluidr3", "FluidR3 GM", "FluidR3_GM.sf2",
             "https://github.com/pianobooster/fluid-soundfont/releases/download/v3.1/FluidR3_GM.sf2", 148398306, FluidSha),
         new("musescore", "MuseScore General", "MuseScore_General.sf2",
@@ -488,7 +491,6 @@ public static class GmBank
     static readonly Dictionary<string, SoundFont> fonts = new(StringComparer.OrdinalIgnoreCase);
     static readonly HashSet<string> failed = new(StringComparer.OrdinalIgnoreCase);
 
-    public static string Path => System.IO.Path.Combine(AppContext.BaseDirectory, "gm", FileName);
     public static string DownloadDir => System.IO.Path.Combine(AppFolder.Dir, "gm");
 
     /// <summary>One name per bank: the id, or the whole path of a user's file; null and "" are the shipped bank.</summary>
@@ -503,10 +505,24 @@ public static class GmBank
 
     /// <summary>Its file; null for an id this version doesn't know.</summary>
     public static string? PathOf(string? bank) =>
-        IsDefault(bank) ? Path : IsFile(bank) ? Key(bank) : Download(bank) is { } d ? System.IO.Path.Combine(DownloadDir, d.File) : null;
+        IsFile(bank) ? Key(bank) : Download(bank) is { } d ? System.IO.Path.Combine(DownloadDir, d.File) : null;
 
     /// <summary>Its file is on this PC (a download that finished, a user's file that is still there).</summary>
     public static bool Available(string? bank) => PathOf(bank) is { } p && File.Exists(p);
+
+    /// <summary>What a track plays while its own bank isn't here: the first download on this PC that reads; null with none.</summary>
+    public static string? FallbackKey
+    {
+        get
+        {
+            foreach (var d in Downloads)
+                if (Available(d.Id) && !Failed(d.Id)) return d.Id;
+            return null;
+        }
+    }
+
+    /// <summary>No bank to play at all: nothing downloaded (or nothing that reads).</summary>
+    public static bool None => FallbackKey == null;
 
     /// <summary>How the menus call it: "MuseScore General", or a user's file by its name.</summary>
     public static string NameOf(string? bank) =>
@@ -518,8 +534,8 @@ public static class GmBank
         lock (gate) return fonts.ContainsKey(Key(bank));
     }
 
-    /// <summary>The shipped bank is in memory.</summary>
-    public static bool Loaded => IsLoaded(null);
+    /// <summary>The fallback bank is in memory: a track whose own isn't ready already sounds with it.</summary>
+    public static bool Loaded => FallbackKey is { } key && IsLoaded(key);
 
     /// <summary>It was tried and isn't there or doesn't read (until <see cref="Retry"/>).</summary>
     public static bool Failed(string? bank)
@@ -537,7 +553,7 @@ public static class GmBank
             if (failed.Contains(key)) return null;
         }
         SoundFont? font = null;
-        // read outside the lock: a big bank takes seconds and the shipped one must not wait for it
+        // read outside the lock: a big bank takes seconds and the fallback must not wait for it
         if (PathOf(bank) is { } path)
         {
             try { font = SoundFont.Read(path); }
@@ -552,14 +568,21 @@ public static class GmBank
         }
     }
 
-    /// <summary>What a track plays: its bank, or the shipped one while its own isn't there.</summary>
-    public static SoundFont? LoadOrDefault(string? bank) => Load(bank) ?? Load();
+    /// <summary>What a track plays: its bank, or the fallback while its own isn't there; null with no bank on this PC.</summary>
+    public static SoundFont? LoadOrDefault(string? bank)
+    {
+        if (Load(bank) is { } font) return font;
+        // a fallback that doesn't read is marked failed and the next one is tried
+        while (FallbackKey is { } key)
+            if (Load(key) is { } other) return other;
+        return null;
+    }
 
-    /// <summary>Lets go of the banks no track wants (the shipped one stays); what already plays them keeps its copy.</summary>
+    /// <summary>Lets go of the banks no track wants (the fallback stays); what already plays them keeps its copy.</summary>
     public static void Keep(IEnumerable<string?> banks)
     {
         var keep = banks.Select(Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        keep.Add(Default);
+        if (FallbackKey is { } fallback) keep.Add(fallback);
         lock (gate)
             foreach (var key in fonts.Keys.Where(k => !keep.Contains(k)).ToList()) fonts.Remove(key);
     }

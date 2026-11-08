@@ -223,7 +223,7 @@ public static class ClipEditing
     /// <summary>A track with a lock on it: its own, or one of its clips'. It can't be removed or recorded over.</summary>
     public static bool HasLock(Track t) => t.EditLocked || t.Clips.Any(c => c.Locked);
 
-    static void Unlocked(Track t, Clip c)
+    internal static void Unlocked(Track t, Clip c)
     {
         if (IsLocked(t, c))
             throw new ArgumentException(t.EditLocked

@@ -99,7 +99,7 @@ Más detalles en [Requisitos](DETALLES.md#requisitos).
 - Cadena de efectos por canal, en el orden que quieras: saturación (**Vida**, válvula o cinta), **compresor** con
   presets por categoría (voces, guitarras, bajo, batería, percusión y más), **EQ de 7 bandas** con espectro en vivo, bandas dinámicas y vista grande y **puerta de ruido**, más paneo
   con plantillas, botón **MONO** para chequear la mezcla y **FX** para escucharla sin efectos.
-- **Transponer** por pista (−12 a +12 semitonos) sin cambiar el largo: se calcula en segundo plano (unos 4 s por
+- **Transponer** por pista (−24 a +24 semitonos) sin cambiar el largo: se calcula en segundo plano (unos 4 s por
   3 min) con un vocoder de fase de alta calidad, se ve el progreso sobre los clips y queda guardada en `cache/`.
 - **Mixer** completo con **buses**: cada pista o carpeta elige su salida (el master o un bus) y manda a los buses
   con sus envíos (antes o después del fader); los buses salen al master. Un bus tiene volumen, paneo y efectos: sirve

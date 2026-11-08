@@ -280,7 +280,8 @@ public sealed class AgentsWindow : Window
 }
 
 /// <summary>
-/// The map of the agents (#273): sessions on the left, files on the right, each session's files beside it, so a line
+/// The map of the agents (#273): sessions on the left (each saying only how many files it is editing, #305), on the
+/// right only the files with a conflict (#305), each beside its holder, so a line
 /// that crosses to another session's files is a wait. Lines: solid in the accent for a file held, dashed yellow for a
 /// place in its line (with the place and how long), dashed red for a stuck one (a line that loops back, a command that
 /// changed another session's files). Hovering a box lights only its lines; a click on a session points the box at it,

@@ -22,7 +22,8 @@ public static class PitchShifter
 {
     /// <summary>Changes whenever the result would sound different, so cached renders are made again.</summary>
     public const int Version = 2;
-    public const double MaxSemitones = 12;
+    /// <summary>Two octaves either way (asked by the user, #316): two down, a frame grows to the whole padded FFT.</summary>
+    public const double MaxSemitones = 24;
 
     /// <summary>85 ms at 48 kHz: resolves the harmonics of a low E (82 Hz apart) into separate bins.</summary>
     const int FrameSize = 4096;

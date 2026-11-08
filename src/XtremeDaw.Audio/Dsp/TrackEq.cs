@@ -129,6 +129,9 @@ public sealed class TrackEq
     /// <summary>What a band's dynamics are doing now (dB), for the graph.</summary>
     public double DynamicDb(int band) => dynamics[band].NowDb;
 
+    /// <summary>How loud a band's own stretch of the spectrum is now (dBFS, what its threshold is compared with), for the graph.</summary>
+    public double DynamicLevelDb(int band) => dynamics[band].LevelDb;
+
     public static bool IsCut(BiquadType t) => t is BiquadType.Highpass or BiquadType.Lowpass;
 
     public static bool HasGain(BiquadType t) => !IsCut(t);
@@ -284,8 +287,10 @@ public sealed class EqDynamics
     readonly Biquad filter;
     volatile Shape shape;
     double env, gain;
-    volatile float now;
+    volatile float now, level = SilentDb;
     bool idle = true;
+    /// <summary>The band level reported while nothing comes in.</summary>
+    const float SilentDb = -120;
 
     public EqDynamics(double sampleRate)
     {
@@ -295,6 +300,9 @@ public sealed class EqDynamics
     }
 
     public double NowDb => now;
+
+    /// <summary>The detector's level at the end of the last block (dBFS).</summary>
+    public double LevelDb => level;
 
     public void Set(EqBandSpec b)
     {
@@ -323,6 +331,7 @@ public sealed class EqDynamics
         filter.Reset();
         env = gain = 0;
         now = 0;
+        level = SilentDb;
         idle = true;
     }
 
@@ -334,6 +343,7 @@ public sealed class EqDynamics
         {
             gain = 0;
             now = 0;
+            level = SilentDb;
             idle = true;
             return;
         }
@@ -364,5 +374,6 @@ public sealed class EqDynamics
         env = e;
         gain = g;
         now = (float)g;
+        level = e > 1e-6 ? (float)(20 * Math.Log10(e)) : SilentDb;
     }
 }

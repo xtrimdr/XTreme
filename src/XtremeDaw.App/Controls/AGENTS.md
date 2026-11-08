@@ -17,7 +17,10 @@ también corta el audio (ver "Audio en tiempo real" en la guía de la raíz).
 
 Una perilla puede llevar su color (`Knob.Tint`, el de la familia de su efecto): `KnobLooks` pinta el arco, los puntos y la
 marca con `KnobLooks.Tint` en vez del acento mientras dura su dibujo. El gráfico de cada efecto (`FxScope`) dibuja con
-líneas cortas y columnas de 1 px, sin geometrías; solo el de la modulación se redibuja solo, y solo mientras suena.
+líneas cortas y columnas de 1 px, sin geometrías. Encima dibuja lo que el efecto le hace a la señal (#312): un `FxTap`
+(`XtremeDaw.Audio/Dsp`, en el `FxShell` o el `LimitInsert`) que la ventana crea solo para lo que muestra y mantiene vivo con
+`Watch` en cada tick (sin mirarlo un segundo, el hilo de audio no copia nada). Se redibuja cuando llega un punto nuevo, y la
+modulación además mientras suena.
 
 ## Etiquetas de los clips
 

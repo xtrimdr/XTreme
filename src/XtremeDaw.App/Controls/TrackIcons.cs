@@ -63,10 +63,11 @@ public static partial class TrackIcons
         KindFolder = Geometry.Parse("M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"),
         KindMaster = Geometry.Parse("M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z M16 9a5 5 0 0 1 0 6 M19.364 18.364a9 9 0 0 0 0-12.728");
 
-    /// <summary>A channel kind's stroked icon on lucide's 24×24 grid: "audio", "midi", "bus", "folder" or "master".</summary>
+    /// <summary>A channel kind's stroked icon on lucide's 24×24 grid: "audio", "midi", "video", "bus", "folder" or "master".</summary>
     public static Geometry KindIcon(string kind) => kind switch
     {
         "midi" => KindMidi,
+        "video" => KindVideo,
         "bus" => KindBus,
         "folder" => KindFolder,
         "master" => KindMaster,

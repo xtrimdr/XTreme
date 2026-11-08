@@ -49,6 +49,7 @@ public partial class MainWindow
     {
         if (store == null) return;
         var st = store;
+        RefreshLackNotes();
         foreach (var t in tracks)
         {
             var want = t.Track.Freeze;

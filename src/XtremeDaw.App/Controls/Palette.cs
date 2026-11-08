@@ -87,6 +87,19 @@ static class Palette
         _ => AccentColor,
     };
 
+    /// <summary>
+    /// The people of a shared session (#291), by the color index the host gives each one (0 = the host): fixed, so a
+    /// person has the same color on every copy whatever its theme; none is the record red or the mute amber.
+    /// </summary>
+    static readonly Color[] people =
+    [
+        Color.Parse("#a78bfa"), Color.Parse("#34d399"), Color.Parse("#f472b6"), Color.Parse("#60a5fa"),
+        Color.Parse("#fb923c"), Color.Parse("#a3e635"), Color.Parse("#e879f9"), Color.Parse("#2dd4bf"),
+    ];
+
+    /// <summary>A person's color in a shared session by its index (<see cref="people"/>, round again after the last).</summary>
+    public static Color PersonColor(int index) => people[(index % people.Length + people.Length) % people.Length];
+
     /// <summary>The mixer meters' gradient (Mixer.tsx METER_BG): green, yellow near 0 dB, red at the top.</summary>
     public static readonly Color MeterGreen = Color.Parse("#22c55e");
     public static readonly Color MeterYellow = Color.Parse("#eab308");

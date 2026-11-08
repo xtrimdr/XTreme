@@ -1,4 +1,6 @@
 ﻿using Avalonia.Threading;
+using XtremeDaw.App.Audio;
+using XtremeDaw.App.Controls;
 using XtremeDaw.App.Dialogs;
 using XtremeDaw.Projects;
 
@@ -10,7 +12,8 @@ namespace XtremeDaw.App;
 /// comes from the others goes in through <see cref="RestoreEdit"/>, like an undo, so the engine and the screen follow
 /// it the same way and the playhead keeps going. Nothing goes or comes in while a take is recorded: it waits and goes
 /// after, with the take's file. A guest's copy is a project of its own, saved like any other; leaving the session
-/// leaves it as it is.
+/// leaves it as it is. Who is where goes apart (MainWindow.Presence.cs), and so do the renders for plugins someone
+/// lacks (MainWindow.LiveRender.cs). Someone joining or leaving says so in a toast with a short cue (<see cref="CueSounds"/>).
 /// </summary>
 public partial class MainWindow
 {
@@ -41,13 +44,14 @@ public partial class MainWindow
 
     void ShowLive() => LiveAsk.Show(live, CanHost);
 
-    /// <summary>The button beside Exportar: "Sesión en vivo" with no session; in one, a beating dot and how many are in.</summary>
+    /// <summary>The button beside Exportar: "Sesión en vivo" with no session; in one, everyone's orbs (<see cref="LivePulse"/>) and how many are in.</summary>
     void UpdateLiveButton()
     {
         bool on = live != null;
         LiveButton.Classes.Set("on", on);
-        LiveDot.IsVisible = on;
-        LiveDot.Classes.Set("on", on);
+        LivePulse.IsVisible = on;
+        if (live is { } p) LivePulse.SetPeople([.. p.People.Select(w => (w, Palette.PersonColor(Math.Max(0, p.ColorOf(w)))))]);
+        else LivePulse.Clear();
         LiveButtonIcon.IsVisible = !on;
         LiveButtonText.Text = live is { } s ? Loc.T("live.buttonOn", s.People.Count) : Loc.T("live.button");
     }
@@ -69,6 +73,7 @@ public partial class MainWindow
         // a take in progress goes when it's whole; an undo being shown goes when it's done
         if (restoring || RecordingBusy) { livePublishTimer.Start(); return; }
         live.Publish(store.Project);
+        LivePulse.Spark(live.Name);
     }
 
     void OnLiveSignal()
@@ -89,6 +94,7 @@ public partial class MainWindow
         var r = s.Pump(st.Project, undo, applyEdits: false);
         Announce(r);
         if (r.Ended) { EndLive(s.EndReason); return; }
+        if (r.PresenceChanged || r.PeopleChanged) ApplyPresence();
         foreach (var id in r.Arrived) liveArrived.Add(id);
         LiveSession.PumpResult? applied = null;
         await RestoreEdit(p =>
@@ -99,8 +105,13 @@ public partial class MainWindow
         if (applied != null)
         {
             Announce(applied);
+            if (live == s && (applied.PresenceChanged || applied.PeopleChanged)) ApplyPresence();
             foreach (var id in applied.Arrived) liveArrived.Add(id);
-            if (applied.Changed && applied.LastAuthor != null) Status(Loc.T("live.changed", applied.LastAuthor));
+            if (applied.Changed && applied.LastAuthor != null)
+            {
+                Status(Loc.T("live.changed", applied.LastAuthor));
+                LivePulse.Spark(applied.LastAuthor);
+            }
         }
         if (liveArrived.Count > 0 && store == st && !restoring && !RecordingBusy) await ReloadArrived(st);
         RefreshLiveDialog();
@@ -108,10 +119,17 @@ public partial class MainWindow
 
     void Announce(LiveSession.PumpResult r)
     {
+        foreach (var n in r.Joined) Toast(Loc.T("live.joinedNow", n));
+        foreach (var n in r.Left) Toast(Loc.T("live.leftNow", n));
+        // a cue too (asked by the user), but never into the headphones of someone recording
+        if (r.Joined.Count + r.Left.Count > 0 && !RecordingBusy) engine.PlayCue(r.Joined.Count > 0 ? CueSounds.Joined : CueSounds.Left);
+        if (r.PluginsChanged) LivePluginsChanged();
         if (!r.PeopleChanged || live == null) return;
         Status(Loc.T("live.peopleNow", string.Join(", ", live.People)));
         UpdateLiveButton();
         RefreshLiveDialog();
+        // the badges of Historial and Biblioteca take or lose their colors
+        RefreshHistory();
     }
 
     void RefreshLiveDialog()
@@ -223,6 +241,12 @@ public partial class MainWindow
     {
         live = s;
         s.Signal += OnLiveSignal;
+        // what this copy found tells the others what it can play; with nothing found yet it looks first (#291)
+        s.Catalog = LiveCatalog;
+        EnsurePlugins();
+        if (store != null) s.ShareCatalog(store.Project);
+        LivePluginsChanged();
+        StartPresence();
         UpdateLiveButton();
         OnLiveSignal();
     }
@@ -240,6 +264,10 @@ public partial class MainWindow
         livePublishTimer?.Stop();
         liveRetryTimer?.Stop();
         liveArrived.Clear();
+        StopPresence();
+        // out of the session every plugin plays again
+        LivePluginsChanged();
+        RefreshHistory();
         UpdateLiveButton();
         if (why != null) Toast(why);
         Status(Loc.T("live.left"));

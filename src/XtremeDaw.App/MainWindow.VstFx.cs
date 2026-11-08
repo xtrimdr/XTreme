@@ -81,8 +81,10 @@ public partial class MainWindow
         var wanted = new Dictionary<string, PluginRef>();
         var p = store.Project;
         foreach (var (owner, slot) in VstSlots(p))
-            // a frozen track's effects are in its render: their processes close (#240)
-            if (p.Tracks.Find(t => t.Id == owner) is not { } t || !FreezeHolds(t)) wanted[EffectKey(owner, slot.Id)] = slot.Vst!.Plugin;
+            // a frozen track's effects are in its render: their processes close (#240); one someone in a shared
+            // session lacks stays off for everybody (#291)
+            if ((p.Tracks.Find(t => t.Id == owner) is not { } t || !FreezeHolds(t)) && !PluginOff(slot.Vst!.Plugin))
+                wanted[EffectKey(owner, slot.Id)] = slot.Vst!.Plugin;
         foreach (var (key, e) in effects.ToList())
             if (!wanted.TryGetValue(key, out var w) || !w.SamePlugin(e.Plugin)) DropEffect(key);
         foreach (var (key, plugin) in wanted)
@@ -256,12 +258,14 @@ public partial class MainWindow
         if (effects.ContainsKey(key)) return EffectState.Ready;
         if (effectLoads.ContainsKey(key)) return EffectState.Loading;
         var plugin = EffectSlot(owner, slotId)?.Vst?.Plugin;
-        return plugin == null || effectFailed.Contains(EffectFailKey(key, plugin)) || VstHost.Find() == null ? EffectState.Failed : EffectState.Loading;
+        return plugin == null || PluginOff(plugin) || effectFailed.Contains(EffectFailKey(key, plugin)) || VstHost.Find() == null ? EffectState.Failed : EffectState.Loading;
     }
 
     /// <summary>How the slot is going, in a line: ready (and how late it comes, compensated), opening, or why not.</summary>
     string EffectStatus(string owner, string slotId)
     {
+        // off in a shared session: who lacks it (#291)
+        if (EffectSlot(owner, slotId)?.Vst?.Plugin is { } plugin && LackNote(plugin) is { } note) return note;
         switch (EffectStateOf(owner, slotId))
         {
             case EffectState.Ready:
@@ -365,6 +369,7 @@ public partial class MainWindow
             }
             var plugin = PluginCatalog.Ref(p);
             item.Click += (_, _) => SlotsEdit(o, x => ChannelInserts.AddVst(x, plugin), "add");
+            MarkLacking(item, p);
             return item;
         }
         var plugins = new AvaloniaList<object>();

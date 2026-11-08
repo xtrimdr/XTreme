@@ -144,7 +144,8 @@ function Locks {
 function Gone($lock) {
     if (-not $lock.pid) { return $false }
     $p = Get-Process -Id ([int]$lock.pid) -ErrorAction SilentlyContinue
-    -not $p -or $p.StartTime.ToUniversalTime().Ticks -ne [long]$lock.started
+    # a pid reused by a process we may not read (elevated, a service) has no StartTime: it's not that Claude (#313)
+    -not $p -or -not $p.StartTime -or $p.StartTime.ToUniversalTime().Ticks -ne [long]$lock.started
 }
 
 function Stale($lock) { (Now) - [long]$lock.touched -gt $StaleSec -or (Gone $lock) }
@@ -155,7 +156,8 @@ function Stale($lock) { (Now) - [long]$lock.touched -gt $StaleSec -or (Gone $loc
 function ClaudeProcess($me) {
     $file = Join-Path $Dir "p-$(Hash $me.session).json"
     $c = ReadJson $file
-    if ($c -and $c.session -and -not (Gone $c)) { return $c }
+    # one written before it kept the model (#315) is looked up again once
+    if ($c -and $c.session -and $null -ne $c.model -and -not (Gone $c)) { return $c }
     $id = $PID
     for ($n = 0; $n -lt 10; $n++) {
         $p = Get-CimInstance Win32_Process -Filter "ProcessId = $id" -ErrorAction SilentlyContinue
@@ -165,7 +167,11 @@ function ClaudeProcess($me) {
         if ($parent.Name -match '^claude(\.exe)?$') {
             $proc = Get-Process -Id ([int]$parent.ProcessId) -ErrorAction SilentlyContinue
             if (-not $proc) { return $null }
-            $c = [pscustomobject]@{ pid = [int]$parent.ProcessId; started = $proc.StartTime.ToUniversalTime().Ticks; session = $me.session }
+            # its model and effort, as its command line gives them (#315: the bench shows them); "" = Claude's default
+            $cmd = [string]$parent.CommandLine
+            $model = if ($cmd -match '--model[=\s]+"?([^\s"]+)') { $Matches[1] } else { '' }
+            $effort = if ($cmd -match '--effort[=\s]+"?([^\s"]+)') { $Matches[1] } else { '' }
+            $c = [pscustomobject]@{ pid = [int]$parent.ProcessId; started = $proc.StartTime.ToUniversalTime().Ticks; session = $me.session; model = $model; effort = $effort }
             New-Item -ItemType Directory -Force $Dir | Out-Null
             Move-Item -Force (WriteJson $file $c) $file
             return $c

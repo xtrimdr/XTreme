@@ -11,7 +11,8 @@ namespace XtremeDaw.Lab;
 /// rebuild a state, two changes to different tracks both stay, on the same value the last one wins; the invitation
 /// reads back; and a real session over 127.0.0.1: a guest joins, gets the project and its audio, edits in both
 /// directions, solos stay each one's, a new take's file travels through the host, undo takes back only one's own
-/// step, another version or a wrong code don't get in.
+/// step, another version or a wrong code don't get in. Who is who: colors from the host, presence both ways and gone on
+/// leaving, what someone edits marked as theirs, the others' steps listed by name, a take saying who brought it.
 /// <c>xtlab colaborar anfitrion &lt;carpeta&gt;</c> and <c>unirse &lt;código&gt; &lt;carpeta&gt;</c> run a session by hand.
 /// </summary>
 static class LiveChecks
@@ -157,7 +158,13 @@ static class LiveChecks
             var hostUndo = new UndoManager();
             using var host = LiveSession.Host("Martín", Version, 0, [IPAddress.Loopback]);
             host.Start(hp, hostDir);
-            void PumpHost() => host.Pump(hp, hostUndo, true);
+            List<string> hostJoined = [], hostLeft = [], guestJoined = [], guestLeft = [];
+            void PumpHost()
+            {
+                var r = host.Pump(hp, hostUndo, true);
+                hostJoined.AddRange(r.Joined);
+                hostLeft.AddRange(r.Left);
+            }
 
             var invite = LiveInvite.Parse(host.Invite.Code)!;
             var joining = LiveSession.Join(invite, "Ana", Version, default);
@@ -170,22 +177,47 @@ static class LiveChecks
             gp.Normalize();
             var guestUndo = new UndoManager();
             guest.Start(gp, guestDir);
-            void PumpGuest() => guest.Pump(gp, guestUndo, true);
+            void PumpGuest()
+            {
+                var r = guest.Pump(gp, guestUndo, true);
+                guestJoined.AddRange(r.Joined);
+                guestLeft.AddRange(r.Left);
+            }
             void PumpBoth() { PumpHost(); PumpGuest(); }
 
             Check("recibe el proyecto con sus pistas y clips", gp.Tracks.Count == 3 && gp.Tracks[0].Clips.Count == 1);
             Check("los dos se ven", Until(() => host.People.Count == 2 && guest.People.Count == 2, PumpBoth) && guest.People.Contains("Martín"));
+            Check("el anfitrión se entera de que entró (aviso y sonido)", hostJoined.SequenceEqual(["Ana"]));
+            Check("se mide la latencia: el anfitrión la de cada invitado, el invitado la suya",
+                Until(() => host.LatencyOf("Ana") is > 0 && guest.LatencyOf(guest.Name) is > 0, PumpBoth) && host.LatencyOf("Martín") == null);
             string got = Path.Combine(guestDir, "media", "toma1.wav");
             Check("le llega el audio entero", Until(() => File.Exists(got), PumpBoth) && File.ReadAllBytes(got).AsSpan().SequenceEqual(audio));
 
             gp.Tracks[1].Channel.Volume = 0.3;
             guest.Publish(gp);
             Check("un cambio del invitado llega al anfitrión", Until(() => hp.Tracks[1].Channel.Volume == 0.3, PumpBoth));
+            Check("lo que toca el invitado se marca como suyo en el anfitrión", host.EditingBy("Ana").Contains(hp.Tracks[1].Id));
+            Check("el paso del invitado lleva su nombre en el historial del anfitrión",
+                hostUndo.Steps(hp, _ => null).Any(s => s.Author == "Ana" && s.Index < 0));
+
+            // presence (#291): who has what selected, plays or records, and where their cursor goes
+            Check("cada uno tiene su color, el mismo en las dos copias",
+                host.ColorOf("Martín") >= 0 && host.ColorOf("Ana") >= 0 && host.ColorOf("Martín") != host.ColorOf("Ana")
+                && Until(() => guest.ColorOf("Ana") == host.ColorOf("Ana") && guest.ColorOf("Martín") == host.ColorOf("Martín"), PumpBoth));
+            guest.Share(new LivePresence { Track = gp.Tracks[0].Id, Clip = gp.Tracks[0].Clips[0].Id, Rolling = true, Cursor = 2.5 });
+            Check("la presencia del invitado llega al anfitrión",
+                Until(() => host.Presence.TryGetValue("Ana", out var pr) && pr.Track == hp.Tracks[0].Id && pr.Clip == hp.Tracks[0].Clips[0].Id && pr.Cursor == 2.5, PumpBoth));
+            host.Share(new LivePresence { Playing = hp.Tracks[2].Id, Recording = true });
+            Check("y la del anfitrión al invitado",
+                Until(() => guest.Presence.TryGetValue("Martín", out var pr) && pr.Playing == gp.Tracks[2].Id && pr.Recording, PumpBoth)
+                && !guest.Presence.ContainsKey("Ana"));
 
             hostUndo.Checkpoint(hp);
             hp.Tracks[2].Name = "Voz principal";
             host.Publish(hp);
             Check("uno del anfitrión llega al invitado", Until(() => gp.Tracks[2].Name == "Voz principal", PumpBoth));
+            Check("y en el historial del invitado es del anfitrión", guestUndo.Steps(gp, _ => null).Any(s => s.Author == "Martín"));
+            Check("los pasos propios no llevan nombre", hostUndo.Steps(hp, _ => null).Where(s => s.Index > 0).All(s => s.Author == null));
 
             gp.Tracks[0].Channel.Pan = 0.4;
             guest.Publish(gp);
@@ -215,6 +247,9 @@ static class LiveChecks
             Check("una toma nueva del invitado llega con su archivo al anfitrión",
                 Until(() => File.Exists(atHost) && hp.Tracks[1].Clips.Count == 1, PumpBoth)
                 && File.ReadAllBytes(atHost).AsSpan().SequenceEqual(take) && hp.Media.Any(m => m.Id == m2.Id));
+            Check("la toma dice quién la trajo", m2.AddedBy == "Ana" && hp.Media.Find(m => m.Id == m2.Id)?.AddedBy == "Ana");
+
+            Plugins(host, guest, hp, gp, hostDir, guestDir, guestUndo, PumpBoth);
 
             // a second guest joins late and gets both files: one through the host
             string thirdDir = TempDir("tercero");
@@ -230,6 +265,17 @@ static class LiveChecks
                     Until(() => File.Exists(Path.Combine(thirdDir, "media", "toma2.wav")) && File.Exists(Path.Combine(thirdDir, "media", "toma1.wav")),
                         () => { PumpBoth(); third.Pump(tp, null, true); })
                     && third.People.Contains("Ana'"));
+                Check("el tercero recibe quién trajo cada toma", tp.Media.Find(m => m.Id == m2.Id)?.AddedBy == "Ana");
+                Check("el tercero se ve con el nombre que le dio el anfitrión", third.Name == "Ana'");
+                third.Share(new LivePresence { Track = tp.Tracks[1].Id });
+                Check("su presencia les llega a los otros dos",
+                    Until(() => host.Presence.ContainsKey("Ana'") && guest.Presence.ContainsKey("Ana'"), () => { PumpBoth(); third.Pump(tp, null, true); }));
+                third.Dispose();
+                Check("al irse, su presencia se borra en los dos",
+                    Until(() => !host.Presence.ContainsKey("Ana'") && !guest.Presence.ContainsKey("Ana'") && host.ColorOf("Ana'") < 0, PumpBoth));
+                Check("los dos se enteran de que entró y de que salió",
+                    Until(() => hostLeft.Contains("Ana'") && guestLeft.Contains("Ana'"), PumpBoth) && hostJoined.Contains("Ana'") && guestJoined.Contains("Ana'")
+                    && !guestJoined.Contains("Ana"));
             }
             finally { TryDelete(thirdDir); }
 
@@ -249,6 +295,55 @@ static class LiveChecks
             TryDelete(hostDir);
             TryDelete(guestDir);
         }
+    }
+
+    /// <summary>
+    /// Plugins in a session (#291, the user's call: only what everybody has is used): each copy says what it has, both
+    /// know who lacks a plugin of the project or of someone's list, and it is known again when it is installed or the one
+    /// without it leaves. Nothing of it goes into the project.
+    /// </summary>
+    static void Plugins(LiveSession host, LiveSession guest, Project hp, Project gp, string hostDir, string guestDir, UndoManager guestUndo, Action pumpBoth)
+    {
+        string fake = Path.Combine(hostDir, "Fake.vst3");
+        File.WriteAllBytes(fake, [1]);
+        bool guestHas = false;
+        guest.HasPlugin = path => string.Equals(path, fake, StringComparison.OrdinalIgnoreCase) ? guestHas : LivePlugins.Installed(path);
+        var synth = new Track { Name = "Sinte", Kind = TrackKinds.Midi, Instrument = new PluginRef { Path = fake, ClassId = "c1", Name = "Fake" } };
+        hp.Tracks.Add(synth);
+        hp.Normalize();
+        host.Publish(hp);
+        Check("al invitado le falta el instrumento: los dos lo saben",
+            Until(() => host.LackingIt(fake).SequenceEqual(["Ana"]) && guest.LackingIt(fake).SequenceEqual(["Ana"]), pumpBoth)
+            && host.LacksAny("Ana") && guest.LacksAny("Ana") && !host.LacksAny("Martín"));
+        int steps = guestUndo.Steps(gp, _ => null).Count;
+
+        // a plugin only the guest found: the host lacks it
+        string other = Path.Combine(guestDir, "Otro.vst3");
+        File.WriteAllBytes(other, [2]);
+        host.HasPlugin = path => !string.Equals(path, other, StringComparison.OrdinalIgnoreCase) && LivePlugins.Installed(path);
+        guest.Catalog = () => [other];
+        guest.ShareCatalog(gp);
+        Check("lo que el invitado encontró llega: el anfitrión no lo tiene",
+            Until(() => host.LackingIt(other).SequenceEqual(["Martín"]) && guest.LackingIt(other).SequenceEqual(["Martín"]), pumpBoth));
+        string plain = Path.Combine(hostDir, "Comun.vst3");
+        File.WriteAllBytes(plain, [3]);
+        guest.Catalog = () => [other, plain];
+        guest.ShareCatalog(gp);
+        host.Catalog = () => [plain];
+        host.ShareCatalog(hp);
+        Check("uno que tienen los dos no le falta a nadie",
+            Until(() => host.LackingIt(plain).Count == 0 && guest.LackingIt(plain).Count == 0, pumpBoth));
+
+        guestHas = true;
+        guest.Publish(gp);
+        guest.ShareCatalog(gp);
+        Check("al instalarlo, ya no le falta a nadie", Until(() => host.LackingIt(fake).Count == 0 && guest.LackingIt(fake).Count == 0, pumpBoth));
+        Check("nada de esto es un paso del deshacer ni cambia la pista",
+            guestUndo.Steps(gp, _ => null).Count == steps && gp.Tracks.Find(t => t.Id == synth.Id) is { Instrument.Path: var gpath, Freeze: null } && gpath == fake);
+        host.HasPlugin = LivePlugins.Installed;
+        guest.HasPlugin = LivePlugins.Installed;
+        guest.Catalog = null;
+        host.Catalog = null;
     }
 
     static void TryDelete(string d)

@@ -98,7 +98,7 @@ More details in [Requirements](DETALLES_EN.md#requirements).
 - A per-channel effects chain, in any order: saturation (**Vida**, tube or tape), a **compressor** with presets
   by category (vocals, guitars, bass, drums, percussion and more), a **7-band EQ** with live spectrum, dynamic bands and a large view and a **noise gate**, plus pan templates, a
   **MONO** button to check the mix and **FX** to hear it without effects.
-- **Transpose** per track (−12 to +12 semitones) without changing the length: it is computed in the background
+- **Transpose** per track (−24 to +24 semitones) without changing the length: it is computed in the background
   (about 4 s per 3 min) with a high-quality phase vocoder, progress shows on the clips and the result is kept in
   `cache/`.
 - A full **mixer** with **buses**: every track or folder picks its output (the master or a bus) and sends to the

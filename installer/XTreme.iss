@@ -40,6 +40,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 ; checked by default (#254); unchecked leaves .xtp files with whatever opens them today
 Name: "xtpassoc"; Description: "{cm:AssocXtp}"
 
+[InstallDelete]
+; the General MIDI bank went with the app up to 0.9.21; now every bank is an optional download (#304)
+Type: filesandordirs; Name: "{app}\gm"
+
 [Files]
 Source: "..\artifacts\publish\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs
 

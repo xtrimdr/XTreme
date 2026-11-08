@@ -258,7 +258,7 @@
           "keywords": "clip arrastrar acortar fade fundido entrada salida bordes estirar stretch",
           "intro": "Un clip es un pedazo de un canal grabado. Recortarlo no toca el archivo.",
           "steps": [
-            "Para **mover**, arrastrá el clip, también a otra pista.",
+            "Para **mover**, arrastrá el clip, también a otra pista. Soltalo debajo del último canal y va a un **canal nuevo** del mismo tipo (uno MIDI, con el mismo instrumento).",
             "Para **recortar**, arrastrá la manija de abajo en un borde.",
             "Para **estirar** sin cambiar el tono, mantené **Ctrl** y arrastrá esa manija. La etiqueta dice la velocidad contra lo grabado. El clip calla hasta que su sonido está listo.",
             "Para hacer un **fade**, arrastrá la manija de arriba en un borde.",
@@ -277,7 +277,7 @@
           "id": "split-copy",
           "icon": "E8C6",
           "title": "Dividir, duplicar, copiar y pegar",
-          "keywords": "cortar partir tijera pegar repetir",
+          "keywords": "cortar partir tijera pegar repetir unir juntar pegar clips",
           "intro": "Se aplica al clip elegido o a todos los marcados.",
           "steps": [
             "Poné el cabezal donde querés cortar y dividí con {key:split}.",
@@ -287,6 +287,7 @@
           ],
           "notes": [
             "En un clip MIDI, una nota que cruza el corte queda en los dos pedazos y sigue sonando como una sola.",
+            "Para unir clips MIDI, marcalos y usá {key:joinClips} o clic derecho → Unir clips: queda uno por pista, del primero al último, y suena igual.",
             "En un patrón, cortá en la raya de una vuelta para que los dos pedazos sigan enlazados. En otro lugar, el de la derecha queda como clip propio."
           ],
           "see": ["select-many", "tools", "move-trim", "loop-clip"]
@@ -319,6 +320,7 @@
           "steps": [
             "Arrastrá en la parte vacía de las pistas o de un carril de automatización: se marca todo lo que toque el rectángulo, también los bloques de automatización.",
             "**Ctrl+clic** en un clip o en un bloque lo suma o lo saca.",
+            "**Shift+clic** en un clip marca desde el clip elegido hasta ese, en las pistas que van de uno a otro.",
             "Un bloque marcado se arrastra por su franja de arriba y se mueve todo lo marcado.",
             "Arrastrá uno de los marcados por el cuerpo y se mueven todos; con Shift queda una copia de cada uno donde estaba.",
             "Arrastrá un borde, un fade o el bucle de uno de los marcados (clip o bloque) y cambian todos igual.",
@@ -502,7 +504,8 @@
             "Agregá un marcador en el cabezal con {key:marker}, o con doble clic en la franja de marcadores.",
             "Saltá entre marcadores con {key:prevMarker} y {key:nextMarker}.",
             "Arrastrá en la franja del rango para marcar el rango A–B. Se prende el loop. Doble clic en esa franja lo saca.",
-            "Prendé o apagá el loop con {key:loop}. También ponés A y B en el cabezal con {key:loopIn} y {key:loopOut}."
+            "Prendé o apagá el loop con {key:loop}. También ponés A y B en el cabezal con {key:loopIn} y {key:loopOut}.",
+            "Con el loop prendido y sin rango A–B, se repite desde el principio hasta donde termina el último clip. Con el loop apagado, la reproducción sigue después del final hasta que la parás."
           ],
           "notes": [
             "Para escribir un acorde, doble clic en la franja de acordes y tipeá su nombre. Doble clic en un acorde lo renombra. Arrastralo para moverlo o tomalo de un borde para alargarlo o acortarlo; con varios marcados, se mueven juntos.",
@@ -643,7 +646,7 @@
           ],
           "notes": [
             "Los efectos propios van por grupos: **Dinámica**, **Compresores clásicos**, **EQ**, **Saturación**, **Modulación**, **Espacio y estéreo** y **Mastering** (las etapas de la cadena de mastering, en su orden).",
-            "Un clic en un efecto propio abre su ventana, abajo de donde hiciste clic. Se mueve desde su barra, queda abierta mientras trabajás y podés tener varias. Se cierra con su X o con **Esc**. El botón de agrandar, en su barra, muestra todos los controles en paneles; achicada, solo lo principal. Cada efecto recuerda su tamaño.",
+            "Un clic en un efecto propio abre su ventana, abajo de donde hiciste clic. Se mueve desde su barra, queda abierta mientras trabajás y podés tener varias. Se cierra con su X o con **Esc**. Muestra todos sus controles, en paneles.",
             "Cada efecto tiene su identidad: lo principal va en perillas grandes, arriba va su gráfico (la cola de la reverb, los ecos del delay, la onda de la modulación, la curva de la saturación, el campo estéreo, la respuesta de los de tono) y lleva el color de su familia: violeta la dinámica, verde el tono, naranja la saturación, azul el espacio y rosa la modulación."
           ],
           "see": ["comp-presets", "guitar-tone", "reverb-delay", "plugins", "eq"]
@@ -761,7 +764,7 @@
           "id": "comp-presets",
           "icon": "E8FD",
           "title": "Elegir un preset del compresor",
-          "keywords": "compresor preset voz bajo bateria bombo caja percusion piano sinte cuerdas vientos bus mezcla locucion podcast categorias agrandar compacto full paneles umbral ratio ataque release",
+          "keywords": "compresor preset voz bajo bateria bombo caja percusion piano sinte cuerdas vientos bus mezcla locucion podcast categorias paneles umbral ratio ataque release",
           "intro": "El compresor arranca en **Default** y trae presets por instrumento y por uso. Se aplican directo.",
           "steps": [
             "Agregá un **Compresor** a la pista.",
@@ -772,7 +775,7 @@
           ],
           "notes": [
             "**Usos generales** sirve para cualquier sonido.",
-            "La ventana del compresor muestra lo principal: **Cantidad**, **Ganancia** y **Wet**. El botón de agrandar, en su barra, la abre con todos los controles en paneles: **Dinámica**, **Tiempos**, **Salida**, **EQ interno** y **Sidechain**. Cada compresor recuerda su tamaño."
+            "La ventana del compresor muestra todos sus controles en paneles: **Dinámica**, **Tiempos**, **Salida**, **EQ interno** y **Sidechain**."
           ],
           "see": ["add-fx", "guitar-tone", "fx-presets"]
         },
@@ -877,11 +880,11 @@
           "intro": "Cambia el tono sin cambiar el largo.",
           "steps": [
             "Elegí la pista.",
-            "En el inspector, arrastrá para arriba o para abajo el valor de **Transponer** (en la sección del clip), usá la ruedita o hacé doble clic para escribirlo: de −12 a +12 semitonos.",
+            "En el inspector, en **Transponer** (en la sección del clip), hacé clic o arrastrá sobre la escala, usá la ruedita (Shift: una octava) o las flechas: de −24 a +24 semitonos. Arriba se ve cuánto está transpuesto y el intervalo (\"5ª justa arriba\"); doble clic vuelve al original.",
             "Esperá el aviso: mientras se calcula, la pista suena como estaba."
           ],
           "notes": [
-            "Para cambiar **un solo clip**: clic derecho en el clip → **Tono**. Se suma al de la pista, hasta ±12."
+            "Para cambiar **un solo clip**: clic derecho en el clip → **Tono**. Va de −12 a +12 y se suma al de la pista, hasta ±24."
           ],
           "see": ["tempo"]
         },
@@ -1182,11 +1185,11 @@
             "Al importar un **.mid** a pistas nuevas, cada pista toma el instrumento que pide el archivo; la del canal 10 toma la batería, con el nombre de cada tecla en el piano roll.",
             "Si el archivo tiene más de una pista, **Importar MIDI** pregunta cuáles traer. **Todas** y **Ninguna** marcan o desmarcan la lista.",
             "Cada pista toma el nombre que trae en el archivo; sin nombre, el de su instrumento.",
-            "**Banco**, arriba a la derecha de la ventana, elige con qué banco suena la pista: **GeneralUser GS** (viene con la app), **FluidR3 GM** o **MuseScore General** (más completos: se bajan desde ahí o en **Configuración → Componentes**) o **Cargar .sf2…** para uno propio."
+            "**Banco**, arriba a la derecha de la ventana, elige con qué banco suena la pista: **GeneralUser GS** (el más liviano), **FluidR3 GM** o **MuseScore General** (más completos). Se bajan desde ahí o en **Configuración → Componentes** o **Cargar .sf2…** para uno propio."
           ],
           "notes": [
-            "Sin elegir otro, suena con el banco **GeneralUser GS**, que viene con la app.",
-            "Cada pista guarda su banco. Si falta en otra PC, suena con GeneralUser GS y la ventana lo avisa.",
+            "Ningún banco viene con la app: hasta bajar uno, la pista no suena y lo avisa. Sin elegir otro, suena con **GeneralUser GS**.",
+            "Cada pista guarda su banco. Si falta en otra PC, suena con otro de los bajados y la ventana lo avisa.",
             "Al cambiar de instrumento, las perillas quedan como estaban. En la batería, Transponer no se aplica.",
             "Al importar sobre una pista MIDI elegida, las pistas marcadas van a un solo clip. Si esa pista suena con el tono de prueba, toma el instrumento de la primera."
           ],
@@ -1476,6 +1479,9 @@
             "Le pasa a los demás el **código**, el **link** o la **IP** (Copiar código / Copiar link / Copiar IP).",
             "Cada invitado toca **Sesión en vivo → Unirme**, pega el código y toca **Unirse**: recibe una copia del proyecto con su audio, que queda en sus proyectos.",
             "Todos editan todo; cada uno escucha por su cuenta (Play, solos y la placa de audio son de cada uno). Lo que se graba llega a los demás al terminar la toma.",
+            "Cada uno tiene un color. Su nombre aparece en la pista y el clip que tiene elegidos, en lo que está editando y en la pista donde graba o toca; su cabezal se ve como una línea de su color mientras reproduce. En **Historial**, cada paso dice quién lo hizo (cada uno deshace solo los suyos); en **Biblioteca**, cada toma dice quién la trajo.",
+            "En una sesión solo se usan plugins que tienen todos. Uno que a alguien le falta sale apagado en los menús y dice quién no lo tiene. Si ya estaba en el proyecto (instrumento o efecto de una pista, una carpeta o un bus), queda apagado para todos, con «Falta en nombre · apagado», hasta que todos lo tengan: el efecto deja pasar el sonido y el instrumento no suena. Al instalarlo, buscá plugins de nuevo y se prende solo.",
+            "En la sesión, cada persona aparece con su color, su rol, la latencia de la conexión y qué está haciendo. Un aviso y un sonido corto dicen cuándo alguien entra o sale.",
             "Hace falta la misma versión de XTreme y estar en la misma red, o en una VPN como Tailscale o ZeroTier. Mientras dura, el botón dice **En vivo** y cuántos hay; desde ahí, **Finalizar sesión** (anfitrión) o **Salir de la sesión** (invitado), que deja tu copia como está."
           ],
           "see": ["share-project"]
@@ -1512,10 +1518,10 @@
           "id": "look",
           "icon": "E771",
           "title": "Cambiar el color y el diseño",
-          "keywords": "tema acento apariencia vertical paneles neumorfismo relieve sombra ocultar pantalla completa perillas knobs estilo neumorfico faders medidores ondas color pista clips teñido franja fuente letra números digital segmentos lcd orbitron tron legacy tema completo colores gradiente degradé custom sorprendeme restablecer fábrica tamaño escala zoom",
+          "keywords": "tema acento apariencia vertical paneles neumorfismo relieve sombra ocultar pantalla completa perillas knobs estilo neumorfico faders medidores ondas color pista clips teñido franja fuente letra números digital segmentos lcd orbitron tron legacy tema completo brillo contraste saturacion temperatura colores gradiente degradé custom sorprendeme restablecer fábrica tamaño escala zoom",
           "intro": "Casi todo está en la barra de título.",
           "steps": [
-            "El selector de tema elige el color de acento y el fondo. **Tron Legacy**, en Temas completos, cambia todo de una vez: fondo, acento, paneles, perillas, faders, medidores, ondas y números; después se puede cambiar cada parte.",
+            "El selector de tema elige el color de acento y el fondo, y los ajusta: **Brillo**, **Contraste**, **Saturación** y **Temperatura** (doble clic en uno lo vuelve a 0). Lo mismo está en **Configuración → Apariencia → General → Tema**, donde también está **Tron Legacy**, en Temas completos, que cambia todo de una vez: fondo, acento, paneles, perillas, faders, medidores, ondas y números; después se puede cambiar cada parte.",
             "El botón de diseño {icon:E80A} cambia entre **Clásico** y **Vertical**.",
             "Los dos botones de panel ocultan los costados.",
             "{key:fullScreen} pasa a pantalla completa.",
