@@ -11,7 +11,8 @@ namespace XtremeDaw.Projects;
 /// from the invitation's key and a random salt from each side (HKDF), one per direction, so no two connections ever
 /// reuse a nonce; the nonce is the frame's number, so a frame repeated, dropped or out of order closes the link. A side
 /// without the invitation can't produce one frame the other accepts. Writes go one after another from any thread;
-/// reads from one thread only.
+/// reads from one thread only. It runs on any stream: a TCP socket on the local network, or a guest's way through the
+/// relay over the internet (<see cref="LiveRelay"/>, #320), which never sees inside the frames.
 /// </summary>
 public sealed class LiveLink : IDisposable
 {
@@ -20,25 +21,30 @@ public sealed class LiveLink : IDisposable
     const int SaltBytes = 16, TagBytes = 16, NonceBytes = 12;
     static readonly byte[] Magic = "XTL1"u8.ToArray();
 
-    readonly TcpClient tcp;
-    readonly NetworkStream stream;
+    readonly IDisposable owner;
+    readonly Stream stream;
     readonly AesGcm send, receive;
     readonly SemaphoreSlim writing = new(1, 1);
     ulong sent, received;
 
-    LiveLink(TcpClient tcp, byte[] sendKey, byte[] receiveKey)
+    LiveLink(Stream stream, IDisposable owner, byte[] sendKey, byte[] receiveKey)
     {
-        this.tcp = tcp;
-        tcp.NoDelay = true;
-        stream = tcp.GetStream();
+        this.stream = stream;
+        this.owner = owner;
         send = new AesGcm(sendKey, TagBytes);
         receive = new AesGcm(receiveKey, TagBytes);
     }
 
     /// <summary>Both sides send their salt in the clear (with a magic word), then derive the keys.</summary>
-    public static async Task<LiveLink> Open(TcpClient tcp, byte[] key, bool host, CancellationToken ct)
+    public static Task<LiveLink> Open(TcpClient tcp, byte[] key, bool host, CancellationToken ct)
     {
-        var s = tcp.GetStream();
+        tcp.NoDelay = true;
+        return Open(tcp.GetStream(), tcp, key, host, ct);
+    }
+
+    /// <summary>The same on any stream; <paramref name="owner"/> is what closes it (the socket, or the stream itself).</summary>
+    public static async Task<LiveLink> Open(Stream s, IDisposable owner, byte[] key, bool host, CancellationToken ct)
+    {
         var mine = RandomNumberGenerator.GetBytes(SaltBytes);
         await s.WriteAsync(Magic.Concat(mine).ToArray(), ct);
         var theirs = new byte[Magic.Length + SaltBytes];
@@ -47,7 +53,7 @@ public sealed class LiveLink : IDisposable
         var salt = host ? theirs[Magic.Length..].Concat(mine).ToArray() : mine.Concat(theirs[Magic.Length..]).ToArray();
         byte[] toHost = HKDF.DeriveKey(HashAlgorithmName.SHA256, key, 32, salt, "xtreme live guest-host"u8.ToArray());
         byte[] toGuest = HKDF.DeriveKey(HashAlgorithmName.SHA256, key, 32, salt, "xtreme live host-guest"u8.ToArray());
-        return host ? new LiveLink(tcp, toGuest, toHost) : new LiveLink(tcp, toHost, toGuest);
+        return host ? new LiveLink(s, owner, toGuest, toHost) : new LiveLink(s, owner, toHost, toGuest);
     }
 
     static byte[] Nonce(ulong n)
@@ -100,7 +106,7 @@ public sealed class LiveLink : IDisposable
 
     public void Dispose()
     {
-        try { tcp.Close(); } catch (SocketException) { }
+        try { owner.Dispose(); } catch (Exception e) when (e is SocketException or IOException) { }
         send.Dispose();
         receive.Dispose();
     }

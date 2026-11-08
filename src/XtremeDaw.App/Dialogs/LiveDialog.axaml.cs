@@ -10,8 +10,9 @@ using XtremeDaw.Projects;
 namespace XtremeDaw.App.Dialogs;
 
 /// <summary>
-/// The live session (#291), from its button beside Exportar. With no session, two choices: Crear sesión (it starts
-/// right away and shows the code, the link and the address to pass on) or Unirme (a field for the code or link); in
+/// The live session (#291), from its button beside Exportar. With no session, two choices: Crear sesión (then where:
+/// over the internet, with a short code through the relay, or on the local network, with the long code, the link and
+/// the address; #320) or Unirme (a field for either code or the link); in
 /// one, what to pass on (the host's), who is in (one row each: their color, name, role, the link's latency where this
 /// copy measures it, and what they are doing) and Finalizar. It only asks: the window (<c>MainWindow.Live.cs</c>)
 /// does the joining and hosting through <see cref="InviteRequested"/>, <see cref="JoinRequested"/> and
@@ -21,20 +22,32 @@ public sealed partial class LiveDialog : UserControl
 {
     const string NameKey = "liveName";
 
-    public event Action<string>? InviteRequested;
+    /// <summary>Crear sesión, with the name and whether it goes over the internet.</summary>
+    public event Action<string, bool>? InviteRequested;
     public event Action<LiveInvite, string>? JoinRequested;
     public event Action? LeaveRequested;
 
     LiveSession? shown;
     /// <summary>Unirme was picked: the code field instead of the two choices.</summary>
     bool joining;
+    /// <summary>Crear sesión was picked: where it goes (internet or local network) instead of the two choices.</summary>
+    bool creating;
 
     public LiveDialog()
     {
         InitializeComponent();
         CancelButton.Click += (_, _) => Back();
         PointerPressed += (_, e) => { if (e.Source == this) Hide(); };
-        CreateButton.Click += (_, _) => { if (TakeName() is { } n) InviteRequested?.Invoke(n); };
+        CreateButton.Click += (_, _) =>
+        {
+            if (TakeName() == null) return;
+            creating = true;
+            Notice(null);
+            Refresh(shown, CreateButton.IsEnabled);
+            OnlineButton.Focus();
+        };
+        OnlineButton.Click += (_, _) => { if (TakeName() is { } n) InviteRequested?.Invoke(n, true); };
+        LocalButton.Click += (_, _) => { if (TakeName() is { } n) InviteRequested?.Invoke(n, false); };
         JoinChoice.Click += (_, _) =>
         {
             if (TakeName() == null) return;
@@ -60,7 +73,7 @@ public sealed partial class LiveDialog : UserControl
     public void Show(LiveSession? session, bool canInvite)
     {
         IsVisible = true;
-        joining = false;
+        joining = creating = false;
         Notice(null);
         Refresh(session, canInvite);
         if (session == null)
@@ -77,18 +90,24 @@ public sealed partial class LiveDialog : UserControl
     {
         shown = session;
         bool on = session != null;
-        if (on) joining = false;
-        ChoosePanel.IsVisible = !on && !joining;
+        if (on) joining = creating = false;
+        ChoosePanel.IsVisible = !on && !joining && !creating;
+        WherePanel.IsVisible = !on && creating;
         JoinPanel.IsVisible = JoinButton.IsVisible = !on && joining;
         ActivePanel.IsVisible = LeaveButton.IsVisible = OnBadge.IsVisible = on;
         CreateButton.IsEnabled = canInvite;
         ToolTip.SetTip(CreateButton, Loc.T(canInvite ? "live.create.tip" : "live.create.off"));
-        CancelButton.Content = Loc.T(on ? "common.close" : joining ? "live.back" : "common.cancel");
+        CancelButton.Content = Loc.T(on ? "common.close" : joining || creating ? "live.back" : "common.cancel");
         if (session == null) return;
         LeaveButton.Content = Loc.T(session.IsHost ? "live.end" : "live.leave");
         OnText.Text = Loc.T(session.IsHost ? "live.badgeHost" : "live.badgeGuest");
         InvitePanel.IsVisible = session.IsHost;
+        bool online = session.Invite.Online;
         InviteBox.Text = session.Invite.Code;
+        RoomText.Text = session.Invite.Code;
+        InviteBox.IsVisible = CopyIpButton.IsVisible = AddressText.IsVisible = !online;
+        RoomText.IsVisible = online;
+        PassOnText.Text = Loc.T(online ? "live.passOnOnline" : "live.passOn");
         CopyIpButton.IsEnabled = session.Invite.Addresses.Count > 0;
         AddressText.Text = Loc.T("live.addresses", string.Join(" · ", session.Invite.Addresses), session.Invite.Port);
         Rows(session);
@@ -175,6 +194,7 @@ public sealed partial class LiveDialog : UserControl
     /// <summary>While it connects, nothing else can be pressed.</summary>
     public void Busy(bool busy)
     {
+        OnlineButton.IsEnabled = LocalButton.IsEnabled = !busy;
         JoinButton.IsEnabled = CodeBox.IsEnabled = CancelButton.IsEnabled = !busy;
         JoinButton.Content = Loc.T(busy ? "live.connecting" : "live.joinButton");
     }
@@ -203,12 +223,13 @@ public sealed partial class LiveDialog : UserControl
     /// <summary>Cancelar / Volver: from the code field back to the two choices; otherwise it closes.</summary>
     void Back()
     {
-        if (joining && shown == null)
+        if ((joining || creating) && shown == null)
         {
-            joining = false;
+            bool wasCreating = creating;
+            joining = creating = false;
             Notice(null);
             Refresh(null, CreateButton.IsEnabled);
-            JoinChoice.Focus();
+            (wasCreating ? CreateButton : JoinChoice).Focus();
             return;
         }
         Hide();

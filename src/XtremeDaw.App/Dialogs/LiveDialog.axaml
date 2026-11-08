@@ -48,6 +48,27 @@
         </Grid>
       </StackPanel>
 
+      <!-- creating: on the local network or over the internet (#320) -->
+      <StackPanel x:Name="WherePanel" Spacing="12" IsVisible="False">
+        <TextBlock Classes="dim" TextWrapping="Wrap" LineHeight="18" Text="{loc:T live.where}" />
+        <Grid ColumnDefinitions="*,12,*">
+          <Button x:Name="OnlineButton" Classes="livepick" HorizontalAlignment="Stretch" ToolTip.Tip="{loc:T live.online.tip}">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="icon" Text="&#xE774;" FontSize="22" Foreground="{StaticResource Accent}" />
+              <TextBlock Text="{loc:T live.online}" FontSize="12.5" FontWeight="SemiBold" />
+              <TextBlock Classes="dim" Text="{loc:T live.online.sub}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+          <Button Grid.Column="2" x:Name="LocalButton" Classes="livepick" HorizontalAlignment="Stretch" ToolTip.Tip="{loc:T live.local.tip}">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="icon" Text="&#xE968;" FontSize="22" Foreground="{StaticResource Accent}" />
+              <TextBlock Text="{loc:T live.local}" FontSize="12.5" FontWeight="SemiBold" />
+              <TextBlock Classes="dim" Text="{loc:T live.local.sub}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+        </Grid>
+      </StackPanel>
+
       <!-- joining: the code or link -->
       <StackPanel x:Name="JoinPanel" Spacing="10" IsVisible="False">
         <TextBlock Classes="label" Text="{loc:T live.codeHint}" />
@@ -57,9 +78,12 @@
       <!-- in a session -->
       <StackPanel x:Name="ActivePanel" Spacing="10" IsVisible="False">
         <StackPanel x:Name="InvitePanel" Spacing="8">
-          <TextBlock Classes="dim" TextWrapping="Wrap" Text="{loc:T live.passOn}" />
+          <TextBlock x:Name="PassOnText" Classes="dim" TextWrapping="Wrap" Text="{loc:T live.passOn}" />
           <TextBlock Classes="label" Text="{loc:T live.code}" />
           <TextBox x:Name="InviteBox" Classes="field" IsReadOnly="True" FontFamily="{DynamicResource Mono}" TextWrapping="Wrap" />
+          <!-- over the internet the code is short enough to read out: big, and nothing else to pass on -->
+          <TextBlock x:Name="RoomText" IsVisible="False" FontFamily="{DynamicResource Mono}" FontSize="26" FontWeight="SemiBold"
+                     Foreground="{StaticResource Accent}" HorizontalAlignment="Left" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button x:Name="CopyCodeButton" Classes="btn sm" Content="{loc:T live.copyCode}" />
             <Button x:Name="CopyLinkButton" Classes="btn sm" Content="{loc:T live.copyLink}" />

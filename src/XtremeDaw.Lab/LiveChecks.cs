@@ -13,6 +13,8 @@ namespace XtremeDaw.Lab;
 /// directions, solos stay each one's, a new take's file travels through the host, undo takes back only one's own
 /// step, another version or a wrong code don't get in. Who is who: colors from the host, presence both ways and gone on
 /// leaving, what someone edits marked as theirs, the others' steps listed by name, a take saying who brought it.
+/// With <c>--internet</c> the same session runs through the relay (#320, <see cref="LiveRelay"/>; <c>XTREME_RELAY</c>
+/// points it at a <c>wrangler dev</c>), with a short code.
 /// <c>xtlab colaborar anfitrion &lt;carpeta&gt;</c> and <c>unirse &lt;código&gt; &lt;carpeta&gt;</c> run a session by hand.
 /// </summary>
 static class LiveChecks
@@ -24,8 +26,8 @@ static class LiveChecks
         string action = a.Positional.Count > 0 ? a.Positional[0] : "";
         return action switch
         {
-            "comprobar" => Check(),
-            "anfitrion" when a.Positional.Count > 1 => HostByHand(a.Positional[1], a.Get("nombre") ?? "Anfitrión"),
+            "comprobar" => Check(a.Flag("internet")),
+            "anfitrion" when a.Positional.Count > 1 => HostByHand(a.Positional[1], a.Get("nombre") ?? "Anfitrión", a.Flag("internet")),
             "unirse" when a.Positional.Count > 2 => JoinByHand(a.Positional[1], a.Positional[2], a.Get("nombre") ?? "Invitado"),
             _ => Usage(),
         };
@@ -33,7 +35,7 @@ static class LiveChecks
 
     static int Usage()
     {
-        Console.WriteLine("xtlab colaborar comprobar | anfitrion <carpeta> [--nombre N] | unirse <código> <carpeta> [--nombre N]");
+        Console.WriteLine("xtlab colaborar comprobar [--internet] | anfitrion <carpeta> [--nombre N] [--internet] | unirse <código> <carpeta> [--nombre N]");
         return 1;
     }
 
@@ -55,12 +57,15 @@ static class LiveChecks
         return p;
     }
 
-    static int Check()
+    static int Check(bool online)
     {
         failed = 0;
         Patches();
         Invites();
-        Session();
+        if (online) Console.WriteLine($"Por internet, con {LiveRelay.Server}");
+        Session(online);
+        if (online && Environment.GetEnvironmentVariable("XTREME_RELAY_ADMIN") is { Length: > 0 } key) Admin(key);
+        else if (online) Console.WriteLine("(sin XTREME_RELAY_ADMIN: no se prueba la administración)");
         Console.WriteLine(failed == 0 ? "Todo ok" : $"{failed} DISTINTO");
         return failed == 0 ? 0 : 1;
     }
@@ -123,6 +128,15 @@ static class LiveChecks
         var fromLink = LiveInvite.Parse(inv.Link.ToLowerInvariant().Replace("xtreme://unirse/", "xtreme://unirse/"));
         Check("el link también, en minúsculas", fromLink != null && fromLink.Key.SequenceEqual(inv.Key));
         Check("un código cortado no se acepta", LiveInvite.Parse(inv.Code[..^3]) == null && LiveInvite.Parse("hola") == null);
+        var room = LiveInvite.NewOnline();
+        Check($"el código por internet es corto ({room.Code})", room.Code.Length == 12 && room.Online && room.Addresses.Count == 0);
+        var typed = LiveInvite.Parse(" " + room.Code.Replace("-", "").ToUpperInvariant() + " ");
+        Check("se lee en mayúsculas y sin guiones, con la misma clave y sala", typed != null && typed.Code == room.Code
+            && typed.Key.SequenceEqual(room.Key) && typed.RoomId == room.RoomId);
+        Check("también desde el link", LiveInvite.Parse(room.Link)?.RoomId == room.RoomId);
+        Check("la sala no deja ver el código ni la clave", room.RoomId!.Length == 32 && !room.RoomId.Contains(room.Code.Replace("-", ""))
+            && !Convert.FromHexString(room.RoomId).SequenceEqual(room.Key));
+        Check("otro código, otra sala", LiveInvite.NewOnline().RoomId != room.RoomId && LiveInvite.Parse("abc-defg-hil") == null);
     }
 
     static bool Until(Func<bool> done, Action pump, int ms = 8000)
@@ -144,7 +158,7 @@ static class LiveChecks
         return d;
     }
 
-    static void Session()
+    static void Session(bool online)
     {
         string hostDir = TempDir("anfitrion"), guestDir = TempDir("invitado");
         try
@@ -156,7 +170,8 @@ static class LiveChecks
             hp.Media.Add(new Media { Name = "toma1", Audio = "media/toma1.wav", DurationSec = 3 });
             hp.Tracks[0].Clips.Add(new Clip { MediaId = hp.Media[0].Id, AtSec = 1 });
             var hostUndo = new UndoManager();
-            using var host = LiveSession.Host("Martín", Version, 0, [IPAddress.Loopback]);
+            using var host = online ? LiveSession.HostOnline("Martín", Version, default).GetAwaiter().GetResult()
+                : LiveSession.Host("Martín", Version, 0, [IPAddress.Loopback]);
             host.Start(hp, hostDir);
             List<string> hostJoined = [], hostLeft = [], guestJoined = [], guestLeft = [];
             bool hostPresence = false, hostPointers = false;
@@ -303,6 +318,13 @@ static class LiveChecks
             Until(() => wrong.IsCompleted, PumpHost);
             Check("con otra clave no entra", wrong.IsFaulted);
 
+            if (online)
+            {
+                var none = LiveSession.Join(LiveInvite.NewOnline(), "Nadie", Version, default);
+                Until(() => none.IsCompleted, PumpHost);
+                Check("un código sin sesión dice que no existe", none.Exception?.InnerException is IOException);
+            }
+
             host.Dispose();
             Check("si el anfitrión cierra, el invitado se entera", Until(() => guest.Ended, PumpGuest));
         }
@@ -362,15 +384,66 @@ static class LiveChecks
         host.Catalog = null;
     }
 
+    /// <summary>
+    /// The relay's admin page (#321) through its API: without the key it says no, an open room is listed with its
+    /// people, closing it ends the session on both sides with its reason, and with new sessions off a host can't open.
+    /// </summary>
+    static void Admin(string key)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri(LiveRelay.Server + "/") };
+        JsonNode? Call(string path, object? body = null, bool auth = true)
+        {
+            using var req = new HttpRequestMessage(body == null ? HttpMethod.Get : HttpMethod.Post, "admin/api/" + path);
+            if (auth) req.Headers.Authorization = new("Bearer", key);
+            if (body != null) req.Content = new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+            using var res = http.Send(req);
+            return res.IsSuccessStatusCode ? JsonNode.Parse(res.Content.ReadAsStringAsync().GetAwaiter().GetResult()) : null;
+        }
+        Check("administración: sin la clave no responde", Call("state", auth: false) == null);
+        var p = Sample();
+        string dir = TempDir("admin");
+        try
+        {
+            using var host = LiveSession.HostOnline("Martín", Version, default).GetAwaiter().GetResult();
+            host.Start(p, dir);
+            var joining = LiveSession.Join(host.Invite, "Ana", Version, default);
+            Until(() => joining.IsCompleted, () => host.Pump(p, null, true));
+            var (guest, w) = joining.Result;
+            using var _g = guest;
+            var gp = ProjectStore.Parse(w.Project);
+            guest.Start(gp, dir);
+            JsonNode? Room() => Call("state")?["rooms"]?.AsArray().FirstOrDefault(r => (string?)r?["room"] == host.Invite.RoomId);
+            Check("la sala abierta aparece con su invitado", Until(() => Room()?["guests"]?.GetValue<int>() == 1, () => { host.Pump(p, null, true); guest.Pump(gp, null, true); }));
+            Check("cerrarla responde", Call("close", new { room = host.Invite.RoomId }) != null);
+            Check("la sesión termina en los dos, diciendo que la cerró el servidor",
+                Until(() => host.Ended && guest.Ended, () => { host.Pump(p, null, true); guest.Pump(gp, null, true); })
+                && host.EndReason!.Contains("servidor de sesiones cerró") && guest.EndReason!.Contains("servidor de sesiones cerró"));
+            Check("y deja la lista", Room() == null);
+        }
+        finally { TryDelete(dir); }
+        Check("apagar las nuevas responde", Call("pause", new { paused = true })?["paused"]?.GetValue<bool>() == true);
+        try
+        {
+            var off = LiveSession.HostOnline("Martín", Version, default);
+            off.ContinueWith(t => t.Exception).Wait(15000);
+            Check("con las nuevas apagadas no se puede crear una", off.Exception?.InnerException is IOException);
+        }
+        finally { Call("pause", new { paused = false }); }
+        Check("al volver a permitirlas, se puede", Call("state")?["paused"]?.GetValue<bool>() == false
+            && LiveSession.HostOnline("Martín", Version, default).GetAwaiter().GetResult() is { } again && Dispose(again));
+    }
+
+    static bool Dispose(IDisposable d) { d.Dispose(); return true; }
+
     static void TryDelete(string d)
     {
         try { Directory.Delete(d, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
-    static int HostByHand(string dir, string name)
+    static int HostByHand(string dir, string name, bool online)
     {
         using var store = ProjectStore.Open(dir);
-        using var s = LiveSession.Host(name, Version);
+        using var s = online ? LiveSession.HostOnline(name, Version, default).GetAwaiter().GetResult() : LiveSession.Host(name, Version);
         s.Start(store.Project, dir);
         Console.WriteLine($"Código: {s.Invite.Code}");
         Console.WriteLine("Enter para cerrar.");

@@ -225,10 +225,13 @@ static class Program
                                            quién hizo qué y cuándo con un ítem (sin número, lo último de todos)
               lista comprobar              comprueba la lista sobre un archivo temporal
               atajos comprobar             ninguna distribución de otro DAW repite una tecla
-              colaborar comprobar          la edición en vivo entre copias (#291): diferencias, código de invitación y una
-                                           sesión real por 127.0.0.1 (cambios en los dos sentidos, audio, deshacer, versión)
-              colaborar anfitrion carpeta [--nombre N] | unirse código carpeta [--nombre N]
-                                           una sesión a mano: invita a un proyecto o se une y crea su copia en la carpeta
+              colaborar comprobar [--internet]
+                                           la edición en vivo entre copias (#291): diferencias, código de invitación y una
+                                           sesión real por 127.0.0.1 (cambios en los dos sentidos, audio, deshacer, versión);
+                                           con --internet, la misma por el servidor de sesiones (#320, XTREME_RELAY)
+              colaborar anfitrion carpeta [--nombre N] [--internet] | unirse código carpeta [--nombre N]
+                                           una sesión a mano: invita a un proyecto (por internet, con código corto) o se une
+                                           y crea su copia en la carpeta
               proyecto abrir    carpeta    abre un proyecto nativo y muestra pistas, avisos e historial
               proyecto versiones carpeta   lista las versiones guardadas, de más nueva a más vieja
               proyecto volver   carpeta n  restaura la versión n y conserva el estado actual en el historial (tomas y exportaciones quedan)

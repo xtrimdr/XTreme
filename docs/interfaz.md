@@ -345,9 +345,11 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 El botón **Sesión en vivo** de la barra del proyecto, a la izquierda de Exportar (`LiveButton`, clase `live`: contorno
 del acento; en una sesión se llena y dice "En vivo · 3"; pedido del usuario), y Archivo → **Sesión en
 vivo…** abren `LiveDialog` (ancho de formulario, sobre `Scrim`): sin sesión, el nombre (se recuerda, "liveName") y dos
-tarjetas (`Button.livepick`): **Crear sesión** (la abre en el acto y muestra qué pasar) o **Unirme** (el campo del código
-o link y **Unirse**; Volver o Esc regresa a las tarjetas); en una sesión, el código con Copiar código / Copiar link /
-Copiar IP y la IP (solo el anfitrión), quién está y **Finalizar sesión** (anfitrión) o **Salir de la sesión** (invitado).
+tarjetas (`Button.livepick`): **Crear sesión** (pregunta dónde, en otras dos tarjetas, #320: **Internet**, que abre la sala
+en el relay con un código corto, o **Red local**; la abre en el acto y muestra qué pasar) o **Unirme** (el campo del código
+o link, cualquiera de los dos, y **Unirse**; Volver o Esc regresa a las tarjetas); en una sesión, lo que se pasa (solo el
+anfitrión): por internet el código corto grande (`RoomText`) con Copiar código / Copiar link; en la red local el código
+largo con Copiar código / Copiar link / Copiar IP y la IP, quién está y **Finalizar sesión** (anfitrión) o **Salir de la sesión** (invitado).
 El menú dice cuántos hay ("Sesión en vivo (3)…"). Las herramientas del timeline se centran sin pisar este botón (`PlaceTools`). Cada edición (`MarkDirty`) sale 120 ms después (`LiveSoon`); lo que llega entra por
 `RestoreEdit`, como un deshacer: el deshacer de cada uno saca solo sus pasos (`UndoManager.Rebase`), y Historial →
 Pasos lista los de los otros entre los propios, con su nombre (`UndoManager.Remote`; no se puede ir a ellos).

@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.9.24",
+      "items": [
+        {
+          "icon": "E774",
+          "title": "Sesión en vivo por internet",
+          "text": "Al crear una **Sesión en vivo** elegís **Internet** o **Red local**. Por internet se entra desde cualquier lugar con un código corto, como «abc-defg-hij», cifrado de punta a punta."
+        }
+      ]
+    },
+    {
       "version": "0.9.23",
       "items": [
         {

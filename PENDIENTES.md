@@ -307,13 +307,13 @@ Por dónde arrancar: los pasos 1 y 2.
 
 #### 14. Edición colaborativa en vivo (#291)
 
-Primera etapa hecha (2026-11-07): P2P sin servidor, en la red local o una VPN (Tailscale, ZeroTier). Decisiones del
+Primera etapa hecha (2026-11-07): P2P sin servidor, en la red local o una VPN (Tailscale, ZeroTier). Por internet
+(2026-11-08, #320): por un relay en Cloudflare (`relay/`, `LiveRelay`) con un código corto. Decisiones del
 usuario: cada uno escucha por su cuenta (transporte, solos y placa no se comparten), todos editan todo, se invita con
 código o link, solo con la misma versión. El anfitrión ordena los cambios; en el mismo dato queda el último que le llega.
 Cómo está hecho: `LiveSession`, `LiveDiff`, `LiveState`, `LiveLink`, `LiveInvite` (Projects) y `MainWindow.Live.cs`.
 
 - [ ] El link `xtreme://unirse/…` se copia pero no abre XTreme solo: falta registrar el protocolo (instalador) y leerlo al arrancar.
-- [ ] Sin red directa: hole punching con el código o un servidor de paso (Cloudflare, Oracle Always Free), si hace falta.
 - [ ] Si el anfitrión se va, la sesión termina: pasarle el lugar a otro de los que quedan.
 
 ### Separar en stems: antes de publicarlo

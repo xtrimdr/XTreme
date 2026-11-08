@@ -1472,17 +1472,17 @@
           "id": "live-session",
           "icon": "E716",
           "title": "Edit together live",
-          "keywords": "collaborate live session share together network vpn tailscale zerotier invite code link",
+          "keywords": "collaborate live session share together internet remote distance local network vpn tailscale zerotier invite code link",
           "intro": "Several people edit the same project at once, each on their own PC, and see the others' changes instantly.",
           "steps": [
-            "The host opens the project, clicks **Live session** (next to Export) and picks **Create session**.",
-            "They pass the **code**, the **link** or the **IP** on (Copy code / Copy link / Copy IP).",
-            "Each guest clicks **Live session → Join**, pastes the code and clicks **Join**: they get a copy of the project with its audio, kept in their projects.",
+            "The host opens the project, clicks **Live session** (next to Export) picks **Create session** and where the others are: **Internet** (from anywhere) or **Local network** (same network or a VPN, direct, no server).",
+            "Over the internet, they pass on the short code (like “abc-defg-hij”) or the link; on the local network, the **code**, the **link** or the **IP** (Copy code / Copy link / Copy IP). Over the internet everything goes through XTreme's session server, encrypted end to end: the server can't read the project or the audio.",
+            "Each guest clicks **Live session → Join**, types or pastes the code and clicks **Join**: they get a copy of the project with its audio, kept in their projects.",
             "Everyone edits everything; each one listens on their own (Play, solos and the audio interface are each one's). What's recorded reaches the others when the take ends.",
             "Each person has a color. Their name shows on the track and clip they have selected, on what they are editing and on the track they record or play on; their playhead shows as a line in their color while they play. Their mouse is an arrow in their color with their name: over the timeline it follows their mouse, and when they grab a control (a fader, a knob, a button) in the mixer or the inspector, it points at that control on your screen, or at their track if you don't have it in view. In **History**, each step shows who made it (each person undoes only their own); in **Library**, each take shows who brought it.",
             "A session only uses plugins everyone has. One someone lacks is greyed out in the menus and says who doesn't have it. If it was already in the project (an instrument or effect on a track, a folder or a bus), it stays off for everyone, showing «Missing on name · off», until everyone has it: the effect lets the sound through and the instrument is silent. Once it's installed, scan for plugins again and it turns on by itself.",
             "In the session each person shows with their color, role, connection latency and what they're doing. A notice and a short sound tell you when someone joins or leaves.",
-            "Everyone needs the same XTreme version and the same network, or a VPN such as Tailscale or ZeroTier. While it lasts, the button says **Live** and how many are in; from there, **End session** (host) or **Leave session** (guest), which keeps your copy as it is."
+            "Everyone needs the same XTreme version; on the local network, also the same network or a VPN such as Tailscale or ZeroTier. While it lasts, the button says **Live** and how many are in; from there, **End session** (host) or **Leave session** (guest), which keeps your copy as it is."
           ],
           "see": ["share-project"]
         }

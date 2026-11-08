@@ -165,8 +165,9 @@ public partial class MainWindow
         }
     }
 
-    void StartHosting(string name)
+    void StartHosting(string name, bool online)
     {
+        if (online) { _ = HostOnline(name); return; }
         if (store == null || !CanHost) return;
         try
         {
@@ -185,6 +186,32 @@ public partial class MainWindow
         catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException)
         {
             LiveAsk.Notice(Loc.T("live.cantHost", e.Message));
+        }
+    }
+
+    /// <summary>Opens a session over the internet (#320): a room on the relay with a short code.</summary>
+    async Task HostOnline(string name)
+    {
+        if (store == null || !CanHost || liveJoining) return;
+        liveJoining = true;
+        LiveAsk.Busy(true);
+        try
+        {
+            var s = await LiveSession.HostOnline(name, AboutDialog.AppVersion(), CancellationToken.None);
+            if (store == null || live != null) { s.Dispose(); return; }
+            s.Start(store.Project, store.Dir);
+            Attach(s);
+            Status(Loc.T("live.hosting"));
+            ShowLive();
+        }
+        catch (IOException e)
+        {
+            LiveAsk.Notice(Loc.T("live.cantHost", e.Message));
+        }
+        finally
+        {
+            liveJoining = false;
+            LiveAsk.Busy(false);
         }
     }
 

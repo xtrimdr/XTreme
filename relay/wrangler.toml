@@ -1,0 +1,25 @@
+name = "xtreme-live"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# the private page /admin (#321) needs the ADMIN_KEY secret: npx wrangler secret put ADMIN_KEY (the one in use is in
+# relay/.admin-key, not in git)
+# (locally, for wrangler dev: ADMIN_KEY=... in relay/.dev.vars, which is not in git)
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "Registry"
+
+# SQLite-backed: the kind the Workers Free plan has
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Registry"]

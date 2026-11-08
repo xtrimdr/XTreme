@@ -11,9 +11,54 @@ namespace XtremeDaw.Projects;
 /// (its addresses on the local network and on a VPN such as Tailscale or ZeroTier, and the port) and the session's key,
 /// in one line to paste. Whoever has it can join, so it travels only to the people invited; the key encrypts and
 /// signs every message (<see cref="LiveLink"/>), so without it nothing gets in or can be read.
+/// <para>Over the internet (#320, asked by the user: short, like a meeting's) the code is only ten letters,
+/// "abc-defg-hij" (<see cref="Room"/>): the session goes through the relay (<see cref="LiveRelay"/>), and both the key
+/// and the room's name on the relay come out of the code with a slow hash, so the relay never learns the code and
+/// trying codes against a room's name costs too much.</para>
 /// </summary>
 public sealed record LiveInvite(IReadOnlyList<IPAddress> Addresses, int Port, byte[] Key)
 {
+    /// <summary>The short code of a session over the internet ("abc-defg-hij"); null on the local network.</summary>
+    public string? Room { get; init; }
+    /// <summary>The room's name on the relay (hex, from the code); null on the local network.</summary>
+    public string? RoomId { get; init; }
+    public bool Online => Room != null;
+
+    /// <summary>The short code's letters: no i, l or o, so it reads out loud and types without doubt.</summary>
+    const string RoomLetters = "abcdefghjkmnpqrstuvwxyz";
+    /// <summary>How the short code goes in groups: 3-4-3, like a meeting's.</summary>
+    static readonly int[] RoomGroups = [3, 4, 3];
+    /// <summary>The slow hash's rounds: about 50 ms once per join, years to try every code.</summary>
+    const int RoomRounds = 200_000;
+    static readonly byte[] RoomSalt = "xtreme live relay 1"u8.ToArray();
+
+    /// <summary>A new session over the internet, with a random short code.</summary>
+    public static LiveInvite NewOnline()
+    {
+        var sb = new StringBuilder();
+        foreach (int n in RoomGroups)
+        {
+            if (sb.Length > 0) sb.Append('-');
+            for (int i = 0; i < n; i++) sb.Append(RoomLetters[RandomNumberGenerator.GetInt32(RoomLetters.Length)]);
+        }
+        return FromRoom(sb.ToString());
+    }
+
+    /// <summary>The invitation of a short code (already checked): its key and room name.</summary>
+    static LiveInvite FromRoom(string code)
+    {
+        var bytes = Rfc2898DeriveBytes.Pbkdf2(Encoding.ASCII.GetBytes(code.Replace("-", "")), RoomSalt, RoomRounds, HashAlgorithmName.SHA256, KeyBytes * 2);
+        return new([], 0, bytes[..KeyBytes]) { Room = code, RoomId = Convert.ToHexStringLower(bytes, KeyBytes, KeyBytes) };
+    }
+
+    /// <summary>A short code as typed (any case, with or without dashes or spaces), or null when it isn't one.</summary>
+    static string? ReadRoom(string text)
+    {
+        var letters = new string([.. text.ToLowerInvariant().Where(c => c != '-' && !char.IsWhiteSpace(c))]);
+        if (letters.Length != RoomGroups.Sum() || letters.Any(c => !RoomLetters.Contains(c))) return null;
+        return $"{letters[..3]}-{letters[3..7]}-{letters[7..]}";
+    }
+
     const byte Format = 1;
     public const int KeyBytes = 16;
     /// <summary>Addresses the code takes at most: it stays short enough to dictate or paste.</summary>
@@ -53,11 +98,12 @@ public sealed record LiveInvite(IReadOnlyList<IPAddress> Addresses, int Port, by
         return 2;
     }
 
-    /// <summary>The code, in groups of five: "XT-ABCDE-…".</summary>
+    /// <summary>The code: the short one over the internet; on the local network, in groups of five, "XT-ABCDE-…".</summary>
     public string Code
     {
         get
         {
+            if (Room != null) return Room;
             var bytes = new List<byte> { Format, (byte)(Port >> 8), (byte)Port, (byte)Addresses.Count };
             foreach (var a in Addresses) bytes.AddRange(a.MapToIPv4().GetAddressBytes());
             bytes.AddRange(Key);
@@ -76,6 +122,7 @@ public sealed record LiveInvite(IReadOnlyList<IPAddress> Addresses, int Port, by
         text = text.Trim();
         if (text.StartsWith(LinkPrefix, StringComparison.OrdinalIgnoreCase)) text = text[LinkPrefix.Length..];
         text = text.Trim('/');
+        if (ReadRoom(text) is { } room) return FromRoom(room);
         if (text.StartsWith("XT-", StringComparison.OrdinalIgnoreCase)) text = text[3..];
         var clean = new string([.. text.ToUpperInvariant().Where(c => c != '-' && !char.IsWhiteSpace(c))]);
         if (Decode(clean) is not { Length: >= 4 } b || b[0] != Format) return null;

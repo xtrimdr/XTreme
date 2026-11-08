@@ -142,7 +142,7 @@ the [Spanish version](DETALLES.md#xtlab).
 
 `xtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: optional component state, install, and a download test against a local server.
 
-`xtlab colaborar comprobar`: the live session (#291) without the window: state diffs, the invitation code and a real session over 127.0.0.1 (changes both ways, audio transfer, undo, solos, another version, another key). `xtlab colaborar anfitrion folder [--nombre N]` hosts a project and prints the code; `xtlab colaborar unirse code folder [--nombre N]` joins and creates the copy in that folder.
+`xtlab colaborar comprobar`: the live session (#291) without the window: state diffs, the invitation code and a real session over 127.0.0.1 (changes both ways, audio transfer, undo, solos, another version, another key). With `--internet`, the same session through the session server (#320; `XTREME_RELAY=http://127.0.0.1:8787` points it at an `npx wrangler dev` running in `relay\`; with the key in `XTREME_RELAY_ADMIN` it also tests the admin page, #321). `xtlab colaborar anfitrion folder [--nombre N] [--internet]` hosts a project and prints the code (short, over the internet); `xtlab colaborar unirse code folder [--nombre N]` joins and creates the copy in that folder.
 
 `xtlab proyecto vinculados folder`: each take and where its files are. `xtlab proyecto copiar-vinculado folder media`: copies what is linked into media/. `xtlab proyecto reencontrar folder media --archivo X` or `folder [media] --buscar-en Y`: finds what is missing, by hand or by name and size. `xtlab proyecto verificar-vinculados`: the checks, with a process that really dies mid-copy (`proyecto cortar-copia`).
 

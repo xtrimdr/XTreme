@@ -9,8 +9,9 @@ namespace XtremeDaw.Projects;
 
 /// <summary>
 /// A shared session (#291): several people editing the same project at once, each on their own copy, seeing the
-/// others' changes as they happen. Decided with the user: peer to peer, no server (on the local network or a VPN);
-/// whoever invites is the host, and everybody edits everything; each one listens on their own (transport, solos and
+/// others' changes as they happen. Decided with the user: on the local network (or a VPN) peer to peer, with no
+/// server; over the internet (#320) through the relay (<see cref="LiveRelay"/>), which only passes the encrypted
+/// bytes along, so the rest works the same either way. Whoever invites is the host, and everybody edits everything; each one listens on their own (transport, solos and
 /// the audio device are not shared); only the same version of the app joins.
 /// <para>The host keeps the order: every change (a <see cref="LiveDiff"/> patch of <see cref="LiveState"/>) goes
 /// through it, gets the next number and goes to everyone, the author too. A guest shows its own changes at once and
@@ -114,6 +115,10 @@ public sealed class LiveSession : IDisposable
     readonly ConcurrentQueue<Inbound> inbox = new(), edits = new();
     readonly List<Peer> peers = [];
     readonly TcpListener? listener;
+    /// <summary>The host's room on the relay, over the internet.</summary>
+    RelayHost? relay;
+    /// <summary>A guest's way through the relay, over the internet.</summary>
+    RelayStream? relayed;
     readonly Peer? host;
     List<string> people = [];
     string? dir;
@@ -317,6 +322,63 @@ public sealed class LiveSession : IDisposable
         return s;
     }
 
+    /// <summary>How many short codes the host draws before giving up when each one's room is taken.</summary>
+    const int RoomTries = 5;
+
+    /// <summary>
+    /// Starts hosting over the internet (#320): opens a room on the relay with a new short code (another if that one
+    /// is taken). Throws <see cref="IOException"/> when the relay can't be reached.
+    /// </summary>
+    public static async Task<LiveSession> HostOnline(string name, string appVersion, CancellationToken ct)
+    {
+        for (int i = 0; i < RoomTries; i++)
+        {
+            var invite = await Task.Run(LiveInvite.NewOnline, ct);
+            if (await LiveRelay.Host(invite.RoomId!, ct) is not { } room) continue;
+            var s = new LiveSession(true, invite, name, appVersion, null, null) { relay = room };
+            _ = s.RelayLoop(room);
+            _ = s.PingLoop();
+            return s;
+        }
+        throw new IOException(Texts.T("live.relayBusy", "El servidor de sesiones no dio una sala libre: probá de nuevo"));
+    }
+
+    async Task RelayLoop(RelayHost room)
+    {
+        while (!stop.IsCancellationRequested)
+        {
+            Stream stream;
+            try { stream = await room.Accept(stop.Token); }
+            catch (Exception e) when (e is OperationCanceledException or IOException)
+            {
+                if (!stop.IsCancellationRequested)
+                {
+                    // the room closed under the host: nobody can reach it any more
+                    inbox.Enqueue(new(null, null, Closed: true));
+                    Signal?.Invoke();
+                }
+                return;
+            }
+            _ = Task.Run(() => Welcomed(stream, stream));
+        }
+    }
+
+    /// <summary>A guest's connection, from either way in: the link's handshake, then its messages.</summary>
+    async Task Welcomed(Stream stream, IDisposable owner)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+            cts.CancelAfter(ConnectTimeout * 2);
+            var link = await LiveLink.Open(stream, owner, Invite.Key, host: true, cts.Token);
+            await ReadLoop(new Peer(link));
+        }
+        catch (Exception e) when (e is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
+        {
+            owner.Dispose();
+        }
+    }
+
     async Task AcceptLoop(TcpListener l)
     {
         while (!stop.IsCancellationRequested)
@@ -324,21 +386,8 @@ public sealed class LiveSession : IDisposable
             TcpClient tcp;
             try { tcp = await l.AcceptTcpClientAsync(stop.Token); }
             catch (Exception e) when (e is OperationCanceledException or SocketException or ObjectDisposedException) { return; }
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
-                    cts.CancelAfter(ConnectTimeout * 2);
-                    var link = await LiveLink.Open(tcp, Invite.Key, host: true, cts.Token);
-                    var peer = new Peer(link);
-                    await ReadLoop(peer);
-                }
-                catch (Exception e) when (e is IOException or SocketException or OperationCanceledException)
-                {
-                    tcp.Close();
-                }
-            });
+            tcp.NoDelay = true;
+            _ = Task.Run(() => Welcomed(tcp.GetStream(), tcp));
         }
     }
 
@@ -348,6 +397,27 @@ public sealed class LiveSession : IDisposable
     /// </summary>
     public static async Task<(LiveSession Session, Welcome Welcome)> Join(LiveInvite invite, string name, string appVersion, CancellationToken ct)
     {
+        if (invite.Online)
+        {
+            var stream = await LiveRelay.Join(invite.RoomId!, ct);
+            try
+            {
+                LiveLink link;
+                using (var cts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    cts.CancelAfter(ConnectTimeout * 3);
+                    link = await LiveLink.Open(stream, stream, invite.Key, host: false, cts.Token);
+                }
+                var joined = await Greet(link, invite, name, appVersion, ct);
+                joined.Session.relayed = stream as RelayStream;
+                return joined;
+            }
+            catch
+            {
+                stream.Dispose();
+                throw;
+            }
+        }
         Exception? last = null;
         foreach (var address in invite.Addresses)
         {
@@ -358,25 +428,7 @@ public sealed class LiveSession : IDisposable
                 cts.CancelAfter(ConnectTimeout);
                 await tcp.ConnectAsync(address, invite.Port, cts.Token);
                 var link = await LiveLink.Open(tcp, invite.Key, host: false, cts.Token);
-                await link.Send(LiveMessage.Of(LiveKind.Hello, new Hello(name, appVersion, Project.CurrentVersion)), ct);
-                // the whole project can take a while on a slow link: no timeout but the caller's
-                LiveMessage answer;
-                try { answer = await link.Receive(ct); }
-                catch (System.Security.Cryptography.AuthenticationTagMismatchException) { throw new LiveRefusedException("key", "", 0); }
-                if (answer.Kind == LiveKind.Refuse)
-                {
-                    var r = answer.Body<Refusal>();
-                    link.Dispose();
-                    throw new LiveRefusedException(r.Reason, r.App, r.Format);
-                }
-                if (answer.Kind != LiveKind.Welcome) throw new IOException("Respuesta inesperada");
-                var w = answer.Body<Welcome>();
-                var peer = new Peer(link) { Name = w.Host, Welcomed = true };
-                var s = new LiveSession(false, invite, w.You ?? name, appVersion, null, peer) { rev = w.Rev, people = w.People, colors = w.Colors ?? [] };
-                _ = s.ReadLoop(peer);
-                s.pinged = [peer];
-                _ = s.PingLoop();
-                return (s, w);
+                return await Greet(link, invite, name, appVersion, ct);
             }
             catch (Exception e) when (e is IOException or SocketException or OperationCanceledException && !ct.IsCancellationRequested)
             {
@@ -390,6 +442,30 @@ public sealed class LiveSession : IDisposable
             }
         }
         throw new IOException(Texts.T("live.unreachable", "No se pudo conectar con el anfitrión: revisá el código y la red"), last);
+    }
+
+    /// <summary>A guest's first words on a fresh link: who it is, and the host's copy of the project (or its no).</summary>
+    static async Task<(LiveSession Session, Welcome Welcome)> Greet(LiveLink link, LiveInvite invite, string name, string appVersion, CancellationToken ct)
+    {
+        await link.Send(LiveMessage.Of(LiveKind.Hello, new Hello(name, appVersion, Project.CurrentVersion)), ct);
+        // the whole project can take a while on a slow link: no timeout but the caller's
+        LiveMessage answer;
+        try { answer = await link.Receive(ct); }
+        catch (System.Security.Cryptography.AuthenticationTagMismatchException) { throw new LiveRefusedException("key", "", 0); }
+        if (answer.Kind == LiveKind.Refuse)
+        {
+            var r = answer.Body<Refusal>();
+            link.Dispose();
+            throw new LiveRefusedException(r.Reason, r.App, r.Format);
+        }
+        if (answer.Kind != LiveKind.Welcome) throw new IOException("Respuesta inesperada");
+        var w = answer.Body<Welcome>();
+        var peer = new Peer(link) { Name = w.Host, Welcomed = true };
+        var s = new LiveSession(false, invite, w.You ?? name, appVersion, null, peer) { rev = w.Rev, people = w.People, colors = w.Colors ?? [] };
+        _ = s.ReadLoop(peer);
+        s.pinged = [peer];
+        _ = s.PingLoop();
+        return (s, w);
     }
 
     async Task ReadLoop(Peer peer)
@@ -575,6 +651,12 @@ public sealed class LiveSession : IDisposable
         while (inbox.TryDequeue(out var item))
         {
             if (item.Arrived != null) { arrived.Add(item.Arrived); continue; }
+            if (item.Closed && item.From == null)
+            {
+                EndReason ??= relay?.ClosedByAdmin == true ? AdminClosed()
+                    : Texts.T("live.relayLost", "Se cortó la conexión con el servidor de sesiones. Tu proyecto queda guardado.");
+                continue;
+            }
             if (item.Closed)
             {
                 string who = item.From!.Name;
@@ -799,7 +881,8 @@ public sealed class LiveSession : IDisposable
         peer.Link.Dispose();
         if (!IsHost)
         {
-            EndReason ??= Texts.T("live.hostLeft", "El anfitrión cerró la sesión en vivo. Tu copia queda guardada.");
+            EndReason ??= relayed?.ClosedByAdmin == true ? AdminClosed()
+                : Texts.T("live.hostLeft", "El anfitrión cerró la sesión en vivo. Tu copia queda guardada.");
             return true;
         }
         if (!peers.Remove(peer)) return false;
@@ -811,6 +894,9 @@ public sealed class LiveSession : IDisposable
         SendPeople();
         return true;
     }
+
+    static string AdminClosed() =>
+        Texts.T("live.adminClosed", "El servidor de sesiones cerró esta sesión. Tu copia queda guardada.");
 
     /// <summary>Sends a file this copy has; the host asks its author for one it lacks, and sends it on when it arrives.</summary>
     void Serve(Peer who, FileRequest req, Project project)
@@ -898,6 +984,7 @@ public sealed class LiveSession : IDisposable
         EndReason ??= Texts.T("live.closed", "Sesión cerrada");
         stop.Cancel();
         listener?.Stop();
+        relay?.Dispose();
         host?.Link.Dispose();
         foreach (var p in peers) p.Link.Dispose();
     }

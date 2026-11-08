@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.9.24",
+      "items": [
+        {
+          "icon": "E774",
+          "title": "Live session over the internet",
+          "text": "When you create a **Live session** you pick **Internet** or **Local network**. Over the internet anyone joins from anywhere with a short code like “abc-defg-hij”, encrypted end to end."
+        }
+      ]
+    },
+    {
       "version": "0.9.23",
       "items": [
         {
