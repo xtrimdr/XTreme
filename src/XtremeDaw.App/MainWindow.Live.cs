@@ -39,6 +39,7 @@ public partial class MainWindow
         LiveAsk.LeaveRequested += () => { EndLive(null); LiveAsk.Hide(); };
         LiveButton.Click += (_, _) => ShowLive();
         LiveButton.SizeChanged += (_, _) => PlaceTools();
+        InitLivePointers();
         UpdateLiveButton();
     }
 
@@ -72,8 +73,8 @@ public partial class MainWindow
         if (live == null || store == null) return;
         // a take in progress goes when it's whole; an undo being shown goes when it's done
         if (restoring || RecordingBusy) { livePublishTimer.Start(); return; }
-        live.Publish(store.Project);
-        LivePulse.Spark(live.Name);
+        // only what this copy changed lights its orb: a change of someone else coming in is theirs (#319)
+        if (live.Publish(store.Project)) LivePulse.Spark(live.Name);
     }
 
     void OnLiveSignal()
@@ -95,6 +96,7 @@ public partial class MainWindow
         Announce(r);
         if (r.Ended) { EndLive(s.EndReason); return; }
         if (r.PresenceChanged || r.PeopleChanged) ApplyPresence();
+        else if (r.PointersMoved) TakePointers();
         foreach (var id in r.Arrived) liveArrived.Add(id);
         LiveSession.PumpResult? applied = null;
         await RestoreEdit(p =>
@@ -106,6 +108,7 @@ public partial class MainWindow
         {
             Announce(applied);
             if (live == s && (applied.PresenceChanged || applied.PeopleChanged)) ApplyPresence();
+            else if (live == s && applied.PointersMoved) TakePointers();
             foreach (var id in applied.Arrived) liveArrived.Add(id);
             if (applied.Changed && applied.LastAuthor != null)
             {

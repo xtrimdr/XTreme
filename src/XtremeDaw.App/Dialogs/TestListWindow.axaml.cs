@@ -198,6 +198,7 @@ public sealed partial class TestListWindow : Window
         InitImages();
         InitAgents();
         InitConsoles();
+        InitQueue();
         if (TestBuild.Label is { } label)
         {
             BuildText.Text = label;
@@ -2242,6 +2243,7 @@ public sealed partial class TestListWindow : Window
             : RunInBench(prompt) == null ? null : AgentLauncher.Run(root, prompt, false);
         ErrorText.Text = why != null ? Loc.T("test.list.review.error", why) : null;
         if (why != null) return false;
+        Launched();
         starting[prompt] = (DateTime.UtcNow, items.ToDictionary(i => i.Id, i => i.TakenBy));
         // the list shows it starting now, and drops it once the wait is over if no session took it
         Refill();

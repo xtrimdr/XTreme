@@ -65,6 +65,7 @@ public partial class MainWindow
         myPresence = null;
         presenceSeen.Clear();
         ApplyPresence();
+        ClearPointers();
     }
 
     void PresenceStep()
@@ -76,6 +77,7 @@ public partial class MainWindow
         if (s.ExpireEditing()) ApplyPresence();
         if (Timeline.CursorsRolling) Timeline.InvalidateCursors();
         LivePulse.Step();
+        StepPointers();
     }
 
     /// <summary>Where this copy is: built only when something changed, sent as soon as the session lets it.</summary>
@@ -104,16 +106,17 @@ public partial class MainWindow
         bool rolling = engine.Playing;
         double cursor = Timeline.Playhead;
         var last = myPresence;
+        var pointer = MyPointer(last?.Pointer);
         bool same = last != null && last.Track == track && last.Clip == clip && last.Playing == playing && last.Recording == rec
-            && last.Rolling == rolling
+            && last.Rolling == rolling && ReferenceEquals(last.Pointer, pointer)
             && (rolling ? Math.Abs(cursor - (last.Cursor + Stopwatch.GetElapsedTime(myPresenceStamp).TotalSeconds)) < CursorDrift : cursor == last.Cursor);
         if (!same)
         {
-            myPresence = new LivePresence { Track = track, Clip = clip, Playing = playing, Recording = rec, Rolling = rolling, Cursor = cursor };
+            myPresence = new LivePresence { Track = track, Clip = clip, Playing = playing, Recording = rec, Rolling = rolling, Cursor = cursor, Pointer = pointer };
             myPresenceStamp = Stopwatch.GetTimestamp();
             presencePending = true;
         }
-        if (!same) LivePulse.SetDoing(s.Name, DoingOf(myPresence!, false));
+        if (!same && last?.Still != myPresence!.Still) LivePulse.SetDoing(s.Name, DoingOf(myPresence!, false));
         if (presencePending) presencePending = !s.Share(myPresence!);
     }
 
@@ -157,6 +160,7 @@ public partial class MainWindow
         presenceTags = tags;
         Timeline.SetPresence(tags, tags, [.. cursors]);
         ApplyMixerPresence();
+        TakePointers();
     }
 
     /// <summary>What someone's orb on the live button shows (<see cref="Controls.LivePulse"/>).</summary>

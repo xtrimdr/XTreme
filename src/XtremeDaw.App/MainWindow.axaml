@@ -600,6 +600,8 @@
 
     <!-- the line from the selected track's header to the inspector's (#180, MainWindow.InspectorPointer.cs): over the panels, under the dialogs -->
     <c:InspectorPointer Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="InspPointer" />
+    <!-- the others' mice in a live session (#319, MainWindow.LivePointers.cs): over the panels, under the dialogs -->
+    <c:LivePointers Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="LivePointers" />
 
     <c:ProjectsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Projects" IsVisible="False" />
     <d:ExportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Export" IsVisible="False" AutomationProperties.Name="{loc:T export.name}" />

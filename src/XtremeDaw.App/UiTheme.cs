@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Avalonia;
 using Avalonia.Media;
 using XtremeDaw.App.Controls;
@@ -25,10 +26,11 @@ static class UiTheme
     /// </summary>
     public sealed record Settings(string Accent, string Surface, double Brightness = 0, double Contrast = 0, double Saturation = 0, double Warmth = 0)
     {
-        public bool Adjusted => Brightness != 0 || Contrast != 0 || Saturation != 0 || Warmth != 0;
+        [JsonIgnore] public bool Adjusted => Brightness != 0 || Contrast != 0 || Saturation != 0 || Warmth != 0;
 
-        /// <summary>The same colors, with no adjustment.</summary>
-        public Settings Plain => this with { Brightness = 0, Contrast = 0, Saturation = 0, Warmth = 0 };
+        /// <summary>The same colors, with no adjustment. Not saved: each read is a new record, so serializing it
+        /// recursed until the cycle check threw and closed the app (#317).</summary>
+        [JsonIgnore] public Settings Plain => this with { Brightness = 0, Contrast = 0, Saturation = 0, Warmth = 0 };
     }
 
     /// <summary>How far each adjustment goes at its end (±1): the backgrounds' lightness moves up to 0.12, the distance of

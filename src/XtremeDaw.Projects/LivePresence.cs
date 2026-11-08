@@ -22,4 +22,32 @@ public sealed record LivePresence
     public bool Rolling { get; init; }
     /// <summary>Their playhead, in timeline seconds.</summary>
     public double Cursor { get; init; }
+    /// <summary>Their mouse and what they hold with it (#319); null = nothing to show. It changes many times a second:
+    /// <see cref="Still"/> says whether anything else did.</summary>
+    public LivePointer? Pointer { get; init; }
+
+    /// <summary>The same presence without the pointer: two that only differ in it are the same for the tags.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public LivePresence Still => Pointer == null ? this : this with { Pointer = null };
+}
+
+/// <summary>
+/// Someone's mouse in a shared session (#319, asked by the user: "cursores ... que muestren específicamente lo que
+/// están tocando"). Each copy has its window at its own size, zoom and scroll, so it never goes in pixels: over the
+/// timeline it is a row and a time (or a place over the headers), and while they hold a control (a fader, a knob, a
+/// button), the strip or panel it belongs to and which of its controls it is. Each copy draws it where that is on its
+/// own screen.
+/// </summary>
+public sealed record LivePointer
+{
+    /// <summary>Over the timeline: the row's id (track, folder, bus or automation lane) and how far down it (0..1).</summary>
+    public string? Row { get; init; }
+    public double RowY { get; init; }
+    /// <summary>Over the row's lane, the time (s); over its header, how far across the headers (0..1).</summary>
+    public double? Sec { get; init; }
+    public double? Head { get; init; }
+    /// <summary>The control they hold: whose it is (a track's, folder's or bus's id) and which one (<c>area:Type:n</c>,
+    /// the n-th control of that type in that area: "mix" a mixer strip, "insp" the inspector).</summary>
+    public string? Owner { get; init; }
+    public string? Control { get; init; }
 }

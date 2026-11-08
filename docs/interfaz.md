@@ -359,7 +359,18 @@ orbe por persona (hasta 8) en su color, unidos por una línea fina con un brillo
 entrar alguien su orbe aparece con un rebote y una onda, al irse se achica y un anillo se cierra sobre él. Mientras
 alguien toca o edita salen ondas de su orbe (lentas y tenues si solo corre su transporte, rojas y rápidas si graba, con
 un punto rojo adentro), y cada cambio suyo que llega (o que sale de esta copia) o cada vez que elige otra cosa destella
-un anillo. Lo mueve el timer de la presencia (`PresenceStep`, 33 ms); todo sale del reloj al dibujar, sin asignar.
+un anillo. Solo lo que esta copia de verdad mandó destella su propio orbe (`LiveSession.Publish` dice si salió algo): lo
+que llega de otro no. Lo mueve el timer de la presencia (`PresenceStep`, 33 ms); todo sale del reloj al dibujar, sin asignar.
+
+**Los cursores de los demás** (`Controls/LivePointers.cs`, `MainWindow.LivePointers.cs`, pedido del usuario, #319: "mouse y lo
+que tocan"): una flecha de su color con su nombre, sobre los paneles y bajo los diálogos, sin tomar clics. Cada ventana
+tiene su tamaño, zoom y scroll, así que no viajan píxeles (`LivePointer`, en la presencia): sobre el timeline, la fila y el
+tiempo (o el lugar sobre los encabezados; `TimelineView.PointerSpot` / `SpotPoint`); con un control agarrado en una tira
+del mixer o el inspector (botón, fader, perilla, campo, gráfico), de quién es y cuál de ese tipo es ahí
+(`mix:Fader:0`), con un anillo que late en la punta, hasta 0,7 s después de soltarlo. Cada copia lo busca en su
+pantalla: la misma tira, o el inspector si muestra lo mismo; si no lo muestra, la flecha va al encabezado de esa fila
+en el timeline. Viaja con la presencia (15 por segundo como mucho) y entre dos llegadas la flecha se desliza; que solo
+se mueva el puntero no rehace las etiquetas (`PumpResult.PointersMoved`).
 
 **Quién está dónde** (`MainWindow.Presence.cs`, `TimelineView.Presence.cs`; pedido del usuario): el anfitrión le da a
 cada uno un color fijo (`LiveSession.ColorOf`, `Palette.PersonColor`, 0 = el anfitrión). El nombre de cada uno, en una

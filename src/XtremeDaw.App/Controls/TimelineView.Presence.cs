@@ -74,6 +74,51 @@ public sealed partial class TimelineView
         if (band.TakeRight(PresenceTagW(t), out var r)) DrawPresenceTag(ctx, r, t);
     }
 
+    /// <summary>
+    /// Where this copy's mouse is over the rows, for the others' pointers (#319): the row, how far down it, and the
+    /// time over its lane or how far across the headers. False when it isn't over a row. Asked on every presence tick:
+    /// it doesn't allocate.
+    /// </summary>
+    public bool PointerSpot(out string row, out double rowY, out double? sec, out double? head)
+    {
+        row = "";
+        rowY = 0;
+        sec = head = null;
+        var p = lastPointer;
+        if (!IsPointerOver && gesture == null) return false;
+        if (p.X < 0 || p.Y < RulerH || p.X > Bounds.Width || p.Y > Bounds.Height) return false;
+        foreach (var r in rows)
+        {
+            if (r.H <= 0) continue;
+            string id = RowIdOf(r);
+            double top = RulerH + Top(id) - scrollY;
+            if (p.Y < top || p.Y >= top + r.H) continue;
+            row = id;
+            rowY = (p.Y - top) / r.H;
+            if (p.X < HeaderW) head = p.X / Math.Max(1, HeaderW);
+            else sec = Sec(p.X);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Where someone's <see cref="PointerSpot"/> is on this copy's screen (its own zoom, scroll and heights); null when out of sight.</summary>
+    public Point? SpotPoint(string row, double rowY, double? sec, double? head)
+    {
+        foreach (var r in rows)
+        {
+            if (r.H <= 0 || RowIdOf(r) != row) continue;
+            double y = RulerH + Top(row) - scrollY + Math.Clamp(rowY, 0, 1) * r.H;
+            double x = sec is { } s ? X(s) : Math.Clamp(head ?? 0.5, 0, 1) * HeaderW;
+            if (y < RulerH || y > Bounds.Height || x > Bounds.Width || sec != null && x < HeaderW) return null;
+            return new Point(x, y);
+        }
+        return null;
+    }
+
+    /// <summary>A row's header, on this copy's screen, for a pointer on a control this copy doesn't show (#319): its middle; null when out of sight.</summary>
+    public Point? HeaderPoint(string row) => SpotPoint(row, 0.5, null, 0.5);
+
     /// <summary>The others' running playheads, under this copy's own, each with its name on the ruler.</summary>
     void DrawPresenceCursors(DrawingContext ctx, double H)
     {

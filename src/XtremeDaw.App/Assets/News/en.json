@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.9.23",
+      "items": [
+        {
+          "icon": "E8B0",
+          "title": "Everyone's cursors",
+          "text": "In a **Live session** you see everyone's mouse: an arrow in their color with their name that follows it over the timeline and, when they grab a fader, a knob or a button in the mixer or the inspector, points at that control on your screen."
+        }
+      ]
+    },
+    {
       "version": "0.9.22",
       "items": [
         {

@@ -159,11 +159,14 @@ static class LiveChecks
             using var host = LiveSession.Host("Martín", Version, 0, [IPAddress.Loopback]);
             host.Start(hp, hostDir);
             List<string> hostJoined = [], hostLeft = [], guestJoined = [], guestLeft = [];
+            bool hostPresence = false, hostPointers = false;
             void PumpHost()
             {
                 var r = host.Pump(hp, hostUndo, true);
                 hostJoined.AddRange(r.Joined);
                 hostLeft.AddRange(r.Left);
+                hostPresence |= r.PresenceChanged;
+                hostPointers |= r.PointersMoved;
             }
 
             var invite = LiveInvite.Parse(host.Invite.Code)!;
@@ -207,6 +210,18 @@ static class LiveChecks
             guest.Share(new LivePresence { Track = gp.Tracks[0].Id, Clip = gp.Tracks[0].Clips[0].Id, Rolling = true, Cursor = 2.5 });
             Check("la presencia del invitado llega al anfitrión",
                 Until(() => host.Presence.TryGetValue("Ana", out var pr) && pr.Track == hp.Tracks[0].Id && pr.Clip == hp.Tracks[0].Clips[0].Id && pr.Cursor == 2.5, PumpBoth));
+            // the mouse (#319): only it moving says so apart, so the tags aren't redone many times a second
+            var still = new LivePresence { Track = gp.Tracks[0].Id, Clip = gp.Tracks[0].Clips[0].Id, Rolling = true, Cursor = 2.5 };
+            Thread.Sleep(80);
+            hostPresence = hostPointers = false;
+            guest.Share(still with { Pointer = new LivePointer { Row = gp.Tracks[1].Id, RowY = 0.5, Sec = 3.25 } });
+            Check("el mouse del invitado llega al anfitrión, aparte de lo demás (#319)",
+                Until(() => host.Presence.TryGetValue("Ana", out var pr) && pr.Pointer is { Sec: 3.25 } pt && pt.Row == hp.Tracks[1].Id, PumpBoth)
+                && hostPointers && !hostPresence);
+            Thread.Sleep(80);
+            guest.Share(still with { Pointer = new LivePointer { Owner = gp.Tracks[1].Id, Control = "mix:Fader:0" } });
+            Check("y lo que agarra (qué control y de quién)",
+                Until(() => host.Presence.TryGetValue("Ana", out var pr) && pr.Pointer is { Control: "mix:Fader:0" } pt && pt.Owner == hp.Tracks[1].Id, PumpBoth));
             host.Share(new LivePresence { Playing = hp.Tracks[2].Id, Recording = true });
             Check("y la del anfitrión al invitado",
                 Until(() => guest.Presence.TryGetValue("Martín", out var pr) && pr.Playing == gp.Tracks[2].Id && pr.Recording, PumpBoth)
@@ -216,6 +231,7 @@ static class LiveChecks
             hp.Tracks[2].Name = "Voz principal";
             host.Publish(hp);
             Check("uno del anfitrión llega al invitado", Until(() => gp.Tracks[2].Name == "Voz principal", PumpBoth));
+            Check("lo que llegó de otro no sale de nuevo como propio (#319)", !guest.Publish(gp));
             Check("y en el historial del invitado es del anfitrión", guestUndo.Steps(gp, _ => null).Any(s => s.Author == "Martín"));
             Check("los pasos propios no llevan nombre", hostUndo.Steps(hp, _ => null).Where(s => s.Index > 0).All(s => s.Author == null));
 

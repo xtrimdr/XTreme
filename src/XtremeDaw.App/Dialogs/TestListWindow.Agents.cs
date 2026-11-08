@@ -210,7 +210,8 @@ public sealed partial class TestListWindow
             if (w.Terminal.Child == c.View) w.Terminal.Child = null;
             c.Dispose();
         }
-        if (consoleOf == "" ? w.ConsoleOn : !shown.Contains(consoleOf) && ConsoleOf(consoleOf) == null)
+        bool queuedShown = IsQueueKey(consoleOf) && queue.Exists(q => q.Key == consoleOf);
+        if (consoleOf == "" ? w.ConsoleOn : !shown.Contains(consoleOf) && ConsoleOf(consoleOf) == null && !queuedShown)
         {
             // the one shown goes on to another open session (the one that waits for the person first), or to none
             string next = live.FirstOrDefault(s => AgentTranscript.For(s).Waiting(root) != AgentTranscript.Wait.None) ?? live.FirstOrDefault() ?? "";
@@ -257,6 +258,8 @@ public sealed partial class TestListWindow
             string key = ConsoleKey(c);
             if (!shown.Contains(key)) tabs.Add((key, c.Title, false, c.Running));
         }
+        // #318: the launches waiting for a place, after the open ones, dimmed
+        foreach (var q in queue) tabs.Add((q.Key, QueueName(q), false, false));
         w.SetSessions(tabs);
         FillConsole();
     }
@@ -309,6 +312,17 @@ public sealed partial class TestListWindow
     void FillConsole()
     {
         if (agentsWindow is not { } w || consoleOf == "") return;
+        if (IsQueueKey(consoleOf))
+        {
+            // #318: nothing runs yet; it says so, and when it starts
+            w.Endable = false;
+            w.ShowTerminal(null);
+            if (consoleLevel == -2) return;
+            consoleLevel = -2;
+            w.Console.Children.Clear();
+            w.Console.Children.Add(consoleNone = new TextBlock { Classes = { "dim" }, Text = Loc.T("test.list.agents.console.queued", MaxAgents), TextWrapping = TextWrapping.Wrap });
+            return;
+        }
         var bench = ConsoleOf(consoleOf);
         bool pending = consoleOf.StartsWith("pid:", StringComparison.Ordinal);
         var wait = pending ? AgentTranscript.Wait.None : waits.TryGetValue(consoleOf, out var wt) ? wt : AgentTranscript.For(consoleOf).Waiting(root);

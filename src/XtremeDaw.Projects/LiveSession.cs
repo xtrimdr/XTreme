@@ -516,18 +516,18 @@ public sealed class LiveSession : IDisposable
 
     /// <summary>
     /// Sends this copy's changes since the last time: call it after edits (a guest's go to the host; the host's go to
-    /// everybody with the next number). Nothing while there's no change.
+    /// everybody with the next number). Nothing while there's no change; says whether something went.
     /// </summary>
-    public void Publish(Project project)
+    public bool Publish(Project project)
     {
-        if (view == null || Ended) return;
+        if (view == null || Ended) return false;
         // a take or an import that wasn't here was brought by this person; the others keep it with the name
         foreach (var m in project.Media)
             if (knownMedia.Add(m.Id)) m.AddedBy ??= Name;
         var now = LiveState.Capture(project);
         var patch = LiveDiff.Diff(view, now);
         view = now;
-        if (patch.Count == 0) return;
+        if (patch.Count == 0) return false;
         if (IsHost)
         {
             rev++;
@@ -539,6 +539,7 @@ public sealed class LiveSession : IDisposable
             host!.Send(LiveMessage.Of(LiveKind.Edit, new EditBody(patch)));
         }
         ShareCatalog(project);
+        return true;
     }
 
     void Broadcast(JsonObject patch, Peer? author, string authorName)
@@ -555,6 +556,8 @@ public sealed class LiveSession : IDisposable
         public List<string> Left { get; init; } = [];
         /// <summary>Who has which plugin changed, or the project's plugins did (<see cref="LackingIt"/>).</summary>
         public bool PluginsChanged { get; init; }
+        /// <summary>Only someone's mouse moved (<see cref="LivePresence.Pointer"/>): nothing else to redo for it (#319).</summary>
+        public bool PointersMoved { get; init; }
     }
 
     /// <summary>
@@ -565,7 +568,7 @@ public sealed class LiveSession : IDisposable
     {
         var arrived = new List<string>();
         var added = new List<Media>();
-        bool changed = false, peopleChanged = false, presenceChanged = false, pluginsChanged = false;
+        bool changed = false, peopleChanged = false, presenceChanged = false, pluginsChanged = false, pointersMoved = false;
         List<string> joined = [], left = [];
         string? author = null;
         bool wasEnded = Ended;
@@ -624,8 +627,10 @@ public sealed class LiveSession : IDisposable
                         foreach (var p in peers) if (p.Welcomed && p != item.From) p.Send(fwd);
                     }
                     if (pr.Who == Name || !people.Contains(pr.Who)) break;
+                    bool still = presence.TryGetValue(pr.Who, out var was) && was.Still == pr.Still;
                     presence[pr.Who] = pr;
-                    presenceChanged = true;
+                    if (still) pointersMoved = true;
+                    else presenceChanged = true;
                     break;
                 case LiveKind.GetFile: Serve(item.From!, m.Body<FileRequest>(), project); break;
                 case LiveKind.Missing:
@@ -692,7 +697,7 @@ public sealed class LiveSession : IDisposable
         }
         return new(changed, [.. arrived.Select(a => a[..a.IndexOf('/')]).Distinct()], added, peopleChanged, Ended && !wasEnded, author, presenceChanged)
         {
-            Joined = joined, Left = left, PluginsChanged = pluginsChanged,
+            Joined = joined, Left = left, PluginsChanged = pluginsChanged, PointersMoved = pointersMoved,
         };
     }
 
