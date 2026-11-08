@@ -5,7 +5,8 @@ namespace XtremeDaw.App;
 /// <summary>
 /// The project without a place (<see cref="UntitledProjects"/>): what the window opens with when
 /// <see cref="StartupMode"/> says so. It saves on its own like any project, in its folder under AppData; "Guardar"
-/// (the key, the diskette, Archivo) asks where it goes instead, and closing the window with something in it asks too.
+/// (the key, the diskette, Archivo) asks where it goes instead and the window goes on there without reopening it, and
+/// closing the window with something in it asks too.
 /// Left with something in it (switching to another project), it goes to the recent list so the manager shows it.
 /// </summary>
 public partial class MainWindow
@@ -51,8 +52,9 @@ public partial class MainWindow
         try
         {
             if (await SaveProjectCopy(old, st.Project.Name, saveAs: true) is not { } dir) return false;
-            await OpenProject(dir);
-            Toast(Loc.T("proj.saveAs.done", store?.Project.Name ?? "", dir));
+            if (store != st) return false; // another project opened while it copied: the copy stays, as with "Guardar una copia"
+            MoveUntitled(st, dir);
+            Toast(Loc.T("proj.saveAs.done", st.Project.Name, dir));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -61,6 +63,33 @@ public partial class MainWindow
         }
         DropUntitled(old, recycle: false);
         return true;
+    }
+
+    /// <summary>
+    /// The window goes on in the copy at <paramref name="dir"/> without reopening anything (#297): the project in
+    /// memory, its tracks, plugins, undo and view stay; only where it is saved changes. The clips' paths follow the
+    /// copy (so nothing reloads), and the video decoders reopen there, so the old folder can go.
+    /// </summary>
+    void MoveUntitled(ProjectStore st, string dir)
+    {
+        FlushSave();
+        var clips = tracks.SelectMany(t => t.Clips).Where(c => c.Media != null).ToList();
+        var audioHere = clips.Where(c => c.AudioPath != null && c.AudioPath == st.Resolve(c.Media!.Audio)).ToHashSet();
+        var videoHere = clips.Where(c => c.VideoPath != null && c.VideoPath == st.Resolve(c.Media!.Video)).ToHashSet();
+        st.MoveTo(dir);
+        foreach (var c in audioHere) c.AudioPath = st.Resolve(c.Media!.Audio);
+        foreach (var c in videoHere)
+        {
+            c.VideoPath = st.Resolve(c.Media!.Video);
+            c.CloseVideo();
+        }
+        if (videoHere.Count > 0) _ = OpenMissingVideos(st);
+        dirty = false;
+        saveFailure = null;
+        SessionName.Text = st.Project.Name;
+        Title = WindowTitle(st.Project.Name);
+        RecentProjects.Touch(st.Dir, st.Project.Name);
+        RefreshHistory();
     }
 
     /// <summary>Takes a project without a place off the disk once nothing has it open: to the Recycle Bin when it had

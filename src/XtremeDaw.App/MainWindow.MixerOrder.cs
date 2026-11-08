@@ -4,6 +4,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using XtremeDaw.App.Controls;
 using XtremeDaw.Projects;
@@ -12,12 +13,14 @@ namespace XtremeDaw.App;
 
 /// <summary>
 /// The mixer's order, edited from the mixer itself (asked by the user, to keep big projects tidy): every strip sits on
-/// the left or the right side (<see cref="MixerSides"/>), and a strip is dragged by its card to another place, side or
+/// the left dock, the middle or the right dock (<see cref="MixerSides"/>, #277), and a strip is dragged by its card to another place, dock or
 /// folder. Tracks, folders and separators move in the same order the timeline shows (<see cref="TrackFolders"/>, one
 /// <see cref="EditTimeline"/> with its undo), so the timeline follows and the other way round; buses move in their own
-/// list (<see cref="ProjectBuses"/>), among the buses of either side. Separators (<see cref="Folder.Separator"/>) are
+/// list (<see cref="ProjectBuses"/>) and land anywhere, between the channels too, following the strip before them
+/// (<see cref="Bus.MixerAfter"/>, #270). Separators (<see cref="Folder.Separator"/>) are
 /// narrow named dividers, here and in the timeline unless hidden there (and they start hidden there). While dragging, the
 /// others glide out of the way like every reorderable list (<see cref="SlotDrag"/>); nothing changes until it is dropped.
+/// What follows the pointer is a picture of the strip on a layer over the docks (#280), so it shows across them.
 /// </summary>
 public partial class MainWindow
 {
@@ -32,22 +35,29 @@ public partial class MainWindow
     sealed class MixerOrder
     {
         /// <summary>Each top-level column with what it holds: a root <see cref="Track"/>, a <see cref="Folder"/> (or separator) or a <see cref="Bus"/>.</summary>
-        public readonly List<(Control Column, object Item, bool Right)> Top = [];
+        public readonly List<(Control Column, object Item, int Side)> Top = [];
         /// <summary>The track strips inside open folders, in order.</summary>
         public readonly List<(Control Card, Track Track, string FolderId)> Inner = [];
         /// <summary>Each open folder's own strip, where its first track's place begins.</summary>
         public readonly Dictionary<string, Control> FolderStrips = [];
-        public StackPanel? Left, Right;
+        /// <summary>Each dock's row of strips, by <see cref="MixerSides"/> index.</summary>
+        public readonly StackPanel?[] Sides = new StackPanel?[2];
     }
 
-    /// <summary>A place a dragged strip can land: its x (a boundary between strips, margins included), the side, the folder (null = top level) and the items around it.</summary>
-    readonly record struct MixerSlot(double X, bool Right, string? Folder, object? Prev, object? Next);
+    /// <summary>
+    /// A place a dragged strip can land: its x (a boundary between strips, margins included), the side, the folder (null
+    /// = top level), the tracks, folders or separators around it (<paramref name="Prev"/>, <paramref name="Next"/>: buses
+    /// and the dragged item skipped), the strips right beside it (<paramref name="Before"/>, <paramref name="After"/>:
+    /// buses too), and the buses between it and <paramref name="Next"/>, which follow what lands there (#270).
+    /// </summary>
+    readonly record struct MixerSlot(double X, int Side, string? Folder, object? Prev, object? Next, object? Before = null, object? After = null,
+        Bus[]? Trailing = null);
 
     /// <summary>
     /// A strip that makes room while another is dragged: its bounds (margins included), its own shift, and the leaf it
     /// sits in (an open folder's column for its strips, -1 at the top), whose shift it already carries.
     /// </summary>
-    readonly record struct MixerLeaf(Control Card, double L, double R, bool Right, TranslateTransform Shift, int Parent);
+    readonly record struct MixerLeaf(Control Card, double L, double R, int Side, TranslateTransform Shift, int Parent);
 
     /// <summary>The drag in progress: the card pressed, what it moves, where it was pressed, and where it would land.</summary>
     Control? mixerDragCard;
@@ -58,7 +68,7 @@ public partial class MainWindow
     /// <summary>What moves with the pointer (the column, the whole folder or a folder's track), its bounds and side when lifted.</summary>
     Control? mixerDragged;
     double mixerDragL, mixerDragW;
-    bool mixerDragRight;
+    int mixerDragSide;
     readonly TranslateTransform mixerDragShift = new();
     double mixerDragTarget;
     /// <summary>The others, the slots and where each one glides to, all measured once when the drag starts.</summary>
@@ -68,6 +78,16 @@ public partial class MainWindow
     /// <summary>The dragged control and its parents, raised over their neighbours while it moves.</summary>
     readonly List<Control> mixerRaised = [];
     DispatcherTimer? mixerGlide;
+    /// <summary>
+    /// What the pointer carries (#280): a picture of the lifted strip over every dock, since each dock scrolls on its own
+    /// and clips what leaves it; the strip itself stays hidden in its place. <see cref="mixerGhostL"/> is where it was
+    /// taken (the layout's coordinates, margins included), what <see cref="mixerDragShift"/> moves it from.
+    /// </summary>
+    Canvas? mixerGhostLayer;
+    RenderTargetBitmap? mixerGhostShot;
+    double mixerGhostL;
+    /// <summary>Share of the remaining distance the dropped strip covers per frame into its room: quicker than making room, so the drop doesn't lag.</summary>
+    const double MixerSettleEase = 0.5;
 
     /// <summary>
     /// Makes <paramref name="card"/> draggable: a press and a move of a few px lifts it, and from there it slides like
@@ -95,9 +115,9 @@ public partial class MainWindow
                 if (Math.Abs(at.X - mixerDragFrom.X) < MixerDragStart && Math.Abs(at.Y - mixerDragFrom.Y) < MixerDragStart) return;
                 if (!LiftMixerDrag()) { mixerDragCard = null; e.Pointer.Capture(null); return; }
             }
-            AutoScrollMixer(e.GetPosition(mixerScroll).X);
+            AutoScrollMixer(e);
             double dx = e.GetPosition(mx.Strips).X - mixerDragFrom.X;
-            mixerDragShift.X = dx;
+            mixerDragShift.X = mixerDragL + dx - mixerGhostL;
             var slot = MixerDropAt(mixerDragL + dx + mixerDragW / 2);
             if (slot != mixerDrop) MakeMixerRoom(slot);
         };
@@ -108,7 +128,7 @@ public partial class MainWindow
             {
                 // glide into the room made for it; the capture goes after, so losing it doesn't cancel the drop
                 mixerSettling = true;
-                mixerDragTarget = mixerDrop is { } d ? LandingX(d) - mixerDragL : 0;
+                mixerDragTarget = (mixerDrop is { } d ? LandingX(d) : mixerDragL) - mixerGhostL;
                 mixerGlide!.Start();
             }
             else mixerDragCard = null;
@@ -121,7 +141,7 @@ public partial class MainWindow
             // cancelled (Esc, another window): everything glides back
             MakeMixerRoom(null);
             mixerSettling = true;
-            mixerDragTarget = 0;
+            mixerDragTarget = mixerDragL - mixerGhostL;
             mixerGlide!.Start();
         };
     }
@@ -143,41 +163,40 @@ public partial class MainWindow
         var inner = o.Inner.FirstOrDefault(i => i.Track == item);
         mixerDragged = top.Column ?? inner.Card;
         if (mixerDragged == null) return false;
-        mixerDragRight = top.Column != null ? top.Right : o.Top.FirstOrDefault(t => t.Item is Folder f && f.Id == inner.FolderId).Right;
+        mixerDragSide = top.Column != null ? top.Side : o.Top.FirstOrDefault(t => t.Item is Folder f && f.Id == inner.FolderId).Side;
         var box = OuterInStrips(mixerDragged);
         mixerDragL = box.Left;
         mixerDragW = box.Width;
         MeasureMixerSlots();
         mixerLeaves.Clear();
-        int Leaf(Control c, bool right, int parent = -1)
+        int Leaf(Control c, int side, int parent = -1)
         {
             if (c == mixerDragged) return -1;
             var r = OuterInStrips(c);
             var shift = new TranslateTransform();
             c.RenderTransform = shift;
-            mixerLeaves.Add(new MixerLeaf(c, r.Left, r.Right, right, shift, parent));
+            mixerLeaves.Add(new MixerLeaf(c, r.Left, r.Right, side, shift, parent));
             return mixerLeaves.Count - 1;
         }
-        foreach (var (column, it, right) in o.Top)
+        foreach (var (column, it, side) in o.Top)
         {
             if (column == mixerDragged) continue;
-            int at = Leaf(column, right);
+            int at = Leaf(column, side);
             // an open folder moves as one block, and its strips also make room inside it (for a track going in or out)
             if (it is Folder { Separator: false } f && o.FolderStrips.TryGetValue(f.Id, out var own))
             {
-                Leaf(own, right, at);
+                Leaf(own, side, at);
                 foreach (var i in o.Inner)
-                    if (i.FolderId == f.Id) Leaf(i.Card, right, at);
+                    if (i.FolderId == f.Id) Leaf(i.Card, side, at);
             }
         }
         mixerTargets = new double[mixerLeaves.Count];
         mixerDrop = null;
         mixerDragShift.X = 0;
         mixerDragTarget = 0;
-        mixerDragged.RenderTransform = mixerDragShift;
-        mixerDragged.Opacity = 0.85;
         // a separator is see-through: lifted, it gets a card so it doesn't blend into what it passes over
         if (mixerDragItem is Folder { Separator: true } && mixerDragCard is Border sb) sb.Background = Palette.Raised;
+        LiftMixerGhost(mixerDragged, box);
         // no tooltips while dragging: the card's own would stick to the pointer and the others pop up as it passes
         ToolTip.SetIsOpen(mixerDragCard!, false);
         ToolTip.SetServiceEnabled(mixerStrips, false);
@@ -192,38 +211,74 @@ public partial class MainWindow
         return true;
     }
 
+    /// <summary>
+    /// Takes the lifted strip's picture and puts it on a layer over the three docks (#280): dragged from one dock to
+    /// another it stays in sight the whole way, where the strip itself would be clipped by its dock's scroll.
+    /// </summary>
+    void LiftMixerGhost(Control c, Rect box)
+    {
+        mixerGhostL = box.Left;
+        var top = TopLevel.GetTopLevel(c);
+        // the picture at the screen's resolution (the interface's own scale included), so it doesn't blur
+        double scale = (top?.RenderScaling ?? 1) * (top != null && c.TransformToVisual(top) is { } m ? Math.Max(0.1, m.M11) : 1);
+        double w = c.Bounds.Width, h = c.Bounds.Height;
+        mixerGhostShot = new RenderTargetBitmap(new PixelSize(Math.Max(1, (int)Math.Ceiling(w * scale)), Math.Max(1, (int)Math.Ceiling(h * scale))),
+            new Vector(96 * scale, 96 * scale));
+        mixerGhostShot.Render(c);
+        var shot = new Image { Source = mixerGhostShot, Width = w, Height = h, Opacity = 0.9, RenderTransform = mixerDragShift };
+        Canvas.SetLeft(shot, box.Left + c.Margin.Left);
+        Canvas.SetTop(shot, box.Top + c.Margin.Top);
+        mixerGhostLayer = new Canvas { IsHitTestVisible = false, ZIndex = 10, Children = { shot } };
+        Grid.SetColumnSpan(mixerGhostLayer, Math.Max(1, mx.Strips.ColumnDefinitions.Count));
+        mx.Strips.Children.Add(mixerGhostLayer);
+        // its place stays (the others close it as they glide), empty
+        c.Opacity = 0;
+    }
+
     /// <summary>Every place the dragged item could land (measured before anything moves).</summary>
     void MeasureMixerSlots()
     {
         var o = mx.Order;
         mixerSlots.Clear();
-        bool bus = mixerDragItem is Bus;
-        foreach (bool right in new[] { false, true })
+        var dragged = mixerDragItem;
+        // buses and channels share the gaps (#270: a bus can sit between the channels)
+        for (int right = 0; right < o.Sides.Length; right++)
         {
-            var side = right ? o.Right : o.Left;
+            var side = o.Sides[right];
             if (side == null) continue;
-            var items = o.Top.Where(t => t.Right == right && t.Item is Bus == bus).ToList();
-            for (int k = 0; k < items.Count; k++)
-                mixerSlots.Add(new MixerSlot(OuterInStrips(items[k].Column).Left, right, null, k > 0 ? items[k - 1].Item : null, items[k].Item));
-            if (items.Count > 0)
-                mixerSlots.Add(new MixerSlot(OuterInStrips(items[^1].Column).Right, right, null, items[^1].Item, null));
-            else
+            var items = o.Top.Where(t => t.Side == right).ToList();
+            if (items.Count == 0)
             {
-                // an empty side (for this kind): tracks go to its start, buses after its tracks
-                var others = o.Top.Where(t => t.Right == right).Select(t => OuterInStrips(t.Column)).ToList();
-                double sideL = OuterInStrips(side).Left;
-                mixerSlots.Add(new MixerSlot(bus && others.Count > 0 ? others.Max(r => r.Right) : sideL, right, null, null, null));
+                mixerSlots.Add(new MixerSlot(OuterInStrips(side).Left, right, null, null, null));
+                continue;
+            }
+            for (int k = 0; k <= items.Count; k++)
+            {
+                double x = k < items.Count ? OuterInStrips(items[k].Column).Left : OuterInStrips(items[^1].Column).Right;
+                object? prev = null, next = null;
+                for (int j = k - 1; j >= 0 && prev == null; j--)
+                    if (items[j].Item is not Bus && items[j].Item != dragged) prev = items[j].Item;
+                var trailing = new List<Bus>();
+                for (int j = k; j < items.Count && next == null; j++)
+                    if (items[j].Item is Bus tb) { if (tb != dragged) trailing.Add(tb); }
+                    else if (items[j].Item != dragged) next = items[j].Item;
+                mixerSlots.Add(new MixerSlot(x, right, null, prev, next, k > 0 ? items[k - 1].Item : null, k < items.Count ? items[k].Item : null,
+                    trailing.Count > 0 ? [.. trailing] : null));
             }
         }
         // a track can also go into an open folder: between its tracks, or first after the folder's strip
         if (mixerDragItem is Track)
             foreach (var (folderId, strip) in o.FolderStrips)
             {
-                bool right = o.Top.FirstOrDefault(t => t.Item is Folder f && f.Id == folderId).Right;
+                int right = o.Top.FirstOrDefault(t => t.Item is Folder f && f.Id == folderId).Side;
                 var inner = o.Inner.Where(i => i.FolderId == folderId).ToList();
-                mixerSlots.Add(new MixerSlot(OuterInStrips(strip).Right, right, folderId, null, inner.Count > 0 ? inner[0].Track : null));
+                mixerSlots.Add(new MixerSlot(OuterInStrips(strip).Right, right, folderId, null, inner.Count > 0 ? inner[0].Track : null,
+                    null, inner.Count > 0 ? inner[0].Track : null));
                 for (int k = 0; k < inner.Count; k++)
-                    mixerSlots.Add(new MixerSlot(OuterInStrips(inner[k].Card).Right, right, folderId, inner[k].Track, k + 1 < inner.Count ? inner[k + 1].Track : null));
+                {
+                    var next = k + 1 < inner.Count ? inner[k + 1].Track : null;
+                    mixerSlots.Add(new MixerSlot(OuterInStrips(inner[k].Card).Right, right, folderId, inner[k].Track, next, inner[k].Track, next));
+                }
             }
     }
 
@@ -241,14 +296,14 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Where the dragged strip's left edge ends in <paramref name="s"/>: the left side grows to the right and the right
-    /// side to the left (it sits against the master), so the strips that make room are the ones after the slot on the
-    /// left and before it on the right.
+    /// Where the dragged strip's left edge ends in <paramref name="s"/>: the left dock and the middle grow to the right and
+    /// the right dock to the left (it sits against the master), so the strips that make room are the ones after the slot
+    /// on the first two and before it on the right dock.
     /// </summary>
     double LandingX(MixerSlot s)
     {
         bool after = s.X > mixerDragL + 1;
-        return s.Right ? (!mixerDragRight || after ? s.X - mixerDragW : s.X) : (!mixerDragRight && after ? s.X - mixerDragW : s.X);
+        return s.Side == MixerSides.RightSide ? (mixerDragSide != s.Side || after ? s.X - mixerDragW : s.X) : (mixerDragSide == s.Side && after ? s.X - mixerDragW : s.X);
     }
 
     /// <summary>The others glide to close the dragged strip's place and open its room at <paramref name="slot"/> (none = back home).</summary>
@@ -262,8 +317,8 @@ public partial class MainWindow
             double off = 0;
             if (slot is { } s)
             {
-                if (l.Right == mixerDragRight) off += mixerDragRight ? (l.R <= mixerDragL + 1 ? w : 0) : (l.L >= dragR - 1 ? -w : 0);
-                if (l.Right == s.Right) off += s.Right ? (l.R <= s.X + 1 ? -w : 0) : (l.L >= s.X - 1 ? w : 0);
+                if (l.Side == mixerDragSide) off += mixerDragSide == MixerSides.RightSide ? (l.R <= mixerDragL + 1 ? w : 0) : (l.L >= dragR - 1 ? -w : 0);
+                if (l.Side == s.Side) off += s.Side == MixerSides.RightSide ? (l.R <= s.X + 1 ? -w : 0) : (l.L >= s.X - 1 ? w : 0);
             }
             // a folder's strip already moves with its folder: only what differs from it is its own
             mixerTargets[i] = l.Parent >= 0 ? off - mixerTargets[l.Parent] : off;
@@ -277,14 +332,14 @@ public partial class MainWindow
         for (int i = 0; i < mixerLeaves.Count; i++)
             still &= Glide(mixerLeaves[i].Shift, mixerTargets[i]);
         // while dragging, the lifted strip is the pointer's
-        if (mixerSettling) still &= Glide(mixerDragShift, mixerDragTarget);
+        if (mixerSettling) still &= Glide(mixerDragShift, mixerDragTarget, MixerSettleEase);
         if (!still) return;
         mixerGlide!.Stop();
         if (mixerSettling) _ = FinishMixerDrag();
 
-        static bool Glide(TranslateTransform t, double target)
+        static bool Glide(TranslateTransform t, double target, double ease = SlotDrag.SlideEase)
         {
-            double x = t.X + (target - t.X) * SlotDrag.SlideEase;
+            double x = t.X + (target - t.X) * ease;
             bool done = Math.Abs(target - x) < 0.5;
             t.X = done ? target : x;
             return done;
@@ -296,14 +351,15 @@ public partial class MainWindow
     {
         var drop = mixerDrop;
         var what = mixerDragItem;
-        if (drop is { } d && what != null && d.Prev != what && d.Next != what) await DropInMixer(what, d);
+        if (drop is { } d && what != null && d.Before != what && d.After != what) await DropInMixer(what, d);
         foreach (var l in mixerLeaves) l.Card.RenderTransform = null;
         foreach (var c in mixerRaised) c.ZIndex = 0;
-        if (mixerDragged != null)
-        {
-            mixerDragged.RenderTransform = null;
-            mixerDragged.Opacity = 1;
-        }
+        if (mixerDragged != null) mixerDragged.Opacity = 1;
+        if (mixerGhostLayer != null) mx.Strips.Children.Remove(mixerGhostLayer);
+        mixerGhostLayer = null;
+        mixerGhostShot?.Dispose();
+        mixerGhostShot = null;
+        mixerDragShift.X = 0;
         if (mixerDragCard is Border { Background: not null } sb && what is Folder { Separator: true }) sb.Background = Brushes.Transparent;
         mixerStrips.ClearValue(ToolTip.ServiceEnabledProperty);
         mixerLeaves.Clear();
@@ -313,15 +369,6 @@ public partial class MainWindow
         mixerDragItem = null;
         mixerDrop = null;
         mixerDragging = mixerSettling = false;
-    }
-
-    /// <summary>Scrolls the mixer while the pointer is near one of its edges.</summary>
-    void AutoScrollMixer(double x)
-    {
-        double w = mixerScroll.Viewport.Width;
-        if (w <= 0) return;
-        double dx = x < MixerDragEdge ? -MixerDragScroll : x > w - MixerDragEdge ? MixerDragScroll : 0;
-        if (dx != 0) mixerScroll.Offset = mixerScroll.Offset.WithX(Math.Clamp(mixerScroll.Offset.X + dx, 0, Math.Max(0, mixerScroll.Extent.Width - w)));
     }
 
     /// <summary>Applies a drop: the item moves to the slot's place, side and folder, in one undo step.</summary>
@@ -336,20 +383,156 @@ public partial class MainWindow
                 var list = p.Settings.Buses;
                 if (list.Find(b => b.Id == id) is not { } b) return false;
                 list.Remove(b);
-                int at = slot.Next is Bus n && list.IndexOf(n) is >= 0 and var ni ? ni
-                    : slot.Prev is Bus pv && list.IndexOf(pv) is >= 0 and var pi ? pi + 1 : list.Count;
+                int at = slot.After is Bus n && list.IndexOf(n) is >= 0 and var ni ? ni
+                    : slot.Before is Bus pv && list.IndexOf(pv) is >= 0 and var pi ? pi + 1 : list.Count;
                 list.Insert(at, b);
-                b.MixerSide = slot.Right ? null : MixerSides.Left;
+                PlaceBus(p, b, slot);
                 return true;
             });
             return;
         }
+        // the buses that followed it stay where they are; the ones after the gap follow it there (#270)
+        var anchors = new List<(string Bus, string? After, int Side)>();
+        var top = mx.Order.Top;
+        if (item is Folder or XtremeDaw.Projects.Track { FolderId: null } && top.FindIndex(t => t.Item == item) is >= 0 and var own)
+        {
+            int right = top[own].Side;
+            object? before = null;
+            for (int j = own - 1; j >= 0 && before == null; j--)
+                if (top[j].Side == right && top[j].Item is not Bus) before = top[j].Item;
+            string? movedId = IdOf(item);
+            foreach (var b in Buses)
+                if (b.MixerAfter == movedId) anchors.Add((b.Id, IdOf(before) ?? MixerSides.First, right));
+        }
+        if (slot.Folder == null && IdOf(item) is { } landedId)
+            foreach (var b in slot.Trailing ?? []) anchors.Add((b.Id, landedId, slot.Side));
         string? keep = sel?.Track.Id;
         await EditTimeline(p =>
         {
             MoveToSlot(p, item, slot);
+            Reanchor(p, anchors);
             return keep;
         }, "tracks-reordered");
+    }
+
+    /// <summary>
+    /// "Dock" in a strip's menu in the mixer (#277, like FL Studio's "Dock to"): the left side or the right dock (#303:
+    /// only those two). A track inside a folder goes with its folder, so it has none.
+    /// </summary>
+    MenuItem DockMenu(object item)
+    {
+        bool enabled = store is { ReadOnly: false } && !restoring;
+        int Now() => item switch
+        {
+            Bus b => BusById(b.Id) is { } x ? MixerSides.Of(x) : MixerSides.RightSide,
+            Folder f => FolderById(f.Id) is { } x ? MixerSides.Of(x) : MixerSides.LeftSide,
+            XtremeDaw.Projects.Track t => store?.Project.Tracks.Find(y => y.Id == t.Id) is { } x ? MixerSides.Of(x) : MixerSides.LeftSide,
+            _ => MixerSides.LeftSide,
+        };
+        var refresh = new List<Action>();
+        MenuItem Pick(string key, int side) => MenuCheck(Loc.T(key), () => Now() == side, () => _ = MoveToDock(item, side), refresh);
+        return new MenuItem
+        {
+            Header = MenuHeader(Loc.T("mixer.dock"), new TextBlock { Classes = { "icon" }, Text = "", FontSize = 12 }),
+            IsEnabled = enabled,
+            ItemsSource = new object[]
+            {
+                Pick("mixer.dock.left", MixerSides.LeftSide),
+                Pick("mixer.dock.right", MixerSides.RightSide),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Moves a strip to another dock (#277), keeping its place in the order, in one undo step. A bus goes after the
+    /// channels of its new dock; the buses that followed a track or folder stay in its old dock, after the strip before it.
+    /// </summary>
+    async Task MoveToDock(object item, int side)
+    {
+        if (store == null || store.ReadOnly || restoring || mixerDragging) return;
+        if (item is Bus bus)
+        {
+            string id = bus.Id;
+            BusesEdit(p =>
+            {
+                if (p.Settings.Buses.Find(b => b.Id == id) is not { } b || MixerSides.Of(b) == side) return false;
+                b.MixerSide = MixerSides.ForBus(side);
+                b.MixerAfter = null;
+                return true;
+            });
+            return;
+        }
+        var anchors = new List<(string Bus, string? After, int Side)>();
+        var top = mixerLayout.Order.Top;
+        if (top.FindIndex(t => t.Item == item) is >= 0 and var own)
+        {
+            int was = top[own].Side;
+            if (was == side) return;
+            object? before = null;
+            for (int j = own - 1; j >= 0 && before == null; j--)
+                if (top[j].Side == was && top[j].Item is not Bus) before = top[j].Item;
+            string? movedId = IdOf(item);
+            foreach (var b in Buses)
+                if (b.MixerAfter == movedId) anchors.Add((b.Id, IdOf(before) ?? MixerSides.First, was));
+        }
+        string? keep = sel?.Track.Id, itemId = IdOf(item);
+        await EditTimeline(p =>
+        {
+            if (p.Folders.Find(f => f.Id == itemId) is { } f) f.MixerSide = MixerSides.ForChannel(side);
+            else if (p.Tracks.Find(t => t.Id == itemId) is { FolderId: null } t) t.MixerSide = MixerSides.ForChannel(side);
+            Reanchor(p, anchors);
+            return keep;
+        }, "tracks-reordered");
+    }
+
+    /// <summary>
+    /// A new empty bus at a mixer gap (#270) on the buses' side (<see cref="MixerSides.BusDefault"/>); a click on the
+    /// other side puts it after the channels of the buses' side (#303: a new bus went to the left).
+    /// </summary>
+    static bool NewBusAt(Project p, MixerSlot? slot)
+    {
+        if (ProjectBuses.Add(p) is not { } b) return false;
+        if (slot is not { Folder: null } s || s.Side != MixerSides.BusDefault) return true;
+        var list = p.Settings.Buses;
+        // among the buses at the gap: before the one after it, or after the one before it
+        int at = s.After is Bus n && list.FindIndex(x => x.Id == n.Id) is >= 0 and var ni ? ni
+            : s.Before is Bus pv && list.FindIndex(x => x.Id == pv.Id) is >= 0 and var pi ? pi + 1 : -1;
+        if (at >= 0)
+        {
+            list.Remove(b);
+            list.Insert(Math.Min(at, list.Count), b);
+        }
+        PlaceBus(p, b, s);
+        return true;
+    }
+
+    /// <summary>The id a bus follows for a track, folder or separator; null for anything else.</summary>
+    static string? IdOf(object? item) => item switch { Folder f => f.Id, XtremeDaw.Projects.Track t => t.Id, _ => null };
+
+    /// <summary>Points buses of <paramref name="p"/> at the strips they now follow (an id, or the start of a side).</summary>
+    static void Reanchor(Project p, IEnumerable<(string Bus, string? After, int Side)> anchors)
+    {
+        foreach (var (id, after, side) in anchors)
+            if (p.Settings.Buses.Find(b => b.Id == id) is { } b)
+            {
+                b.MixerAfter = after;
+                b.MixerSide = MixerSides.ForBus(side);
+            }
+    }
+
+    /// <summary>
+    /// Puts a bus of <paramref name="p"/> at a mixer gap (#270): after the strip before it, after what the bus before it
+    /// follows, or first on the side.
+    /// </summary>
+    static void PlaceBus(Project p, Bus b, MixerSlot slot)
+    {
+        string? after = slot.Before switch
+        {
+            Bus pb => p.Settings.Buses.Find(x => x.Id == pb.Id)?.MixerAfter,
+            null => MixerSides.First,
+            var o => IdOf(o),
+        };
+        Reanchor(p, [(b.Id, after, slot.Side)]);
     }
 
     /// <summary>Moves a track or folder (with its tracks) of <paramref name="p"/> to the slot's place, side and folder.</summary>
@@ -361,7 +544,7 @@ public partial class MainWindow
             var seq = TrackFolders.Sequence(p);
             seq.RemoveAll(x => x == f || x is Track t && t.FolderId == f.Id);
             if (Place(p, seq, slot) is { } at) TrackFolders.MoveFolder(p, f.Id, at);
-            f.MixerSide = slot.Right ? MixerSides.Right : null;
+            f.MixerSide = MixerSides.ForChannel(slot.Side);
         }
         else if (item is Track track && p.Tracks.Find(t => t.Id == track.Id) is { } t)
         {
@@ -371,7 +554,7 @@ public partial class MainWindow
                 ? seq.FindIndex(x => x is Folder f && f.Id == fid) + 1
                 : Place(p, seq, slot);
             if (at is { } pos) TrackFolders.Move(p, [t.Id], pos, slot.Folder);
-            if (slot.Folder == null) t.MixerSide = slot.Right ? MixerSides.Right : null;
+            if (slot.Folder == null) t.MixerSide = MixerSides.ForChannel(slot.Side);
         }
     }
 
@@ -399,6 +582,10 @@ public partial class MainWindow
         // each one goes before the strip after the slot (keeps their order), or after the one before it (reversed to keep it)
         if (!(at.Slot.Next != null && seq.Contains(at.Slot.Next))) made.Reverse();
         foreach (var x in made) MoveToSlot(p, x, at.Slot);
+        // the buses after the gap follow the last one made (#270)
+        if (at.Slot.Folder == null && at.Slot.Trailing is { } trailing
+            && TrackFolders.Sequence(p).LastOrDefault(x => made.Contains(x) && x is Folder or XtremeDaw.Projects.Track { FolderId: null }) is { } last)
+            Reanchor(p, trailing.Select(b => (b.Id, IdOf(last), at.Slot.Side)));
     }
 
     /// <summary>Every item of a menu with no submenu, at any depth.</summary>
@@ -433,22 +620,20 @@ public partial class MainWindow
     // --- separators in the mixer ----------------------------------------------------------------------
 
     /// <summary>
-    /// A separator's strip: a narrow divider with its name written up the middle in its color, and an eye that shows or
+    /// A separator's strip: a narrow divider, a double line with its name small and upper-cased up the middle in its
+    /// color (console style, #289), and an eye that shows or
     /// hides it in the timeline. A click opens its menu; dragged, it moves like any strip.
     /// </summary>
     Control SeparatorStrip(Folder sep)
     {
         string id = sep.Id;
         Folder S() => FolderById(id) ?? sep;
-        var line = new Rectangle { Width = 2, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(0, 40, 0, 8) };
-        // the same soft glow as in the timeline (TimelineView.DrawSeparatorLine): stacked faint bands, denser at the line
-        var glow = new Rectangle[TimelineView.GlowSteps];
-        for (int k = 0; k < glow.Length; k++)
-            glow[k] = new Rectangle { Width = 2 + 2 * TimelineView.GlowReach * (k + 1) / TimelineView.GlowSteps, HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Stretch, Margin = line.Margin, IsHitTestVisible = false };
-        var name = new TextBlock { FontSize = 11, FontWeight = FontWeight.SemiBold, LetterSpacing = 0.8, TextTrimming = TextTrimming.CharacterEllipsis,
-            Background = Palette.App, Padding = new Thickness(6, 0) };
-        var rotated = new LayoutTransformControl { LayoutTransform = new RotateTransform(-90), Child = name, HorizontalAlignment = HorizontalAlignment.Center,
+        // the same look as in the timeline (SeparatorLooks, picked in Apariencia, #293; the console's double line by default, #289)
+        var line = new SeparatorLooks.Rule { HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(0, 40, 0, 8), IsHitTestVisible = false };
+        var name = new TextBlock { FontSize = 9, FontWeight = FontWeight.Bold, LetterSpacing = 1.5, TextTrimming = TextTrimming.CharacterEllipsis };
+        var tag = new Border { Padding = new Thickness(6, 0), Child = name };
+        var rotated = new LayoutTransformControl { LayoutTransform = new RotateTransform(-90), Child = tag, HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 40, 0, 8) };
         var eye = new Button { Classes = { "ghost" }, Width = 24, Height = 24, MinHeight = 24, Padding = new Thickness(0), Focusable = false,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 10, 0, 0),
@@ -456,20 +641,28 @@ public partial class MainWindow
         eye.Click += (_, _) => FolderEdit(S(), x => x.HiddenInTimeline = !x.HiddenInTimeline, "hidden");
         var box = new Border { Width = SeparatorW, Margin = MixerLooks.Joined ? default : new Thickness(StripGap / 2, StripGap), Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Cursor = new Cursor(StandardCursorType.Hand),
             Child = new Grid() };
-        ((Grid)box.Child).Children.AddRange([.. glow, line, rotated, eye]);
+        ((Grid)box.Child).Children.AddRange([line, rotated, eye]);
         mx.Refresh.Add(() =>
         {
             var s = S();
             var c = TimelineView.SeparatorColor(s);
-            name.Text = s.Name;
-            name.Foreground = Palette.Alpha(c, 1);
-            line.Fill = Palette.Alpha(c, TimelineView.SeparatorLineAlpha);
-            foreach (var g in glow) g.Fill = Palette.Alpha(c, TimelineView.GlowAlpha);
+            name.Text = s.Name.ToUpperInvariant();
+            (tag.Background, name.Foreground) = SeparatorLooks.NameBrushes(c);
+            tag.CornerRadius = SeparatorLooks.NameCorners;
+            line.Color = c;
+            line.InvalidateVisual();
             ((TextBlock)eye.Content!).Text = s.HiddenInTimeline ? "" : "";
             ((TextBlock)eye.Content!).Foreground = s.HiddenInTimeline ? Palette.Faint : Palette.Dim;
             ToolTip.SetTip(eye, Loc.T(s.HiddenInTimeline ? "separator.show.tip" : "separator.hide.tip"));
         });
-        void Menu() { if (FolderById(id) is { } s) OpenAnchoredMenu(Popup(SeparatorMenu(s, box, null), 240), box); }
+        void Menu()
+        {
+            if (FolderById(id) is not { } s) return;
+            var items = SeparatorMenu(s, box, null);
+            items.Add(new Separator());
+            items.Add(DockMenu(s));
+            OpenAnchoredMenu(Popup(items, 240), box);
+        }
         // a left click opens the menu once it is clear it isn't the first half of a double click, which goes straight to
         // the color (asked by the user, #194)
         var later = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(SeparatorClickWait) };
@@ -522,21 +715,23 @@ public partial class MainWindow
         {
             var seq = TrackFolders.Sequence(p);
             int? pos = null;
-            bool right = false;
+            int right = MixerSides.LeftSide;
             if (slot is { } s)
             {
                 pos = Place(p, seq, s);
-                right = s.Right;
+                right = s.Side;
             }
             else if (((object?)p.Folders.Find(f => f.Id == folderId && !f.Separator) ?? p.Tracks.Find(t => t.Id == keep)) is { } picked)
             {
                 // a track in a folder puts it after the whole folder (AddSeparator never goes inside one)
                 pos = seq.IndexOf(picked) + 1;
                 var owner = picked is Track t ? (object?)TrackFolders.Of(p, t) ?? t : picked;
-                right = owner is Folder of ? MixerSides.IsRight(of) : MixerSides.IsRight((Track)owner);
+                right = owner is Folder of ? MixerSides.Of(of) : MixerSides.Of((Track)owner);
             }
             string id = TrackFolders.AddSeparator(p, null, pos);
-            if (right && p.Folders.Find(f => f.Id == id) is { } sep) sep.MixerSide = MixerSides.Right;
+            if (p.Folders.Find(f => f.Id == id) is { } sep) sep.MixerSide = MixerSides.ForChannel(right);
+            // the buses after the gap follow it (#270)
+            if (slot is { Trailing: { } trailing }) Reanchor(p, trailing.Select(b => (b.Id, (string?)id, right)));
             return keep;
         }, "separator-added");
     }
@@ -553,7 +748,8 @@ public partial class MainWindow
         mixerStrips.Background = Brushes.Transparent;
         mixerStrips.PointerPressed += (_, e) =>
         {
-            if (e.Source != mixerStrips || !e.GetCurrentPoint(mixerStrips).Properties.IsLeftButtonPressed || restoring) return;
+            // the empty space is the place itself or either side's (#275)
+            if (e.Source != mixerStrips && e.Source != mixerLeftHost && e.Source != mixerRightHost && e.Source != mx.Strips || !e.GetCurrentPoint(mixerStrips).Properties.IsLeftButtonPressed || restoring) return;
             if (sel != null || SelectedFolder != null || selBusId != null) Timeline.Select(-1);
         };
         mixerStrips.PointerReleased += (_, e) =>
@@ -581,10 +777,18 @@ public partial class MainWindow
                     pendingMixerMenuClosed = () => { if (!picked && mixerNewAt == made) mixerNewAt = null; };
                 }
             }
+            // a new bus goes there too (#270)
+            MixerSlot? busAt = null;
+            if (enabled && !mixerDragging)
+            {
+                MeasureMixerSlots();
+                busAt = MixerDropAt(x);
+                mixerSlots.Clear();
+            }
             if (items.Count > 0) items.Add(new Separator());
             items.AddRange(
             [
-                MenuAction(Loc.T("mixer.menu.newBus"), () => { BusesEdit(p => ProjectBuses.Add(p) != null); return Task.CompletedTask; }, enabled: enabled, icon: "",
+                MenuAction(Loc.T("mixer.menu.newBus"), () => { BusesEdit(p => NewBusAt(p, busAt)); return Task.CompletedTask; }, enabled: enabled, icon: "",
                     tip: Loc.T("mixer.menu.newBus.tip")),
                 MenuAction(Loc.T("mixer.menu.newSeparator"), () => NewMixerSeparator(x), enabled: enabled, icon: "", tip: Loc.T("separator.add.tip")),
             ]);

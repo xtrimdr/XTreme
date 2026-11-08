@@ -391,6 +391,21 @@ public static class Automations
 
     public static AutomationBlock? BlockById(AutomationLane lane, string id) => lane.Blocks.Find(b => b.Id == id);
 
+    /// <summary>Every lane of the project with its owner: the tracks', the folders' and the buses'.</summary>
+    public static IEnumerable<(IAutomated Owner, AutomationLane Lane)> Lanes(Project p)
+    {
+        foreach (var o in p.Tracks.Cast<IAutomated>().Concat(p.Folders).Concat(p.Settings.Buses))
+            foreach (var l in o.Automation ?? []) yield return (o, l);
+    }
+
+    /// <summary>The block with this id in any lane of the project, with its lane; null if there is none.</summary>
+    public static (AutomationLane Lane, AutomationBlock Block)? FindBlock(Project p, string id)
+    {
+        foreach (var (_, l) in Lanes(p))
+            if (BlockById(l, id) is { } b) return (l, b);
+        return null;
+    }
+
     /// <summary>
     /// A lane for <paramref name="target"/>: the one it has, shown, or a new one with a block over <paramref name="lengthSec"/>
     /// holding <paramref name="position"/>, so nothing changes until a point moves.
@@ -463,17 +478,33 @@ public static class Automations
         lane.Touch();
     }
 
-    /// <summary>A block in two at a timeline time, sounding the same. False when the time isn't inside it.</summary>
-    public static bool Split(AutomationLane lane, string id, double sec, bool stepped)
+    /// <summary>
+    /// A block in two at a timeline time, sounding the same: the left piece keeps its id (a selection of it stays good).
+    /// Returns the right piece's id; null when the time isn't inside it.
+    /// </summary>
+    public static string? Split(AutomationLane lane, string id, double sec, bool stepped)
     {
-        if (BlockById(lane, id) is not { } b || sec <= b.AtSec + AutomationBlock.MinSec || sec >= b.EndSec - AutomationBlock.MinSec) return false;
+        if (BlockById(lane, id) is not { } b || !CanSplit(b, sec)) return null;
         double at = sec - b.AtSec;
         var left = b.Cut(0, at, stepped);
+        left.Id = b.Id;
+        left.Extra = b.Extra;
         var right = b.Cut(at, b.LengthSec, stepped);
         lane.Blocks[lane.Blocks.IndexOf(b)] = left;
         lane.Blocks.Add(right);
         lane.Touch();
-        return true;
+        return right.Id;
+    }
+
+    /// <summary>Whether a timeline time is far enough inside a block to split it there.</summary>
+    public static bool CanSplit(AutomationBlock b, double sec) => sec > b.AtSec + AutomationBlock.MinSec && sec < b.EndSec - AutomationBlock.MinSec;
+
+    /// <summary>"Alinear a la grilla" for a block (#281, as a clip's): its start on the nearest line.</summary>
+    public static void AlignToGrid(AutomationLane lane, string id, SnapGrid grid)
+    {
+        if (BlockById(lane, id) is not { } b) return;
+        b.AtSec = Math.Max(0, ClipEditing.ToSample(ClipEditing.Snap(b.AtSec, grid, false)));
+        lane.Touch();
     }
 
     /// <summary>The control's position at a time on the lane's curve (it has blocks).</summary>
@@ -622,6 +653,42 @@ public static class Automations
                 curves.Add(c);
             }
         return ids.Count == 0 ? null : new VstParamCurves([.. ids], [.. curves]);
+    }
+
+    /// <summary>
+    /// A range deleted on the track (<see cref="ClipEditing.DeleteRange"/>, #281: its lanes go with its clips): the stretch
+    /// goes from every block it touches, leaving a gap, and each side keeps what it had. Returns how many blocks changed.
+    /// </summary>
+    public static int ClearRange(IAutomated t, double startSec, double endSec)
+    {
+        if (t.Automation == null || !(endSec > startSec)) return 0;
+        int changed = 0;
+        foreach (var l in t.Automation)
+        {
+            bool stepped = Stepped(t, l.Target), touched = false;
+            var kept = new List<AutomationBlock>();
+            foreach (var b in l.Blocks)
+            {
+                if (b.EndSec <= startSec || b.AtSec >= endSec)
+                {
+                    kept.Add(b);
+                    continue;
+                }
+                touched = true;
+                changed++;
+                if (startSec - b.AtSec >= AutomationBlock.MinSec)
+                {
+                    var left = b.Cut(0, startSec - b.AtSec, stepped);
+                    left.Id = b.Id;
+                    kept.Add(left);
+                }
+                if (b.EndSec - endSec >= AutomationBlock.MinSec) kept.Add(b.Cut(endSec - b.AtSec, b.LengthSec, stepped));
+            }
+            if (!touched) continue;
+            l.Blocks = kept;
+            l.Touch();
+        }
+        return changed;
     }
 
     /// <summary>

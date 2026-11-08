@@ -352,7 +352,7 @@ public sealed partial class TimelineView
         var color = tint ?? Palette.AccentColor;
         bool silent = t.Silenced || anySoloed && !t.Soloed;
         var r = new Rect(x0, y + 5, Math.Max(2, x1 - x0), lh - 10);
-        using var opacity = ctx.PushOpacity((silent ? 0.5 : held ? 0.85 : 1) * (erasing.Contains(c.Id) ? 0.25 : 1));
+        using var opacity = ctx.PushOpacity((silent ? 0.5 : held ? 0.85 : 1) * (erasing.Contains(c.Id) ? ErasingOpacity : 1));
         bool lit = c.PatternId != null && c.PatternId == litPattern;
         // a colored track paints its parts in the look chosen in Apariencia (TrackColorLooks, #162)
         var look = tint != null ? TrackColorLooks.Clip(color, sel) : default;
@@ -560,6 +560,7 @@ public sealed partial class TimelineView
             // everything boxed moves by the same time, the grabbed clip landing on a line, each on its own track, none before 0
             double dt = ClipEditing.Snap(midiFromSec + dxPx / pps, grid, free) - midiFromSec;
             foreach (double from in midiCarried.Values) dt = Math.Max(dt, -from);
+            foreach (double from in autoCarried.Values) dt = Math.Max(dt, -from);
             foreach (var (lc, o) in carriedAlong) dt = Math.Max(dt, ClipEnvelope.MinClipSec - Window(lc, o).End);
             carryShift = dt;
             foreach (var (lc, o) in carriedAlong)
@@ -689,6 +690,7 @@ public sealed partial class TimelineView
     {
         var s = new HashSet<string>();
         if (boxed.Count > 1) s.UnionWith(boxed);
+        else if (pressBlock != null) s.Add(pressBlock);
         else if (SelectedMidiId != null) s.Add(SelectedMidiId);
         else if (Selected >= 0 && Selected < tracks.Count && SelectedClipId != null && tracks[Selected].Clips.Any(c => c.Clip.Id == SelectedClipId))
             s.Add(SelectedClipId);
@@ -715,15 +717,30 @@ public sealed partial class TimelineView
         if (set.Count <= 1)
         {
             string only = set.Count == 1 ? set.First() : id;
+            boxed.Clear();
+            if (set.Count == 1 && IsBlockId(only))
+            {
+                // what is left is an automation block (#281)
+                selectedBlock = only;
+                InvalidateVisual();
+                return;
+            }
+            selectedBlock = null;
             int lane = LaneOf(only);
             if (set.Count == 0) { SelectedMidiId = null; Select(lane); }
             else if (IsMidiClip(only)) SelectMidiClip(lane, only);
             else SelectClip(lane, only);
             return;
         }
-        string primary = set.Contains(id) ? id : set.First();
+        string primary = set.Contains(id) ? id : set.FirstOrDefault(x => !IsBlockId(x)) ?? set.First();
         boxed.Clear();
         boxed.UnionWith(set);
+        if (IsBlockId(primary))
+        {
+            selectedBlock = primary;
+            InvalidateVisual();
+            return;
+        }
         if (IsMidiClip(primary)) SelectedMidiId = primary;
         else
         {

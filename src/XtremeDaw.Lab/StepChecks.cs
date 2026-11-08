@@ -56,7 +56,6 @@ static class StepChecks
         history.Checkpoint(p, label: EditSteps.Recorded(["Toma 2"], []));
         p.Tracks[2].Name = "Voz 2";
         Check(Last() == "Grabaste «Toma 2»", "la grabación trae su nombre: " + Last());
-
         var steps = history.Steps(p, Name);
         Check(steps.Count == 10 && steps.All(s => s.Done) && history.Position == 10, "diez pasos hechos");
         Check(history.JumpTo(p, 2) && history.Position == 2, "saltar al paso 2");
@@ -72,6 +71,17 @@ static class StepChecks
         p.Markers.Add(new Marker { Name = "Solo", Sec = 30 });
         Check(!history.CanRedo && history.Steps(p, Name).Count == 2 && Last() == "Agregaste el marcador «Solo»", "una edición nueva borra lo que estaba para rehacer");
         Check(history.Undo(p) && p.Markers.Count == 0 && history.Steps(p, Name)[^1].Label.Text == "Agregaste el marcador «Solo»", "deshacer conserva el nombre del paso");
+        // a bus's lane is a step of its own (#288)
+        var bus = new Bus { Name = "Reverb" };
+        p.Settings.Buses.Add(bus);
+        history.Checkpoint(p);
+        var busLane = Automations.Show(bus, AutoTarget.Volume, 0.5, null, 10);
+        Check(Last() == "Automatización de «Reverb»", "carril de un bus: " + Last());
+        history.Checkpoint(p);
+        Automations.AddBlock(busLane, 2, 2, 0.5);
+        busLane.Touch();
+        Check(Last() == "Automatización de «Reverb»", "bloque en un bus: " + Last());
+
 
         n += Versions();
         Console.WriteLine($"Pasos y versiones: {n} comprobaciones bien (sin tocar proyectos de verdad).");

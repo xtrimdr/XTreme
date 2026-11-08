@@ -351,9 +351,21 @@ public partial class MainWindow
             if (loaded.Window == window) loaded.Window = null;
             SamplerInFront(trackId, false);
         };
+        ForwardKeyUps(window);
         loaded.Window = window;
         ShowSamplerState(live, loaded);
         window.Show(this);
+    }
+
+    /// <summary>
+    /// An instrument's window (GM, sampler, granular) sends its keys up too (#276): a transport key held is let go only by
+    /// its release (<see cref="transportKeys"/>), so without it the second Space in that window did nothing.
+    /// </summary>
+    void ForwardKeyUps(Window window)
+    {
+        window.AddHandler(KeyUpEvent, OnVirtualKeyUp, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        window.AddHandler(KeyUpEvent, OnTransportKeyUp, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        window.Deactivated += (_, _) => transportKeys.Clear();
     }
 
     /// <summary>While its window is in front, the keyboards play that track.</summary>

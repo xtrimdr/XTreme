@@ -213,6 +213,15 @@ static class AutomationChecks
         var left = cut.Automation![0];
         Say("cerrar un hueco corre lo que sigue", Near(Automations.PositionAt(left, false, 2), 1), $"{Automations.PositionAt(left, false, 2):0.000}");
 
+        // #281: a range deleted on a track cuts its lanes too, leaving a gap; what is left sounds as before
+        var hole = new Track { Automation = [Lane(AutoTarget.Volume, (0, 0), (4, 1))] };
+        var holeLane = hole.Automation![0];
+        double holeAt = Automations.PositionAt(holeLane, false, 3.5), holeBefore = Automations.PositionAt(holeLane, false, 0.5);
+        int holed = Automations.ClearRange(hole, 1, 3);
+        Say("borrar un rango corta los bloques del carril", holed == 1 && holeLane.Blocks is [var hl, var hr] && Near(hl.EndSec, 1) && Near(hr.AtSec, 3)
+            && Near(Automations.PositionAt(holeLane, false, 3.5), holeAt, 1e-6) && Near(Automations.PositionAt(holeLane, false, 0.5), holeBefore, 1e-6),
+            $"{holeLane.Blocks.Count} bloques");
+
         // a block of a second going 0 -> 1, repeated: each lap starts again, and after the last it holds
         var laps = new AutomationLane { Target = AutoTarget.Pan, Blocks = [new() { LengthSec = 1, Points = [new() { Sec = 0, Value = 0 }, new() { Sec = 1, Value = 1 }] }] };
         Automations.Repeat(laps, laps.Blocks[0].Id, 3);

@@ -80,6 +80,15 @@ static class ClipChecks
         left.Clips.Add(new Clip { MediaId = media.Id, AtSec = 12 });
         ClipEditing.RemoveClip(p, original.Id);
         Check(left.Clips.Count == 1 && left.Name == "Base" && p.Media.Count == 1, "quitar un clip no quita otros ni borra medios");
+        // a box selection holds a loop and its passes: removing the source takes the passes, the rest must still go (#281)
+        var source = new Clip { MediaId = media.Id, AtSec = 20 };
+        var pass = new Clip { MediaId = media.Id, AtSec = 30, LoopOf = source.Id };
+        var loose3 = new Clip { MediaId = media.Id, AtSec = 40 };
+        left.Clips.AddRange([source, pass, loose3]);
+        bool removed = true;
+        try { MidiEditing.RemoveMany(p, [source.Id, pass.Id, loose3.Id]); }
+        catch (ArgumentException) { removed = false; }
+        Check(removed && left.Clips.Count == 1, "borrar en grupo un bucle con sus vueltas marcadas borra todo lo marcado");
         ClipEditing.RemoveTrack(p, left.Id);
         ClipEditing.RemoveTrack(p, right.Id);
         string empty = ClipEditing.AddEmpty(p);
@@ -208,6 +217,26 @@ static class ClipChecks
         bool foreign = false;
         try { board.Paste(new Project { Media = [media], Tracks = [new Track(), new Track()] }, null, 0); } catch (ArgumentException) { foreign = true; }
         Check(foreign, "no pega en otro proyecto");
+        // automation blocks boxed with the clips (#281): duplicated after the block they all make, copied and pasted in their own lane
+        var ap = new Project { Media = [media], Tracks = [new Track { Name = "A" }] };
+        var ac = new Clip { MediaId = media.Id, AtSec = 2, TrimEndSec = 6 };
+        ap.Tracks[0].Clips.Add(ac);
+        var alane = new AutomationLane { Target = AutoTarget.Volume };
+        var ablock = new AutomationBlock { AtSec = 4, LengthSec = 10, Points = [new AutomationPoint { Sec = 0, Value = 0.2 }] };
+        alane.Blocks.Add(ablock);
+        ap.Tracks[0].Automation = [alane];
+        List<string> adup = [];
+        try { adup = MidiEditing.DuplicateMany(ap, [ac.Id, ablock.Id]); } catch (Exception) { }
+        Check(adup.Count == 2 && alane.Blocks.Count == 2 && alane.Blocks.Any(b => b.Id == adup[1] && Near(b.AtSec, 16))
+            && Near(ClipEditing.Window(ClipEditing.Find(ap, adup[0]).Clip, media).Start, 14),
+            "duplicar clips con bloques de automatización los corre igual, cada bloque en su carril");
+        List<string> apasted = [];
+        try { apasted = ClipClipboard.Take(ap, [ac.Id, ablock.Id])!.Paste(ap, null, 30); } catch (Exception) { }
+        Check(apasted.Count == 2 && alane.Blocks.Any(b => b.Id == apasted[1] && Near(b.AtSec, 32)),
+            "copiar y pegar clips con bloques pega cada bloque en su carril, a la misma distancia");
+        List<string> aonly = [];
+        try { aonly = ClipClipboard.Take(ap, [ablock.Id])?.Paste(ap, null, 50) ?? []; } catch (Exception) { }
+        Check(aonly.Count == 1 && alane.Blocks.Any(b => b.Id == aonly[0] && Near(b.AtSec, 50)), "copiar solo bloques los pega en el cabezal");
         // delete a range: a clip of the media from 20 s to 30 s (AtSec 20, 10 s long), fades 0.5 / 0.7
         var rp = new Project { Media = [media], Tracks = [new Track { Name = "R" }, new Track { Name = "Otra" }] };
         var rc = new Clip { MediaId = media.Id, AtSec = 20, FadeInSec = 0.5, FadeOutSec = 0.7 };

@@ -306,7 +306,7 @@
           ],
           "notes": [
             "On an audio clip, the repeats follow the original: move or trim it and they are made again. A repeat you edit by itself becomes a clip of its own.",
-            "On a MIDI clip or an automation block, whatever you edit in any pass changes them all."
+            "On a MIDI clip, whatever you edit in any pass changes them all. On an automation block the passes show veiled and can't be edited: the original rules."
           ],
           "see": ["split-copy", "move-trim", "automation"]
         },
@@ -317,12 +317,14 @@
           "keywords": "mark multiple selection rectangle group",
           "intro": "To move, edit or delete several at once.",
           "steps": [
-            "Drag on the empty part of the tracks: everything the rectangle touches is marked.",
-            "**Ctrl+click** on a clip adds or removes it.",
-            "Drag one marked clip by its body and they all move.",
-            "Drag an edge, a fade or the loop of a marked clip and they all change the same way.",
+            "Drag on the empty part of the tracks or of an automation lane: everything the rectangle touches is marked, automation blocks too.",
+            "**Ctrl+click** on a clip or a block adds or removes it.",
+            "Drag a marked block by its top strip and everything marked moves.",
+            "Drag one marked clip by its body and they all move; with Shift a copy of each stays where it was.",
+            "Drag an edge, a fade or the loop of a marked clip or block and they all change the same way.",
+            "Duplicate, copy, cut and paste take everything marked, blocks included: each block goes back to its own lane.",
             "Delete them with {key:delete}.",
-            "{key:selectAll} marks every clip and {key:deselect} clears the selection."
+            "{key:selectAll} marks every clip and block, and {key:deselect} clears the selection."
           ],
           "see": ["delete-range", "split-copy"]
         },
@@ -360,7 +362,7 @@
           ],
           "notes": [
             "A click on a pattern in Patterns or on a sample in the Library also picks it for the pencil and the brush.",
-            "Split, Delete and Listen work on audio and MIDI clips."
+            "They all work on the automation lanes too: Split cuts the block, Erase removes it, Listen plays its track, Range marks a stretch of its track (and deleting a range cuts its lanes too), and the pencil and the brush take a block with a click and lay copies on an empty spot (with no block taken, the click makes one)."
           ],
           "see": ["navigate"]
         },
@@ -378,7 +380,8 @@
             "{key:fit}: see the whole song."
           ],
           "notes": [
-            "Right-click the ruler numbers to choose how the grid is drawn."
+            "Right-click the ruler numbers to choose how the grid is drawn.",
+            "**Return on stop**, in the transport next to the loop: when on, stopping with {key:play} takes the playhead back to where playback started; while it plays, a dashed line marks that point."
           ],
           "see": ["shortcuts"]
         },
@@ -615,6 +618,11 @@
           "notes": [
             "{wheel:wheelZoom} over the mixer changes the channel width, also over a knob or a fader: with that key held no value changes.",
             "**Effects** and **Sends**, at the top, show or hide that section on every strip. Drag the line under a list to make it taller or shorter; a double click fits it to the longest list. Right-click the button: the same fit or the default height.",
+            "**Audio**, **MIDI**, **Folders**, **Buses**, **Separators** and **Empty**, in the header, show or hide each kind of strip. Without folders, their tracks stay in the folder's place. The mixer has two sides: the left one and the right dock, each scrolling on its own. Channels go on the left and buses in the right dock by default; right-click a strip → **Dock** moves it to **Dock left** or **Dock right**. Drag the line between the left side and the right dock to give one more room, and double-click it to reset. Drag a bus anywhere, between the channels too: it stays after the channel on its left.",
+            "**View**: the mixer's title is a drop-down (Mixer · XTreme) that changes its layout. **XTreme**: the free one, the only one with zoom; width, effects, sends and their heights, names and inspector are yours, and stay as you left them when you come back to it. The others are fixed, like FL Studio's: no zoom, and their own sections. **Compact** and **Wide**: strips keep pan, fader and meter, and the selected channel's effects, sends, input and output go in the inspector, at the side. **Compact alt** and **Wide alt**: the same, with names at the bottom. **Console**: every strip has its own effects and sends, no inspector.",
+            "**Inspector** shows the selected channel in a full-height panel: input, output, all its effects, sends and pan. Drag its edge to resize it. Right-click the panel: **Inspector on the left** or **on the right**.",
+            "The three dots over each fader share the height between the lists and the fader; double-click resets it.",
+            "Strip names can go at the bottom: Settings → Appearance → Mixer.",
             "**MONO**, on the master, lets you check the mix in mono.",
             "Right-click a strip: the same actions as on the track header."
           ],
@@ -819,7 +827,7 @@
           "notes": [
             "**PRE** takes the send before the fader: it keeps sounding if you lower the track.",
             "A bus sends to other buses too, with the same **+** under **Sends** in its strip. A bus that would send the sound back to it isn't offered; its output always goes to the Master.",
-            "**Connections**, in the mixer's header, shows the selected channel's active sends under the strips: a line to each bus, with a knob for its level. With a bus selected, the sends that reach it too, fainter. Ropes leave from OUT and arrive at IN, on either side of the selected strip; at the other end, under each knob, IN or OUT too, and the arrow comes up into it. Under each bus the channel doesn't send to yet, **Send** makes that send at once. Drag the band's top edge to make it taller.",
+            "**Connections**, in the mixer's header, shows the selected channel's active sends under the strips: a line to each bus, with a knob for its level. With a bus selected, the sends that reach it too, fainter. Ropes leave from OUT and arrive at IN, on either side of the selected strip; at the other end, under each knob, IN or OUT too, and the arrow comes up into it. Under each bus the channel doesn't send to yet, **Send** makes that send at once. Drag the band's top edge to make it taller. The channel's output (to its folder, a bus or the Master) is drawn apart: a thicker neutral line, without a knob. A selected bus or folder also shows what goes out to it.",
             "When you stop, tails ring on until they fade. To silence them now, click **Cut audio** (the muted speaker in the transport) or press {key:cutAudio}: it also cuts notes left sounding."
           ],
           "see": ["add-fx", "mixer"]
@@ -832,11 +840,12 @@
           "intro": "Makes a control change by itself along the song.",
           "steps": [
             "Right-click the control → **Automate…**, or the track's or folder's menu → **Automation**. In a plugin: click **Automate** in its window's bar and move the parameter.",
-            "A lane appears under the track, the folder's row or the bus's row. Buses have their rows at the end of the timeline; **Show buses in the timeline** (right click on a bus row or on the empty space) shows or hides them. A folder's lanes hide when it folds; **Show automation**, in its menu, shows or hides them.",
+            "A lane appears under the track, the folder's row or the bus's row. A bus with automation has its row at the end of the timeline (its lanes start from its strip's right click in the mixer); **Show buses in the timeline** (right click on a bus row or on the empty space) shows or hides them. A folder's lanes hide when it folds; **Show automation**, in its menu, shows or hides them.",
             "Click adds a point, dragging moves it and double-click deletes it. Shift+drag draws. Right-drag erases the blocks it touches, as with clips.",
             "Drag the circle in the middle of a segment to set its tension: bend it, or change how many stairs, pulses or waves it has. Double-click sets it back to zero.",
             "Right-click a point or a segment → its shape: **Curve**, **Double curve**, **Hold**, **Stairs**, **Smooth stairs**, **Pulse** or **Wave**. A point's is the one of the segment coming into it.",
-            "Drag a block's top right corner to loop it.",
+            "Right-click a point → **Type value…**: type the value in the parameter's units (dB, Hz, ms, %, L/R) and press Enter.",
+            "Drag a block's top right corner to loop it. The passes show veiled and can't be edited: points go in the original.",
             "To delete a lane, click the trash can in its header and confirm."
           ],
           "notes": [
@@ -1455,6 +1464,21 @@
             "On the other side, **Open package…** brings it in as a new project."
           ],
           "see": ["new-project"]
+        },
+        {
+          "id": "live-session",
+          "icon": "E716",
+          "title": "Edit together live",
+          "keywords": "collaborate live session share together network vpn tailscale zerotier invite code link",
+          "intro": "Several people edit the same project at once, each on their own PC, and see the others' changes instantly.",
+          "steps": [
+            "The host opens the project, clicks **Live session** (next to Export) and picks **Create session**.",
+            "They pass the **code**, the **link** or the **IP** on (Copy code / Copy link / Copy IP).",
+            "Each guest clicks **Live session → Join**, pastes the code and clicks **Join**: they get a copy of the project with its audio, kept in their projects.",
+            "Everyone edits everything; each one listens on their own (Play, solos and the audio interface are each one's). What's recorded reaches the others when the take ends.",
+            "Everyone needs the same XTreme version and the same network, or a VPN such as Tailscale or ZeroTier. While it lasts, the button says **Live** and how many are in; from there, **End session** (host) or **Leave session** (guest), which keeps your copy as it is."
+          ],
+          "see": ["share-project"]
         }
       ]
     },
@@ -1478,6 +1502,7 @@
           ],
           "notes": [
             "**Keyboard shortcuts** has the full list, and any of them can be changed.",
+            "The search box above the Settings tabs (**Ctrl+F**) finds any option or shortcut by name: click a result to go there.",
             "In **Key layout**, choose the keys of Cubase, Logic Pro, FL Studio, Reaper or Studio Pro. Your changes are kept in each one. What that DAW doesn't have keeps XTreme's key.",
             "With a plugin's window in front, keys go to XTreme: transport, shortcuts and the virtual keyboard (except Alt+Tab and Alt+F4). With **Keys to plugin** on in its window's bar, every key goes to the plugin while its window is in front, and the virtual keyboard doesn't play. It applies to every plugin window."
           ],
@@ -1494,7 +1519,7 @@
             "The layout button {icon:E80A} switches between **Classic** and **Vertical**.",
             "The two panel buttons hide the sides.",
             "{key:fullScreen} goes full screen.",
-            "In **Settings → Appearance** pick the style of the window's panels (flat, raised or raised with a gradient), of knobs, faders, meters and waveforms, how each track's color shows in the timeline (soft, solid, wave-only or title-bar clips; the header with an edge, a band, tinted, filled or no color, a tinted lane and the selection in its color), how **folders** look (frame, a block of their color or a line at the side), the **mixer strips** (cards or joined; the channel color as an edge, a band, tinted, a filled header or none) and in the inspector (rule and tint, rule only, filled or no color; a stripe along the edge, tinted sections and section icons in its color), the interface's font, the numbers' font (values, times and the clock; also a 14-segment digital one and Orbitron) the **meter colors** (**Default**, or **Custom**: pick Low, Hot and Clip, or hit **Surprise me** to draw three that go together; they apply to every meter and look, and the thresholds stay the same) and the size, in px (also with **Ctrl +** and **Ctrl −**; **Ctrl 0** goes back to 100 %). **Reset**, above each one, takes it back to the factory setting."
+            "In **Settings → Appearance** pick the style of the window's panels (flat, raised or raised with a gradient), of knobs, faders, meters and waveforms, how each track's color shows in the timeline (soft, solid, wave-only or title-bar clips; the header with an edge, a band, tinted, filled or no color, a tinted lane and the selection in its color), how **folders** look (frame, a block of their color or a line at the side), the **mixer strips** (cards or joined; the channel color as an edge, a band, tinted, a filled header or none) and in the inspector (rule and tint, rule only, filled or no color; a stripe along the edge, tinted sections and section icons in its color), the interface's font, the numbers' font (values, times and the clock; also a 14-segment digital one and Orbitron) the **meter colors** (**Default**, or **Custom**: pick Low, Hot and Clip, or hit **Surprise me** to draw three that go together; they apply to every meter and look, and the thresholds stay the same) and the size, in px (also with **Ctrl +** and **Ctrl −**; **Ctrl 0** goes back to 100 %), and the design of the timeline and mixer **separators** (double line, single line, band, label or groove). **Reset**, above each one, takes it back to the factory setting. The options come in groups (General, Controls, Timeline, Inspector, Mixer, Separators): click a title to open or fold it, and it stays as you left it."
           ],
           "settings": "view"
         },

@@ -21,6 +21,8 @@
   turns. Refusals go out as a denial with the reason, never as a hook error, and a bug in this script lets the tool
   run and writes .claude\bloqueos\errores.log.
     soltar   Stop / SubagentStop: the turn ended, so its changes are done: lets go of everything it held.
+    espera   Notification (#278): a permission prompt or a question waits for the person; u-<session hash>.json tells
+             the bench's map (a turn that ended it reads from the transcript itself).
 
   By hand: tools\bloqueos.ps1 -Lista shows who holds what; tools\bloqueos.ps1 -Limpiar drops every lock.
 
@@ -64,6 +66,7 @@ $KeepSec = 300      # a place in line is kept this long after the last try
 $ActiveSec = 5      # someone who tried this recently is still waiting in the hook right now
 $ReserveSec = 120   # a file let go waits this long for the first in line, even if it's off doing something else
 $StaleSec = 1800    # a lock nobody touched in 30 min belongs to a session that's gone
+$EditLagSec = 600   # #299: an edit's write can come this long after its PreToolUse (a permission prompt in between)
 $AlertKeepSec = 1800  # a read alert stays this long, so the bench can still show it
 $LogKeepSec = 86400   # the conversation in the bench (#269, avisos.jsonl) keeps a day
 $ChangedSec = 7200  # a change mark this old no longer makes its author someone to warn
@@ -84,6 +87,7 @@ $BenchFiles = @(
     '^tools\\probar\.ps1$'
     '^src\\XtremeDaw\.App\\LockLight\.cs$'
     '^src\\XtremeDaw\.App\\AgentAlert\.cs$'
+    '^src\\XtremeDaw\.App\\AgentTranscript\.cs$'
 )
 
 function Now { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
@@ -179,9 +183,19 @@ function Mine($lock, $me) {
 
 # Who changed each file last, by hand or through a command (e-<path hash>.json), so a command never takes what someone
 # else changed while it ran.
-function MarkChanged([string]$full, $me) {
+# An edit marks it twice (#299): pending before the write and again after it, so a command that started in between
+# never takes that write as its own.
+function MarkChanged([string]$full, $me, [bool]$pending = $false) {
     $file = Join-Path $Dir "e-$(Hash $full).json"
-    Move-Item -Force (WriteJson $file @{ owner = $me.owner; session = $me.session; agent = $me.agent; at = (Now) }) $file
+    Move-Item -Force (WriteJson $file @{ owner = $me.owner; session = $me.session; agent = $me.agent; at = (Now); pending = $pending }) $file
+}
+
+# The edit's full path, or '' when it's outside the repository.
+function EditPath($in) {
+    $p = if ($in.tool_input.file_path) { $in.tool_input.file_path } else { $in.tool_input.notebook_path }
+    if (-not $p) { return '' }
+    $full = [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $in.cwd $p }))
+    if ($full.StartsWith($Root + '\', [StringComparison]::OrdinalIgnoreCase)) { $full } else { '' }
 }
 
 # When each session's last command ran (c-<owner hash>.json; end = 0 while it runs).
@@ -648,15 +662,13 @@ try {
 
     switch ($Evento) {
         'editar' {
-            $p = if ($in.tool_input.file_path) { $in.tool_input.file_path } else { $in.tool_input.notebook_path }
-            if (-not $p) { exit 0 }
-            $full = [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $in.cwd $p }))
-            if (-not $full.StartsWith($Root + '\', [StringComparison]::OrdinalIgnoreCase)) { exit 0 }
+            $full = EditPath $in
+            if (-not $full) { exit 0 }
             $r = Take $full $me $true
             if ($r) { Refuse $r }
             ClearLight $me
             AddDomain $me (Domain $full)
-            MarkChanged $full $me
+            MarkChanged $full $me $true
             exit 0
         }
         'consola' {
@@ -710,8 +722,21 @@ try {
             foreach ($n in $nums) { & $xtlab lista tomar $n --archivo $list *> $null }
             exit 0
         }
+        'espera' {
+            # Notification (#278): Claude waits for the person. A permission prompt leaves nothing in the transcript,
+            # so it is written down here for the bench's map (AgentTranscript.Waiting); any newer line there clears it.
+            $kind = switch ([string]$in.notification_type) { 'permission_prompt' { 'permiso' } 'elicitation_dialog' { 'pregunta' } default { '' } }
+            if (-not $kind -or -not $me.session) { exit 0 }
+            New-Item -ItemType Directory -Force $Dir | Out-Null
+            $file = Join-Path $Dir "u-$(Hash $me.session).json"
+            Move-Item -Force (WriteJson $file @{ session = $me.session; kind = $kind; at = (Now) }) $file
+            exit 0
+        }
         'avisos' {
-            # PostToolUse of an edit (#263): the alerts that came meanwhile
+            # PostToolUse of an edit (#263): the alerts that came meanwhile. #299: the write is done now; its time is
+            # what a command running meanwhile compares against.
+            $full = EditPath $in
+            if ($full) { $null = Take $full $me $false; MarkChanged $full $me }
             Post (Inbox $me)
             exit 0
         }
@@ -742,7 +767,8 @@ try {
                 if (Foreign $me $p) { continue }
                 # Someone else changed it, by hand or by a command, while this one ran: the change is theirs.
                 $e = ReadJson (Join-Path $Dir "e-$(Hash $p).json")
-                if ($e -and -not (Mine $e $me) -and [long]$e.at -ge $start) { continue }
+                # #299: an edit still under way (its PostToolUse not run yet) is theirs too.
+                if ($e -and -not (Mine $e $me) -and ([long]$e.at -ge $start -or ($e.pending -and [long]$e.at -ge $start - $EditLagSec))) { continue }
                 $held = Take $p $me $false
                 if (-not $held) { MarkChanged $p $me; continue }
                 # The holder edited it, or ran a command of its own, while this one ran: most likely its change.
@@ -793,7 +819,7 @@ try {
                 if (-not $m -or ([long]$m.read -and (Now) - [long]$m.read -gt $AlertKeepSec)) { Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue }
             }
             TrimLog
-            foreach ($pat in 's-*.json', 'e-*.json', 'c-*.json', 'p-*.json', 'w-*.json', 't-*.json', 'm-*.json', 'k-*.json') {
+            foreach ($pat in 's-*.json', 'e-*.json', 'c-*.json', 'p-*.json', 'w-*.json', 't-*.json', 'm-*.json', 'k-*.json', 'u-*.json') {
                 Get-ChildItem $Dir -Filter $pat -ErrorAction SilentlyContinue |
                     Where-Object { $_.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddHours(-2) } |
                     # a session working longer than that keeps its process written down: the bench tells by it that its tickets are in progress (#173)

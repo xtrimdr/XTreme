@@ -48,13 +48,14 @@ public partial class MainWindow
             if (at >= 0) l.Blocks[at] = block;
             else l.Blocks.Add(block);
         });
-        Timeline.AutomationBlocksErased += (t, id, gone) => _ = LaneEdit(t, id, l => l.Blocks.RemoveAll(b => gone.Contains(b.Id)));
         Timeline.AutomationBlockCreated +=(t, id, sec) => _ = LaneEdit(t, id, l => Automations.AddBlock(l, sec, BarSec(sec), Automations.PositionAt(l, Automations.Stepped(t, l.Target), sec)));
         Timeline.AutomationToggled += (t, id) => _ = LaneEdit(t, id, l => l.On = !l.On);
         Timeline.AutomationFoldRequested += FoldLanes;
         Timeline.AutomationContextRequested += ShowLaneMenu;
         Timeline.AutomationShapeRequested += ShowShapeMenu;
         Timeline.AutomationRemoveRequested += AskRemoveLane;
+        Timeline.AutomationSplitRequested += (t, laneId, blockId, sec) => _ = SplitBlock(t, laneId, blockId, sec);
+        Timeline.AutomationPainted += (t, laneId, brush, starts) => _ = PaintBlocks(t, laneId, brush, starts);
         Timeline.AutomationAsked += (t, target, point) =>
         {
             var list = new List<object> { AutomateItem(t, target) };
@@ -63,6 +64,69 @@ public partial class MainWindow
     }
 
     /// <summary>The project's track, folder or bus by id (the objects change with every undo).</summary>
+    /// <summary>Every lane of the project: the tracks', the folders' and the buses'.</summary>
+    static IEnumerable<AutomationLane> LanesIn(Project p) =>
+        p.Tracks.Cast<IAutomated>().Concat(p.Folders).Concat(p.Settings.Buses).SelectMany(o => o.Automation ?? []);
+
+    /// <summary>The ids of every automation block, for Seleccionar todo (#281).</summary>
+    static IEnumerable<string> AllBlockIds(Project p) => LanesIn(p).SelectMany(l => l.Blocks.Select(b => b.Id));
+
+    /// <summary>Boxed blocks dragged with the clips (#281): each one to its new start, in its own lane.</summary>
+    static void MoveBlocks(Project p, IReadOnlyList<(string Id, double AtSec)> moves)
+    {
+        if (moves.Count == 0) return;
+        foreach (var lane in LanesIn(p))
+        {
+            bool touched = false;
+            foreach (var b in lane.Blocks)
+                foreach (var (id, at) in moves)
+                    if (b.Id == id) { b.AtSec = Math.Max(0, at); touched = true; }
+            if (touched) lane.Touch();
+        }
+    }
+
+    /// <summary>
+    /// Shift+drag of a box (#281): a copy of each carried block stays where it was, in its lane, as a clip's does
+    /// (<see cref="MidiEditing.LeaveCopies"/>). Gives back the ids that are not blocks, the clips' to copy.
+    /// </summary>
+    static List<string> LeaveBlockCopies(Project p, List<string> ids)
+    {
+        if (ids.Count == 0) return ids;
+        var rest = new HashSet<string>(ids);
+        foreach (var lane in LanesIn(p))
+        {
+            bool touched = false;
+            for (int i = lane.Blocks.Count - 1; i >= 0; i--)
+            {
+                var b = lane.Blocks[i];
+                if (!rest.Remove(b.Id)) continue;
+                lane.Blocks.Insert(i, b.Copy(b.AtSec));
+                touched = true;
+            }
+            if (touched) lane.Touch();
+        }
+        return [.. ids.Where(rest.Contains)];
+    }
+
+    /// <summary>Boxed blocks edited with the clips (#281): each one in place of the block with its id.</summary>
+    static void ReplaceBlocks(Project p, IReadOnlyList<AutomationBlock> blocks)
+    {
+        foreach (var b in blocks)
+            if (Automations.FindBlock(p, b.Id) is var (lane, old))
+            {
+                lane.Blocks[lane.Blocks.IndexOf(old)] = b;
+                lane.Touch();
+            }
+    }
+
+    /// <summary>Boxed blocks deleted with the clips (#281).</summary>
+    static void RemoveBlocks(Project p, IReadOnlyCollection<string> ids)
+    {
+        if (ids.Count == 0) return;
+        foreach (var lane in LanesIn(p))
+            if (lane.Blocks.RemoveAll(b => ids.Contains(b.Id)) > 0) lane.Touch();
+    }
+
     static IAutomated? OwnerIn(Project p, string id) => (IAutomated?)p.Tracks.Find(t => t.Id == id) ?? (IAutomated?)p.Folders.Find(f => f.Id == id) ?? p.Settings.Buses.Find(b => b.Id == id);
 
     /// <summary>A track's live side (its instrument's process); null for a folder.</summary>
@@ -267,12 +331,14 @@ public partial class MainWindow
             string blockId = block.Id;
             if (point >= 0)
             {
+                list.Add(PointValueItem(t, lane, block, point, enabled));
                 list.Add(MenuAction(Loc.T("auto.point.remove"), () => LaneEdit(t, id, l =>
                 {
                     if (Automations.BlockById(l, blockId) is { Points.Count: > 1 } b && point < b.Points.Count) b.Points.RemoveAt(point);
                 }), enabled: enabled && block.Points.Count > 1));
                 list.Add(new Separator());
             }
+            list.Add(MenuAction(Loc.T("menu.cut"), () => CutBlock(t, id, block), Shortcuts.Label("cut"), enabled));
             list.Add(MenuAction(Loc.T("auto.block.copy"), () => { CopyBlock(block); return Task.CompletedTask; }, Shortcuts.Label("copy")));
             list.Add(MenuAction(Loc.T("menu.duplicate"), () => LaneEdit(t, id, l => Automations.Repeat(l, blockId, 1)), Shortcuts.Label("duplicate"), enabled));
             var repeats = new List<object>();
@@ -285,8 +351,11 @@ public partial class MainWindow
                 return Task.CompletedTask;
             }, enabled: enabled));
             list.Add(new MenuItem { Header = Loc.T("auto.block.repeat"), ItemsSource = repeats, IsEnabled = enabled });
-            list.Add(MenuAction(Loc.T("auto.block.split"), () => LaneEdit(t, id, l => Automations.Split(l, blockId, sec, stepped)),
-                enabled: enabled && sec > block.AtSec + AutomationBlock.MinSec && sec < block.EndSec - AutomationBlock.MinSec));
+            list.Add(MenuAction(Loc.T("auto.block.split"), () => SplitBlock(t, id, blockId, sec),
+                enabled: enabled && Automations.CanSplit(block, sec)));
+            double grid = Timeline.SnapSec;
+            list.Add(MenuAction(Loc.T("menu.alignGrid"), () => AlignBlock(t, id, blockId), Shortcuts.Label("alignGrid"), enabled && grid > 0,
+                tip: grid > 0 ? Loc.T("menu.alignGrid.tip", SnapChoices.Label(Timeline.SnapMode)) : Loc.T("menu.alignGrid.off")));
             list.Add(MenuAction(Loc.T("auto.flat"), () => LaneEdit(t, id, l =>
             {
                 if (Automations.BlockById(l, blockId) is { } b) b.Points = [new AutomationPoint { Sec = 0, Value = b.PositionAt(sec - b.AtSec, stepped) }];
@@ -346,10 +415,10 @@ public partial class MainWindow
     /// Studio), each with how it looks; a right click on a shape tries it and leaves the menu open. Picking another shape
     /// starts it at tension 0 (the steps and cycles of one are not the bend of another).
     /// </summary>
-    void ShowShapeMenu(IAutomated t, AutomationLane lane, AutomationBlock block, int stretch, bool onPoint, Point at)
+    void ShowShapeMenu(IAutomated t, AutomationLane lane, AutomationBlock block, int stretch, int point, Point at)
     {
         if (store == null || restoring) return;
-        bool enabled = !store.ReadOnly;
+        bool enabled = !store.ReadOnly, onPoint = point >= 0;
         string trackId = t.Id, id = lane.Id, blockId = block.Id;
         // looked up at each click: the menu can stay open while the stretch changes
         AutomationPoint? Now() => store != null && OwnerIn(store.Project, trackId) is { } tr && Automations.ById(tr, id) is { } l
@@ -358,7 +427,13 @@ public partial class MainWindow
         {
             if (Automations.BlockById(l, blockId) is { } b && stretch + 1 < b.Points.Count) change(b, b.Points[stretch]);
         });
-        var list = new List<object> { new MenuItem { Header = Loc.T(onPoint ? "auto.shape.point" : "auto.shape.stretch"), IsEnabled = false, FontSize = 11 } };
+        var list = new List<object>();
+        if (onPoint)
+        {
+            list.Add(PointValueItem(t, lane, block, point, enabled));
+            list.Add(new Separator());
+        }
+        list.Add(new MenuItem { Header = Loc.T(onPoint ? "auto.shape.point" : "auto.shape.stretch"), IsEnabled = false, FontSize = 11 });
         var refresh = new List<Action>();
         foreach (var shape in Enum.GetValues<AutoShape>())
             list.Add(ShapeItem(shape, () => Now()?.Shape == shape, () => _ = Edit((_, p) =>
@@ -374,6 +449,112 @@ public partial class MainWindow
         }), enabled: enabled && block.Points.Count > 2, tip: Loc.T("auto.shape.block.tip")));
         OpenTimelineMenu(Popup(list, 220), at, MenuHeight(list));
     }
+
+    /// <summary>"Escribir valor…" on a point (#296): its value by keyboard, in the parameter's own units.</summary>
+    MenuItem PointValueItem(IAutomated t, AutomationLane lane, AutomationBlock block, int point, bool enabled) =>
+        MenuAction(Loc.T("auto.point.value"), () =>
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => AskPointValue(t, lane, block, point));
+            return Task.CompletedTask;
+        }, enabled: enabled && point < block.Points.Count);
+
+    /// <summary>A box with the point's value as its lane reads it; Enter sets what was typed, Esc leaves it.</summary>
+    void AskPointValue(IAutomated t, AutomationLane lane, AutomationBlock block, int point)
+    {
+        if (point >= block.Points.Count) return;
+        string id = lane.Id, blockId = block.Id;
+        var box = new TextBox { Classes = { "field", "mono" }, Text = LaneValue(t, lane, block.Points[point].Value), Width = 160 };
+        var flyout = new Flyout
+        {
+            Content = new StackPanel { Spacing = 6, Children = { new TextBlock { Classes = { "dim" }, Text = LaneName(t, lane) }, box } },
+            Placement = PlacementMode.Pointer,
+        };
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) { e.Handled = true; flyout.Hide(); return; }
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            flyout.Hide();
+            if (PositionOf(t, lane, box.Text ?? "") is not { } k)
+            {
+                Toast(Loc.T("auto.point.value.bad", box.Text ?? ""));
+                return;
+            }
+            _ = LaneEdit(t, id, l =>
+            {
+                if (Automations.BlockById(l, blockId) is { } b && point < b.Points.Count) b.Points[point].Value = k;
+            });
+        };
+        flyout.ShowAt(Timeline, true);
+        box.SelectAll();
+        box.Focus();
+    }
+
+    /// <summary>
+    /// What was typed as a position (0..1) of the lane, or null: a number in the units its values show (dB, Hz with "k",
+    /// ms, %, L/R for pan), or on/off for a switch. The position is the one whose reading comes nearest, so any curve works.
+    /// </summary>
+    double? PositionOf(IAutomated t, AutomationLane l, string text)
+    {
+        string s = text.Trim().ToLowerInvariant();
+        if (s.Length == 0) return null;
+        if (Automations.Stepped(t, l.Target))
+        {
+            string on = LaneValue(t, l, 1).ToLowerInvariant(), off = LaneValue(t, l, 0).ToLowerInvariant();
+            if (s == on || s is "on" or "1" or "si" or "sí" or "yes") return 1;
+            if (s == off || s is "off" or "0" or "no") return 0;
+            return null;
+        }
+        bool pan = l.Target == AutoTarget.Pan || AutoTarget.SamplerOf(l.Target) == SamplerKnob.Pan || AutoTarget.GranularOf(l.Target) == GranularKnob.Pan;
+        if (pan && (s == "c" || s == LaneValue(t, l, 0.5).ToLowerInvariant() || s.StartsWith(Loc.T("value.pan.center").ToLowerInvariant()))) return 0.5;
+        if (l.Target == AutoTarget.Volume && (s.Contains('∞') || s.Contains("inf"))) return 0;
+        var m = System.Text.RegularExpressions.Regex.Match(s, @"[-+]?\d+(?:[.,]\d+)?|[-+]?[.,]\d+");
+        if (!m.Success || !double.TryParse(m.Value.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v))
+        {
+            // no number: a reading by its name (an effect's mode, "Apagado")
+            for (int i = 0; i <= NamedSamples; i++)
+                if (LaneValue(t, l, i / (double)NamedSamples).Trim().ToLowerInvariant() == s) return Math.Round(i / (double)NamedSamples, 4);
+            return null;
+        }
+        string unit = s[(m.Index + m.Length)..].Trim();
+        // a pan's side: L (or I, izquierda) to the left, R (or D, derecha) to the right, before or after the number
+        if (pan && (s.StartsWith('l') || s.StartsWith('i') || unit.StartsWith('l') || unit.StartsWith('i'))) v = -Math.Abs(v);
+        Func<double, double> reading;
+        if (l.Target == AutoTarget.Volume) reading = k => 20 * Math.Log10(Math.Max(1e-9, Fader.ToVol(k)));
+        else if (pan) reading = k => (k * 2 - 1) * 100;
+        else if (AutoTarget.SamplerOf(l.Target) is { } knob)
+        {
+            if (knob == SamplerKnob.Cutoff && unit.StartsWith('k')) v *= 1000;
+            reading = knob is SamplerKnob.Cutoff or SamplerKnob.Gain or SamplerKnob.LfoPitch or SamplerKnob.LfoFilter
+                ? k => SamplerKnobs.Value(knob, k) : k => SamplerKnobs.Value(knob, k) * 100;
+        }
+        else if (AutoTarget.GranularOf(l.Target) is { } grain)
+        {
+            if (grain is GranularKnob.Size or GranularKnob.Spray && unit.StartsWith("ms")) v /= 1000;
+            reading = grain is GranularKnob.Density or GranularKnob.Size or GranularKnob.Spray or GranularKnob.Gain
+                ? k => GranularKnobs.Value(grain, k) : k => GranularKnobs.Value(grain, k) * 100;
+        }
+        else if (Automations.FxParamOf(t.AutoSlots, l.Target) is { } f)
+        {
+            var param = f.Param;
+            if (param.Unit == FxUnit.Hz && unit.StartsWith('k')) v *= 1000;
+            if (param.Unit == FxUnit.Ms && (unit.StartsWith('µ') || unit.StartsWith("us"))) v /= 1000;
+            reading = param.Unit == FxUnit.Percent ? k => param.FromKnob(k) * 100 : k => param.FromKnob(k);
+        }
+        else reading = k => k * 100;
+        // the nearest reading over the whole travel: steps, logs and squares alike
+        const int Samples = 10000;
+        double best = 0, gap = double.MaxValue;
+        for (int i = 0; i <= Samples; i++)
+        {
+            double k = i / (double)Samples, d = Math.Abs(reading(k) - v);
+            if (d < gap) (best, gap) = (k, d);
+        }
+        return Math.Round(best, 4);
+    }
+
+    /// <summary>Positions looked at for a reading typed by its name.</summary>
+    const int NamedSamples = 200;
 
     /// <summary>A shape's entry: its check, a drawing of how it goes up, and its name.</summary>
     static MenuItem ShapeItem(AutoShape shape, Func<bool> isOn, Action apply, List<Action> refresh, bool enabled)
@@ -448,15 +629,102 @@ public partial class MainWindow
     bool BlockShortcut(string action)
     {
         if (store is not { ReadOnly: false } || Timeline.SelectedBlock is not { } s) return false;
+        // with several boxed (#281), the keys act on all of them, not on this block alone
+        if (Timeline.BoxedIds.Count > 1) return false;
         string lane = s.Lane.Id, id = s.Block.Id;
         switch (action)
         {
             case "duplicate": _ = LaneEdit(s.Owner, lane, l => Automations.Repeat(l, id, 1)); return true;
             case "delete": _ = LaneEdit(s.Owner, lane, l => l.Blocks.RemoveAll(b => b.Id == id)); return true;
             case "copy": CopyBlock(s.Block); return true;
+            case "cut": _ = CutBlock(s.Owner, lane, s.Block); return true;
+            case "alignGrid": _ = AlignBlock(s.Owner, lane, id); return true;
             case "paste" when blockClipboard != null: _ = PasteBlock(s.Owner, lane, engine.PositionSec); return true;
             default: return false;
         }
+    }
+
+    /// <summary>Ctrl+X on a block (#281, as on a clip): copied, then taken out (one step to undo).</summary>
+    Task CutBlock(IAutomated t, string laneId, AutomationBlock block)
+    {
+        CopyBlock(block);
+        string id = block.Id;
+        return LaneEdit(t, laneId, l => l.Blocks.RemoveAll(b => b.Id == id));
+    }
+
+    /// <summary>"Alinear a la grilla" on a block (#281, as on a clip): its start on the nearest line of the magnet.</summary>
+    Task AlignBlock(IAutomated t, string laneId, string id)
+    {
+        var grid = Timeline.SnapLines;
+        if (grid.Step <= 0) { Toast(Loc.T("menu.alignGrid.off")); return Task.CompletedTask; }
+        return LaneEdit(t, laneId, l => Automations.AlignToGrid(l, id, grid));
+    }
+
+    /// <summary>Dividir on a block (#281, as on a clip): cut where it was clicked, the right piece selected.</summary>
+    async Task SplitBlock(IAutomated t, string laneId, string blockId, double sec)
+    {
+        if (store is not { ReadOnly: false } || OwnerIn(store.Project, t.Id) is not { } o || Automations.ById(o, laneId) is not { } lane
+            || Automations.BlockById(lane, blockId) is not { } block) return;
+        if (!Automations.CanSplit(block, sec)) { Toast(Loc.T("split.edge")); return; }
+        bool stepped = Automations.Stepped(o, lane.Target);
+        string? right = null;
+        await LaneEdit(t, laneId, l => right = Automations.Split(l, blockId, sec, stepped));
+        Timeline.SelectBlock(right);
+    }
+
+    /// <summary>
+    /// Alt+X on blocks (#281, as on the clip under the playhead): the selected block, or every boxed one, the playhead
+    /// crosses is cut there; the right piece of the last is selected. False when no block is picked.
+    /// </summary>
+    async Task<bool> SplitBlocksAtPlayhead()
+    {
+        if (store is not { ReadOnly: false } || Timeline.SelectedBlock is not { } picked) return false;
+        double at = engine.PositionSec;
+        var ids = Timeline.BoxedBlockIds.Count > 0 ? Timeline.BoxedBlockIds.ToHashSet() : [picked.Block.Id];
+        string? right = null;
+        int cut = 0;
+        await EditTimeline(p =>
+        {
+            foreach (var (owner, lane) in Automations.Lanes(p))
+            {
+                bool stepped = Automations.Stepped(owner, lane.Target);
+                foreach (var b in lane.Blocks.ToList())
+                    if (ids.Contains(b.Id) && Automations.CanSplit(b, at) && Automations.Split(lane, b.Id, at, stepped) is { } r)
+                    {
+                        right = r;
+                        cut++;
+                    }
+            }
+            return picked.Owner.Id;
+        }, null);
+        if (cut == 0) Toast(Loc.T("timeline.split.nowhere"));
+        else Timeline.SelectBlock(right);
+        return true;
+    }
+
+    /// <summary>
+    /// Lápiz and Pincel on a lane (#281): a copy of the brush block at each start, one step to undo. A copy that would land
+    /// on a block already there is left out, as the pencil does with clips.
+    /// </summary>
+    async Task PaintBlocks(IAutomated t, string laneId, AutomationBlock brush, IReadOnlyList<double> starts)
+    {
+        if (store is not { ReadOnly: false } || OwnerIn(store.Project, t.Id) is not { } o || Automations.ById(o, laneId) is not { } lane) return;
+        bool stepped = Automations.Stepped(o, lane.Target);
+        var free = starts.Where(at => !lane.Blocks.Any(b => b.AtSec < at + brush.LengthSec - 1e-9 && b.EndSec > at + 1e-9)).ToList();
+        if (free.Count == 0) { Toast(Loc.T("pencil.full")); return; }
+        string? last = null;
+        await LaneEdit(t, laneId, l =>
+        {
+            foreach (double at in free)
+            {
+                var copy = brush.Copy(at);
+                // a copy into an on/off or stepped parameter takes whole values, as a point drawn there would
+                if (stepped) foreach (var pt in copy.Points) pt.Value = Math.Round(pt.Value);
+                l.Blocks.Add(copy);
+                last = copy.Id;
+            }
+        });
+        Timeline.SelectBlock(last);
     }
 
     /// <summary>

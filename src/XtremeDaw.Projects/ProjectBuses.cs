@@ -136,10 +136,26 @@ public static class ProjectBuses
     /// <summary>
     /// Whether <paramref name="from"/> can send its sound to the bus <paramref name="to"/>: the bus exists and, when
     /// <paramref name="from"/> is a bus too (#264: a bus sends to other buses like a track does), it isn't itself and
-    /// <paramref name="to"/>'s sound doesn't already come back to it, so no loop can close.
+    /// <paramref name="to"/>'s sound doesn't already come back to it, so no loop can close; nor the bus its output already
+    /// goes to (#301: a track that goes out to a bus has no send to that same bus).
     /// </summary>
     public static bool CanFeed(Project p, IRouted from, string to) =>
-        p.Settings.Buses.Exists(b => b.Id == to) && (from is not Bus bus || bus.Id != to && !Reaches(p, to, bus.Id));
+        p.Settings.Buses.Exists(b => b.Id == to) && OutputOf(p, from) != to && (from is not Bus bus || bus.Id != to && !Reaches(p, to, bus.Id));
+
+    /// <summary>
+    /// The bus <paramref name="r"/>'s output really goes to: a bus's goes to the master (what a file says is dropped by
+    /// <see cref="Normalize"/>), a track in a folder goes to its folder, whatever its channel says.
+    /// </summary>
+    static string? OutputOf(Project p, IRouted r) =>
+        r is Bus || r is Channel ch && p.Tracks.Find(t => t.Channel == ch) is { FolderId: not null } ? null : r.Output;
+
+    /// <summary>Takes the send to <paramref name="r"/>'s output bus out of its list (off, its level kept): that bus already gets all its sound.</summary>
+    static void HideSendToOutput(Project p, IRouted r)
+    {
+        if (OutputOf(p, r) is not { } o || r.Sends.Find(s => s.BusId == o) is not { } s) return;
+        s.Hidden = true;
+        s.On = false;
+    }
 
     /// <summary>
     /// Whether <paramref name="r"/>'s output can go to the bus <paramref name="to"/>: as <see cref="CanFeed"/>, but a
@@ -168,6 +184,7 @@ public static class ProjectBuses
     {
         if (r.Output == busId || busId != null && !CanOutput(p, r, busId)) return false;
         r.Output = busId;
+        HideSendToOutput(p, r);
         return true;
     }
 
@@ -274,6 +291,7 @@ public static class ProjectBuses
             var seen = new HashSet<string>();
             r.Sends.RemoveAll(s => s == null || !ids.Contains(s.BusId) || !seen.Add(s.BusId));
             foreach (var s in r.Sends) s.Level = double.IsFinite(s.Level) ? Math.Clamp(s.Level, 0, 1) : 0;
+            HideSendToOutput(p, r);
         }
         // a bus's output goes to the master only (see the summary); its sends stay unless one goes to itself or closes a
         // loop (a hand-edited file): they are put back one by one, in the list's order, and the one that would close it is dropped

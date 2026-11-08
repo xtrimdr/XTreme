@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="using:XtremeDaw.App"
         x:Class="XtremeDaw.App.Dialogs.TestListWindow"
@@ -6,7 +6,7 @@
         ShowInTaskbar="True" ShowActivated="False" WindowStartupLocation="Manual"
         Background="{StaticResource App}" ExtendClientAreaToDecorationsHint="True" ExtendClientAreaTitleBarHeightHint="44">
 
-  <Grid x:Name="Shell" RowDefinitions="44,*,Auto">
+  <Grid x:Name="Shell" RowDefinitions="44,*,Auto,Auto">
     <!-- The accent line under the title gives the window its own face next to the app. -->
     <Border x:Name="Header" Background="{StaticResource Panel}" BorderBrush="{StaticResource Accent40}" BorderThickness="0,0,0,2">
       <Grid ColumnDefinitions="*,Auto">
@@ -38,6 +38,13 @@
           </Button>
           <Button x:Name="OpenAppButton" Classes="ghost" IsVisible="False" AutomationProperties.Name="{loc:T test.list.openapp}">
             <TextBlock Classes="icon" Text="&#xE768;" FontSize="13" />
+          </Button>
+          <!-- The Agentes window (#273): the map of the open sessions and their files, and their conversation; how many are open. -->
+          <Button x:Name="AgentsButton" Classes="ghost" IsVisible="False" AutomationProperties.Name="{loc:T test.list.agents.title}">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Classes="icon" Text="&#xE716;" FontSize="13" VerticalAlignment="Center" />
+              <TextBlock x:Name="AgentsCount" Classes="mono" FontSize="11" VerticalAlignment="Center" IsVisible="False" />
+            </StackPanel>
           </Button>
           <Button x:Name="ClaudeButton" Classes="ghost" IsVisible="False" AutomationProperties.Name="{loc:T test.list.claude}">
             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -98,7 +105,18 @@
     </Grid>
     </LayoutTransformControl>
 
-    <Border Grid.Row="2" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,8">
+    <!-- Agentes, big and always at hand (asked by the user, #278): how many sessions are open and how many wait for you. -->
+    <Button x:Name="AgentsBigButton" Grid.Row="2" Classes="btn primary" IsVisible="False" Height="48" Margin="10,8,10,8"
+            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+            AutomationProperties.Name="{loc:T test.list.agents.title}">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Classes="icon" Text="&#xE716;" FontSize="18" VerticalAlignment="Center" />
+        <TextBlock Text="{loc:T test.list.agents.title}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <TextBlock x:Name="AgentsBigText" Classes="mono" FontSize="13" VerticalAlignment="Center" />
+      </StackPanel>
+    </Button>
+
+    <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,8">
       <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
         <WrapPanel x:Name="Totals" VerticalAlignment="Center" ItemSpacing="12" />
         <TextBlock x:Name="ErrorText" Grid.Column="1" Classes="notice" VerticalAlignment="Center" Margin="10,0" TextWrapping="Wrap" />

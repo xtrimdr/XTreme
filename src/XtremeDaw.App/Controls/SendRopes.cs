@@ -23,6 +23,8 @@ namespace XtremeDaw.App.Controls;
 /// ones that reach it arrive at IN, to the left. The other end is labelled too, beside the rope under its knob: IN
 /// where a send arrives, OUT where an incoming one leaves. Every rope leaves and arrives vertically, so its arrow
 /// points straight up into the knob or the port.
+/// A channel's real output (<see cref="Rope.Main"/>, asked by the user, #301) is drawn apart from the sends: solid,
+/// thicker, in the text's neutral color, without a knob or a level (its end is just labelled), and under the sends.
 /// </summary>
 public sealed class SendRopes : Control
 {
@@ -34,6 +36,10 @@ public sealed class SendRopes : Control
     const double MaxThick = 3, MinThick = 1.25, ArrowL = 7, ArrowW = 4.5;
     /// <summary>The knobs' size as a share of the band's height, and the least and most they get (px).</summary>
     const double KnobShare = 0.3, KnobMin = 22, KnobMax = 56;
+    /// <summary>The least room between two knobs (px), the least a knob shrinks to so it never covers the next one (#290), and how far apart the ends of ropes to channels scrolled out of view land at their dock's edge.</summary>
+    const double KnobGap = 4, KnobFloor = 14, OffStep = 6;
+    /// <summary>An output rope's width (px) and how strong its neutral color goes (#301).</summary>
+    const double MainThick = 3.5, MainAlpha = 0.55;
     /// <summary>How much of an outgoing rope's look an incoming one keeps: they are the faint ones.</summary>
     const double InFade = 0.45;
     /// <summary>The radius of a rope's corners, the dark edge around it so crossings stay readable, and the most the ropes fan out at a port (px).</summary>
@@ -42,8 +48,11 @@ public sealed class SendRopes : Control
     /// <summary>How far apart the ropes sharing a port drop (px), for that many lanes.</summary>
     static double FanStep(int lanes) => lanes <= 1 ? 0 : Math.Min(FanMax, FanRoom / (lanes - 1));
 
-    /// <summary>A rope from <paramref name="FromX"/> to <paramref name="ToX"/> (px), its level (0..1), whether it is pre-fader, whether it comes into the selected channel and the color of the bus it reaches (asked by the user, #264: a rope always takes its destination's color).</summary>
-    public readonly record struct Rope(double FromX, double ToX, double Level, bool Pre, bool In, Color Color);
+    /// <summary>A rope from <paramref name="FromX"/> to <paramref name="ToX"/> (px), its level (0..1), whether it is pre-fader, whether it comes into the selected channel, the color of the bus it reaches (asked by the user, #264: a rope always takes its destination's color) whether its knob's end is scrolled out of its dock (<paramref name="Off"/>: the rope stops at the dock's edge, without a knob, #290) and whether it is the channel's output rather than a send (<paramref name="Main"/>: no knob, drawn apart, #301).</summary>
+    public readonly record struct Rope(double FromX, double ToX, double Level, bool Pre, bool In, Color Color, bool Off = false, bool Main = false);
+
+    /// <summary>The rope ends without a knob: scrolled out of view or an output.</summary>
+    static bool Knobless(in Rope r) => r.Off || r.Main;
 
     sealed class Built
     {
@@ -54,6 +63,8 @@ public sealed class SendRopes : Control
         public required TextLayout End;
         public required Point TextAt, Knot, EndAt;
         public required Rect Plate;
+        /// <summary>Whether the level and the end's label are drawn (the knob is on screen and there is room).</summary>
+        public required bool Labeled, Ended;
     }
 
     Rope[] ropes = [];
@@ -62,7 +73,9 @@ public sealed class SendRopes : Control
     Point[] knobs = [];
     double[] depth = [];
     int[] lane = [];
+    bool[] roomy = [];
     int lanes;
+    double knobSize = KnobMin;
     double builtH = -1, laidH = -1;
     string emptyText = "";
     TextLayout? inLabel, outLabel;
@@ -73,6 +86,12 @@ public sealed class SendRopes : Control
 
     /// <summary>Where rope <paramref name="i"/>'s knob goes, after <see cref="Layout"/>.</summary>
     public Point KnobCenter(int i) => i < knobs.Length ? knobs[i] : default;
+
+    /// <summary>The knobs' size after <see cref="Layout"/>: the band's (<see cref="KnobSizeFor"/>), shrunk so neighbouring knobs never overlap (#290).</summary>
+    public double KnobSize => knobSize;
+
+    /// <summary>Whether rope <paramref name="i"/>'s level is written beside its knob: only when it fits before the next knob (#290).</summary>
+    public bool ShowsLevel(int i) => i < roomy.Length && roomy[i];
 
     /// <summary>The ropes to draw; <paramref name="none"/> is shown when there are none.</summary>
     public void Set(IReadOnlyList<Rope> list, string none)
@@ -107,9 +126,30 @@ public sealed class SendRopes : Control
         knobs = new Point[n];
         depth = new double[n];
         lane = new int[n];
+        roomy = new bool[n];
         lanes = 0;
         if (n == 0) return;
-        double k = KnobSizeFor(h), half = k / 2 + 4;
+        // the knobs' ends: the ones scrolled out of view fan out from their dock's edge, towards the selected strip
+        var xs = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            var r = ropes[i];
+            xs[i] = r.In ? r.FromX : r.ToX;
+            if (!r.Off) continue;
+            int same = 0;
+            for (int j = 0; j < i; j++)
+                if (ropes[j].Off && Math.Abs((ropes[j].In ? ropes[j].FromX : ropes[j].ToX) - xs[i]) < 0.5) same++;
+            double port = r.In ? r.ToX : r.FromX;
+            xs[i] += (port >= xs[i] ? 1 : -1) * OffStep * same;
+        }
+        // as big as the band asks, but never over the next knob: narrow strips get smaller knobs
+        double k = KnobSizeFor(h), gap = double.MaxValue;
+        for (int i = 0; i < n; i++)
+            for (int j = i + 1; j < n; j++)
+                if (!Knobless(ropes[i]) && !Knobless(ropes[j])) gap = Math.Min(gap, Math.Abs(xs[i] - xs[j]));
+        if (gap < double.MaxValue) k = Math.Max(KnobFloor, Math.Min(k, Math.Floor(gap - KnobGap)));
+        knobSize = k;
+        double half = k / 2 + 4;
         var order = new int[n];
         for (int i = 0; i < n; i++) order[i] = i;
         Array.Sort(order, (a, b) => Math.Abs(ropes[a].ToX - ropes[a].FromX).CompareTo(Math.Abs(ropes[b].ToX - ropes[b].FromX)));
@@ -134,8 +174,18 @@ public sealed class SendRopes : Control
         for (int i = 0; i < n; i++)
         {
             var r = ropes[i];
-            knobs[i] = new Point(r.In ? r.FromX : r.ToX, kc);
+            knobs[i] = new Point(xs[i], kc);
             depth[i] = top + (bottom - top) * (lane[i] + 1) / (lanes + 0.35);
+        }
+        // a level is written beside its knob only when it fits before the next one to the right
+        for (int i = 0; i < n; i++)
+        {
+            if (Knobless(ropes[i])) continue;
+            double next = double.MaxValue;
+            for (int j = 0; j < n; j++)
+                if (j != i && !Knobless(ropes[j]) && xs[j] > xs[i]) next = Math.Min(next, xs[j]);
+            double w = Palette.Text(labels[i], 9, Palette.Dim, Palette.Mono).Width + 6;
+            roomy[i] = next - xs[i] >= k + 4 + w + 2;
         }
     }
 
@@ -144,20 +194,22 @@ public sealed class SendRopes : Control
         Layout(h);
         builtH = h;
         built = new Built[ropes.Length];
-        double k = KnobSizeFor(h);
+        double k = knobSize;
         for (int i = 0; i < ropes.Length; i++)
         {
             var r = ropes[i];
+            double kx = knobs[i].X;
             var color = Color.FromRgb(r.Color.R, r.Color.G, r.Color.B);
             double level = Math.Clamp(r.Level, 0, 1), fade = r.In ? InFade : 1;
             // the knob's end leaves from under the knob; the selected channel's end, from the top
-            double knobY = knobs[i].Y + k / 2 + 2;
+            // (a rope to a channel out of view has no knob: it stops at its dock's edge, at the knobs' row)
+            double knobY = Knobless(r) ? knobs[i].Y : knobs[i].Y + k / 2 + 2;
             // at the selected strip's port the ropes fan out by lane, so their drops never cross another's run: leaving,
             // the deeper ones stay behind (against the way they go); arriving, the deeper ones land further along
             double dir = r.ToX >= r.FromX ? 1 : -1;
             double fan = (lane[i] - (lanes - 1) / 2.0) * FanStep(lanes);
-            var a = new Point(r.In ? r.FromX : r.FromX + PortGap - dir * fan, r.In ? knobY : AnchorY);
-            var b = new Point(r.In ? r.ToX - PortGap + dir * fan : r.ToX, r.In ? AnchorY : knobY);
+            var a = new Point(r.In ? kx : r.FromX + PortGap - dir * fan, r.In ? knobY : AnchorY);
+            var b = new Point(r.In ? r.ToX - PortGap + dir * fan : kx, r.In ? AnchorY : knobY);
             double d = Math.Max(depth[i], Math.Max(a.Y, b.Y) + 4);
             var line = new StreamGeometry();
             using (var g = line.Open())
@@ -188,7 +240,8 @@ public sealed class SendRopes : Control
                 g.LineTo(new Point(b.X + ArrowW, b.Y + ArrowL));
                 g.EndFigure(true);
             }
-            double thick = (MinThick + (MaxThick - MinThick) * level) * (r.In ? 0.8 : 1);
+            double thick = r.Main ? MainThick : (MinThick + (MaxThick - MinThick) * level) * (r.In ? 0.8 : 1);
+            double alpha = r.Main ? MainAlpha * (r.In ? 0.8 : 1) : (0.55 + 0.45 * level) * fade;
             var text = Palette.Text(labels[i], 9, r.In ? Palette.Faint : Palette.Dim, Palette.Mono);
             var kp = knobs[i];
             double tx = kp.X + k / 2 + 4, ty = kp.Y - text.Height / 2;
@@ -196,12 +249,13 @@ public sealed class SendRopes : Control
             var end = r.In ? Palette.Text("OUT", 8, Palette.Faint, Palette.Mono) : Palette.Text("IN", 8, Palette.Dim, Palette.Mono);
             built[i] = new Built
             {
-                Line = line, Arrow = arrow, Fill = Palette.Alpha(color, 0.95 * fade),
-                Pen = Palette.Pen(Palette.Alpha(color, (0.55 + 0.45 * level) * fade), thick, PenLineCap.Round, PenLineJoin.Round),
+                Line = line, Arrow = arrow, Fill = Palette.Alpha(color, r.Main ? Math.Min(1, alpha + 0.2) : 0.95 * fade),
+                Pen = Palette.Pen(Palette.Alpha(color, alpha), thick, PenLineCap.Round, PenLineJoin.Round),
                 Halo = Palette.Pen(Palette.Panel, thick + HaloW, PenLineCap.Round, PenLineJoin.Round),
                 Text = text, TextAt = new Point(tx, ty), Knot = a,
                 End = end, EndAt = new Point(kp.X - ArrowW - 3 - end.Width, knobY + 1),
                 Plate = new Rect(tx - 3, ty - 1, text.Width + 6, text.Height + 2),
+                Labeled = !Knobless(r) && roomy[i], Ended = !r.Off,
             };
         }
     }
@@ -221,11 +275,12 @@ public sealed class SendRopes : Control
         if (builtH != size.Height) Build(size.Height);
         using (ctx.PushClip(new Rect(size)))
         {
-            // the incoming ones first, under the outgoing
-            for (int pass = 0; pass < 2; pass++)
+            // the outputs first, then the incoming sends, under the outgoing ones
+            for (int pass = 0; pass < 3; pass++)
                 for (int i = 0; i < built.Length; i++)
                 {
-                    if (ropes[i].In != (pass == 0)) continue;
+                    var rp = ropes[i];
+                    if ((rp.Main ? 0 : rp.In ? 1 : 2) != pass) continue;
                     var r = built[i];
                     ctx.DrawGeometry(null, r.Halo, r.Line);
                     ctx.DrawGeometry(null, r.Pen, r.Line);
@@ -238,9 +293,12 @@ public sealed class SendRopes : Control
             // the levels beside the knobs, on a plate so no rope crosses a text
             foreach (var r in built)
             {
-                ctx.DrawRectangle(Palette.Panel, Palette.Pen(Palette.Line), r.Plate, 3, 3);
-                ctx.DrawText(r.Text, r.TextAt);
-                ctx.DrawText(r.End, r.EndAt);
+                if (r.Labeled)
+                {
+                    ctx.DrawRectangle(Palette.Panel, Palette.Pen(Palette.Line), r.Plate, 3, 3);
+                    ctx.DrawText(r.Text, r.TextAt);
+                }
+                if (r.Ended) ctx.DrawText(r.End, r.EndAt);
             }
         }
     }

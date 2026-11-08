@@ -90,6 +90,18 @@ public sealed class InstrumentPlayer(VstBridge bridge)
         Volatile.Write(ref ringHead, next);
     }
 
+    /// <summary>A key held until <see cref="Lift"/> (the piano roll under the mouse, #276). UI thread.</summary>
+    public void Press(int pitch, int velocity) => Audition(pitch, velocity, int.MaxValue);
+
+    /// <summary>Ends a key of <see cref="Press"/>. UI thread.</summary>
+    public void Lift(int pitch)
+    {
+        int head = ringHead, next = (head + 1) % ring.Length;
+        if (next == Volatile.Read(ref ringTail)) return; // full: dropped
+        ring[head] = (Math.Clamp(pitch, 0, 127), 0, 0);
+        Volatile.Write(ref ringHead, next);
+    }
+
     /// <summary>
     /// While playing: adds the instrument's sound for frames <c>[pos .. pos + n)</c> to <paramref name="l"/> /
     /// <paramref name="r"/> and sends the notes that start or end a block and a latency later.
@@ -346,8 +358,9 @@ public sealed class InstrumentPlayer(VstBridge bridge)
         {
             var (pitch, velocity, frames) = ring[tail];
             if (offIn[pitch] > 0) Add(0, VstNote.Off, pitch, 0);
-            Add(0, VstNote.On, pitch, velocity);
-            offIn[pitch] = frames;
+            // a lift (velocity 0) only ends the key
+            if (velocity > 0) Add(0, VstNote.On, pitch, velocity);
+            offIn[pitch] = velocity > 0 ? frames : 0;
             tail = (tail + 1) % ring.Length;
             any = true;
         }

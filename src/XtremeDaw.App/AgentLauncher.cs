@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -12,6 +12,8 @@ namespace XtremeDaw.App;
 /// and the person answers there. Each action has two buttons (pedido del usuario, 2026-11-04): a new session of the
 /// Claude desktop app by its documented link, which prefills the message and asks to confirm the folder, so the person
 /// sends it; or a console with Claude Code, which starts by itself. Without the app's link registered, both use the console.
+/// The console runs inside the bench (<see cref="InBench"/>, #278); Windows Terminal (<see cref="InTerminal"/>) only when
+/// the pseudo console cannot start.
 /// </summary>
 static class AgentLauncher
 {
@@ -189,6 +191,42 @@ static class AgentLauncher
     }
 
     /// <summary>
+    /// Claude Code inside the bench (asked by the user, #278): the same session as <see cref="InTerminal"/>, in a pseudo
+    /// console the bench draws, so it needs no Windows Terminal and the prompt goes whole (no cmd in between). Returns
+    /// the console, or why it could not start.
+    /// </summary>
+    public static (Terminal.ConsoleSession? Console, string? Error) InBench(string root, string prompt)
+    {
+        var start = new ProcessStartInfo();
+        DropHostSession(start);
+        string flag = Path.Combine(Path.GetTempPath(), $"xt-cerrar-{Guid.NewGuid():N}");
+        start.Environment[CloseVar] = flag;
+        string line = Quote(ClaudeExe()) + " " + Quote(prompt);
+        try
+        {
+            return (Terminal.ConsoleSession.Start(prompt, line, root, start.Environment, flag), null);
+        }
+        catch (Exception e) when (e is Win32Exception or EntryPointNotFoundException or IOException) { return (null, e.Message); }
+    }
+
+    /// <summary>One argument of a Windows command line, quoted as the C runtime reads it back (backslashes before a quote doubled).</summary>
+    static string Quote(string arg)
+    {
+        if (arg.Length > 0 && arg.IndexOfAny([' ', '\t', '"']) < 0) return arg;
+        var sb = new System.Text.StringBuilder("\"");
+        int slashes = 0;
+        foreach (char c in arg)
+        {
+            if (c == '\\') { slashes++; continue; }
+            sb.Append('\\', c == '"' ? slashes * 2 + 1 : slashes);
+            slashes = 0;
+            sb.Append(c);
+        }
+        sb.Append('\\', slashes * 2).Append('"');
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Claude Code's executable: its native installer's folder (<c>%USERPROFILE%\.local\bin</c>), so it opens even when
     /// the PATH this process got is older than the install; otherwise <c>claude</c>, by the PATH.
     /// </summary>
@@ -228,27 +266,38 @@ static class AgentLauncher
         const string Agent = "agent:";
         if (takenBy is not { Length: > 6 } || !takenBy.StartsWith(Agent, StringComparison.Ordinal)) return null;
         string prefix = takenBy[Agent.Length..];
+        foreach (var (session, pid) in LiveProcesses(root))
+            if (session.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return pid;
+        return null;
+    }
+
+    /// <summary>
+    /// Each session whose claude.exe still runs, with its process (#164, #278: the bench tells its own consoles by it).
+    /// The start time tells a reused pid from the session's.
+    /// </summary>
+    public static List<(string Session, int Pid)> LiveProcesses(string root)
+    {
+        var list = new List<(string, int)>();
         try
         {
             var dir = Path.Combine(root, ".claude", "bloqueos");
-            if (!Directory.Exists(dir)) return null;
+            if (!Directory.Exists(dir)) return list;
             foreach (var f in Directory.EnumerateFiles(dir, "p-*.json"))
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(f));
-                var e = doc.RootElement;
-                if (!e.TryGetProperty("session", out var s) || s.GetString() is not { } session
-                    || !session.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                if (!e.TryGetProperty("pid", out var pid) || !e.TryGetProperty("started", out var started)) continue;
                 try
                 {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(f));
+                    var e = doc.RootElement;
+                    if (!e.TryGetProperty("session", out var s) || s.GetString() is not { Length: > 0 } session) continue;
+                    if (!e.TryGetProperty("pid", out var pid) || !e.TryGetProperty("started", out var started)) continue;
                     using var p = Process.GetProcessById(pid.GetInt32());
-                    if (p.StartTime.ToUniversalTime().Ticks == started.GetInt64()) return p.Id;
+                    if (p.StartTime.ToUniversalTime().Ticks == started.GetInt64()) list.Add((session, p.Id));
                 }
-                catch (Exception x) when (x is ArgumentException or InvalidOperationException or Win32Exception) { }
+                catch (Exception x) when (x is ArgumentException or InvalidOperationException or Win32Exception or JsonException or FormatException or IOException) { }
             }
         }
-        catch (Exception x) when (x is IOException or UnauthorizedAccessException or JsonException or FormatException) { }
-        return null;
+        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { }
+        return list;
     }
 
     /// <summary>

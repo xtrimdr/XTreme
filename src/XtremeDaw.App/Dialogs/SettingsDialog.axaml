@@ -57,6 +57,16 @@
       <Grid Grid.Row="1" ColumnDefinitions="208,*">
         <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="8">
           <StackPanel Spacing="2">
+            <!-- searches every page (#302): SettingsDialog.Search.cs -->
+            <Panel Margin="0,0,0,6">
+              <TextBox x:Name="SearchBox" Classes="field" Height="34" FontSize="13" Watermark="{loc:T settings.search}" AutomationProperties.Name="{loc:T settings.search}" Padding="30,0,28,0" />
+              <TextBlock Classes="icon" Text="&#xE721;" FontSize="12" Foreground="{StaticResource Faint}" Margin="10,0,0,0"
+                         HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" />
+              <Button x:Name="SearchClear" Classes="act" Cursor="Arrow" IsVisible="False" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,3,0"
+                      ToolTip.Tip="{loc:T settings.search.clear}" AutomationProperties.Name="{loc:T settings.search.clear}">
+                <TextBlock Classes="icon" Text="&#xE711;" FontSize="10" />
+              </Button>
+            </Panel>
             <Button x:Name="AudioTab" Classes="nav">
               <StackPanel Orientation="Horizontal" Spacing="10"><TextBlock Classes="icon" Text="&#xE8D6;" FontSize="15" /><TextBlock Text="{loc:T settings.tab.audio}" /></StackPanel>
             </Button>

@@ -32,6 +32,7 @@ public sealed partial class TimelineView
             CancelGesture();
             tool = value;
             splitHover = null;
+            autoSplitHover = null;
             pencilHover = null;
             UpdateCursor();
             InvalidateVisual();
@@ -42,8 +43,8 @@ public sealed partial class TimelineView
     public event Action<LiveTrack, LiveClip, double>? SplitAtRequested;
     /// <summary>Dividir on a MIDI clip: its track, its id and the (snapped) time.</summary>
     public event Action<LiveTrack, string, double>? MidiSplitRequested;
-    /// <summary>Borrar: the clips one drag touched, removed together (one step to undo).</summary>
-    public event Action<IReadOnlyList<string>>? ClipsErased;
+    /// <summary>Borrar: the clips and the automation blocks (#281) one drag touched, by id, removed together (one step to undo).</summary>
+    public event Action<IReadOnlyList<string>, IReadOnlyList<string>>? ClipsErased;
     /// <summary>Escuchar: the track to hear alone and from where, while the button is held; <see cref="ListenEnded"/> on release.</summary>
     public event Action<LiveTrack, double>? ListenStarted;
     public event Action? ListenEnded;
@@ -155,6 +156,7 @@ public sealed partial class TimelineView
     void StartRightErase(PointerPressedEventArgs e, Action menu)
     {
         erasing.Clear();
+        erasePrev = e.GetPosition(this);
         rightMenu = menu;
         StartGesture("erase", e);
     }
@@ -167,18 +169,20 @@ public sealed partial class TimelineView
             // a right press only erases once it is a drag; the clip it started on goes too
             if (Math.Abs(lastPointer.X - down.X) < RightEraseSlop && Math.Abs(lastPointer.Y - down.Y) < RightEraseSlop) return;
             moved = true;
-            if (autoEraseLane == null && eraseStrip == EraseStrip.None && down.X >= HeaderW && AnyClipAt(HitTrack(down.Y), down.X) is { } first) erasing.Add(first);
-        }
-        if (autoEraseLane != null)
-        {
-            DragAutoErase();
-            return;
+            if (eraseStrip == EraseStrip.None && down.X >= HeaderW && AnyClipAt(HitTrack(down.Y), down.X) is { } first) erasing.Add(first);
         }
         if (eraseStrip != EraseStrip.None)
         {
             DragStripErase();
             return;
         }
+        // on the lanes the eraser takes whatever it goes over, clips and automation blocks alike, wherever it started (#281)
+        if (HitRow(lastPointer.Y) is { Lane: { } lane })
+        {
+            DragAutoErase(lane);
+            return;
+        }
+        erasePrev = lastPointer;
         int i = HitTrack(lastPointer.Y);
         if (lastPointer.X >= HeaderW && AnyClipAt(i, lastPointer.X) is { } c && erasing.Add(c)) moved = true;
     }

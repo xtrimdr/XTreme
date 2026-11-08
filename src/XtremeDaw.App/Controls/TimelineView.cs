@@ -316,6 +316,7 @@ public sealed partial class TimelineView : Control
         base.OnAttachedToVisualTree(e);
         WaveLooks.Changed += OnWaveLook;
         TrackColorLooks.Changed += InvalidateVisual;
+        SeparatorLooks.Changed += InvalidateVisual;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -323,6 +324,7 @@ public sealed partial class TimelineView : Control
         base.OnDetachedFromVisualTree(e);
         WaveLooks.Changed -= OnWaveLook;
         TrackColorLooks.Changed -= InvalidateVisual;
+        SeparatorLooks.Changed -= InvalidateVisual;
     }
     /// <summary>
     /// What a cached wave was drawn for, each value on its own. It was one sum (pps × 1e6 + … + AtSec × 1.7e-3): at the
@@ -544,7 +546,7 @@ public sealed partial class TimelineView : Control
         tracks = list;
         SetFolders(folderList);
         picked.RemoveWhere(id => !list.Any(t => t.Track.Id == id));
-        boxed.RemoveWhere(id => !list.Any(t => t.Clips.Any(c => c.Clip.Id == id) || t.Track.MidiClips?.Any(c => c.Id == id) == true));
+        boxed.RemoveWhere(id => !list.Any(t => t.Clips.Any(c => c.Clip.Id == id) || t.Track.MidiClips?.Any(c => c.Id == id) == true) && !IsBlockId(id));
         Relayout();
         if (shownTop.Count > 0) slide.Start();
         var live = list.SelectMany(t => t.Clips).ToHashSet();
@@ -581,15 +583,22 @@ public sealed partial class TimelineView : Control
     public event Action? TracksPicked;
 
     /// <summary>The clips caught by the selection box, by id (empty or one = a plain selection).</summary>
-    public IReadOnlyCollection<string> BoxedClipIds => boxed.Count > 1 ? boxed : [];
-    /// <summary>The boxed clips were dragged: each take as it lands (the grabbed one first) and each MIDI clip's new start.</summary>
-    public event Action<IReadOnlyList<Clip>, IReadOnlyList<(string Id, double AtSec)>>? ClipsMoved;
+    public IReadOnlyCollection<string> BoxedClipIds => boxed.Count > 1 ? [.. boxed.Where(id => !IsBlockId(id))] : [];
+    /// <summary>Everything boxed, clips and automation blocks (#281), to box it again after an edit.</summary>
+    public IReadOnlyCollection<string> BoxedIds => boxed.Count > 1 ? [.. boxed] : [];
+    /// <summary>
+    /// The boxed clips were dragged: each take as it lands (the grabbed one first, if a take was grabbed), each MIDI
+    /// clip's new start and each automation block's (#281).
+    /// </summary>
+    public event Action<IReadOnlyList<Clip>, IReadOnlyList<(string Id, double AtSec)>, IReadOnlyList<(string Id, double AtSec)>>? ClipsMoved;
 
     /// <summary>Boxes these clips together again (after the window moved them), keeping the selected one.</summary>
     public void BoxClips(IReadOnlyCollection<string> ids)
     {
         boxed.Clear();
-        if (ids.Count > 1) boxed.UnionWith(ids);
+        // an id the edit took away (a clip gone, a loop's repeat made again) doesn't stay selected: the next edit would fail on it
+        if (ids.Count > 1) boxed.UnionWith(ids.Where(id => IsBlockId(id) || tracks.Any(t => t.Clips.Any(c => c.Clip.Id == id) || t.Track.MidiClips?.Any(c => c.Id == id) == true)));
+        if (boxed.Count < 2) boxed.Clear();
         InvalidateVisual();
     }
 
@@ -602,6 +611,7 @@ public sealed partial class TimelineView : Control
             boxBase.UnionWith(boxed);
             if (SelectedClipId != null) boxBase.Add(SelectedClipId);
             if (SelectedMidiId != null) boxBase.Add(SelectedMidiId);
+            if (pressBlock != null) boxBase.Add(pressBlock);
         }
         boxSec = Sec(Math.Max(HeaderW, lastPointer.X));
         boxTop = lastPointer.Y - RulerH + scrollY;
@@ -628,11 +638,19 @@ public sealed partial class TimelineView : Control
                 if (ClipRect(i, Window(c)).Intersects(b)) boxed.Add(c.Clip.Id);
             BoxMidi(i, b);
         }
+        BoxAuto(b);
     }
 
     /// <summary>The box was let go: the first boxed clip (top track, earliest) becomes the selected one, for the inspector.</summary>
     void EndBox()
     {
+        // a boxed block is the one the shortcuts act on when it is alone
+        selectedBlock = FirstBoxedBlock();
+        if (boxed.Count == 1 && selectedBlock != null)
+        {
+            InvalidateVisual();
+            return;
+        }
         foreach (var r in rows)
         {
             if (r.Folder != null || r.Lane != null || r.Bus != null) continue;
@@ -663,6 +681,7 @@ public sealed partial class TimelineView : Control
             foreach (var c in t.Clips)
                 if (c != grabbed && boxed.Contains(c.Clip.Id) && !ClipEditing.IsLocked(t.Track, c.Clip)) carriedAlong.Add((c, ClipEditing.Copy(c.Clip)));
         StartMidiCarry();
+        StartAutoCarry();
     }
 
     /// <summary>True on a part of a clip that a Shift+drag clones: its body, not its handles, and not a locked one.</summary>
@@ -680,6 +699,7 @@ public sealed partial class TimelineView : Control
         if (kind == "midi" && midiHeld != null && !midiCarrying) ids.Add(midiHeld.Id);
         ids.AddRange(carriedAlong.Select(c => c.Item1.Clip.Id));
         ids.AddRange(midiCarried.Keys.Select(c => c.Id));
+        ids.AddRange(autoCarried.Keys.Select(b => b.Id));
         return ids;
     }
 
@@ -698,6 +718,7 @@ public sealed partial class TimelineView : Control
         double shift = preview.AtSec - original.AtSec;
         foreach (var (c, o) in carriedAlong) shift = Math.Max(shift, ClipEnvelope.MinClipSec - Window(c, o).End);
         foreach (double from in midiCarried.Values) shift = Math.Max(shift, -from);
+        foreach (double from in autoCarried.Values) shift = Math.Max(shift, -from);
         carryShift = shift;
         preview.AtSec = ClipEditing.ToSample(original.AtSec + shift);
         foreach (var (c, o) in carriedAlong)
@@ -769,6 +790,17 @@ public sealed partial class TimelineView : Control
         if (follow && (x > Bounds.Width - 40 || x < HeaderW)) scrollX = Math.Max(0, sec * pps - 40);
         if (scrollX != oldScroll || Recording || (meters && !MetersOnLayer)) InvalidateVisual();
         else layer.InvalidateVisual();
+    }
+
+    /// <summary>Where the playhead goes back on stop, drawn as a dashed line (#271), or NaN for none.</summary>
+    double returnMark = double.NaN;
+
+    /// <summary>Shows (or hides, with NaN) the return-on-stop point; repaints the <see cref="Layer"/> only when it moved.</summary>
+    public void SetReturnMark(double sec)
+    {
+        if (sec == returnMark || (double.IsNaN(sec) && double.IsNaN(returnMark))) return;
+        returnMark = sec;
+        layer.InvalidateVisual();
     }
 
     /// <summary>The header meters as last drawn, in steps finer than a pixel (see <see cref="DrawMeterBar"/>).</summary>
@@ -1619,6 +1651,15 @@ public sealed partial class TimelineView : Control
                     if (midi.Contains(c)) Outline(i, from, SecPlus(from, c.LengthBeats));
             }
             if (midiHeld != null && !midiCarrying) Outline(fromIndex, midiFromSec, SecPlus(midiFromSec, midiFromBeats));
+            // the boxed automation blocks, in their lanes (#281)
+            if (autoCarried.Count == 0) return;
+            foreach (var r in rows)
+            {
+                if (r.Lane is not { } lane) continue;
+                foreach (var b in lane.Blocks)
+                    if (autoCarried.TryGetValue(b, out double from))
+                        ctx.DrawRectangle(Palette.Alpha(Palette.AccentColor, 0.18), dashed, new Rect(X(from), AutoY(r) + 1, Math.Max(3, X(from + b.LengthSec) - X(from)), r.H - 3), 4, 4);
+            }
         }
     }
 
@@ -1697,9 +1738,9 @@ public sealed partial class TimelineView : Control
         if (fh <= 0 || y + fh < RulerH || y > Bounds.Height) return;
         if (f.Separator)
         {
-            // a separator: a glowing line across the lanes, at the middle of its row
+            // a separator: its line across the lanes, at the middle of its row, in the look picked in Apariencia (#293)
             if (f.Id == liftedId) ctx.FillRectangle(Palette.App, new Rect(HeaderW, y, Math.Max(0, W - HeaderW), fh));
-            DrawSeparatorLine(ctx, SeparatorColor(f), HeaderW, W, Math.Round(y + fh / 2) + 0.5);
+            SeparatorLooks.DrawRow(ctx, SeparatorLooks.Current, SeparatorColor(f), HeaderW, HeaderW, W, y, fh, null, 0);
             return;
         }
         var c = FolderColor(f);
@@ -1942,52 +1983,34 @@ public sealed partial class TimelineView : Control
     /// </summary>
     public static Color SeparatorColor(Folder f) => f.Color != null && Color.TryParse(f.Color, out var c) ? c : Palette.AccentColor;
 
-    /// <summary>Px the separator's glow reaches to each side of its line, in <see cref="GlowSteps"/> stacked bands of
-    /// <see cref="GlowAlpha"/> (the mixer's separator strip glows the same way).</summary>
-    public const double GlowReach = 6;
-    public const int GlowSteps = 4;
-    public const double GlowAlpha = 0.05;
-    /// <summary>Opacity of the separator's line itself, over its glow.</summary>
-    public const double SeparatorLineAlpha = 0.75;
+    /// <summary>Px from a separator header's left edge to where its line starts, past the handle.</summary>
+    const double SeparatorLineX = 22;
 
-    /// <summary>
-    /// A separator's line with a soft glow (asked by the user, so the break between groups reads at a glance): stacked
-    /// faint bands centered on the line, denser at its middle, instead of a gradient brush that would be new per frame.
-    /// </summary>
-    static void DrawSeparatorLine(DrawingContext ctx, Color c, double x0, double x1, double mid)
+    /// <summary>Upper-cased separator names, kept so a frame doesn't make a new string per separator.</summary>
+    readonly Dictionary<string, string> upperNames = [];
+
+    string UpperName(string name)
     {
-        if (x1 <= x0) return;
-        var glow = Palette.Alpha(c, GlowAlpha);
-        for (int k = 1; k <= GlowSteps; k++)
-        {
-            double h = GlowReach * k / GlowSteps;
-            ctx.FillRectangle(glow, new Rect(x0, mid - h, x1 - x0, 2 * h));
-        }
-        ctx.DrawLine(Palette.Pen(Palette.Alpha(c, SeparatorLineAlpha)), new Point(x0, mid), new Point(x1, mid));
+        if (!upperNames.TryGetValue(name, out var up)) upperNames[name] = up = name.ToUpperInvariant();
+        return up;
     }
 
-    /// <summary>A separator's header: its handle, its name in its color and its line to the right edge, over the window's
-    /// background, so it reads as a gap between the groups and not as one more row.</summary>
+    /// <summary>A separator's header: its handle, then its row in the look picked in Apariencia (<see cref="SeparatorLooks"/>,
+    /// #293; the console's double line by default, #289): a short lead, its name small and upper-cased in its color and
+    /// the line on to the right edge, over the window's background, so it reads as a gap between the groups and not as
+    /// one more row.</summary>
     void DrawSeparatorHeader(DrawingContext ctx, Folder f, double y, double fh)
     {
         var c = SeparatorColor(f);
         ctx.FillRectangle(Palette.App, new Rect(0, y, HeaderW, fh));
+        string? up = editingNameId != f.Id && f.Name.Length > 0 ? UpperName(f.Name) : null;
+        double nameX = SeparatorLineX + SeparatorLooks.Lead + SeparatorLooks.NameGap;
+        SeparatorLooks.DrawRow(ctx, SeparatorLooks.Current, c, 0, SeparatorLineX, HeaderW, y, fh, up, HeaderRight - nameX - 16);
         for (int k = 0; k < 2; k++)
         {
             ctx.FillRectangle(Palette.Faint, new Rect(8, y + fh / 2 - 3 + k * 5, 2, 2));
             ctx.FillRectangle(Palette.Faint, new Rect(13, y + fh / 2 - 3 + k * 5, 2, 2));
         }
-        double mid = Math.Round(y + fh / 2) + 0.5;
-        double x = 24;
-        if (editingNameId != f.Id && f.Name.Length > 0)
-        {
-            // the name as written: an upper-cased copy would be a new string every frame
-            var name = Palette.Text(f.Name, 10.5, Palette.Alpha(c, 1), Palette.UiBold);
-            double maxW = Math.Max(20, HeaderRight - x - 16);
-            ctx.DrawText(f.Name, 10.5, Palette.Alpha(c, 1), new Point(x, y + (fh - name.Height) / 2), Palette.UiBold, maxW);
-            x += Math.Min(name.Width, maxW) + 8;
-        }
-        DrawSeparatorLine(ctx, c, x, HeaderW, mid);
     }
 
     /// <summary>The folder the dragged track would land in, or the folder a track is in.</summary>
@@ -2385,7 +2408,7 @@ public sealed partial class TimelineView : Control
         bool silent = t.Silenced || anySoloed && !t.Soloed;
         // the clip being carried to another track stays dimmed where it was until it is dropped
         bool carried = dragged == c && overIndex >= 0 && overIndex != fromIndex && !swapping;
-        using var opacity = ctx.PushOpacity((!c.Offline && silent ? 0.5 : 1) * (carried ? 0.35 : 1) * (erasing.Contains(c.Clip.Id) ? 0.25 : 1));
+        using var opacity = ctx.PushOpacity((!c.Offline && silent ? 0.5 : 1) * (carried ? 0.35 : 1) * (erasing.Contains(c.Clip.Id) ? ErasingOpacity : 1));
         // the web shows the filmstrip from SHOW_THUMBS_AT; audio-only media (native only) keeps the plain clip
         bool thumbs = showVideo && t.Track.Video && !c.Offline && lh >= ShowThumbsAt && c.VideoPath != null;
         // a colored track paints its clips in the look chosen in Apariencia (TrackColorLooks, #162)
@@ -3348,6 +3371,11 @@ public sealed partial class TimelineView : Control
         using (ctx.PushClip(new Rect(HeaderW, 0, Math.Max(0, W - HeaderW), H)))
         {
             DrawDrop(ctx);
+            if (!double.IsNaN(returnMark))
+            {
+                double rx = Math.Round(X(returnMark)) + 0.5;
+                ctx.DrawLine(Palette.Dashed(Palette.Alpha(Palette.AccentColor, 0.7), 1), new Point(rx, StripsH), new Point(rx, H));
+            }
             double px = X(Playhead);
             var playColor = Recording ? Palette.Rec : Palette.Accent;
             var pen = Palette.Pen(playColor, 1.5);
@@ -3451,6 +3479,7 @@ public sealed partial class TimelineView : Control
         }
         var row = HitRow(p.Y);
         int i = row is { Folder: null, Lane: null } h ? h.Track : -1;
+        pressBlock = selectedBlock;
         if (row?.Lane == null) selectedBlock = null;
         if (buttons.IsLeftButtonPressed || buttons.IsRightButtonPressed)
         {
@@ -3504,6 +3533,8 @@ public sealed partial class TimelineView : Control
         }
         if (row is { Lane: not null } autoRow)
         {
+            // the tools act on the blocks as on the clips (#281); the lane's header works the same with any tool
+            if (tool != TimelineTool.Select && p.X >= HeaderW && AutoToolPressed(autoRow, p, e)) return;
             AutoPressed(autoRow, p, e);
             return;
         }
@@ -3875,7 +3906,7 @@ public sealed partial class TimelineView : Control
         moved = false;
         capturedPointer = e.Pointer;
         e.Pointer.Capture(this);
-        if (kind is "clip" or "reorder" or "scrub" or "range" or "box" or "erase" or "zoom" or "pencil") dragScroll.Start();
+        if (kind is "clip" or "reorder" or "scrub" or "range" or "box" or "erase" or "zoom" or "pencil" or "auto-pencil") dragScroll.Start();
         e.Handled = true;
     }
 
@@ -3889,7 +3920,11 @@ public sealed partial class TimelineView : Control
         {
             UpdateCursor();
             UpdatePatternHover();
-            if (tool == TimelineTool.Split) UpdateSplitHover();
+            if (tool == TimelineTool.Split)
+            {
+                UpdateSplitHover();
+                UpdateAutoSplitHover();
+            }
             if (Drawing) UpdatePencilHover();
         }
         InvalidateVisual();
@@ -4009,6 +4044,8 @@ public sealed partial class TimelineView : Control
             DragErase();
         else if (gesture == "pencil")
             DragPencil();
+        else if (gesture == "auto-pencil")
+            DragAutoPencil();
         else if (gesture == "midi") UpdateMidiDrag();
         else if (gesture is "zoom" or "listen")
         {
@@ -4053,7 +4090,7 @@ public sealed partial class TimelineView : Control
                 }
                 DragGroup();
             }
-            else if (dragged != null && original != null && carriedAlong.Count > 0)
+            else if (dragged != null && original != null && (carriedAlong.Count > 0 || midiCarried.Count > 0 || autoCarried.Count > 0))
             {
                 // the boxed clips move in time together, each on its own track (no swapping, no landing elsewhere)
                 overIndex = fromIndex;
@@ -4114,13 +4151,14 @@ public sealed partial class TimelineView : Control
         var painted = kind == "pencil" ? TakePencil() : null;
         var group = TakeGroup();
         bool midiCarry = kind == "midi" && midiCarrying;
-        List<Clip>? together = group == null && kind == "clip" && (carriedAlong.Count > 0 || midiCarried.Count > 0) && value != null ? [value, .. carriedPreview.Values]
+        List<Clip>? together = group == null && kind == "clip" && (carriedAlong.Count > 0 || midiCarried.Count > 0 || autoCarried.Count > 0) && value != null ? [value, .. carriedPreview.Values]
             : midiCarry ? [.. carriedPreview.Values] : null;
         var midiMoves = together != null ? MidiMoves() : [];
+        var blockMoves = together != null ? AutoMoves() : [];
         string? grabbedId = kind == "midi" ? midiHeld?.Id : dragged?.Clip.Id;
         var midi = kind == "midi" && !midiCarry && group == null ? MidiResult() : null;
         var loop = kind == "clip" && group == null ? TakeLoop() : null;
-        bool stayed = kind == "clip" ? value?.AtSec == original?.AtSec && target == null : midiCarry ? carryShift == 0 : midi == null;
+        bool stayed = kind == "clip" ? value?.AtSec == original?.AtSec && target == null : midiCarry || autoCarrying ? carryShift == 0 : midi == null;
         clones = cloning && changed && !stayed && extractTo.Clip == null ? CloneIds(kind) : [];
         var toggle = toggleBase;
         var menu = kind == "erase" && !changed ? rightMenu : null;
@@ -4128,13 +4166,15 @@ public sealed partial class TimelineView : Control
         // old height for a moment and glided from there, so everything jumped on release
         if (kind == "row-height" && changed && heightDrag is { } rh) RowHeightRequested?.Invoke(rh.Id, rh.H);
         if (kind == "auto") EndAuto(changed);
-        if (kind == "erase") EndRightErase(changed);
+        List<string> erasedBlocks = kind == "erase" ? EndRightErase(changed) : [];
+        var autoPainted = kind == "auto-pencil" ? TakeAutoPencil() : null;
         ClearGesture();
         e.Pointer.Capture(null);
         if (kind == "range" && Range == null) ClearRange();
-        if (kind == "erase" && erased.Count > 0) ClipsErased?.Invoke(erased);
+        if (kind == "erase" && (erased.Count > 0 || erasedBlocks.Count > 0)) ClipsErased?.Invoke(erased, erasedBlocks);
         menu?.Invoke();
         if (painted is { Count: > 0 } && paintedLane >= 0 && paintedLane < tracks.Count) PencilPlaced?.Invoke(tracks[paintedLane], painted);
+        if (autoPainted is { } ap) AutomationPainted?.Invoke(ap.Owner, ap.Lane, ap.Brush, ap.Starts);
         if (kind == "zoom") EndZoom(lastPointer, (modifiers & KeyModifiers.Alt) != 0);
         if (kind is "marker" or "loop") StripReleased(kind, changed);
         if (kind == "chords") ChordsReleased(changed);
@@ -4147,8 +4187,8 @@ public sealed partial class TimelineView : Control
         {
             // a click on an edge without moving it leaves just that clip selected, like one on its body
             if (!changed && kind == "midi") SelectMidiClip(from, grabbedId);
-            else if (!changed) SelectClip(from, grabbedId);
-            else RaiseClipsEdited(g.Takes, g.Loops, g.Midi);
+            else if (!changed && kind != "auto") SelectClip(from, grabbedId);
+            else if (changed) RaiseClipsEdited(g.Takes, g.Loops, g.Midi, g.Blocks);
         }
         // a click on a boxed clip without moving it leaves just that one selected
         else if (together != null && !changed)
@@ -4156,7 +4196,7 @@ public sealed partial class TimelineView : Control
             if (kind == "midi") SelectMidiClip(from, grabbedId);
             else SelectClip(from, grabbedId);
         }
-        else if (together != null) ClipsMoved?.Invoke(together, midiMoves);
+        else if (together != null) ClipsMoved?.Invoke(together, midiMoves, blockMoves);
         else if (extractTo.Clip != null) ExtractMidiRequested?.Invoke(extractTo.Clip, extractTo.Track);
         else if (loop is { } lp)
         {
@@ -4233,6 +4273,10 @@ public sealed partial class TimelineView : Control
         ClearMidiGesture();
         carriedAlong.Clear();
         carriedPreview.Clear();
+        autoCarried.Clear();
+        autoCarrying = false;
+        autoToggleBase = null;
+        ClearAutoPencil();
         stuckTo = null;
         curvePoint = -1;
         swapId = null;

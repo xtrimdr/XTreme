@@ -364,7 +364,8 @@ public sealed partial class TimelineView
             double x = TempoX(map.BarStartBeat(meters[i].Bar));
             if (x > W) break;
             double next = i + 1 < meters.Count ? TempoX(map.BarStartBeat(meters[i + 1].Bar)) : double.PositiveInfinity;
-            if (next < HeaderW || meterErasing.Contains(meters[i].Bar)) continue;
+            if (next < HeaderW) continue;
+            using var dim = ctx.PushOpacity(meterErasing.Contains(meters[i].Bar) ? ErasingOpacity : 1);
             var label = Palette.Text(MeterText(meters[i].Num, meters[i].Den), 11, i == 0 ? Palette.Dim : Palette.Fg, Palette.Mono);
             if (x >= HeaderW) ctx.DrawLine(tickPen, new Point(Math.Round(x) + 0.5, top + 2), new Point(Math.Round(x) + 0.5, CurveTop));
             double lx = Math.Min(Math.Max(x, HeaderW) + 4, next - label.Width - 6);
@@ -416,7 +417,8 @@ public sealed partial class TimelineView
             double x = TempoX(pts[i].Beat);
             if (x > W + TempoGrab) break;
             double nextX = i + 1 < pts.Count ? TempoX(pts[i + 1].Beat) : double.PositiveInfinity;
-            if (x < HeaderW - TempoGrab && nextX < HeaderW || tempoErasing.Contains(pts[i].Beat)) continue;
+            if (x < HeaderW - TempoGrab && nextX < HeaderW) continue;
+            using var dim = ctx.PushOpacity(tempoErasing.Contains(pts[i].Beat) ? ErasingOpacity : 1);
             double y = BpmY(pts[i].Bpm, s);
             bool picked = dragging ? Math.Abs(pts[i].Beat - tempoDragBeat) < 1e-9 : tempoPicked is { } pb && Math.Abs(pb - pts[i].Beat) < 1e-9;
             double r = picked || i == hover ? 4.5 : 3.5;

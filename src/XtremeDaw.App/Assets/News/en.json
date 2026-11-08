@@ -1,12 +1,92 @@
 {
   "releases": [
     {
+      "version": "0.9.21",
+      "items": [
+        {
+          "icon": "E8AB",
+          "title": "Two-sided mixer",
+          "text": "The mixer now has two sides, left and the right dock (**Dock → Dock left / Dock right**). A new bus goes to the buses' dock, and the divider moves on its own to show a strip that lands on the right."
+        },
+        {
+          "icon": "E721",
+          "title": "Search in Settings",
+          "text": "Above the **Settings** tabs, type what you are looking for (**Ctrl+F**): every option, help or shortcut that names it shows up, by tab. A click takes you to that card; Esc clears."
+        },
+        {
+          "icon": "E8AB",
+          "title": "Buses on the right",
+          "text": "In **Settings → Appearance → Mixer** you choose which dock the buses go to (the right one by default); the ones you moved stay where you put them."
+        },
+        {
+          "icon": "E8AB",
+          "title": "Outputs in Connections",
+          "text": "The mixer's **Connections** band shows the channel's real output apart from its sends (a neutral line, without a knob) and reaches under the Master."
+        },
+        {
+          "icon": "E74E",
+          "title": "Saving without reopening",
+          "text": "Saving a new project puts it where you choose and you keep working there: it doesn't reopen, plugins keep running and undo carries on."
+        },
+        {
+          "icon": "E70F",
+          "title": "Automation values by keyboard",
+          "text": "Right-click an automation point → **Type value…** to type it in the parameter's units. A point on a block's edge can be grabbed even when it touches the edge or the next block, and a looped block's passes show veiled and can't be edited: the original rules."
+        },
+        {
+          "icon": "E716",
+          "title": "Live session",
+          "text": "Several people can edit the same project at once, each on their own PC, over the local network or a VPN: the **Live session** button, next to Export, creates a session or joins one. The host passes a code or a link; the others get a copy with its audio and see every change instantly. Each one listens on their own, and everyone needs the same XTreme version."
+        },
+        {
+          "icon": "E8C6",
+          "title": "Tools on automation",
+          "text": "The tools work on the automation lanes as on the clips: Split cuts a block, Erase removes it, Listen plays its track, Range marks a stretch and deleting it cuts the lanes too, and the pencil and the brush take a block and lay copies. Alt+X splits the picked block at the playhead, and Ctrl+X and Align to grid work on blocks too."
+        },
+        {
+          "icon": "E76F",
+          "title": "Console-style separators",
+          "text": "Separators in the timeline and the mixer are now a thin double line in their color, without the glow, with the name small and upper-cased. Settings → Appearance → Separators picks another design: Single line, Band, Label or Groove. Appearance is now sorted into groups that fold."
+        },
+        {
+          "icon": "E8B3",
+          "title": "Automation blocks in the selection",
+          "text": "The selection rectangle also marks automation blocks, and it can be dragged from an empty lane. They move, duplicate (Shift+drag or D), copy, paste, stretch by the edge and delete together with the clips, Ctrl+click adds or removes one and Select all includes them. What a right-drag erases stays dimmed until release, on clips, blocks, markers, chords and tempo, and one drag erases clips and blocks alike."
+        },
+        {
+          "icon": "E9E9",
+          "title": "Mixer views",
+          "text": "View: the mixer's title is a drop-down that changes its layout: XTreme (the free one, with zoom) and FL Studio's fixed ones: Compact and Wide (the selected channel's effects and sends in the inspector, at the side), their alt versions with names at the bottom, and Console (the chain on every strip). Also fixed docks on the left and right (right-click a strip → Dock) and the lists / fader proportion. At the foot of every strip, its kind: Audio, MIDI, Bus, Folder or Master."
+        },
+        {
+          "icon": "E8D6",
+          "title": "Held notes in the piano roll",
+          "text": "A key or a note pressed with the mouse in the piano roll sounds while you hold it, with the instrument's sustain. With an instrument's window in front, the transport shortcuts always respond."
+        },
+        {
+          "icon": "E790",
+          "title": "Grey backgrounds",
+          "text": "Six new backgrounds in the theme picker, lighter than the usual ones: Steel, Cement, Storm, Moss, Sand and Ash."
+        },
+        {
+          "icon": "E7A7",
+          "title": "Return on stop",
+          "text": "A new transport button next to the loop: when on, stopping with {key:play} or ▶ takes the playhead back to where playback started; while it plays, a dashed line marks that point."
+        },
+        {
+          "icon": "E71C",
+          "title": "What the mixer shows",
+          "text": "In the mixer's header, Audio, MIDI, Folders, Buses, Separators and Empty show or hide each kind of strip. A line sets the buses apart from the rest, and a bus can be dragged between the channels."
+        }
+      ]
+    },
+    {
       "version": "0.9.20",
       "items": [
         {
           "icon": "E9D2",
           "title": "Bus automation",
-          "text": "A bus's fader, pan, mute, sends and effects are automated like a track's. Each bus has its row at the end of the timeline with its lanes; **Show buses in the timeline** hides them."
+          "text": "A bus's fader, pan, mute, sends and effects are automated like a track's. A bus with automation has its row at the end of the timeline with its lanes (they start from its strip's right click in the mixer); **Show buses in the timeline** hides them."
         },
         {
           "icon": "E75C",

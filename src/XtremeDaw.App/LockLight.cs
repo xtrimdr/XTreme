@@ -162,6 +162,71 @@ public sealed record LockLight(LockLight.Level State, string Path, int Place, in
         return all;
     }
 
+    /// <summary>
+    /// A link the bench's map draws between a session and a file (#273): a place in the file's line (<see cref="Level.Waiting"/>,
+    /// with whom it waits for, its place and since when, unix seconds) or a red from the hook (<see cref="Level.Blocked"/>,
+    /// <see cref="Level.Clash"/>; the place is 0).
+    /// </summary>
+    public sealed record Snag(string Session, Level State, string Path, string Holder, int Place, int Line, long Since);
+
+    /// <summary>
+    /// Every wait and every red now, each on its own (#273: <see cref="Read"/> keeps only a session's worst, the map
+    /// shows all of them). The holder is a session id, "" when the hook did not say.
+    /// </summary>
+    public static List<Snag> Snags(string? root)
+    {
+        var all = new List<Snag>();
+        if (root == null) return all;
+        var dir = System.IO.Path.Combine(root, ".claude", "bloqueos");
+        try
+        {
+            if (!Directory.Exists(dir)) return all;
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var held = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var f in Directory.EnumerateFiles(dir, "l-*.json"))
+                if (Parse(f) is { } e && Str(e, "path") is { } path && Str(e, "session") is { Length: > 0 } session && !Stale(e, now))
+                    held[path] = session;
+
+            var lines = new Dictionary<string, List<Spot>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var f in Directory.EnumerateFiles(dir, "q-*.json"))
+            {
+                if (Parse(f) is not { } e || Str(e, "path") is not { } path || Str(e, "session") is not { Length: > 0 } session) continue;
+                if (now - Long(e, "seen") > KeepSec) continue;
+                if (!lines.TryGetValue(path, out var line)) lines[path] = line = [];
+                line.Add(new Spot(Str(e, "owner") ?? session, session, path, Long(e, "joined")));
+            }
+            foreach (var line in lines.Values)
+            {
+                line.Sort((a, b) => a.Joined != b.Joined ? a.Joined.CompareTo(b.Joined) : string.CompareOrdinal(a.Owner, b.Owner));
+                for (int i = 0; i < line.Count; i++)
+                {
+                    var p = line[i];
+                    // as in Read: whoever holds it, or the first in line of a file let go
+                    string? holder = held.TryGetValue(p.Path, out var h) ? h : i > 0 ? line[0].Session : null;
+                    if (holder == null || holder.Equals(p.Session, StringComparison.OrdinalIgnoreCase)) continue;
+                    // a subagent and its session wait once on the map
+                    if (all.Exists(s => s.Session.Equals(p.Session, StringComparison.OrdinalIgnoreCase) && s.Path.Equals(Rel(root, p.Path), StringComparison.OrdinalIgnoreCase))) continue;
+                    all.Add(new Snag(p.Session, Level.Waiting, Rel(root, p.Path), holder, i + 1, line.Count, p.Joined));
+                }
+            }
+
+            foreach (var f in Directory.EnumerateFiles(dir, "t-*.json"))
+            {
+                if (Parse(f) is not { } e || Str(e, "session") is not { Length: > 0 } session) continue;
+                var level = Str(e, "state") switch
+                {
+                    "bloqueado" => Level.Blocked,
+                    "atencion" => Level.Clash,
+                    _ => Level.Free,
+                };
+                if (level == Level.Free) continue;
+                all.Add(new Snag(session, level, Rel(root, Str(e, "path") ?? ""), Str(e, "holder") ?? "", 0, 0, 0));
+            }
+        }
+        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { }
+        return all;
+    }
+
     /// <summary>A session's title in Claude (see <see cref="Title"/>), "" when it has none.</summary>
     public static string SessionTitle(string session) => Title(session);
 

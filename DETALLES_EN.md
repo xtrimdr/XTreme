@@ -140,6 +140,8 @@ the [Spanish version](DETALLES.md#xtlab).
 
 `xtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: optional component state, install, and a download test against a local server.
 
+`xtlab colaborar comprobar`: the live session (#291) without the window: state diffs, the invitation code and a real session over 127.0.0.1 (changes both ways, audio transfer, undo, solos, another version, another key). `xtlab colaborar anfitrion folder [--nombre N]` hosts a project and prints the code; `xtlab colaborar unirse code folder [--nombre N]` joins and creates the copy in that folder.
+
 `xtlab proyecto vinculados folder`: each take and where its files are. `xtlab proyecto copiar-vinculado folder media`: copies what is linked into media/. `xtlab proyecto reencontrar folder media --archivo X` or `folder [media] --buscar-en Y`: finds what is missing, by hand or by name and size. `xtlab proyecto verificar-vinculados`: the checks, with a process that really dies mid-copy (`proyecto cortar-copia`).
 
 `xtlab midi herramienta folder --clip id --tool arpeggiate [--rate 5 …]`: runs any piano roll tool (`MidiTools.All`) with its settings by id. `xtlab midi exportar-mid folder --clip id --a x.mid`: the clip as a type 1 MIDI file, at the project's tempo. `xtlab midi importar-mid folder --de x.mid [--pista n] [--en 0]`: with `--pista`, everything in one clip on that MIDI track; without it, a new track per track of the file (per channel in a type 0). `xtlab midi partitura folder --clip id --a x.pdf`: the clip as a PDF score (grand staff, 4/4, quantized to 1/16, with the key signature of the project's scale when it is natural major or minor).

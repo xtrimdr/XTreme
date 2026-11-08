@@ -181,7 +181,7 @@ public sealed class LiveClip
     /// <summary>Where <see cref="Audio"/> came from, and <see cref="VideoPath"/> the same for the picture: once its media points elsewhere the clip starts over.</summary>
     public string? AudioPath { get; set; }
     /// <summary>The take's video file (it may be missing), for the lane's thumbnails; null for audio-only media.</summary>
-    public string? VideoPath { get; init; }
+    public string? VideoPath { get; set; }
     public WriteableBitmap? Frame { get; private set; }
     public bool InClip { get; private set; }
     /// <summary>

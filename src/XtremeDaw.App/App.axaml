@@ -478,6 +478,70 @@
       <Setter Property="Opacity" Value="0.45" />
     </Style>
 
+    <!-- Sesión en vivo (#291), beside Exportar: an accent outline that fills while a session is on, with a beating dot -->
+    <Style Selector="Button.live">
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.live /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent40}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.live:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.live:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent70}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.live.on /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent70}" />
+      <Setter Property="Foreground" Value="{StaticResource Accent}" />
+    </Style>
+    <Style Selector="Button.live:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="Ellipse.livedot.on">
+      <Style.Animations>
+        <Animation Duration="0:0:0.9" IterationCount="Infinite" PlaybackDirection="Alternate" Easing="SineEaseInOut">
+          <KeyFrame Cue="0%">
+            <Setter Property="Opacity" Value="1" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Opacity" Value="0.3" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <!-- the two choices of the live session dialog (Crear / Unirme): a card each -->
+    <Style Selector="Button.livepick">
+      <Setter Property="Padding" Value="14,14" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.livepick /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Raised}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.livepick:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.livepick:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Hover}" />
+      <Setter Property="BorderBrush" Value="{StaticResource Accent40}" />
+      <Setter Property="Foreground" Value="{StaticResource Fg}" />
+    </Style>
+    <Style Selector="Button.livepick:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Opacity" Value="0.45" />
+    </Style>
+
     <!-- "Borrar no usados": a plain chip, in the same color as "Desvincular no usados" beside it, that turns red on hover -->
     <Style Selector="Button.chip.purge:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.purge:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource RecSoft}" />
@@ -786,6 +850,10 @@
       <Setter Property="StrokeThickness" Value="2" />
       <Setter Property="StrokeLineCap" Value="Round" />
       <Setter Property="RenderTransform" Value="rotate(0deg)" />
+    </Style>
+    <!-- it turns only while shown (#295): an infinite animation runs on a hidden control too, and the title bar's
+         SaveSpin (always there, hidden) kept the render loop drawing 60 frames a second with the app idle -->
+    <Style Selector="Arc.spin[IsVisible=True]">
       <Style.Animations>
         <Animation Duration="0:0:0.8" IterationCount="Infinite">
           <KeyFrame Cue="0%">

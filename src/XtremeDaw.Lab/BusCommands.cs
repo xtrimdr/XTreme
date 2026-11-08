@@ -424,6 +424,21 @@ static class BusCommands
         bool folderPost = ProjectBuses.SetSend(p, folder, ProjectBuses.DelayId, 0.4, pre: true) is { Pre: true };
         p.Normalize();
         folderPost &= folder.Sends.Find(s => s.BusId == ProjectBuses.DelayId) is { Pre: true } &&ChannelDsp.Sends(ChannelDsp.Nodes(p), folder) is [{ Pre: true }];
+        // #301: a channel that goes out to a bus has no send to that same bus: going out there takes it out of its list
+        // (off, level kept), and it can't be added back; a track in a folder goes to its folder, so its channel's bus doesn't count
+        var outTrack = new Track { Name = "D" };
+        p.Tracks.Add(outTrack);
+        var outCh = outTrack.Channel;
+        ProjectBuses.SetSend(p, outCh, ProjectBuses.ReverbId, 0.25);
+        bool outSend = ProjectBuses.SetOutput(p, outCh, ProjectBuses.ReverbId) && outCh.SendTo(ProjectBuses.ReverbId) is { Hidden: true, On: false, Level: 0.25 }
+            && !ProjectBuses.CanFeed(p, outCh, ProjectBuses.ReverbId) && ProjectBuses.SetSend(p, outCh, ProjectBuses.ReverbId, 0.5) == null
+            && !ProjectBuses.ShowSend(p, outCh, ProjectBuses.ReverbId, true) && ProjectBuses.Shown(p, outCh).Count == 0
+            && ProjectBuses.SetOutput(p, folder, ProjectBuses.DelayId) && folder.Sends.Find(s => s.BusId == ProjectBuses.DelayId) is { Hidden: true, On: false }
+            && !ProjectBuses.CanFeed(p, folder, ProjectBuses.DelayId);
+        outTrack.FolderId = folder.Id;
+        outSend &= ProjectBuses.CanFeed(p, outCh, ProjectBuses.ReverbId);
+        outTrack.FolderId = null;
+        ProjectBuses.SetOutput(p, folder, null);
 
         // a file with a bus routed to a bus (it goes: a bus's output goes to the master), a send to itself, a loop of
         // sends (the one that closes it goes), a send to nowhere and repeated ids is put right
@@ -470,7 +485,7 @@ static class BusCommands
         ProjectBuses.SetSend(p, p.Tracks[1].Channel, temp.Id, 0.4);
         bool undone = undo.Undo(p) && p.Settings.Buses.Count == count && p.Tracks[1].Channel.Sends.Count == 0
             && undo.Redo(p) && p.Settings.Buses.Count == count + 1 && p.Tracks[1].Channel.SendTo(temp.Id) is { Level: 0.4 };
-        Line("Buses: modelo, envíos entre buses, v2", defaults && adds && loops && hides && ordered && specs && removed && folderPost && fixedUp && converted && clean && roundTrip && undone ? 0 : 1, 0, "bien");
+        Line("Buses: modelo, envíos entre buses, v2", defaults && adds && loops && hides && ordered && specs && removed && folderPost && outSend && fixedUp && converted && clean && roundTrip && undone ? 0 : 1, 0, "bien");
         return allOk;
     }
 

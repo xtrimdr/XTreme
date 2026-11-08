@@ -762,6 +762,25 @@ public sealed class PlaybackEngine : IDisposable
     }
 
     /// <summary>
+    /// Return to the play start on stop (asked by the user, #271; Logic's and Studio One's toggle): when on,
+    /// <see cref="StopPlaying"/> takes the playhead back to where playback started (or to the last seek made while
+    /// playing). Off, it stays where it stopped.
+    /// </summary>
+    public bool ReturnOnStop { get; set; }
+
+    /// <summary>
+    /// The play / stop key and ▶ while playing: fades out like <see cref="FadeOutAndPause"/> and, with
+    /// <see cref="ReturnOnStop"/>, goes back to where playback started (the seek waits for the fade).
+    /// </summary>
+    public void StopPlaying()
+    {
+        if (!playing || stopping || recording) return;
+        double back = playStartSec;
+        FadeOutAndPause();
+        if (ReturnOnStop) Seek(back);
+    }
+
+    /// <summary>
     /// The panic (asked by the user): stops like <see cref="FadeOutAndPause"/> and then silences everything that rings
     /// on: slot tails on tracks, folders, buses and the master, held notes and the instruments' voices. The block that
     /// takes it fades out, so the cut doesn't click. Not while recording.

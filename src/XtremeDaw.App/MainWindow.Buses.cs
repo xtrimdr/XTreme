@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -81,8 +81,16 @@ public partial class MainWindow
         };
     }
 
-    /// <summary>The buses' rows at the end of the timeline, or none while the project hides them.</summary>
-    void SyncBusRows() => Timeline.SetBusRows(store is { } st && !st.Project.Settings.BusRowsHidden ? st.Project.Settings.Buses : []);
+    /// <summary>
+    /// The buses' rows at the end of the timeline: only the buses with automation lanes (asked by the user, #288: a bus
+    /// without lanes has nothing to show there; its lanes start from its menu in the mixer), none while the project hides them.
+    /// </summary>
+    void SyncBusRows() => Timeline.SetBusRows(store is { } st && !st.Project.Settings.BusRowsHidden
+        ? [.. st.Project.Settings.Buses.Where(b => b.Automation is { Count: > 0 })]
+        : []);
+
+    /// <summary>Whether some bus has lanes, so a row the toggle shows or hides.</summary>
+    bool AnyBusLanes => store?.Project.Settings.Buses.Any(b => b.Automation is { Count: > 0 }) == true;
 
     /// <summary>Shows or hides the buses' rows (a view setting of the project: saved, without undo; their lanes keep playing).</summary>
     MenuItem BusRowsItem() => MenuCheck(Loc.T("timeline.busRows"), () => store?.Project.Settings.BusRowsHidden == false, () =>
@@ -405,7 +413,7 @@ public partial class MainWindow
         var (controls, gr) = CompactChain(SlotsOf(bus), RouterOf(bus), () => B().Pan, v => BusEdit(id, b => b.Pan = v, "pan"), busMute);
         mx.NodeMeters.Add((id, meter, gr));
         var content = new Grid();
-        var layout = StripLayout(head, controls, faders, db);
+        var layout = StripLayout(head, controls, faders, db, "bus");
         NarrowParts(layout, faders, fader, meter, db);
         content.Children.Add(layout);
         content.Children.Add(top);
@@ -421,6 +429,11 @@ public partial class MainWindow
         [
             MenuAction(Loc.T("mix.bus.rename"), () => { RenameBus(id, anchor); return Task.CompletedTask; }, enabled: enabled, icon: "\ue8ac"),
             MenuAction(Loc.T("look.bus.menu"), () => { ShowBusLook(id, anchor); return Task.CompletedTask; }, enabled: enabled, icon: "\ue790"),
+            // its lanes start here: the bus has a row in the timeline only once it has one (#288)
+            BusById(id) is { } auto
+                ? new MenuItem { Header = MenuHeader(Loc.T("auto.menu"), new TextBlock { Classes = { "icon" }, Text = "\ue9d2", FontSize = 12 }), ItemsSource = AutomationItems(auto), IsEnabled = enabled }
+                : new Separator(),
+            BusById(id) is { } docked ? DockMenu(docked) : new Separator(),
             new Separator(),
             MenuAction(Loc.T("mix.bus.remove"), () => { BusesEdit(p => ProjectBuses.Remove(p, id)); return Task.CompletedTask; }, enabled: enabled, danger: true, icon: "\ue74d",
                 tip: Loc.T("mix.bus.remove.tip")),

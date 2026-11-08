@@ -71,7 +71,7 @@ public partial class MainWindow
     const string ClipPage = "#clip", LimPage = "#limit";
 
     /// <summary>The output meter pinned at the view's right (asked by the user: always in sight, as the master in the mixer).</summary>
-    readonly Border masteringPin = PinnedColumn();
+    readonly GrooveBorder masteringPin = PinnedColumn();
     MixerMeter? masteringMeter;
     LoudnessHistory? masterHistory;
     /// <summary>When the loudness graph last took a reading (ms, <see cref="Environment.TickCount64"/>).</summary>

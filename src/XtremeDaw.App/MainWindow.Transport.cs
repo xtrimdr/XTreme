@@ -47,10 +47,20 @@ public partial class MainWindow
         Status(Loc.T("transport.cutAudio.done"));
     }
 
+    /// <summary>config.json key of the return-on-stop toggle (#271): a habit of the user, not of a project.</summary>
+    const string ReturnOnStopKey = "transport.returnOnStop";
+
     void InitTransport()
     {
         engine.Loop = LoopToggle.IsChecked == true;
         LoopToggle.IsCheckedChanged += (_, _) => engine.Loop = LoopToggle.IsChecked == true;
+        ReturnToggle.IsChecked = engine.ReturnOnStop = AppConfig.Get(ReturnOnStopKey) == "1";
+        ReturnToggle.IsCheckedChanged += (_, _) =>
+        {
+            engine.ReturnOnStop = ReturnToggle.IsChecked == true;
+            try { AppConfig.Set(ReturnOnStopKey, engine.ReturnOnStop ? "1" : null); }
+            catch (Exception ex) { Status(ex.Message); }
+        };
         StopButton.Click += (_, _) => engine.StopTransport();
         CutAudioButton.Click += (_, _) => CutAudio();
         ToolTip.SetTip(CutAudioButton, Shortcuts.Tip(Loc.T("transport.cutAudio.tip"), "cutAudio"));

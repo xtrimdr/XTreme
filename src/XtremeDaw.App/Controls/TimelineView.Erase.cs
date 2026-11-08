@@ -7,7 +7,7 @@ namespace XtremeDaw.App.Controls;
 /// The right drag erases anything it goes over, wherever it starts (#268: one rule for all, as in FL Studio): clips
 /// (TimelineView.Tools.cs), automation blocks (TimelineView.Automation.cs) and, here, what the strips above the lanes
 /// hold: the loop range, markers, chords, meter changes and tempo points. A right click that does not move opens that
-/// place's menu on release. What a drag takes is hidden until release, when it goes in one undo step.
+/// place's menu on release. What a drag takes is dimmed until release (#281: clips, blocks and marks alike), when it goes in one undo step.
 /// </summary>
 public sealed partial class TimelineView
 {
@@ -19,6 +19,9 @@ public sealed partial class TimelineView
     public event Action<IReadOnlyList<double>, IReadOnlyList<int>>? TempoErased;
 
     enum EraseStrip { None, Range, Marker, Chord, Meter, Tempo }
+
+    /// <summary>How what a right drag went over is drawn until release (#281: the same for all, clips, blocks and the strips' marks).</summary>
+    const double ErasingOpacity = 0.25;
 
     // the strip a right drag started on and what it went over
     EraseStrip eraseStrip;
@@ -89,17 +92,20 @@ public sealed partial class TimelineView
         if (any) InvalidateVisual();
     }
 
-    /// <summary>The right drag ends: what it went over goes to the window, in one step per kind.</summary>
-    void EndRightErase(bool changed)
+    /// <summary>
+    /// The right drag ends: what it went over on a strip goes to the window, in one step per kind; the automation blocks it
+    /// went over come back, to go with its clips.
+    /// </summary>
+    List<string> EndRightErase(bool changed)
     {
-        EndAutoErase(changed);
+        var blocks = EndAutoErase(changed);
         var strip = eraseStrip;
         List<string> ids = [.. stripErasing];
         List<double> beats = [.. tempoErasing];
         List<int> bars = [.. meterErasing];
         bool loop = loopErasing;
         ClearStripErase();
-        if (!changed) return;
+        if (!changed) return blocks;
         switch (strip)
         {
             case EraseStrip.Range when loop: LoopClearRequested?.Invoke(); break;
@@ -107,14 +113,13 @@ public sealed partial class TimelineView
             case EraseStrip.Chord when ids.Count > 0: ChordsErased?.Invoke(ids); break;
             case EraseStrip.Meter or EraseStrip.Tempo when beats.Count > 0 || bars.Count > 0: TempoErased?.Invoke(beats, bars); break;
         }
+        return blocks;
     }
 
     /// <summary>Forgets a right drag: the automation's and the strips'.</summary>
     void ClearRightErase()
     {
         if (autoErasing.Count > 0) autoErasing.Clear();
-        autoEraseLane = null;
-        autoEraseOwner = null;
         ClearStripErase();
     }
 

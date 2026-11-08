@@ -52,6 +52,25 @@ static class UntitledChecks
                     !UntitledProjects.Is(saved) && st.Project.Tracks.Count == 1 && File.Exists(Path.Combine(saved, "media", "toma1.wav")));
             UntitledProjects.Remove(full);
             Check("y la carpeta sin guardar se va", !Directory.Exists(full) && UntitledProjects.Leftover() == null);
+
+            // "Guardar" goes on in the copy with the same project in memory (#297): nothing reopens
+            string live = UntitledProjects.Create("audio");
+            using (var st = ProjectStore.Open(live))
+            {
+                var project = st.Project;
+                project.Tracks.Add(new Track { Name = "Bajo" });
+                st.Save();
+                string to = ProjectLibrary.SaveAs(live, Path.Combine(tmp, "afuera", "Sigue.xtp"));
+                project.Tracks.Add(new Track { Name = "Teclado" }); // an edit after the copy was read
+                st.MoveTo(to);
+                Check("Guardar sigue en la copia con el mismo proyecto en memoria",
+                    st.Project == project && ProjectLibrary.SamePath(st.Dir, to) && project.Name == "Sigue");
+                Check("y escribe ahí lo que hay en memoria, con su origen en el registro",
+                    ProjectStore.Parse(File.ReadAllText(st.FilePath)).Tracks.Count == 2 && project.Log.Any(l => l.Type == "session-saved-as"));
+                Check("toma el bloqueo de la copia y suelta el de antes",
+                    File.Exists(Path.Combine(to, ProjectStore.LockName)) && !File.Exists(Path.Combine(live, ProjectStore.LockName)));
+            }
+            UntitledProjects.Remove(live);
         }
         finally
         {

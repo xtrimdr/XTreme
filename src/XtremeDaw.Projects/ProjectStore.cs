@@ -59,7 +59,7 @@ public sealed class ProjectStore : IDisposable
     DateTime lastSnapshot = DateTime.MinValue;
     string? lastSnapshotText;
 
-    public string Dir { get; }
+    public string Dir { get; private set; }
     public Project Project { get; private set; }
     /// <summary>Set when the project can't be saved from here; the reason is shown to the user.</summary>
     public string? ReadOnlyReason { get; private set; }
@@ -863,6 +863,41 @@ public sealed class ProjectStore : IDisposable
             Notices.Add(Texts.T("store.adopted", "{0} archivo(s) de media/ agregados al proyecto ({1})", names.Count, string.Join(", ", names)));
         }
         return names.Count;
+    }
+
+    /// <summary>
+    /// Goes on in <paramref name="dir"/>, the copy <see cref="ProjectLibrary.SaveAs"/> just made of this project, with
+    /// the same <see cref="Project"/> in memory: "Guardar" of a project without a place moves it without reopening it
+    /// (#297), so what the window holds (tracks, plugins, undo, view) carries on. Takes the copy's identity (id, name,
+    /// dates, log) and its lock, lets go of the old folder's and writes what is in memory there. Call it on the thread
+    /// that owns the project, with no save pending for the old folder. Throws when the copy can't be opened for
+    /// writing; the store then stays where it was.
+    /// </summary>
+    public void MoveTo(string dir)
+    {
+        dir = Path.GetFullPath(dir).TrimEnd('\\', '/');
+        string file = FindFile(dir) ?? throw new IOException(Texts.T("store.noCopy", "No se encontró la copia del proyecto"));
+        var copy = Parse(File.ReadAllText(file, Encoding.UTF8));
+        lock (writeLock)
+        {
+            var (oldDir, oldFile, oldLock) = (Dir, FilePath, lockFile);
+            (Dir, FilePath, lockFile) = (dir, file, null);
+            TakeLock();
+            if (ReadOnly)
+            {
+                (Dir, FilePath, lockFile, ReadOnlyReason) = (oldDir, oldFile, oldLock, null);
+                throw new IOException(Texts.T("store.locked", "Abierto en otra ventana de XTreme: solo lectura"));
+            }
+            oldLock?.Dispose();
+            (Project.Id, Project.Name, Project.CreatedAt) = (copy.Id, copy.Name, copy.CreatedAt);
+            Project.Exports = [];
+            // the copy's log ends with where it came from; what happened here after the copy was read stays too
+            Project.Log = [.. copy.Log, .. Project.Log.Skip(Math.Min(Project.Log.Count, copy.Log.Count - 1))];
+            lastSnapshot = DateTime.MinValue;
+            lastSnapshotText = null;
+            Notices.Clear();
+            Save();
+        }
     }
 
     public void Dispose()

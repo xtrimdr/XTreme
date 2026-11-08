@@ -306,7 +306,7 @@
           ],
           "notes": [
             "En un clip de audio, las repeticiones siguen al original: si lo movés o lo recortás, se rehacen. Una repetición que editás sola queda como clip propio.",
-            "En un clip MIDI o un bloque de automatización, lo que edités en cualquier vuelta cambia todas."
+            "En un clip MIDI, lo que edités en cualquier vuelta cambia todas. En un bloque de automatización las vueltas se ven veladas y no se editan: manda el original."
           ],
           "see": ["split-copy", "move-trim", "automation"]
         },
@@ -317,12 +317,14 @@
           "keywords": "marcar seleccion multiple rectangulo grupo",
           "intro": "Para mover, editar o borrar varios de una vez.",
           "steps": [
-            "Arrastrá en la parte vacía de las pistas: se marca todo lo que toque el rectángulo.",
-            "**Ctrl+clic** en un clip lo suma o lo saca.",
-            "Arrastrá uno de los marcados por el cuerpo y se mueven todos.",
-            "Arrastrá un borde, un fade o el bucle de uno de los marcados y cambian todos igual.",
+            "Arrastrá en la parte vacía de las pistas o de un carril de automatización: se marca todo lo que toque el rectángulo, también los bloques de automatización.",
+            "**Ctrl+clic** en un clip o en un bloque lo suma o lo saca.",
+            "Un bloque marcado se arrastra por su franja de arriba y se mueve todo lo marcado.",
+            "Arrastrá uno de los marcados por el cuerpo y se mueven todos; con Shift queda una copia de cada uno donde estaba.",
+            "Arrastrá un borde, un fade o el bucle de uno de los marcados (clip o bloque) y cambian todos igual.",
+            "Duplicar, copiar, cortar y pegar llevan todo lo marcado, bloques incluidos: cada bloque vuelve a su carril.",
             "Borralos con {key:delete}.",
-            "{key:selectAll} marca todos los clips y {key:deselect} saca la selección."
+            "{key:selectAll} marca todos los clips y bloques, y {key:deselect} saca la selección."
           ],
           "see": ["delete-range", "split-copy"]
         },
@@ -360,7 +362,7 @@
           ],
           "notes": [
             "Un clic en un patrón de Patrones o en un sample de la Biblioteca también lo elige para el lápiz y el pincel.",
-            "Dividir, Borrar y Escuchar valen para clips de audio y MIDI."
+            "Todas valen también en los carriles de automatización: Dividir corta el bloque, Borrar lo saca, Escuchar oye su pista, Rango marca el tramo de su pista (y borrar un rango corta también sus carriles), y el lápiz y el pincel toman un bloque con un clic y ponen copias en un lugar vacío (sin un bloque tomado, el clic crea uno)."
           ],
           "see": ["navigate"]
         },
@@ -378,7 +380,8 @@
             "{key:fit}: ver todo el tema."
           ],
           "notes": [
-            "Clic derecho en los números de la regla: cómo se dibuja la grilla."
+            "Clic derecho en los números de la regla: cómo se dibuja la grilla.",
+            "**Volver al parar**, en el transporte al lado del loop: prendido, al parar con {key:play} el cabezal vuelve a donde arrancó la reproducción; mientras suena, una línea punteada marca ese punto."
           ],
           "see": ["shortcuts"]
         },
@@ -615,6 +618,11 @@
           "notes": [
             "{wheel:wheelZoom} sobre el mixer cambia el ancho de los canales, también sobre una perilla o un fader: con esa tecla apretada no cambia ningún valor.",
             "**Efectos** y **Envíos**, arriba, muestran u ocultan esa sección en todas las tiras. Arrastrá la línea de abajo de una lista para agrandarla o achicarla; doble clic la ajusta a la lista más larga. Clic derecho en el botón: el mismo ajuste o el alto por defecto.",
+            "**Audio**, **MIDI**, **Carpetas**, **Buses**, **Separadores** y **Vacías**, en la cabecera, muestran u ocultan cada tipo de tira. Sin las carpetas, sus pistas quedan en el lugar de la carpeta. El mixer tiene dos lados: el izquierdo y el dock derecho, cada uno con su desplazamiento. Por defecto los canales van a la izquierda y los buses al dock derecho; clic derecho en una tira → **Dock** la pasa a **Fijar a la izquierda** o **Fijar a la derecha**. Arrastrá la línea entre el lado izquierdo y el dock derecho para darle más lugar a uno, y con doble clic vuelve a como estaba. Un bus se arrastra a cualquier lugar, también entre los canales, y queda después del canal que tiene a su izquierda.",
+            "**Vista**: el título del mixer es un desplegable (Mixer · XTreme) que cambia su disposición. **XTreme**: la libre, la única con zoom; el ancho, los efectos, los envíos y sus altos, el nombre y el inspector los elegís vos, y quedan como los dejaste al volver a ella. Las demás son fijas, como las de FL Studio: sin zoom y con sus secciones. **Compacta** y **Amplia**: las tiras quedan con paneo, fader y medidor, y los efectos, envíos, entrada y salida del canal elegido van en el inspector, al costado. **Compacta alt** y **Amplia alt**: lo mismo, con el nombre al pie. **Consola**: cada tira lleva sus efectos y envíos, sin inspector.",
+            "**Inspector** muestra el canal elegido en un panel de todo el alto: entrada, salida, todos sus efectos, envíos y paneo. Arrastrá su borde para cambiar el ancho. Clic derecho en el panel: **Inspector a la izquierda** o **a la derecha**.",
+            "Los tres puntos sobre cada fader reparten el alto entre las listas y el fader; doble clic vuelve al de fábrica.",
+            "El nombre de las tiras puede ir al pie: Configuración → Apariencia → Mixer.",
             "**MONO**, en el master, sirve para comprobar la mezcla en mono.",
             "Clic derecho en una tira: las mismas acciones que en el encabezado de la pista."
           ],
@@ -819,7 +827,7 @@
           "notes": [
             "**PRE** saca el envío antes del fader: sigue sonando aunque bajes la pista.",
             "Un bus también manda a otros buses, con el mismo **+** de **Envíos** en su tira. No se ofrece uno que le devolvería el sonido; su salida va siempre al Master.",
-            "**Conexiones**, en la cabecera del mixer, muestra debajo de las tiras los envíos activos del canal elegido: una línea hasta cada bus, con una perilla para su nivel. Con un bus elegido, también los que le llegan, más tenues. Las sogas salen de OUT y llegan a IN, a los costados de la tira elegida; en la otra punta, bajo cada perilla, también IN u OUT, y la flecha entra desde abajo. Bajo cada bus al que el canal todavía no manda, **Enviar** crea el envío al instante. Arrastrá el borde de arriba de la franja para agrandarla.",
+            "**Conexiones**, en la cabecera del mixer, muestra debajo de las tiras los envíos activos del canal elegido: una línea hasta cada bus, con una perilla para su nivel. Con un bus elegido, también los que le llegan, más tenues. Las sogas salen de OUT y llegan a IN, a los costados de la tira elegida; en la otra punta, bajo cada perilla, también IN u OUT, y la flecha entra desde abajo. Bajo cada bus al que el canal todavía no manda, **Enviar** crea el envío al instante. Arrastrá el borde de arriba de la franja para agrandarla. La salida del canal (a su carpeta, a un bus o al Master) va aparte: una línea neutra y más gruesa, sin perilla. Un bus o una carpeta elegidos muestran también lo que sale hacia ellos.",
             "Al detener, las colas siguen sonando hasta apagarse. Para callarlas ya, tocá **Cortar audio** (el parlante tachado del transporte) o {key:cutAudio}: corta también las notas que quedaron sonando."
           ],
           "see": ["add-fx", "mixer"]
@@ -832,11 +840,12 @@
           "intro": "Hace que un control cambie solo a lo largo del tema.",
           "steps": [
             "Clic derecho sobre el control → **Automatizar…**, o en el menú de la pista o de la carpeta → **Automatización**. En un plugin: tocá **Automatizar** en la barra de su ventana y mové el parámetro.",
-            "Aparece un carril debajo de la pista, de la fila de la carpeta o de la fila del bus. Los buses tienen su fila al final del timeline; **Mostrar buses en el timeline** (clic derecho en una fila de bus o en el espacio vacío) las muestra u oculta. Los de una carpeta se ocultan al plegarla; **Ver la automatización**, en su menú, los muestra u oculta.",
+            "Aparece un carril debajo de la pista, de la fila de la carpeta o de la fila del bus. Un bus con automatización tiene su fila al final del timeline (sus carriles se agregan desde el clic derecho de su tira en el mixer); **Mostrar buses en el timeline** (clic derecho en una fila de bus o en el espacio vacío) las muestra u oculta. Los de una carpeta se ocultan al plegarla; **Ver la automatización**, en su menú, los muestra u oculta.",
             "Clic agrega un punto, arrastrar lo mueve y doble clic lo borra. Shift+arrastrar dibuja. Arrastrar con clic derecho borra los bloques que toca, como con los clips.",
             "Arrastrá el círculo en medio de un tramo para darle tensión: curvarlo, o cambiar cuántos escalones, pulsos u ondas tiene. Doble clic la vuelve a cero.",
             "Clic derecho sobre un punto o un tramo → su forma: **Curva**, **Curva doble**, **Mantener**, **Escalones**, **Escalones suaves**, **Pulsos** u **Onda**. La de un punto es la del tramo que llega a él.",
-            "Arrastrá la esquina de arriba a la derecha de un bloque para repetirlo en bucle.",
+            "Clic derecho sobre un punto → **Escribir valor…**: escribí el valor en las unidades del parámetro (dB, Hz, ms, %, L/R) y Enter.",
+            "Arrastrá la esquina de arriba a la derecha de un bloque para repetirlo en bucle. Las vueltas se ven veladas y no se editan: los puntos van en el original.",
             "Para borrar un carril, tocá el tacho en su encabezado y confirmá."
           ],
           "notes": [
@@ -1455,6 +1464,21 @@
             "Del otro lado, **Abrir paquete…** lo trae como proyecto nuevo."
           ],
           "see": ["new-project"]
+        },
+        {
+          "id": "live-session",
+          "icon": "E716",
+          "title": "Editar entre varios en vivo",
+          "keywords": "colaborar sesión en vivo compartir juntos red vpn tailscale zerotier invitar código link",
+          "intro": "Varios editan el mismo proyecto a la vez, cada uno en su PC, y ven al instante lo que cambian los demás.",
+          "steps": [
+            "Quien invita abre el proyecto, toca **Sesión en vivo** (al lado de Exportar) y elige **Crear sesión**.",
+            "Le pasa a los demás el **código**, el **link** o la **IP** (Copiar código / Copiar link / Copiar IP).",
+            "Cada invitado toca **Sesión en vivo → Unirme**, pega el código y toca **Unirse**: recibe una copia del proyecto con su audio, que queda en sus proyectos.",
+            "Todos editan todo; cada uno escucha por su cuenta (Play, solos y la placa de audio son de cada uno). Lo que se graba llega a los demás al terminar la toma.",
+            "Hace falta la misma versión de XTreme y estar en la misma red, o en una VPN como Tailscale o ZeroTier. Mientras dura, el botón dice **En vivo** y cuántos hay; desde ahí, **Finalizar sesión** (anfitrión) o **Salir de la sesión** (invitado), que deja tu copia como está."
+          ],
+          "see": ["share-project"]
         }
       ]
     },
@@ -1478,6 +1502,7 @@
           ],
           "notes": [
             "En **Atajos de teclado** está la lista completa y se cambia cualquiera.",
+            "El buscador de arriba de las pestañas de Configuración (**Ctrl+F**) encuentra cualquier opción o atajo por su nombre: un clic en el resultado te lleva ahí.",
             "En **Distribución de teclas** elegís las teclas de Cubase, Logic Pro, FL Studio, Reaper o Studio Pro. Tus cambios quedan guardados en cada una. Lo que ese DAW no tiene sigue con la tecla de XTreme.",
             "Con la ventana de un plugin adelante, las teclas van a XTreme: transporte, atajos y teclado virtual (salvo Alt+Tab y Alt+F4). Con **Teclas al plugin** prendido en la barra de su ventana, van todas al plugin mientras su ventana está adelante, y el teclado virtual no toca. Vale para todas las ventanas de plugins."
           ],
@@ -1494,7 +1519,7 @@
             "El botón de diseño {icon:E80A} cambia entre **Clásico** y **Vertical**.",
             "Los dos botones de panel ocultan los costados.",
             "{key:fullScreen} pasa a pantalla completa.",
-            "En **Configuración → Apariencia** se elige el estilo de los paneles de la ventana (planos, en relieve o en relieve con degradé), de las perillas, los faders, los medidores, las ondas y cómo se ve el color de cada pista en el timeline (clips tenues, llenos, solo la onda o con barra de título; el encabezado con filo, franja, teñido, lleno o sin color, carril teñido y la selección en su color), cómo se ven las **carpetas** (marco, bloque de su color o línea al costado), las **tiras del mixer** (tarjetas o unidas; el color del canal como filo, franja, teñida, encabezado lleno o sin color) y en el inspector (línea y tinte, solo línea, lleno o sin color; franja al costado, secciones teñidas e íconos en su color), la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) los **colores de los medidores** (**Por defecto**, o **Custom**: elegís Bajo, Caliente y Clip, o tocás **Sorprendeme** para sortear tres que combinan; valen en todos los medidores y estilos y los umbrales no cambian) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica."
+            "En **Configuración → Apariencia** se elige el estilo de los paneles de la ventana (planos, en relieve o en relieve con degradé), de las perillas, los faders, los medidores, las ondas y cómo se ve el color de cada pista en el timeline (clips tenues, llenos, solo la onda o con barra de título; el encabezado con filo, franja, teñido, lleno o sin color, carril teñido y la selección en su color), cómo se ven las **carpetas** (marco, bloque de su color o línea al costado), las **tiras del mixer** (tarjetas o unidas; el color del canal como filo, franja, teñida, encabezado lleno o sin color) y en el inspector (línea y tinte, solo línea, lleno o sin color; franja al costado, secciones teñidas e íconos en su color), la fuente de la interfaz, la de los números (valores, tiempos y reloj; también una digital de 14 segmentos y Orbitron) los **colores de los medidores** (**Por defecto**, o **Custom**: elegís Bajo, Caliente y Clip, o tocás **Sorprendeme** para sortear tres que combinan; valen en todos los medidores y estilos y los umbrales no cambian) y el tamaño, en px (también con **Ctrl +** y **Ctrl −**; **Ctrl 0** vuelve al 100 %), y el diseño de los **separadores** del timeline y el mixer (doble línea, línea simple, banda, etiqueta o surco). **Restablecer**, arriba de cada uno, lo vuelve al de fábrica. Las opciones van en grupos (General, Controles, Timeline, Inspector, Mixer, Separadores): un clic en el título lo abre o lo pliega, y queda como lo dejaste."
           ],
           "settings": "view"
         },

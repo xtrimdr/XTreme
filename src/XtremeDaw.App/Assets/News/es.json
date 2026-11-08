@@ -1,12 +1,92 @@
 {
   "releases": [
     {
+      "version": "0.9.21",
+      "items": [
+        {
+          "icon": "E8AB",
+          "title": "Mixer en dos lados",
+          "text": "El mixer queda con dos lados, izquierda y dock derecho (**Dock → Fijar a la izquierda / a la derecha**). Un bus nuevo va al dock de los buses, y el divisor se corre solo para mostrar la tira que llega a la derecha."
+        },
+        {
+          "icon": "E721",
+          "title": "Buscador en Configuración",
+          "text": "Arriba de las pestañas de **Configuración**, escribí lo que buscás (**Ctrl+F**): aparece cada opción, ayuda o atajo que lo nombra, por pestaña. Un clic te lleva a esa tarjeta; Esc borra."
+        },
+        {
+          "icon": "E8AB",
+          "title": "Buses a la derecha",
+          "text": "En **Configuración → Apariencia → Mixer** elegís en qué dock van los buses (el derecho, por defecto); los que moviste a mano quedan donde los pusiste."
+        },
+        {
+          "icon": "E8AB",
+          "title": "Salidas en Conexiones",
+          "text": "La franja **Conexiones** del mixer muestra la salida real del canal aparte de sus envíos (una línea neutra, sin perilla) y llega hasta el Master."
+        },
+        {
+          "icon": "E74E",
+          "title": "Guardar sin reabrir",
+          "text": "Guardar un proyecto nuevo lo ubica donde elegís y seguís trabajando ahí: no se vuelve a abrir, no se cortan los plugins y el deshacer sigue."
+        },
+        {
+          "icon": "E70F",
+          "title": "Valores de automatización por teclado",
+          "text": "Clic derecho sobre un punto de automatización → **Escribir valor…** para escribirlo en las unidades del parámetro. Un punto en el borde de un bloque se agarra aunque esté pegado al borde o al bloque de al lado, y las vueltas de un bloque en bucle se ven veladas y no se editan: manda el original."
+        },
+        {
+          "icon": "E716",
+          "title": "Sesión en vivo",
+          "text": "Varios pueden editar el mismo proyecto a la vez, cada uno en su PC, por la red local o una VPN: el botón **Sesión en vivo**, al lado de Exportar, crea una sesión o te une a una. Quien invita pasa un código o un link; los demás reciben una copia con su audio y ven al instante cada cambio. Cada uno escucha por su cuenta, y hace falta la misma versión de XTreme."
+        },
+        {
+          "icon": "E8C6",
+          "title": "Herramientas en la automatización",
+          "text": "Las herramientas funcionan en los carriles de automatización como en los clips: Dividir corta un bloque, Borrar lo saca, Escuchar oye su pista, Rango marca el tramo y borrarlo corta también los carriles, y el lápiz y el pincel toman un bloque y ponen copias. Alt+X divide el bloque elegido en el cabezal, y Ctrl+X y Alinear a la grilla también valen para bloques."
+        },
+        {
+          "icon": "E76F",
+          "title": "Separadores estilo consola",
+          "text": "Los separadores del timeline y del mixer son ahora una doble línea fina de su color, sin brillo, con el nombre chico y en mayúsculas. En Configuración → Apariencia → Separadores se elige otro diseño: Línea simple, Banda, Etiqueta o Surco. Apariencia se ordena en grupos que se pliegan."
+        },
+        {
+          "icon": "E8B3",
+          "title": "Bloques de automatización en la selección",
+          "text": "El rectángulo de selección marca también los bloques de automatización, y se arrastra desde un carril vacío. Se mueven, se duplican (Shift+arrastrar o D), se copian, se pegan, se estiran por el borde y se borran junto con los clips, Ctrl+clic suma o saca uno y Seleccionar todo los incluye. Lo que borra el arrastre con clic derecho queda tenue hasta soltar, en clips, bloques, marcadores, acordes y tempo, y el mismo arrastre borra clips y bloques a la vez."
+        },
+        {
+          "icon": "E9E9",
+          "title": "Vistas del mixer",
+          "text": "Vista: el título del mixer es un desplegable que cambia su disposición: XTreme (la libre, con zoom) y las fijas de FL Studio: Compacta y Amplia (efectos y envíos del canal elegido en el inspector, al costado), sus versiones alt con el nombre al pie, y Consola (la cadena en cada tira). Además, docks fijos a la izquierda y a la derecha (clic derecho en una tira → Dock) y la proporción entre listas y fader. Al pie de cada tira, su tipo: Audio, MIDI, Bus, Carpeta o Master."
+        },
+        {
+          "icon": "E8D6",
+          "title": "Notas sostenidas en el piano roll",
+          "text": "Una tecla o una nota apretada con el mouse en el piano roll suena mientras la mantenés, con el sustain del instrumento. Con la ventana de un instrumento al frente, los atajos del transporte responden siempre."
+        },
+        {
+          "icon": "E790",
+          "title": "Fondos grises",
+          "text": "Seis fondos nuevos en el selector de tema, más claros que los de siempre: Acero, Cemento, Tormenta, Musgo, Arena y Ceniza."
+        },
+        {
+          "icon": "E7A7",
+          "title": "Volver al parar",
+          "text": "Un botón nuevo en el transporte, al lado del loop: prendido, al parar con {key:play} o ▶ el cabezal vuelve a donde arrancó la reproducción; mientras suena, una línea punteada marca ese punto."
+        },
+        {
+          "icon": "E71C",
+          "title": "Qué se ve en el mixer",
+          "text": "En la cabecera del mixer, Audio, MIDI, Carpetas, Buses, Separadores y Vacías muestran u ocultan cada tipo de tira. Una línea separa los buses del resto, y un bus se puede arrastrar entre los canales."
+        }
+      ]
+    },
+    {
       "version": "0.9.20",
       "items": [
         {
           "icon": "E9D2",
           "title": "Automatización de buses",
-          "text": "Fader, paneo, mute, envíos y efectos de un bus se automatizan como los de una pista. Cada bus tiene su fila al final del timeline con sus carriles; **Mostrar buses en el timeline** las oculta."
+          "text": "Fader, paneo, mute, envíos y efectos de un bus se automatizan como los de una pista. Un bus con automatización tiene su fila al final del timeline con sus carriles (se agregan desde el clic derecho de su tira en el mixer); **Mostrar buses en el timeline** las oculta."
         },
         {
           "icon": "E75C",

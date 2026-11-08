@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Automation;
 using Avalonia.Controls.Primitives;
@@ -84,16 +84,17 @@ public partial class MainWindow
 
         Timeline.SplitAtRequested += async (track, clip, at) => await SplitAt(track, clip, at);
         Timeline.MidiSplitRequested += async (track, id, at) => await SplitMidi(track, id, at);
-        Timeline.ClipsErased += async erased =>
+        Timeline.ClipsErased += async (erased, blocks) =>
         {
             var ids = WithoutLocked(erased);
-            if (ids.Count == 0) return;
+            if (ids.Count == 0 && blocks.Count == 0) return;
             string? trackId = sel?.Track.Id;
             await EditTimeline(p =>
             {
-                foreach (var id in ids) MidiEditing.RemoveAny(p, id);
+                MidiEditing.RemoveMany(p, ids);
+                RemoveBlocks(p, blocks);
                 return trackId;
-            }, ids.Count > 1 ? "clips-removed" : "clip-removed");
+            }, ids.Count + blocks.Count > 1 ? "clips-removed" : "clip-removed");
         };
         Timeline.ListenStarted += StartListening;
         Timeline.ListenEnded += StopListening;
@@ -147,7 +148,7 @@ public partial class MainWindow
     {
         double w = ToolBox.Bounds.Width;
         if (w <= 0) return;
-        double left = EditButtons.Bounds.Right, right = ExportButton.Bounds.Left;
+        double left = EditButtons.Bounds.Right, right = LiveButton.Bounds.Left;
         // too narrow: the project's name trims (down to NameMin) before the tools reach Exportar; with room it grows back
         double over = left + ToolGap + w + ToolGap - right;
         double name = over > 0 ? Math.Max(NameMin, Math.Min(SessionName.MaxWidth, SessionName.Bounds.Width) - over) : Math.Min(NameMax, SessionName.MaxWidth - over);

@@ -126,7 +126,7 @@ public static partial class HelpGuide
     static string Plain(string text) => string.Concat(Pieces(text).Where(p => p.Mark != Mark.Icon).Select(p => p.Text));
 
     /// <summary>Lowercase and without accents: "cómo" finds "Como" and the other way around.</summary>
-    static string Fold(string text)
+    internal static string Fold(string text)
     {
         var sb = new StringBuilder(text.Length);
         foreach (char c in text.Normalize(NormalizationForm.FormD))

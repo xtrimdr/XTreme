@@ -60,6 +60,7 @@ public partial class MainWindow : Window
         };
         InitFullScreen();
         InitWindowPlace();
+        InitLive();
 
         SessionChip.Click += async (_, _) => await ShowProjects();
         ExportButton.Click += async (_, _) =>
@@ -331,6 +332,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             SessionLog.Write("ventana cerrada");
+            EndLive(null);
             if (untitledToDrop is var (dropDir, recycle)) DropUntitled(dropDir, recycle);
             timer.Stop();
             SaveWindowPlace();
@@ -363,6 +365,7 @@ public partial class MainWindow : Window
         dirty = true;
         ArmSave(restart: true);
         LoudnessSoon();
+        LiveSoon();
     }
 
     /// <summary>
@@ -528,6 +531,7 @@ public partial class MainWindow : Window
     /// <summary>Opens a project in place of the current one (throws, so the manager can show why not).</summary>
     async Task OpenProject(string dir, bool preserveUndo = false)
     {
+        LiveBeforeOpen();
         await FlushProjectOperation();
         if (PluginStatesDue && store is { ReadOnly: false }) await SavePluginStates();
         Status(Loc.T("main.loading"));
@@ -631,7 +635,7 @@ public partial class MainWindow : Window
             Toast(engine.Status);
             return;
         }
-        if (engine.Playing && !engine.Stopping) engine.FadeOutAndPause();
+        if (engine.Playing && !engine.Stopping) engine.StopPlaying();
         else
         {
             StopSample(); // the library's listen gives way to the song
@@ -648,7 +652,7 @@ public partial class MainWindow : Window
         shortcutTips.AddRange(
         [
             (SaveButton, Loc.T("title.save.tip"), "save"), (UndoButton, Loc.T("title.undo"), "undo"), (RedoButton, Loc.T("title.redo"), "redo"), (TimelineFitButton, Loc.T("timeline.fit.tip"), "fit"), (NewTrackButton, Loc.T("timeline.newTrack"), "newTrack"), (VirtualKeysButton, Loc.T("sc.virtualKeys"), "virtualKeys"),
-            (ToStartButton, Loc.T("transport.start.tip"), "toStart"), (LoopToggle, Loc.T("transport.loop.tip"), "loop"),(CountInToggle, Loc.T("transport.countin.tip"), "countIn"),
+            (ToStartButton, Loc.T("transport.start.tip"), "toStart"), (LoopToggle, Loc.T("transport.loop.tip"), "loop"), (ReturnToggle, Loc.T("transport.return.tip"), "returnOnStop"), (CountInToggle, Loc.T("transport.countin.tip"), "countIn"),
             (ClickToggle, Loc.T("transport.click.tip"), "click"), (TunerToggle, Loc.T("transport.tuner.tip"), "tuner"), (MaxPanelButton, Loc.T("sc.maximize"), "maximize"), (FitButton, Loc.T("transport.fit.tip"), "fit"),
         ]);
         ApplyShortcutTips();
@@ -695,6 +699,7 @@ public partial class MainWindow : Window
         TellTimelineKeys(e, down: true);
         if (Unsaved.HandleKey(e)) return;
         if (TempoAsk.HandleKey(e)) return;
+        if (LiveAsk.HandleKey(e)) return;
         if (MidiAsk.HandleKey(e)) return;
         if (ImportAsk.HandleKey(e)) return;
         if (Feedback.HandleKey(e)) return;
@@ -812,6 +817,9 @@ public partial class MainWindow : Window
             case "loop":
                 LoopToggle.IsChecked = LoopToggle.IsChecked != true;
                 break;
+            case "returnOnStop":
+                ReturnToggle.IsChecked = ReturnToggle.IsChecked != true;
+                break;
             case "loopIn":
                 SetLoopStartHere();
                 break;
@@ -901,7 +909,7 @@ public partial class MainWindow : Window
     /// <summary>The editing actions, the same from their keys and from the Edición menu.</summary>
     async Task RunEdit(string action)
     {
-        if (action is "duplicate" or "delete" or "copy" or "paste" && BlockShortcut(action)) return;
+        if (action is "duplicate" or "delete" or "copy" or "cut" or "paste" or "alignGrid" && BlockShortcut(action)) return;
         switch (action)
         {
             case "delete" when Timeline.PickedTempoBeat is > 0 and var tempoBeat:
@@ -909,6 +917,10 @@ public partial class MainWindow : Window
                 break;
             case "delete" when Timeline.ChordMarks.Count > 0:
                 RemoveChords(Timeline.ChordMarks.ToList());
+                break;
+            // boxed automation blocks go with the boxed clips, whatever row is selected (#281)
+            case "delete" when Timeline.Range == null && Timeline.BoxedBlockIds.Count > 0:
+                await DeleteTimelineSelection();
                 break;
             case "delete":
                 await (Timeline.Range != null ? DeleteRangeSelection() : sel == null && SelectedFolder is { } gone ? RemoveFolder(gone) : DeleteTimelineSelection());
@@ -923,7 +935,7 @@ public partial class MainWindow : Window
                 await AlignClips(PickedClipIds());
                 break;
             case "selectAll" when store != null:
-                Timeline.BoxClips([.. store.Project.Tracks.SelectMany(t => t.Clips.Select(c => c.Id).Concat((t.MidiClips ?? []).Select(c => c.Id)))]);
+                Timeline.BoxClips([.. store.Project.Tracks.SelectMany(t => t.Clips.Select(c => c.Id).Concat((t.MidiClips ?? []).Select(c => c.Id))), .. AllBlockIds(store.Project)]);
                 break;
             case "deselect":
                 Timeline.BoxClips([]);
@@ -982,6 +994,8 @@ public partial class MainWindow : Window
         FollowLanes(engine.PositionSec);
         TickListen();
         Timeline.SetPlayhead(pos, engine.Playing);
+        // where ▶ / Space will send the playhead back (#271)
+        Timeline.SetReturnMark(engine.ReturnOnStop && engine.Playing && !engine.Stopping && !RecordingBusy ? engine.PlayStartSec : double.NaN);
         pianoRoll.SetPlayhead(pos);
         pianoRoll.ShowLive(PianoKeys());
         bool newFrame = false;
@@ -1177,7 +1191,8 @@ public partial class MainWindow : Window
         string? selected = sel?.Track.Id;
         var places = st.Project.Media.ToDictionary(m => m.Id, m => (m.Audio, m.Video));
         if (!move(st.Project)) return;
-        ForgetFileFacts(st.Project.Media.Where(m => places[m.Id] != (m.Audio, m.Video)).Select(m => m.Id));
+        // a shared session (#291) may bring media that wasn't there
+        ForgetFileFacts(st.Project.Media.Where(m => !places.TryGetValue(m.Id, out var was) || was != (m.Audio, m.Video)).Select(m => m.Id));
         restoring = true;
         MarkDirty();
         saveTimer.Stop();
@@ -1224,6 +1239,8 @@ public partial class MainWindow : Window
                 st.Project.Tracks = tracks.Select(t => t.Track).ToList();
                 ApplyRouting(st.Project, tracks);
                 Timeline.UpdateTracks(tracks, st.Project.Folders);
+                // the buses came back as new objects: their rows show them, or a bus's lane looks unchanged (#288)
+                SyncBusRows();
                 UpdateResetHeights();
                 engine.SetSettings(st.Project.Settings, glideDelay: true);
                 if (MasteringShown) BuildMastering();

@@ -305,6 +305,19 @@ Por dónde arrancar: los pasos 1 y 2.
   - Investigar recorrer y cargar los presets de Serum desde XTreme (leer sus archivos y pasárselos al plugin).
   - Pedirle accesibilidad a Xfer Records con el caso concreto.
 
+#### 14. Edición colaborativa en vivo (#291)
+
+Primera etapa hecha (2026-11-07): P2P sin servidor, en la red local o una VPN (Tailscale, ZeroTier). Decisiones del
+usuario: cada uno escucha por su cuenta (transporte, solos y placa no se comparten), todos editan todo, se invita con
+código o link, solo con la misma versión. El anfitrión ordena los cambios; en el mismo dato queda el último que le llega.
+Cómo está hecho: `LiveSession`, `LiveDiff`, `LiveState`, `LiveLink`, `LiveInvite` (Projects) y `MainWindow.Live.cs`.
+
+- [ ] El link `xtreme://unirse/…` se copia pero no abre XTreme solo: falta registrar el protocolo (instalador) y leerlo al arrancar.
+- [ ] Ver quién está tocando qué (el nombre sobre la pista o el clip que edita otro).
+- [ ] Sin red directa: hole punching con el código o un servidor de paso (Cloudflare, Oracle Always Free), si hace falta.
+- [ ] Plugins VST3: su estado viaja como dato, pero si el otro no tiene el plugin instalado queda sin sonar.
+- [ ] Si el anfitrión se va, la sesión termina: pasarle el lugar a otro de los que quedan.
+
 ### Separar en stems: antes de publicarlo
 
 - [ ] El instalador no lleva `lib\demucs-graphs` (fuera de git): hay que llevarlos a GitHub Actions, por repo o release, ya que sin ellos stems dice que la conversión no está incluida. Se regeneran con `tools\make-demucs-templates.py`.

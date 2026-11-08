@@ -102,7 +102,18 @@ public sealed record AgentAlert(string Id, string To, string From, string Kind, 
     }
 
     /// <summary>The same alert in the log and on disk: who, when and what.</summary>
-    string Key => $"{At}|{To}|{Text}";
+    internal string Key => $"{At}|{To}|{Text}";
+
+    /// <summary>
+    /// Whether the agent got it (#283): the hook marks its file read when it hands it over, and deletes it a while
+    /// later, so one no longer on disk was read.
+    /// </summary>
+    public bool ReadIn(List<AgentAlert> onDisk)
+    {
+        foreach (var d in onDisk)
+            if (d.Key == Key) return d.Read;
+        return true;
+    }
 
     const string LogName = "avisos.jsonl";
 
@@ -147,7 +158,7 @@ public sealed record AgentAlert(string Id, string To, string From, string Kind, 
     }
 
     /// <summary>The hook's name for a session's files: SHA-1 of the id in lower case, in hex.</summary>
-    static string Hash(string text) =>
+    internal static string Hash(string text) =>
         Convert.ToHexStringLower(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToLowerInvariant())));
 
     /// <summary>The sessions whose Claude is open now (the hook's <c>p-*.json</c> of a running process), oldest first.</summary>

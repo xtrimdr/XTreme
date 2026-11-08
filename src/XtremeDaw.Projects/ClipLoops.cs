@@ -60,9 +60,14 @@ public static class ClipLoops
         foreach (var t in p.Tracks) t.Clips.RemoveAll(c => c.LoopOf == id);
     }
 
-    /// <summary>Makes <paramref name="source"/>'s repeats again from it, from its end to <paramref name="endSec"/>.</summary>
+    /// <summary>
+    /// Makes <paramref name="source"/>'s repeats again from it, from its end to <paramref name="endSec"/>. The new
+    /// repeats take the old ones' ids in order: the window keeps a selection by id, and a selected repeat that vanished
+    /// under it made the next edit fail (#281).
+    /// </summary>
     static void Remake(Project p, Track track, Clip source, double endSec, double? durationSec)
     {
+        var ids = new Queue<string>(Repeats(track, source.Id).Select(r => r.Id));
         foreach (var t in p.Tracks) t.Clips.RemoveAll(c => c.LoopOf == source.Id);
         source.LoopOf = null;
         var w = ClipEditing.Window(source, p.FindMedia(source.MediaId), durationSec);
@@ -74,7 +79,7 @@ public static class ClipLoops
             double from = start + k * pass;
             if (endSec - from < ClipEnvelope.MinClipSec) break;
             var r = ClipEditing.Copy(source);
-            r.Id = Ids.New("clp");
+            r.Id = ids.Count > 0 ? ids.Dequeue() : Ids.New("clp");
             r.LoopOf = source.Id;
             r.Locked = false;
             r.Transition = ClipTransitions.CutId; // a repeat follows its pass straight on
@@ -127,6 +132,17 @@ public static class ClipLoops
                     if (r.LoopOf == s.SourceId && s.Repeats.TryGetValue(r.Id, out var was) && (t != track || Json(r) != was)) r.LoopOf = null;
         }
         foreach (var t in p.Tracks) Normalize(t);
+    }
+
+    /// <summary>
+    /// After copying clips together (D, paste, #281): a copied repeat whose source was copied too repeats that copy, so
+    /// the loop goes along; any other copied repeat is a plain clip. <paramref name="copies"/> maps each original's id to
+    /// its copy, whose <see cref="Clip.LoopOf"/> is still the original's.
+    /// </summary>
+    public static void Relink(IReadOnlyDictionary<string, Clip> copies)
+    {
+        foreach (var copy in copies.Values)
+            copy.LoopOf = copy.LoopOf is { } source && copies.TryGetValue(source, out var s) ? s.Id : null;
     }
 
     /// <summary>A repeat whose source isn't on its track (or is a repeat itself) is a plain clip.</summary>

@@ -3,7 +3,7 @@
   Closes the console of Claude that the Banco de pruebas opened, once its agent finished well (pedido del usuario, #143).
 
 .DESCRIPTION
-  The bench's console (AgentLauncher.InTerminal) runs Claude with XT_BENCH_CLOSE = a file that does not exist yet, and
+  The bench's console (AgentLauncher.InBench, a tab of its Consolas window; InTerminal, Windows Terminal) runs Claude with XT_BENCH_CLOSE = a file that does not exist yet, and
   closes when Claude ends and that file is there. This script, run by the agent as its very last step, lets go of the
   session's file locks (tools\bloqueos.ps1 soltar: the Stop hook will not run), leaves the file and ends the Claude
   process it runs under. Elsewhere (the desktop app, a console opened by hand) it says so and does nothing.

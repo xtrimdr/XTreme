@@ -75,7 +75,7 @@ public sealed partial class TimelineView
         return null;
     }
 
-    (double Start, double End)? ShownLoop => gesture == "loop" ? (loopA, loopB) : loopErasing ? null : loopRange;
+    (double Start, double End)? ShownLoop => gesture == "loop" ? (loopA, loopB) : loopRange;
 
     /// <summary>Which part of the range is under x: "start", "end", "move" or "" (none).</summary>
     string LoopPartAt(double x)
@@ -189,6 +189,7 @@ public sealed partial class TimelineView
         ctx.DrawLine(Palette.Pen(Palette.Alpha(Palette.LineColor, 0.7)), new Point(HeaderW, RangeH - 0.5), new Point(W, RangeH - 0.5));
         if (ShownLoop is not { } r) return;
         using var clip = ctx.PushClip(new Rect(HeaderW, 0, Math.Max(0, W - HeaderW), RangeH));
+        using var dim = ctx.PushOpacity(loopErasing ? ErasingOpacity : 1);
         double x0 = X(r.Start), x1 = X(r.End);
         var color = loopOn ? Palette.AccentColor : Palette.FaintColor;
         ctx.DrawRectangle(Palette.Alpha(color, loopOn ? 0.30 : 0.16), null, new Rect(x0, 2, Math.Max(1, x1 - x0), RangeH - 4), 4, 4);
@@ -208,7 +209,8 @@ public sealed partial class TimelineView
         foreach (var m in markers)
         {
             var box = MarkerRect(m);
-            if (box.X > W || box.Right < HeaderW || m.Id == editingNameId || stripErasing.Contains(m.Id)) continue;
+            if (box.X > W || box.Right < HeaderW || m.Id == editingNameId) continue;
+            using var dim = ctx.PushOpacity(stripErasing.Contains(m.Id) ? ErasingOpacity : 1);
             bool hot = m.Id == markerDragId || gesture == null && box.Contains(lastPointer);
             ctx.DrawRectangle(hot ? Palette.Hover : Palette.Raised, Palette.Pen(Palette.Line), box, 4, 4);
             ctx.DrawLine(Palette.Pen(Palette.Fg, 1.5), new Point(box.X + 0.75, top + 1), new Point(box.X + 0.75, top + MarkerH - 1));
@@ -226,7 +228,7 @@ public sealed partial class TimelineView
             double x = X(m.Id == markerDragId ? markerDragSec : m.Sec);
             if (x >= HeaderW && x <= W) ctx.DrawLine(pen, new Point(x + 0.5, RulerH), new Point(x + 0.5, H));
         }
-        if (!loopOn || ShownLoop is not { } r) return;
+        if (!loopOn || loopErasing || ShownLoop is not { } r) return;
         var edge = Palette.Pen(Palette.Alpha(Palette.AccentColor, 0.35));
         Guide(X(r.Start));
         Guide(X(r.End));

@@ -209,6 +209,7 @@ public partial class MainWindow
             if (loaded.Window == window) loaded.Window = null;
             SamplerInFront(trackId, false);
         };
+        ForwardKeyUps(window);
         loaded.Window = window;
         ShowGranularState(live, loaded);
         window.Show(this);

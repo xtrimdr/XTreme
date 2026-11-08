@@ -8,33 +8,37 @@ namespace XtremeDaw.Projects;
 /// the block's start on the playhead and its top track on the chosen one, keeping the layout of the rest; near the last
 /// track the block climbs so every clip still has a track. Takes point at the project's media, so a block with takes
 /// only pastes into the project it came from; MIDI clips (<see cref="MidiItems"/>, native only) carry their notes and go
-/// anywhere, but only onto MIDI tracks, as takes only go onto audio ones. It lives in memory, not in the project: it is
-/// not saved and it has no undo of its own.
+/// anywhere, but only onto MIDI tracks, as takes only go onto audio ones. Automation blocks boxed with them (#281,
+/// <see cref="BlockItems"/>) go back to their own lane, moved by the same time, while it still exists. It lives in memory,
+/// not in the project: it is not saved and it has no undo of its own.
 /// </summary>
 public sealed class ClipClipboard
 {
     public sealed record Item(Clip Clip, int Lane);
     public sealed record MidiItem(MidiClip Clip, int Lane);
+    public sealed record BlockItem(AutomationBlock Block, string LaneId);
 
     public string ProjectId { get; }
     /// <summary>The track the top clips came from: where the block goes back when no track is chosen.</summary>
     public string TopTrackId { get; }
     public IReadOnlyList<Item> Items { get; }
     public IReadOnlyList<MidiItem> MidiItems { get; }
-    /// <summary>Takes and MIDI clips together.</summary>
-    public int Count => Items.Count + MidiItems.Count;
+    public IReadOnlyList<BlockItem> BlockItems { get; }
+    /// <summary>Takes, MIDI clips and automation blocks together.</summary>
+    public int Count => Items.Count + MidiItems.Count + BlockItems.Count;
     /// <summary>Where the block started when it was copied, counting the part a cut at 0 hides.</summary>
     public double StartSec { get; }
     public double LengthSec { get; }
     /// <summary>How many tracks the block spans, from the top one.</summary>
-    public int Lanes => Items.Select(i => i.Lane).Concat(MidiItems.Select(i => i.Lane)).Max() + 1;
+    public int Lanes => Items.Select(i => i.Lane).Concat(MidiItems.Select(i => i.Lane)).DefaultIfEmpty(-1).Max() + 1;
 
-    ClipClipboard(string projectId, string topTrackId, List<Item> items, List<MidiItem> midi, double start, double length)
+    ClipClipboard(string projectId, string topTrackId, List<Item> items, List<MidiItem> midi, List<BlockItem> blocks, double start, double length)
     {
         ProjectId = projectId;
         TopTrackId = topTrackId;
         Items = items;
         MidiItems = midi;
+        BlockItems = blocks;
         StartSec = start;
         LengthSec = length;
     }
@@ -45,8 +49,9 @@ public sealed class ClipClipboard
         var wanted = ids.ToHashSet();
         var found = p.Tracks.SelectMany((t, i) => t.Clips.Where(c => wanted.Contains(c.Id)).Select(c => (Index: i, Clip: c))).ToList();
         var midi = p.Tracks.SelectMany((t, i) => (t.MidiClips ?? []).Where(c => wanted.Contains(c.Id)).Select(c => (Index: i, Clip: c))).ToList();
-        if (found.Count == 0 && midi.Count == 0) return null;
-        int top = found.Select(f => f.Index).Concat(midi.Select(m => m.Index)).Min();
+        var blocks = Automations.Lanes(p).SelectMany(l => l.Lane.Blocks.Where(b => wanted.Contains(b.Id)).Select(b => new BlockItem(b.Copy(b.AtSec), l.Lane.Id))).ToList();
+        if (found.Count == 0 && midi.Count == 0 && blocks.Count == 0) return null;
+        int top = found.Select(f => f.Index).Concat(midi.Select(m => m.Index)).DefaultIfEmpty(-1).Min();
         double start = double.MaxValue, end = double.MinValue;
         if (found.Count > 0) (start, end) = ClipEditing.Span(p, found.Select(f => f.Clip), lengthOf);
         foreach (var (_, c) in midi)
@@ -54,8 +59,13 @@ public sealed class ClipClipboard
             start = Math.Min(start, c.AtSec);
             end = Math.Max(end, c.EndSec(p.Settings.TempoMap));
         }
-        return new(p.Id, p.Tracks[top].Id, [.. found.Select(f => new Item(ClipEditing.Copy(f.Clip), f.Index - top))],
-            [.. midi.Select(m => new MidiItem(m.Clip.Copy(), m.Index - top))], start, end - start);
+        foreach (var b in blocks)
+        {
+            start = Math.Min(start, b.Block.AtSec);
+            end = Math.Max(end, b.Block.EndSec);
+        }
+        return new(p.Id, top >= 0 ? p.Tracks[top].Id : "", [.. found.Select(f => new Item(ClipEditing.Copy(f.Clip), f.Index - top))],
+            [.. midi.Select(m => new MidiItem(m.Clip.Copy(), m.Index - top))], blocks, start, end - start);
     }
 
     /// <summary>
@@ -68,6 +78,22 @@ public sealed class ClipClipboard
         if (p.Id != ProjectId && Items.Count > 0) throw new ArgumentException(Texts.T("err.clip.pasteOtherProject", "Los clips son de otro proyecto: copialos de nuevo acá."));
         if (Items.Any(i => p.FindMedia(i.Clip.MediaId) == null))
             throw new ArgumentException(Texts.T("err.clip.pasteNoMedia", "Falta el audio de alguno de los clips."));
+        double shift = atSec - StartSec;
+        List<string> pasted = [];
+        if (Items.Count > 0 || MidiItems.Count > 0) PasteClips(p, trackId, shift, pasted);
+        foreach (var item in BlockItems)
+        {
+            if (Automations.Lanes(p).FirstOrDefault(l => l.Lane.Id == item.LaneId).Lane is not { } lane) continue;
+            var copy = item.Block.Copy(item.Block.AtSec + shift);
+            lane.Blocks.Add(copy);
+            lane.Touch();
+            pasted.Add(copy.Id);
+        }
+        return pasted;
+    }
+
+    void PasteClips(Project p, string? trackId, double shift, List<string> pasted)
+    {
         int at = p.Tracks.FindIndex(t => t.Id == (trackId ?? TopTrackId));
         // MIDI clips copied in another project go back to its first MIDI track when no track is chosen
         if (at < 0 && trackId == null && Items.Count == 0) at = p.Tracks.FindIndex(t => t.IsMidi);
@@ -78,17 +104,18 @@ public sealed class ClipClipboard
             throw new ArgumentException(Texts.T("err.midi.noAudio", "El audio no va en pistas MIDI."));
         if (MidiItems.Any(i => !p.Tracks[at + i.Lane].IsMidi))
             throw new ArgumentException(Texts.T("err.midi.pasteNotMidi", "Los clips MIDI se pegan en pistas MIDI."));
-        double shift = atSec - StartSec;
-        List<string> pasted = [];
+        Dictionary<string, Clip> copies = [];
         foreach (var item in Items)
         {
             var copy = ClipEditing.Copy(item.Clip);
             copy.Id = Ids.New("clp");
-            copy.LoopOf = null;
             copy.AtSec = ClipEditing.ToSample(copy.AtSec + shift);
             p.Tracks[at + item.Lane].Clips.Add(copy);
+            copies[item.Clip.Id] = copy;
             pasted.Add(copy.Id);
         }
+        // a loop copied whole (source and repeats) pastes as a loop
+        ClipLoops.Relink(copies);
         foreach (var item in MidiItems)
         {
             var copy = item.Clip.Copy();
@@ -97,6 +124,5 @@ public sealed class ClipClipboard
             MidiPatterns.Adopt(p, copy);
             pasted.Add(copy.Id);
         }
-        return pasted;
     }
 }

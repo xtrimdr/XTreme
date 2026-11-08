@@ -248,11 +248,15 @@ static class ProjectCommands
                 Console.WriteLine(TrackFolders.AddSeparator(p, id.Length > 0 ? id : null, a.Get("en") is { } sepAt ? int.Parse(sepAt) : null, !a.Flag("visible")));
                 break;
             case "lado":
-                // which side of the mixer a strip sits on: a track, a folder or separator, or a bus
-                bool right = value switch { "derecha" => true, "izquierda" => false, _ => throw new ArgumentException("lado: izquierda o derecha.") };
-                if (p.Tracks.Find(t => t.Id == id) is { } lt) lt.MixerSide = right ? MixerSides.Right : null;
-                else if (p.Folders.Find(f => f.Id == id) is { } lf) lf.MixerSide = right ? MixerSides.Right : null;
-                else if (ProjectBuses.Find(p, id) is { } lb) lb.MixerSide = right ? null : MixerSides.Left;
+                // which side of the mixer a strip sits in (#277, #303: left or right): a track, a folder or separator, or a bus
+                int dock = value switch
+                {
+                    "izquierda" => MixerSides.LeftSide, "derecha" => MixerSides.RightSide,
+                    _ => throw new ArgumentException("lado: izquierda o derecha."),
+                };
+                if (p.Tracks.Find(t => t.Id == id) is { } lt) lt.MixerSide = MixerSides.ForChannel(dock);
+                else if (p.Folders.Find(f => f.Id == id) is { } lf) lf.MixerSide = MixerSides.ForChannel(dock);
+                else if (ProjectBuses.Find(p, id) is { } lb) lb.MixerSide = MixerSides.ForBus(dock);
                 else throw new ArgumentException("lado: no encontré esa pista, carpeta o bus.");
                 break;
             case "guardar-plantilla":
@@ -493,12 +497,34 @@ static class ProjectCommands
         s.Tracks[0].MixerSide = MixerSides.Right;
         s.Settings.Buses[0].MixerSide = MixerSides.Left;
         s.Settings.Buses[1].MixerSide = MixerSides.Right;
+        // a bus between the channels (#270): it keeps the strip it follows; blank is the old place
+        s.Settings.Buses[0].MixerAfter = s.Tracks[0].Id;
+        s.Settings.Buses[1].MixerAfter = "  ";
         s.Folders.Find(f => f.Id == sep)!.HiddenInTimeline = true;
         var back = ProjectStore.Parse(System.Text.Json.JsonSerializer.Serialize(s, ProjectStore.Json));
         Check("lados y separadores se guardan", MixerSides.IsRight(back.Tracks[0]) && !MixerSides.IsRight(back.Settings.Buses[0])
-            && MixerSides.IsRight(back.Settings.Buses[1]) && back.Settings.Buses[1].MixerSide == null
+            && MixerSides.IsRight(back.Settings.Buses[1]) && back.Settings.Buses[1].MixerSide == MixerSides.Right
             && back.Folders.Find(f => f.Id == sep) is { Separator: true, HiddenInTimeline: true, Name: "Guitarras" }
             && back.Folders.Find(f => f.Id == g) is { Separator: false, HiddenInTimeline: false });
+        Check("un bus entre canales guarda a quién sigue", back.Settings.Buses[0].MixerAfter == s.Tracks[0].Id && back.Settings.Buses[1].MixerAfter == null);
+        // the sides (#277, #303: left and right only); the old left dock ("leftDock") opens on the left side
+        s.Tracks[0].MixerSide = MixerSides.LeftDock;
+        s.Folders.Find(f => f.Id == g)!.MixerSide = MixerSides.ForChannel(MixerSides.RightSide);
+        s.Settings.Buses[0].MixerSide = MixerSides.LeftDock;
+        s.Settings.Buses[1].MixerSide = MixerSides.ForBus(MixerSides.LeftSide);
+        back = ProjectStore.Parse(System.Text.Json.JsonSerializer.Serialize(s, ProjectStore.Json));
+        Check("los lados del mixer se guardan; el dock izquierdo viejo abre a la izquierda", MixerSides.Of(back.Tracks[0]) == MixerSides.LeftSide
+            && back.Tracks[0].MixerSide == null && MixerSides.Of(back.Folders.Find(f => f.Id == g)!) == MixerSides.RightSide
+            && MixerSides.Of(back.Settings.Buses[0]) == MixerSides.LeftSide && back.Settings.Buses[0].MixerSide == MixerSides.Left
+            && MixerSides.Of(back.Settings.Buses[1]) == MixerSides.LeftSide
+            && back.Settings.Buses[1].MixerSide == MixerSides.Left && MixerSides.ForChannel(MixerSides.LeftSide) == null && MixerSides.ForBus(MixerSides.RightSide) == null);
+        // the buses' default dock (#301): a bus in its default place follows the setting, one placed elsewhere stays
+        var lone = new Bus { Name = "x" };
+        MixerSides.BusDefault = MixerSides.LeftSide;
+        bool followed = MixerSides.Of(lone) == MixerSides.LeftSide && MixerSides.ForBus(MixerSides.LeftSide) == null
+            && MixerSides.ForBus(MixerSides.RightSide) == MixerSides.Right && MixerSides.Of(back.Settings.Buses[0]) == MixerSides.LeftSide;
+        MixerSides.BusDefault = MixerSides.RightSide;
+        Check("los buses van al dock elegido por defecto", followed && MixerSides.Of(lone) == MixerSides.RightSide);
         Console.WriteLine(failed == 0 ? "Todo bien." : $"{failed} comprobación(es) fallaron.");
         return failed == 0 ? 0 : 1;
     }

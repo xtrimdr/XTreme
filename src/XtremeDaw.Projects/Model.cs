@@ -1070,6 +1070,12 @@ public sealed class Bus : IRouted, IAutomated
     public List<Send> Sends { get; set; } = [];
     /// <summary>The mixer side its strip sits on (<see cref="MixerSides"/>); null = the right, where buses go by default.</summary>
     public string? MixerSide { get; set; }
+    /// <summary>
+    /// The mixer strip it follows (asked by the user, #270: buses go between the channels too): the id of a top-level
+    /// track, folder or separator, <see cref="MixerSides.First"/> for the start of its side, or null (and an id that is
+    /// gone) for after the channels of its side, as before.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? MixerAfter { get; set; }
     /// <summary>Its automated parameters (<see cref="Automations"/>), lanes under its row at the end of the timeline; null = none.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<AutomationLane>? Automation { get; set; }
     /// <summary>Its lanes are folded under its row (they keep playing), like <see cref="Track.AutomationFolded"/>.</summary>
@@ -1089,7 +1095,9 @@ public sealed class Bus : IRouted, IAutomated
             foreach (var l in Automation) l.Normalize();
             if (Automation.Count == 0) Automation = null;
         }
-        MixerSide = MixerSides.Normalize(MixerSide, MixerSides.Right);
+        // "right" is kept: with another default dock (#301) it is a place the user chose
+        MixerSide = MixerSide == MixerSides.LeftDock ? MixerSides.Left : MixerSide is MixerSides.Left or MixerSides.Right ? MixerSide : null;
+        MixerAfter = string.IsNullOrWhiteSpace(MixerAfter) || MixerAfter.Length > 64 ? null : MixerAfter.Trim();
         if (string.IsNullOrEmpty(Id)) Id = Ids.New("bus");
         Name ??= "";
         Icon = string.IsNullOrWhiteSpace(Icon) || Icon.Length > 64 ? null : Icon.Trim();
@@ -1573,18 +1581,45 @@ public static class Ids
 }
 
 /// <summary>
-/// The two sides of the mixer (asked by the user): every strip sits on the left or on the right of the free space, and
-/// the user moves it from one to the other. Tracks and folders go left and buses right unless they say otherwise; the
-/// default side is saved as null, so a project only writes the strips that moved.
+/// The mixer's two sides (asked by the user, #275 and #277, down to two in #303): every strip sits on the left side (the
+/// one that scrolls and takes the rest) or the right dock, and the user moves it from one to the other. Tracks and
+/// folders go on the left and buses on the right unless they say otherwise; the default is saved as null, so a project
+/// only writes the strips that moved. "leftDock" (#277's third dock, gone in #303) reads as the left side.
 /// </summary>
 public static class MixerSides
 {
-    public const string Left = "left", Right = "right";
+    public const string Left = "left", Right = "right", LeftDock = "leftDock";
+    /// <summary>A <see cref="Bus.MixerAfter"/> that puts the bus first on its side.</summary>
+    public const string First = "first";
+    /// <summary>The sides by index, from left to right.</summary>
+    public const int LeftSide = 0, RightSide = 1;
 
-    /// <summary>"left" or "right", with the default (and anything else) as null.</summary>
-    public static string? Normalize(string? side, string defaultSide) => side is Left or Right && side != defaultSide ? side : null;
+    /// <summary>A known side, with the default (and anything else) as null; the old left dock is the left side.</summary>
+    public static string? Normalize(string? side, string defaultSide)
+    {
+        if (side == LeftDock) side = Left;
+        return side is Left or Right && side != defaultSide ? side : null;
+    }
 
     public static bool IsRight(Track t) => t.MixerSide == Right;
     public static bool IsRight(Folder f) => f.MixerSide == Right;
-    public static bool IsRight(Bus b) => b.MixerSide != Left;
+    public static bool IsRight(Bus b) => Of(b) == RightSide;
+
+    /// <summary>
+    /// The side of a bus left in its default place (null): the right dock unless the user picks the left side in the
+    /// settings (asked by the user, #301). A machine setting, not the project's: the window sets it from config.json.
+    /// </summary>
+    public static int BusDefault { get; set; } = RightSide;
+
+    /// <summary>The side a strip sits in (<see cref="LeftSide"/> or <see cref="RightSide"/>).</summary>
+    public static int Of(Track t) => ChannelIndex(t.MixerSide);
+    public static int Of(Folder f) => ChannelIndex(f.MixerSide);
+    public static int Of(Bus b) => b.MixerSide switch { Left or LeftDock => LeftSide, Right => RightSide, _ => BusDefault };
+
+    /// <summary>What a track or folder saves for side <paramref name="side"/>; a bus, <see cref="ForBus"/>.</summary>
+    public static string? ForChannel(int side) => side == RightSide ? Right : null;
+    /// <summary>What a bus saves for side <paramref name="side"/>: null in the <see cref="BusDefault"/> one, so it follows the setting.</summary>
+    public static string? ForBus(int side) => side == BusDefault ? null : side == RightSide ? Right : Left;
+
+    static int ChannelIndex(string? side) => side == Right ? RightSide : LeftSide;
 }

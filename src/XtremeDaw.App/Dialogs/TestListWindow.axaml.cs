@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Automation;
@@ -128,7 +128,7 @@ public sealed partial class TestListWindow : Window
     /// "totest" (waits for the person to try it), "done" (works) or "all".
     /// </summary>
     const string ViewKey = "benchView";
-    static readonly string[] Views = ["pending", "busy", "totest", "done", "all", AgentsView];
+    static readonly string[] Views = ["pending", "busy", "totest", "done", "all"];
     string view = AppConfig.Get(ViewKey) is { } savedView && Views.Contains(savedView) ? savedView : "all";
     /// <summary>The words in the search box, each one has to be in the ticket (empty = no search).</summary>
     string[] search = [];
@@ -194,6 +194,8 @@ public sealed partial class TestListWindow : Window
         root = path == "" ? null : AgentLauncher.Root(path);
         InitializeComponent();
         InitImages();
+        InitAgents();
+        InitConsoles();
         if (TestBuild.Label is { } label)
         {
             BuildText.Text = label;
@@ -527,7 +529,7 @@ public sealed partial class TestListWindow : Window
     /// <summary>Draws the list that waited for the reply box to lose the focus, once the click that took it is over.</summary>
     void FillWaiting()
     {
-        if (waiting is { } d && !pressing && replyBox?.IsFocused != true && inlineBox?.IsFocused != true && !AgentTyping) Fill(d);
+        if (waiting is { } d && !pressing && replyBox?.IsFocused != true && inlineBox?.IsFocused != true) Fill(d);
     }
 
     void Refill()
@@ -541,7 +543,10 @@ public sealed partial class TestListWindow : Window
         current = data;
         Announce(data);
         AnnounceAlerts(data);
-        if (!sent && IsActive && (replyBox?.IsFocused == true || inlineBox?.IsFocused == true || AgentTyping))
+        // its own window, with a box that is never redrawn: it does not wait for a reply being written here
+        lights = LockLight.Read(root, data.Items);
+        FillAgents(data);
+        if (!sent && IsActive && (replyBox?.IsFocused == true || inlineBox?.IsFocused == true))
         {
             waiting = data;
             return;
@@ -553,7 +558,6 @@ public sealed partial class TestListWindow : Window
         replyBox = null;
         replyItem = null;
         inlineBox = null;
-        lights = LockLight.Read(root, data.Items);
         sessions = AgentSessions.Read(root);
         Rows.Children.Clear();
         TicketBar.Child = null;
@@ -588,11 +592,6 @@ public sealed partial class TestListWindow : Window
 
     void FillTab(TestListData data)
     {
-        if (view == AgentsView)
-        {
-            FillAgents(data);
-            return;
-        }
         // everything with work reviews itself whole: the requests and everything to fix (the skill with no arguments)
         var work = view is "all" or "pending" ? data.Items.Where(i => TabReview(SectionOf(i)) != null).ToList() : [];
         if (work.Count > 0 && root != null && ReviewAllRow(work, Palette.AccentColor) is { } all) Rows.Children.Add(all);
@@ -683,7 +682,6 @@ public sealed partial class TestListWindow : Window
         "pending" => !Busy(i) && SectionOf(i) is FixTabIndex or RequestTabIndex,
         "totest" => !Busy(i) && i.State == TestItem.Pending,
         "done" => i.State == TestItem.Works,
-        AgentsView => false,
         _ => true,
     };
 
@@ -705,8 +703,7 @@ public sealed partial class TestListWindow : Window
                 row.Children.Add(new TextBlock
                 {
                     Classes = { "mono" }, FontSize = 11, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center,
-                    // Agentes counts the sessions open
-                    Text = (v == AgentsView ? AgentAlert.Live(root).Count : found.Count(i => InView(i, v))).ToString(CultureInfo.CurrentCulture),
+                    Text = found.Count(i => InView(i, v)).ToString(CultureInfo.CurrentCulture),
                 });
             var b = new ToggleButton { Classes = { "seg" }, Content = row, Padding = new(4, 0), IsChecked = v == view, Focusable = false };
             ToolTip.SetTip(b, Loc.T("test.list.view." + v + ".tip"));
@@ -2097,7 +2094,7 @@ public sealed partial class TestListWindow : Window
         if (root == null || !TestList.Held(item, sessions)) return null;
         if (AgentLauncher.SessionProcess(root, item.TakenBy) is not { } pid) return null;
         return ReviewChip(ConsoleGlyph, Loc.T("test.list.session.button"), Loc.T("test.list.session.button.tip", item.Id), () =>
-            ErrorText.Text = AgentLauncher.ShowSession(pid) ? null : Loc.T("test.list.session.error"));
+            ErrorText.Text = ShowInBench(pid) || AgentLauncher.ShowSession(pid) ? null : Loc.T("test.list.session.error"));
     }
 
     /// <summary>Sends a ticket to review and goes back to the list (pedido del usuario, #119); on a failure it stays, with the error.</summary>
@@ -2197,7 +2194,9 @@ public sealed partial class TestListWindow : Window
             ErrorText.Text = Loc.T("test.list.review.busy.tip");
             return false;
         }
-        string? why = AgentLauncher.Run(root, prompt, desktop);
+        // #278: the console opens inside the bench; Windows Terminal only when that cannot start
+        string? why = desktop && AgentLauncher.DesktopInstalled ? AgentLauncher.Run(root, prompt, true)
+            : RunInBench(prompt) == null ? null : AgentLauncher.Run(root, prompt, false);
         ErrorText.Text = why != null ? Loc.T("test.list.review.error", why) : null;
         if (why != null) return false;
         starting[prompt] = (DateTime.UtcNow, items.ToDictionary(i => i.Id, i => i.TakenBy));

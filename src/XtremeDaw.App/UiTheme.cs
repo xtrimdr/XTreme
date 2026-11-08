@@ -9,7 +9,7 @@ namespace XtremeDaw.App;
 /// <summary>
 /// UI themes, port of the web app's theme.ts: always dark, an accent color plus a surface palette (the greys,
 /// tinted). Applied live to the App.axaml brushes, to <see cref="Palette"/> and to the Fluent accent colors.
-/// Same as the web except it adds nine accent presets and three dark surface palettes, and is remembered
+/// Same as the web except it adds nine accent presets, three dark and six mid-grey surface palettes, and is remembered
 /// in the program's config ("theme") instead of localStorage.
 /// </summary>
 static class UiTheme
@@ -32,6 +32,15 @@ static class UiTheme
         S("ocean", "Océano", "#080c12", "#101720", "#18222e", "#202d3c", "#263445", "#e7eef7", "#9cacc1", "#687b93"),
         S("coffee", "Café", "#100b08", "#1a130e", "#261c15", "#32271e", "#382c22", "#f3ece3", "#b8a797", "#847161"),
         S("smoke", "Humo", "#101112", "#191b1d", "#232629", "#2d3135", "#34393e", "#eceff1", "#a8b0b7", "#747e87"),
+        // mid greys (#272): lighter studio surfaces, the text still light. Each layer steps ~11 levels from the one
+        // below and Line sits above Hover, so panels, sections and borders separate; Dim and Faint are raised so they
+        // keep about 4:1 against Hover
+        S("steel", "Acero", "#222326", "#2c2d31", "#37383d", "#43454b", "#50525a", "#f5f5f7", "#d0d1d6", "#a3a5ad"),
+        S("cement", "Cemento", "#29292a", "#333334", "#3e3e40", "#4b4b4d", "#59595b", "#f7f7f7", "#d4d4d4", "#a8a8a8"),
+        S("storm", "Tormenta", "#282e35", "#323942", "#3d454f", "#49535e", "#57626e", "#f3f7fb", "#d0d9e2", "#a5b0bc"),
+        S("moss", "Musgo", "#292d28", "#333832", "#3e443d", "#4a5249", "#586157", "#f3f7f1", "#d2d9cf", "#a8b1a5"),
+        S("sand", "Arena", "#2f2a26", "#3a342f", "#463f39", "#534b44", "#625952", "#f9f4ee", "#ddd2c7", "#b2a597"),
+        S("ash", "Ceniza", "#36373a", "#404144", "#4c4d51", "#595a5e", "#67686d", "#fafafb", "#e2e3e6", "#b8babe"),
         // Tron Legacy (#191): the film's blue-black, with its edges and texts tinted the cyan of its light lines
         S(TronSurface, "Tron Legacy", "#010409", "#03090f", "#071420", "#0c1e2c", "#103446", "#e0f7ff", "#8ec3d3", "#4d7a8a"),
     ];

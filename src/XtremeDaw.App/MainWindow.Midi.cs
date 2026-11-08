@@ -74,8 +74,9 @@ public partial class MainWindow
             await EditTimeline(p => { MidiEditing.SetNotes(p, clipId, notes); return trackId; }, "midi-notes");
             Timeline.SelectMidiClip(TrackIndex(trackId), clipId);
         };
-        pianoRoll.NoteAuditioned += (pitch, velocity) =>
-            Audition(store != null && MidiEditing.TryFind(store.Project, pianoClipId) != null ? MidiEditing.Find(store.Project, pianoClipId!).Track.Id : null, pitch, velocity);
+        pianoRoll.NoteAuditioned += (pitch, velocity) => Audition(PianoTrackId(), pitch, velocity);
+        pianoRoll.NoteHeld += (pitch, velocity) => AuditionPress(PianoTrackId(), pitch, velocity);
+        pianoRoll.NoteReleased += AuditionLift;
         pianoRoll.SeekRequested += engine.Seek;
         pianoRoll.ScrubChanged += Scrub;
         pianoRoll.ClipPicked += clipId =>

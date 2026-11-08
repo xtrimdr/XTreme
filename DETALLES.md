@@ -286,6 +286,8 @@ plantillas (para probar sin tocar los tuyos), y `--raiz X` otra carpeta de proye
 
 `xtlab componentes [estado | instalar id [--paquete p] [--url u] | comprobar]`: estado de los componentes opcionales, instalación y prueba de la descarga contra un servidor local.
 
+`xtlab colaborar comprobar`: la sesión en vivo (#291) sin la ventana: diferencias entre estados, código de invitación y una sesión real por 127.0.0.1 (cambios en los dos sentidos, audio que viaja, deshacer, solos, otra versión, otra clave). `xtlab colaborar anfitrion carpeta [--nombre N]` invita a un proyecto e imprime el código; `xtlab colaborar unirse código carpeta [--nombre N]` se une y crea la copia en esa carpeta.
+
 ## Modelos de Separar en stems
 
 Los modelos son de Meta (Demucs, https://github.com/facebookresearch/demucs). XTreme no los incluye ni los aloja: se bajan de su fuente original a tu PC cuando los instalás. Tienen sus propios términos y no están cubiertos por la licencia de XTreme. La app funciona sin ellos.

@@ -101,6 +101,7 @@ public partial class MainWindow
             if (gmWindows.GetValueOrDefault(trackId) == window) gmWindows.Remove(trackId);
             SamplerInFront(trackId, false);
         };
+        ForwardKeyUps(window);
         gmWindows[trackId] = window;
         ShowGmState(live, window);
         window.Show(this);

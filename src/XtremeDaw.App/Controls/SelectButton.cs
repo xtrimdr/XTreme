@@ -34,13 +34,37 @@ public sealed class SelectButton : Button
         HorizontalAlignment = HorizontalAlignment.Stretch;
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Center;
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        Grid.SetColumn(text, 1);
         grid.Children.Add(text);
-        var chevron = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 8, Foreground = Palette.Dim, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(chevron, 1);
+        chevron = new TextBlock { Classes = { "icon" }, Text = "", FontSize = 8, Foreground = Palette.Dim, Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(chevron, 2);
         grid.Children.Add(chevron);
         Content = grid;
         Click += (_, _) => Open();
+    }
+
+    readonly Grid grid;
+    readonly TextBlock chevron;
+
+    /// <summary>
+    /// A select that is a panel's title (the mixer's views, #277): no box, <paramref name="lead"/> (the panel's icon and
+    /// name) before the choice, which goes in the title's size, dimmed; the list drops from the whole title.
+    /// </summary>
+    public void AsTitle(Control lead)
+    {
+        Width = double.NaN;
+        Height = MinHeight = 28;
+        Padding = new Thickness(6, 0, 6, 0);
+        Background = Brushes.Transparent;
+        BorderBrush = Brushes.Transparent;
+        HorizontalAlignment = HorizontalAlignment.Left;
+        text.FontSize = 13.5;
+        text.Foreground = Palette.Dim;
+        chevron.FontSize = 9;
+        chevron.Margin = new Thickness(8, 1, 0, 0);
+        lead.VerticalAlignment = VerticalAlignment.Center;
+        grid.Children.Add(lead);
     }
 
     /// <summary>A select that is the point of its row (an effect's preset, #261): taller, its choice in larger semibold text.</summary>

@@ -302,23 +302,26 @@ public partial class MainWindow
                 return track.Id;
             }, "clip-looped", clipId);
         };
-        Timeline.ClipsMoved += async (clips, midi) =>
+        Timeline.ClipsMoved += async (clips, midi, blocks) =>
         {
-            var ids = Timeline.BoxedClipIds.ToList();
+            var ids = Timeline.BoxedIds.ToList();
             var clones = Timeline.TakeClones();
+            string? keep = sel?.Track.Id;
             await EditTimeline(p =>
             {
-                MidiEditing.LeaveCopies(p, clones);
+                MidiEditing.LeaveCopies(p, LeaveBlockCopies(p, clones));
                 foreach (var c in clips) ClipEditing.Replace(p, c);
                 foreach (var (id, at) in midi) MidiEditing.Move(p, id, at);
-                return clips.Count > 0 ? ClipEditing.Find(p, clips[0].Id).Track.Id : MidiEditing.Find(p, midi[0].Id).Track.Id;
+                MoveBlocks(p, blocks);
+                return clips.Count > 0 ? ClipEditing.Find(p, clips[0].Id).Track.Id : midi.Count > 0 ? MidiEditing.Find(p, midi[0].Id).Track.Id : keep;
             }, clones.Count > 0 ? "clips-duplicated" : "clips-moved", clips.Count > 0 ? clips[0].Id : null);
             // the moved clips stay selected together
             Timeline.BoxClips(ids);
         };
-        Timeline.ClipsEdited += async (clips, loops, midi) =>
+        Timeline.ClipsEdited += async (clips, loops, midi, blocks) =>
         {
-            var ids = Timeline.BoxedClipIds.ToList();
+            var ids = Timeline.BoxedIds.ToList();
+            string? keep = sel?.Track.Id;
             var lengths = LiveLengths();
             await EditTimeline(p =>
             {
@@ -330,9 +333,10 @@ public partial class MainWindow
                     else if (m.Kind == TimelineView.MidiEditKind.Loop) MidiEditing.Loop(p, m.Id, m.Beats);
                     else MidiEditing.Place(p, m.Id, m.AtSec, m.Beats);
                 }
+                ReplaceBlocks(p, blocks);
                 if (clips.Count > 0) return ClipEditing.Find(p, clips[0].Id).Track.Id;
                 if (loops.Count > 0) return ClipEditing.Find(p, loops[0].Source).Track.Id;
-                return MidiEditing.Find(p, midi[0].Id).Track.Id;
+                return midi.Count > 0 ? MidiEditing.Find(p, midi[0].Id).Track.Id : keep;
             }, "clips-edited", clips.Count > 0 ? clips[0].Id : loops.Count > 0 ? loops[0].Source : null);
             // the edited clips stay selected together
             Timeline.BoxClips(ids);
@@ -512,19 +516,23 @@ public partial class MainWindow
 
     Task DeleteTimelineSelection()
     {
-        if (sel == null || store == null) return Task.CompletedTask;
-        string trackId = sel.Track.Id;
-        // the clips caught by the selection box (takes and MIDI clips) go all at once (one step to undo)
-        if (Timeline.BoxedClipIds.ToList() is { Count: > 1 } picked)
+        if (store == null) return Task.CompletedTask;
+        // the clips caught by the selection box (takes, MIDI clips and automation blocks, #281) go all at once (one step to undo)
+        var blocks = Timeline.BoxedBlockIds;
+        if (Timeline.BoxedClipIds.ToList() is var picked && (picked.Count > 1 || blocks.Count > 0))
         {
-            var boxed = WithoutLocked(picked);
-            if (boxed.Count == 0) return Task.CompletedTask;
+            var boxed = picked.Count > 0 ? WithoutLocked(picked) : [];
+            if (boxed.Count == 0 && blocks.Count == 0) return Task.CompletedTask;
+            string? keep = sel?.Track.Id;
             return EditTimeline(p =>
             {
-                foreach (var id in boxed) MidiEditing.RemoveAny(p, id);
-                return trackId;
+                MidiEditing.RemoveMany(p, boxed);
+                RemoveBlocks(p, blocks);
+                return keep;
             }, "clips-removed");
         }
+        if (sel == null) return Task.CompletedTask;
+        string trackId = sel.Track.Id;
         if (Timeline.PickedTrackIds is { Count: > 1 } many)
         {
             AskRemoveTrack(many[0], Timeline.RemoveAskPoint(many[0]));
@@ -556,6 +564,8 @@ public partial class MainWindow
     /// <summary>Alt+X, like Studio One: splits the clip under the playhead and selects the right piece.</summary>
     async Task SplitAtPlayhead()
     {
+        // a picked automation block (or boxed ones) splits like a clip (#281)
+        if (await SplitBlocksAtPlayhead()) return;
         if (sel == null) { Toast(Loc.T("timeline.split.pick")); return; }
         if (sel.Track.IsMidi) { await SplitMidiAtPlayhead(); return; }
         if (ClipUnderPlayhead() is not { } clip) { Toast(Loc.T("timeline.split.nowhere")); return; }
@@ -567,8 +577,8 @@ public partial class MainWindow
         if (right != null) Timeline.SelectClip(Timeline.Selected, right);
     }
 
-    /// <summary>The clips D, Ctrl+C and Ctrl+X act on: the boxed ones, or the selected one.</summary>
-    List<string> PickedClipIds() => Timeline.BoxedClipIds is { Count: > 1 } boxed ? [.. boxed]
+    /// <summary>The clips D, Ctrl+C and Ctrl+X act on: the boxed ones (automation blocks too, #281), or the selected one.</summary>
+    List<string> PickedClipIds() => Timeline.BoxedIds is { Count: > 1 } boxed ? [.. boxed]
         : sel != null && Timeline.SelectedClipId is { } id && sel.Clips.Any(c => c.Clip.Id == id) ? [id] : [];
 
     /// <summary>The length the timeline knows for each clip (the media's own may still be loading).</summary>
@@ -583,7 +593,7 @@ public partial class MainWindow
     /// magnet on, the copy goes at the next whole step of it (<see cref="ClipEditing.DuplicateShift"/>).</summary>
     Task DuplicateSelection()
     {
-        if (Timeline.BoxedClipIds.Count <= 1 && Timeline.SelectedMidiId is { } midi) return DuplicateMidiClip(midi);
+        if (Timeline.BoxedIds.Count <= 1 && Timeline.SelectedMidiId is { } midi) return DuplicateMidiClip(midi);
         var ids = PickedClipIds();
         if (ids.Count == 0) { Toast(Loc.T("timeline.dup.pick")); return Task.CompletedTask; }
         return DuplicateClips(ids);
@@ -606,7 +616,7 @@ public partial class MainWindow
     }
 
     /// <summary>"Alinear a la grilla" (Shift+Q, like FL Studio's quick quantize): each clip's start on the nearest line of
-    /// the magnet. MIDI and locked clips stay where they are.</summary>
+    /// the magnet. MIDI and locked clips stay where they are; boxed automation blocks align too (#281).</summary>
     async Task AlignClips(List<string> ids)
     {
         var grid = Timeline.SnapLines;
@@ -616,8 +626,12 @@ public partial class MainWindow
         var lengths = LiveLengths();
         await EditTimeline(p =>
         {
-            foreach (var b in ids.Where(b => MidiEditing.TryFind(p, b) == null && !ClipEditing.IsLocked(p, b)))
-                ClipEditing.AlignToGrid(p, b, grid, lengths(ClipEditing.Find(p, b).Clip));
+            foreach (var b in ids)
+            {
+                if (Automations.FindBlock(p, b) is var (lane, _)) Automations.AlignToGrid(lane, b, grid);
+                else if (MidiEditing.TryFind(p, b) == null && !ClipEditing.IsLocked(p, b))
+                    ClipEditing.AlignToGrid(p, b, grid, lengths(ClipEditing.Find(p, b).Clip));
+            }
             return trackId;
         }, "clip-aligned", Timeline.SelectedClipId);
         Timeline.BoxClips(ids);
@@ -643,9 +657,11 @@ public partial class MainWindow
             if (store.ReadOnly) return;
             string? trackId = sel?.Track.Id;
             var gone = WithoutLocked(ids);
+            var blocks = gone.Where(id => Automations.FindBlock(store.Project, id) != null).ToList();
             await EditTimeline(p =>
             {
-                foreach (var id in gone) MidiEditing.RemoveAny(p, id);
+                MidiEditing.RemoveMany(p, gone.Except(blocks));
+                RemoveBlocks(p, blocks);
                 return trackId;
             }, ids.Count > 1 ? "clips-cut" : "clip-cut");
         }
@@ -667,11 +683,13 @@ public partial class MainWindow
         await EditTimeline(p =>
         {
             pasted = board.Paste(p, target, at);
+            // only automation blocks (#281): they went to their own lanes, the selected track stays
+            if (pasted.Count == 0 || Automations.FindBlock(p, pasted[0]) != null) return target;
             return MidiEditing.TryFind(p, pasted[0]) != null ? MidiEditing.Find(p, pasted[0]).Track.Id : ClipEditing.Find(p, pasted[0]).Track.Id;
         }, board.Count > 1 ? "clips-pasted" : "clip-pasted");
         if (pasted.Count == 0) return;
         if (MidiEditing.TryFind(store.Project, pasted[0]) != null) Timeline.SelectMidiClip(Timeline.Selected, pasted[0]);
-        else Timeline.SelectClip(Timeline.Selected, pasted[0]);
+        else if (Automations.FindBlock(store.Project, pasted[0]) == null) Timeline.SelectClip(Timeline.Selected, pasted[0]);
         Timeline.BoxClips(pasted);
         if (!engine.Playing) engine.Seek(at + board.LengthSec);
     }
@@ -808,7 +826,7 @@ public partial class MainWindow
     {
         if (NewTrackItems() is not { } list) return;
         // the empty space also brings the bus rows back (#267)
-        if (store is { Project.Settings.Buses.Count: > 0 })
+        if (AnyBusLanes)
         {
             list.Add(new Separator());
             list.Add(BusRowsItem());

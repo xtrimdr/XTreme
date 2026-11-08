@@ -26,6 +26,7 @@ public partial class App : Application
         Controls.ThemePicker.Presets = Controls.TronLegacy.Tile;
         Controls.TrackColorLooks.Load();
         Controls.MixerLooks.Load();
+        Controls.SeparatorLooks.Load();
         NoteNames.Load();
         Controls.UiFonts.Load();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

@@ -84,7 +84,11 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 - Son dos filas en un mismo `TitleBar` (para que todo entre con la ventana sin maximizar, pedido del usuario): la
   primera, de 44, es la barra de título (`ExtendClientAreaTitleBarHeightHint="44"`) con la app, la barra de menús,
   los medidores, los paneles, el diseño, el tema y el engranaje de Configuración (`SettingsButton`, pedido del usuario,
-  2026-11-03: más a mano que Archivo → Configuración, que sigue); la segunda es la del proyecto: modo, chip, guardar/deshacer y Exportar a la derecha (ahí no
+  2026-11-03: más a mano que Archivo → Configuración, que sigue. Configuración tiene arriba de las pestañas un **buscador**,
+  #302, `Dialogs/SettingsDialog.Search.cs`: busca sin tildes ni mayúsculas en lo que muestra cada página, leído de sus
+  controles, y en los nombres de todos los atajos; los resultados tapan la página, por pestaña, y las pestañas sin nada
+  quedan tenues; un resultado abre su página, despliega su grupo y prende un momento su tarjeta; Ctrl+F, Enter abre el
+  primero, Esc borra. Una tarjeta nueva se encuentra sola si va en `Card`); la segunda es la del proyecto: modo, chip, guardar/deshacer y Exportar a la derecha (ahí no
   hay botones del sistema, así que va sin el margen de 150). Las dos arrastran la ventana.
 - En el medio de la segunda fila, las **herramientas del timeline** (`MainWindow.Tools.cs`, pedido del usuario): una
   caja como la de Video | Solo audio (`Border.mode` con `ToggleButton.mode` de 32 px, solo ícono) con Seleccionar ·
@@ -177,7 +181,13 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   abren en la app o en una consola, elegido una vez y guardado en `config.json`, "benchClaude"). **Revisar**
   (`AgentLauncher`, decisión del usuario: una sesión que se ve, no en segundo plano) abre Claude en el repositorio con
   `/xt_revisar-workbench`: en la app de escritorio (`claude://code/new?folder=…&q=…`: el mensaje queda escrito y la app
-  pide confirmar la carpeta) o en Windows Terminal con Claude Code, que arranca solo (sin la app, siempre la consola).
+  pide confirmar la carpeta) o en una consola con Claude Code, que arranca solo (sin la app, siempre la consola). La
+  consola va **dentro del Banco** (pedido del usuario, #278): vive en el Banco (`TestListWindow.Consoles.cs`) y se ve
+  en **Agentes**, en la pestaña de su sesión, con una terminal propia (`Terminal/`: ConPTY de Windows en `PseudoConsole`, el emulador VT en
+  `TerminalScreen`, dibujada por `TerminalView` en Cascadia Mono; la ruedita y Mayús+RePág recorren lo que salió de la
+  pantalla, arrastrar selecciona, clic derecho copia o pega, Ctrl+C copia si hay selección y si no interrumpe,
+  Mayús+Enter es una línea nueva). Cerrar Agentes no las corta (siguen trabajando); el botón de terminar de su pestaña
+  pide un segundo clic, y cerrar el Banco con sesiones abiertas, cerrarlo de nuevo (las termina). Windows Terminal queda solo si la pseudo consola no arranca.
   En cada ítem (todos menos Resuelto; con el número la skill sigue sin proponer antes) son dos botones, **Desktop** y
   **Consola** (pedido del usuario, #121), con el mismo comando; la consola le saca al proceso las variables de la
   sesión de Claude que abrió la copia (`DropHostSession`), que si no la hacen fallar. El menú elige solo para el enlace de cada
@@ -193,7 +203,7 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   tema, sus tickets en una sola lista, sin encabezados de sección (pedido del usuario, #197: era mucho ruido): cada
   fila dice su estado en un chip de su color (No anda, Anda mal, A mejorar, Pedido o Para probar;
   `StateChip`), y van primero los Nuevo, después lo que hay que arreglar, los pedidos y lo que espera prueba (`Ranked`);
-  **Resuelto** queda abajo, plegado en una línea con su cuenta (`DoneHead`). Bajo la búsqueda, un **filtro** (pedido del usuario, #249: con muchos tickets a la vez se mezclaban los estados; `FillViews`, `InView`, guardado en `config.json`, `benchView`): **Pendiente** (pedidos y lo que hay que arreglar, sin agente), **En curso** (lo que tiene un agente o está arrancando, sea cual sea su estado), **Para probar**, **Terminado** (lo que anda, sin pliegue), **Todo**, cada uno con su cuenta, y **Agentes** (las sesiones abiertas y su conversación, ver abajo). Arriba,
+  **Resuelto** queda abajo, plegado en una línea con su cuenta (`DoneHead`). Bajo la búsqueda, un **filtro** (pedido del usuario, #249: con muchos tickets a la vez se mezclaban los estados; `FillViews`, `InView`, guardado en `config.json`, `benchView`): **Pendiente** (pedidos y lo que hay que arreglar, sin agente), **En curso** (lo que tiene un agente o está arrancando, sea cual sea su estado), **Para probar**, **Terminado** (lo que anda, sin pliegue), **Todo**, cada uno con su cuenta. Arriba,
   **Buscar** (pedido del usuario, 2026-11-04; Ctrl+F) filtra la lista por número, texto, conversación, tema y tipo, sin
   mayúsculas ni tildes; Enter abre el primero y Esc borra. El tema de un ticket solo se lee
   en la ventana: un pedido entra "A categorizar" y se lo pone el agente que lo toma (`-Clasifica`; pedido del usuario,
@@ -230,25 +240,51 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
   **Ver consola** en lugar de Probar y de Revisar (en su fila y en el ticket; #164, #172: mientras un agente lo arranca
   o lo trabaja no hay Probar ni un segundo Revisar; arrancando dice **Iniciando…**, también en su tema): trae al frente su ventana (`AgentLauncher.SessionProcess` busca la
   sesión en `.claude\bloqueos\p-*.json`, que el hook escribe en cada comando; `ShowSession` toma la consola, o la app
-  que la corre). Su "en curso" lleva el **semáforo de bloqueos** de esa sesión (#167; `LockLight`, que lee los
+  que la corre; una sesión que corre en el Banco, su pestaña en Agentes). Su "en curso" lleva el **semáforo de bloqueos** de esa sesión (#167; `LockLight`, que lee los
   `.claude\bloqueos\t-*.json` que escribe el hook desde la sesión del agente): verde, nada la frena; amarillo, "en cola
   2° de 3" esperando un archivo de otra sesión; rojo, "bloqueado" (espera en círculo) o "atención" (un comando cambió
   archivos de otra sesión), que queda hasta su próxima acción. El tooltip dice qué archivo y quién lo tiene; el
   encabezado del tema muestra el peor. Los avisos entre agentes (#263; `AgentAlert`, que lee los
   `.claude\bloqueos\m-*.json` del hook) llegan como toast ("Aviso para el #60", de quién y qué dice; Ver abre ese
-  ticket; uno de atención queda hasta cerrarlo), y los últimos tres van en el tooltip del "en curso". La vista
-  **Agentes** del filtro (pedido del usuario, #269: para destrabar un atasco; `TestListWindow.Agents.cs`) muestra
-  arriba cada sesión de Claude abierta (`AgentAlert.Live`) con su ticket, su semáforo en palabras y los archivos que
-  tiene (`LockLight.Held`), cada uno con **Pedir** (como `-PideArchivo`); abajo, la conversación de las últimas 24 h
-  como un chat (`AgentAlert.History`: el registro `avisos.jsonl` que el hook suma con cada aviso) y una caja para
-  escribirle a una sesión o a todas (**Escribir** en una tarjeta la elige; Ctrl+Enter envía). Lo que manda el Banco lo
-  escribe `AgentAlert.Send` como el usuario, igual que el hook. Abajo, al lado de Historial, un slider cambia el tamaño
+  ticket; uno de atención queda hasta cerrarlo), y los últimos tres van en el tooltip del "en curso". La ventana
+  **Agentes** (pedido del usuario, #269: para destrabar un atasco; #273: un mapa, en una ventana aparte, sin vista en el
+  filtro; el botón de personas arriba, con cuántas sesiones hay abiertas; `TestListWindow.Agents.cs`, `AgentsWindow` y
+  `AgentMap` en `TestListWindow.AgentMap.cs`) muestra arriba un mapa: cada sesión de Claude abierta (`AgentAlert.Live`)
+  a la izquierda, con su ticket y su semáforo, y a la derecha los archivos, los de cada sesión a su altura
+  (`LockLight.Held`). Una línea llena en el acento es un archivo que tiene; una amarilla punteada, su lugar en la cola de
+  otro archivo, con el puesto y desde hace cuánto; una roja, una cola en círculo o un comando que cambió archivos ajenos
+  (`LockLight.Snags`). El mapa se achica solo para entrar entero en su lugar (#286: `AgentMap.FitHeight`, el alto de su
+  scroll), llenando siempre el ancho; por debajo de la mitad deja de achicarse y se desplaza. Pasar el mouse por una caja deja encendidas solo sus líneas; un clic en una sesión le apunta la
+  caja de mensajes, en un archivo tomado ofrece pedirle que lo suelte (como `-PideArchivo`). Una sesión que termina sale
+  del mapa con sus archivos en el próximo refresco. Abajo, la conversación de las últimas 24 h como un chat
+  (`AgentAlert.History`: el registro `avisos.jsonl` que el hook suma con cada aviso) y una caja para escribirle a una
+  sesión o a todas (Ctrl+Enter envía); la caja no se rearma al refrescar. Lo que manda el Banco lo escribe
+  `AgentAlert.Send` como el usuario, igual que el hook. Arriba del chat, pestañas (#278): una por cada sesión abierta, siempre a la vista (con un punto en el acento si espera al usuario); el chat
+  de las últimas 24 h no tiene pestaña (#294: el usuario no la usaba) y se ve solo sin ninguna sesión abierta. El botón de
+  terminar (al lado de los niveles, con un segundo clic de confirmación) termina la sesión elegida (#294): una consola
+  del Banco se cierra; cualquier otra, matando su proceso de Claude (`EndSession`), lo que libera sus archivos al
+  instante. Una sesión que termina, bien o no, se cierra al instante (#287): su pestaña y su consola se van y
+  se pasa a otra abierta (la que espera primero) o al chat. La pestaña o el clic en la sesión del mapa la eligen (su caja queda
+  marcada y la caja de mensajes le escribe) y muestran su conversación con Claude en vivo cada 2 s
+  (`AgentTranscript`, que lee solo lo nuevo del transcript de la sesión en `~\.claude\projects`), con tres niveles al
+  costado de las pestañas (#278): **Resumen** (el de entrada: solo los mensajes, los de Claude cortados a su primer párrafo),
+  **Normal** (además una línea por herramienta) y **Todo** (la terminal real, si la sesión corre en el Banco). Una sesión
+  del Banco que pide un permiso o hace una pregunta muestra su terminal en cualquier nivel, para contestarle ahí; con
+  otro nivel, la caja de mensajes le escribe en su consola (pegado y Enter), no como aviso. Lo que se le manda como aviso
+  aparece en su conversación al instante (#283: el aviso no llega al transcript), en orden con el resto y con su estado:
+  "Enviado · sin leer" hasta que el hook se lo da al agente (marca `read` en su `m-*.json`), y entonces "Leído". Una que recién arranca tiene
+  su pestaña con el pedido hasta que el hook dice su sesión (`AgentLauncher.LiveProcesses`). En el mapa, una sesión que
+  trabaja dice qué hace (su última herramienta, "Pensando…" o "Escribiendo…"). Abajo del Banco, un botón grande
+  **Agentes** (pedido del usuario, #278) abre la ventana (en la sesión que te espera, o la primera) y dice cuántas sesiones hay abiertas y cuántas te esperan. Una sesión que espera
+  al usuario se ve en el acento con su motivo: terminó su turno o la cortaron ("en espera de tu respuesta", del
+  transcript), una pregunta abierta ("te hizo una pregunta") o un permiso ("espera tu permiso": el hook `espera`, en
+  Notification, deja `u-<sesión>.json`, que cualquier línea nueva del transcript anula). Abajo, al lado de Historial, un slider cambia el tamaño
   del texto del Banco (una escala sobre la lista, la búsqueda y el cuadro, aparte de la de XTreme: `benchZoom` en
   `config.json`; doble clic, 100 %). El Banco tiene su propio idioma y tema (#151): el botón de paleta, primero arriba
   (`ThemePicker` con su fila de Idioma, `TestListWindow.AddLookPicker`), los guarda en `benchLanguage` y `benchTheme`,
   aparte de los de XTreme (hasta elegir, el idioma del sistema y el tema por defecto); el tema cambia en vivo y el
   idioma rearma la ventana al instante, en el mismo lugar y con la búsqueda y el pedido a medio escribir
-  (`Bench.Open`, `TakeOver`). La consola que abre Revisar se cierra sola cuando el agente terminó bien: corre
+  (`Bench.Open`, `TakeOver`). La consola que abre Revisar (su pestaña en Agentes) se cierra sola cuando el agente terminó bien (y la pestaña, cuando termina de cualquier forma): corre
   `tools\cerrar-sesion.ps1`, que suelta sus bloqueos, deja el archivo de `XT_BENCH_CLOSE` y termina su Claude. Lee y escribe `pruebas\lista.json` (`TestList`): lo ve al instante (`FileSystemWatcher`, y cada 2 s por
   las dudas). Cada clic lleva la versión de la tarjeta (`TestItem.Rev`): si un agente cambió el ítem mientras tanto,
   no se escribe nada, avisa y la lista se refresca. **Historial** (el botón de abajo, o el ⋯ de una tarjeta) muestra
@@ -299,6 +335,19 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 - El contenido va en `Assets/News/<código>.json`, con las marcas de la Ayuda; **es.json es la referencia**. Se cuenta para
   el usuario, sin nombres internos ni arreglos que no va a notar.
 
+## Sesión en vivo (`MainWindow.Live.cs`, `Dialogs/LiveDialog`, #291)
+
+El botón **Sesión en vivo** de la barra del proyecto, a la izquierda de Exportar (`LiveButton`, clase `live`: contorno
+del acento; en una sesión se llena, un punto late y dice "En vivo · 3"; pedido del usuario), y Archivo → **Sesión en
+vivo…** abren `LiveDialog` (ancho de formulario, sobre `Scrim`): sin sesión, el nombre (se recuerda, "liveName") y dos
+tarjetas (`Button.livepick`): **Crear sesión** (la abre en el acto y muestra qué pasar) o **Unirme** (el campo del código
+o link y **Unirse**; Volver o Esc regresa a las tarjetas); en una sesión, el código con Copiar código / Copiar link /
+Copiar IP y la IP (solo el anfitrión), quién está y **Finalizar sesión** (anfitrión) o **Salir de la sesión** (invitado).
+El menú dice cuántos hay ("Sesión en vivo (3)…"). Las herramientas del timeline se centran sin pisar este botón (`PlaceTools`). Cada edición (`MarkDirty`) sale 120 ms después (`LiveSoon`); lo que llega entra por
+`RestoreEdit`, como un deshacer, y no arma paso: el deshacer de cada uno saca solo sus pasos (`UndoManager.Rebase`).
+Grabando no sale ni entra nada: espera a que termine la toma. El invitado recibe una copia nueva en la biblioteca;
+el audio llega después y sus clips pasan de offline a sonar (`ReloadArrived`). Abrir otro proyecto o cerrar sale de la sesión.
+
 ## Avisos y toasts
 
 - Sin campanita (pedido del usuario, 2026-11-03: nadie la abría). `Status(texto)` solo lo anota en el registro de la
@@ -325,7 +374,10 @@ Ese es el diseño **Clásico**. Para el **Vertical**, ver el apartado que sigue.
 - En el medio, **un solo recuadro oscuro** (`Border.metro`) con reloj │ transporte (`Button.tbtn`; Grabar es un ●
   rojo sin texto) │ metrónomo, separados por `Border.vsep`. Entre Detener y Play, **Cortar audio** (parlante tachado,
   Ctrl+., pedido del usuario): detiene y calla las colas de todos los slots (pistas, carpetas, buses, master) y las notas
-  que siguen sonando, con un fundido de 10 ms (`PlaybackEngine.CutAudio`, `LiveTrack.Silence`). Queda **centrado en la ventana** mientras los costados entran al lado (`TransportPanel`): si no, se corre, y si los tres grupos no caben en una fila, la entrada y las vistas bajan a una segunda.
+  que siguen sonando, con un fundido de 10 ms (`PlaybackEngine.CutAudio`, `LiveTrack.Silence`). Después del loop, **Volver al parar** (#271, `ReturnToggle`,
+  `PlaybackEngine.ReturnOnStop`, en `config.json` "transport.returnOnStop", apagado de fábrica): prendido, parar con
+  Espacio o ▶ vuelve el cabezal a donde arrancó la reproducción (o al último salto hecho tocando), que mientras suena marca una línea punteada del acento (`TimelineView.SetReturnMark`); ■ ya lo hacía
+  siempre. Queda **centrado en la ventana** mientras los costados entran al lado (`TransportPanel`): si no, se corre, y si los tres grupos no caben en una fila, la entrada y las vistas bajan a una segunda.
 - A la izquierda, pegados al recuadro: el medidor de entrada (del ancho del texto de abajo y con su escala en dB,
   `StereoMeter.ShowScale`) con "Entrada 1-2 · 48 kHz · 192 muestras (4,0 ms)" chiquito debajo (el driver va en el
   tooltip) y el botón **Monitor** (`ToggleButton.cell`, el monitoreo por software de Configuración). A la derecha, la vista:
@@ -682,8 +734,8 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   bloqueado se silencia). Cada modo recuerda lo suyo (`stemsAdvanced`, `stemsModel`, `stemsOnly`, `stemsPasses`,
   `stemsRange`, `stemsOriginal` en `config.json`).
 - **Selección de varios clips** (pedido del usuario): arrastrar en la parte vacía de las pistas (o debajo de la
-  última) dibuja un rectángulo que marca cada clip que toca, tomas y clips MIDI; con Ctrl suma a lo marcado (`boxed`,
-  `UpdateBox`). **Ctrl+clic** en un clip lo suma o lo saca (en una toma, al soltar sin mover: Ctrl+arrastrar sigue
+  última, o en un carril de automatización fuera de sus bloques) dibuja un rectángulo que marca cada clip que toca, tomas, clips MIDI y bloques de automatización (#281, `BoxAuto`); con Ctrl suma a lo marcado (`boxed`,
+  `UpdateBox`). Un bloque marcado se agarra por su franja de arriba para mover todo lo marcado (`autoCarrying`, `DragAutoCarry`; `ClipsMoved` lleva también los bloques), Ctrl+clic en su cuerpo (o en la franja, sin mover) lo suma o lo saca (`ToggleBlock`), y Supr y Seleccionar todo los incluyen. Shift+arrastrar deja una copia de cada bloque (`CloneIds`, `LeaveBlockCopies`), D los duplica con el resto (`MidiEditing.DuplicateMany`), Ctrl+C/X/V los llevan (`ClipClipboard.BlockItems`: cada bloque vuelve a su carril, corrido el mismo tiempo) y un borde o el bucle de uno marcado, clip o bloque, edita todos (`autoGroup`, `autoGrouped`, `GroupBlock`; `ClipsEdited` lleva los bloques). **Ctrl+clic** en un clip lo suma o lo saca (en una toma, al soltar sin mover: Ctrl+arrastrar sigue
   intercambiando con el clip de otra pista; `ToggleBoxed`). Agarrar
   uno marcado por el cuerpo mueve todos el mismo tiempo, cada uno en su pista (`StartCarry`, `DragCarried`, evento `ClipsMoved`: un solo paso para deshacer); por un borde, un fade, el estiramiento (Ctrl) o el bucle, edita todos igual (pedido del usuario, `TimelineView.Group.cs`, evento `ClipsEdited`, un solo paso): el agarrado va con la grilla y los demás corren ese borde el mismo tiempo, cada uno con sus límites; un clip MIDI toma el borde derecho como el final de una toma y el izquierdo como su comienzo (uno de patrón no tiene), y los fades son solo de tomas. Supr los saca a
   todos. Un clic sin mover, o cualquier selección común, deja uno solo.
@@ -701,6 +753,13 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   apaga con el fundido y el cabezal vuelve a donde estaba. **Zoom**: clic ×2, Alt+clic ÷2, arrastrar muestra ese tramo.
   **Mano** arrastra la vista. Cada una tiene su puntero (`Controls/ToolCursors.cs`: el mismo ícono que su botón,
   blanco con borde negro; la mano sale del trazo de lucide porque Segoe no tiene). Teclas 1 a 9 en el orden de los botones (pedido del usuario, #135).
+  **En los carriles de automatización** (#281, `Controls/TimelineView.AutoTools.cs`: un bloque responde a todo como un
+  clip) Dividir corta el bloque (`Automations.Split`, con su línea), Borrar lo saca, Escuchar toca la pista del carril,
+  Rango marca el tramo de su pista, y Zoom y Mano andan igual. Lápiz y Pincel tienen su pincel propio (`autoBrush`): clic
+  en un bloque lo toma, clic en un lugar vacío pone una copia (el Pincel, una tras otra arrastrando; donde ya hay un
+  bloque no pone); sin un bloque tomado, el clic crea uno. Borrar un rango corta también los carriles de sus pistas
+  (`Automations.ClearRange`, desde `ClipEditing.DeleteRange`). Alt+X divide el bloque elegido (o los marcados) en el
+  cabezal, y Ctrl+X y Alinear a la grilla (Shift+Q, también en el menú del bloque) valen para bloques.
 - **Lápiz y Pincel** (pedido de un colaborador, como los de FL Studio; `Controls/TimelineView.Pencil.cs`, `MainWindow.Pencil.cs`,
   `ClipStamp`): van después de Seleccionar y comparten lo que dibujan (el pincel, `PencilBrush`). Clic en un clip lo
   toma; clic en un lugar vacío de una pista que lo acepta (audio para una toma o un sample, MIDI para un clip MIDI o un
@@ -842,7 +901,7 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   corte, restablecer, quitar clip); en el encabezado o en un tramo vacío del carril, solo cosas de la pista (panel de
   video, renombrar, duplicar con o sin contenido (`DuplicateTracks`, `TrackCopies`: cada copia debajo de su original, en su carpeta; con varias elegidas, todas; Ctrl+Shift+D), carpeta, guardar como plantilla, pegar en el cabezal, quitar pista; quitar pista pregunta antes, igual desde el menú, el tacho y Supr: `AskRemoveTrack`); en la parte vacía debajo de la última fila,
   en los encabezados o en el timeline, el menú de "+ Nueva pista" (pedido del usuario). En los carriles el menú abre al soltar:
-  si el clic derecho se arrastra (`RightEraseSlop`), borra los clips que toca, como la goma (`StartRightErase`, pedido del usuario: como en FL Studio). El mismo criterio vale en todo el timeline (#268: "que elimine cualquier cosa"): en los carriles de automatización borra los bloques enteros que toca (un punto suelto se borra con doble clic), y en las tiras de arriba el rango del loop, marcadores, acordes, cambios de compás y puntos de tempo (salvo el primero de cada uno), y su menú abre al soltar (`TimelineView.Erase.cs`, `StartStripErase`). Lo que toca se oculta hasta soltar y se va en un paso del historial. Mute y solo no van: están en el encabezado. Los
+  si el clic derecho se arrastra (`RightEraseSlop`), borra los clips que toca, como la goma (`StartRightErase`, pedido del usuario: como en FL Studio). El mismo criterio vale en todo el timeline (#268: "que elimine cualquier cosa"): en los carriles de automatización borra los bloques enteros que toca (un punto suelto se borra con doble clic), y en las tiras de arriba el rango del loop, marcadores, acordes, cambios de compás y puntos de tempo (salvo el primero de cada uno), y su menú abre al soltar (`TimelineView.Erase.cs`, `StartStripErase`). Lo que toca queda tenue hasta soltar (`ErasingOpacity`, #281: igual en clips, bloques y las marcas de las tiras) y se va en un paso del historial; en los carriles un mismo arrastre toma clips y bloques, empiece donde empiece (`ClipsErased` lleva los dos). Mute y solo no van: están en el encabezado. Los
   menús no tienen tope de alto (sin scroll), salvo que la ventana sea más baja que el menú.
 - **Ganancia por clip**: `Clip.GainDb` (slider del inspector) y `Clip.GainCurve`, puntos en dB contados desde el sample
   0 de la toma (`ClipGainCurve`, así siguen pegados a las notas al mover, recortar o dividir). El clip seleccionado
@@ -861,8 +920,8 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
 - **Crear**: clic derecho sobre el control (fader, paneo y sliders del mixer y el inspector, perillas de efecto, volumen, paneo, M y envíos del encabezado) → "Automatizar …", o menú de la pista → Automatización, que lista todo lo de la pista. Un VST3 ofrece "Último tocado" (lo último movido en su ventana) y "Elegir parámetro…" (lista con búsqueda: pueden ser miles). Hace falta que el plugin esté abierto.
 - **Automatizar en la ventana del plugin** (`MainWindow.AutomationListen.cs`, pedido del usuario): en la barra de la ventana de un instrumento o de un efecto de pista, el botón "Automatizar" escucha ese plugin: el próximo parámetro que se mueva ahí (`VstBridge.Touches`) recibe su carril, recién al soltar el control y con el valor donde quedó; si no, el carril le sacaría el control a la mano. Se apaga solo; otro clic lo cancela, y cerrar la ventana también. Escucha un plugin por vez. Si el parámetro ya tiene carril, lo muestra. Un efecto de bus no tiene barra: los buses no tienen carriles.
 - **Carril hijo**: va justo debajo de su pista, con una rama del color de la pista (`DrawAutoHeader`), nombre, ON y tacho (último, alineado con el de la pista). El tacho (`AutoTrashRect`, #152) y "Borrar automatización" del menú preguntan antes, ahí mismo (`AskRemoveLane`). Se pliega con la flecha al pie del agarre de la pista o de la carpeta abierta, con el ícono de automatización encima si la fila tiene lugar (`AutoFoldColumn`, #159; `AutomationFolded`, vista, sin deshacer), y va con la pista si se pliega su carpeta o se la arrastra. Su altura se cambia del borde inferior, como una pista. Debajo de la curva, una sombra de los clips.
-- **Bloques** (como los clips MIDI): un carril nuevo trae uno a lo largo de la canción. Doble clic en el carril vacío crea otro de un compás; la tira de arriba lo mueve (con Shift o Ctrl, una copia, que se puede soltar en otro carril de automatización, de la misma pista o de otra; a un parámetro de encendido o por pasos, con valores enteros; #171) y los bordes lo recortan. Clic derecho: copiar, duplicar, repetir 2 / 3 / 4 / 8 / 16 veces u otra cantidad, dividir, vaciar, borrar, pegar. Atajos de copiar, pegar, duplicar y Supr sobre el bloque elegido. La punta derecha de su tira lo repite en bucle (ver **Bucle** en el timeline): un punto puesto en cualquier vuelta va a todas. Entre bloques la curva mantiene el último valor; si dos se pisan, manda el que empieza después. Las copias son independientes.
-- **Puntos**: clic agrega (imantado a la grilla; Alt lo suelta), arrastrar mueve, doble clic borra, Shift+arrastrar dibuja. Cada tramo tiene su forma y su tensión (`AutoShape`, `AutoShapes`, pedido del usuario, como FL Studio): Curva (exponencial, recta en 0), Curva doble (una S: dos curvas, k y −k), Mantener, Escalones, Escalones suaves, Pulsos y Onda (la tensión da de 2 a 32 escalones o ciclos, 8 en 0). Con el puntero sobre el carril aparece un círculo en cada tramo: en una curva va sobre ella a la mitad y arrastrarlo la hace pasar por el puntero; en las otras (la doble también: su medio no se mueve) va en el medio, entre los puntos, y arrastrar hacia arriba suma tensión, escalones o ciclos; doble clic vuelve la tensión a 0 ("Quitar curvas" deja todo el carril recto). **Clic derecho sobre un punto o un tramo** (el círculo o la línea) abre solo el menú de su forma (`ShowShapeMenu`, pedido del usuario: sin el resto del menú): el de un punto es el tramo que llega a él (como FL), el del primero el que sale; elegir otra forma la empieza en tensión 0, clic derecho en una forma la prueba sin cerrar, y "Usar en todo el bloque" la copia a todos sus tramos. En el resto del carril, clic derecho es el menú del bloque. Como en los carriles de clips (#268), en la curva esos menús abren al soltar: si el clic derecho se arrastra (`RightEraseSlop`), borra los puntos que toca (`DragAutoErase`, a lo largo del trazo; un bloque que se queda sin puntos se va), todo en un paso del historial (`AutomationPointsErased`); en el encabezado del carril el menú abre al apretar. Un punto nuevo toma la forma del tramo que parte. Dividir o recortar un bloque no cambia lo que suena (`AutomationBlock.Cut`: una curva cortada es la misma curva con menos tensión; mantener, escalones y pulsos quedan como puntos de mantener; escalones suaves y onda, como líneas cortas). Interruptores (mute, ON de un efecto) van en escalones. Clic derecho: borrar punto, apagar, ocultar (sigue sonando; vuelve desde el menú de la pista), vaciar, borrar.
+- **Bloques** (como los clips MIDI): un carril nuevo trae uno a lo largo de la canción. Doble clic en el carril vacío crea otro de un compás; la tira de arriba lo mueve (con Shift o Ctrl, una copia, que se puede soltar en otro carril de automatización, de la misma pista o de otra; a un parámetro de encendido o por pasos, con valores enteros; #171) y los bordes lo recortan. Clic derecho: copiar, duplicar, repetir 2 / 3 / 4 / 8 / 16 veces u otra cantidad, dividir, vaciar, borrar, pegar. Atajos de copiar, pegar, duplicar y Supr sobre el bloque elegido. La punta derecha de su tira lo repite en bucle (ver **Bucle** en el timeline): las vueltas son de solo lectura (#296: manda el original), veladas con el fondo bajo la tira (`DrawAutoRepeats`); un clic o Shift+arrastrar en ellas solo elige el bloque. Entre bloques la curva mantiene el último valor; si dos se pisan, manda el que empieza después. Las copias son independientes.
+- **Puntos**: clic agrega (imantado a la grilla; Alt lo suelta), arrastrar mueve, doble clic borra, Shift+arrastrar dibuja. Cada tramo tiene su forma y su tensión (`AutoShape`, `AutoShapes`, pedido del usuario, como FL Studio): Curva (exponencial, recta en 0), Curva doble (una S: dos curvas, k y −k), Mantener, Escalones, Escalones suaves, Pulsos y Onda (la tensión da de 2 a 32 escalones o ciclos, 8 en 0). Con el puntero sobre el carril aparece un círculo en cada tramo: en una curva va sobre ella a la mitad y arrastrarlo la hace pasar por el puntero; en las otras (la doble también: su medio no se mueve) va en el medio, entre los puntos, y arrastrar hacia arriba suma tensión, escalones o ciclos; doble clic vuelve la tensión a 0 ("Quitar curvas" deja todo el carril recto). **Clic derecho sobre un punto o un tramo** (el círculo o la línea) abre solo el menú de su forma (`ShowShapeMenu`, pedido del usuario: sin el resto del menú): el de un punto es el tramo que llega a él (como FL), el del primero el que sale; elegir otra forma la empieza en tensión 0, clic derecho en una forma la prueba sin cerrar, y "Usar en todo el bloque" la copia a todos sus tramos. En el resto del carril, clic derecho es el menú del bloque. Como en los carriles de clips (#268), en la curva esos menús abren al soltar: si el clic derecho se arrastra (`RightEraseSlop`), borra los puntos que toca (`DragAutoErase`, a lo largo del trazo; un bloque que se queda sin puntos se va), todo en un paso del historial (`AutomationPointsErased`); en el encabezado del carril el menú abre al apretar. Un punto nuevo toma la forma del tramo que parte. Dividir o recortar un bloque no cambia lo que suena (`AutomationBlock.Cut`: una curva cortada es la misma curva con menos tensión; mantener, escalones y pulsos quedan como puntos de mantener; escalones suaves y onda, como líneas cortas). Interruptores (mute, ON de un efecto) van en escalones. Un punto en el borde de un bloque se agarra también desde afuera o sobre el comienzo del bloque de al lado (`AutoBlockUnder`, #296). Clic derecho sobre un punto empieza con "Escribir valor…" (`AskPointValue`, #296): en las unidades que muestra el parámetro (dB, Hz con k, ms, %, L/R, el nombre de un modo), y la posición es la que más se acerca a esa lectura (`PositionOf`). Clic derecho: borrar punto, apagar, ocultar (sigue sonando; vuelve desde el menú de la pista), vaciar, borrar.
 - **Los controles siguen al carril** (`FollowLanes`, `AutomateOn`): fader, paneo y perillas se mueven mientras suena, sin tocar el canal. Mover a mano un parámetro con carril encendido no sirve: el carril lo pisa.
 - Cada gesto es un paso de deshacer. Borrar y cerrar el hueco corre los puntos (`Automations.CloseGap`).
 
@@ -994,9 +1053,9 @@ hover y se pliega con un clic en cualquier parte fuera de sus botones.
   vuelve a una sola.
 - **Quitar una carpeta** con pistas adentro pregunta (`MainWindow.RemoveFolder`): "Solo la carpeta" (las pistas
   quedan afuera) o "La carpeta y sus pistas" (`TrackFolders.Remove(…, withTracks)`); vacía se quita sin preguntar.
-- **Separadores** (`Folder.Separator`, pedido del usuario): una fila de `SeparatorH` = 22 px con la manija, el nombre en su
-  color y una línea a lo ancho con un brillo suave de su color (`DrawSeparatorLine`: bandas tenues apiladas; pedido del
-  usuario), sobre el fondo de la ventana para que se lea como un corte entre grupos (`DrawSeparatorHeader`). La fila de
+- **Separadores** (`Folder.Separator`, pedido del usuario): una fila de `SeparatorH` = 22 px con la manija, un tramo corto de
+  doble línea, el nombre chico y en mayúsculas en su color y la doble línea a lo ancho (`DrawSeparatorLine`, estilo
+  consola, sin brillo: elegido por el usuario, #289; es el diseño por defecto: Configuración → Apariencia → Separadores elige otro, Línea simple, Banda, Etiqueta o Surco, igual en el timeline y el mixer, `Controls/SeparatorLooks.cs`, "separatorLook", #293), sobre el fondo de la ventana para que se lea como un corte entre grupos (`DrawSeparatorHeader`). La fila de
   arriba no dibuja su línea de abajo, que sería redundante (`OverSeparator`, salvo mientras se reordena); se arrastran como una carpeta (nunca entran pistas), doble clic
   renombra y el clic derecho abre su menú (`SeparatorMenu`: renombrar, color, mostrar u ocultar en el timeline,
   quitar; elegir un color cierra el selector). Oculto, no ocupa lugar pero conserva su lugar en el orden. Uno nuevo nace
@@ -1069,6 +1128,11 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   va recta y adentro del borde (`MarkInset`, #267: de borde a borde tomaba las esquinas redondeadas). El mismo surco
   cierra cada canal del timeline (pista o carpeta, debajo de sus carriles de automatización; `DrawRowBottom`/`DrawSeam`,
   `seamUnder`); entre un canal y sus carriles, la línea fina de siempre. Cambiar cualquiera rearma las tiras una vez.
+  **Tipo de canal** (#277): debajo de todo, en cada tira, una fila fija (`StripKindH`, `KindTag`) con el ícono del tipo (`TrackIcons.KindIcon`: audio, MIDI, bus, carpeta, master) y su nombre, que se oculta en las tiras angostas.
+  **Nombre arriba o abajo** (#277, las vistas "Alt" de FL Studio): Configuración → Apariencia → Mixer, "Nombre al pie
+  de las tiras" (`MixerOptions.NameAtFoot`, "mixer.namePos": "top" por defecto o "bottom"). Abajo, `StripLayout` pone
+  la cabecera (badge y nombre; en el master, su botón y LIM / MONO) debajo del pie, en todas las tiras, con las
+  mismas filas fijas: faders y medidores siguen parejos. Cambiarlo rearma las tiras una vez.
 - **Zoom del mixer** (pedido del usuario: un solo flujo, sin botones Compacto / Amplio / Auto, y una sola tira, la de
   lista, en todos los anchos): todas las tiras de pista y bus tienen un ancho, `mixerStripW` (`config.json`
   "mixerStripW", 120 de entrada), que va de `MinStripW` (42) a `WideMax` (150: más ancho no suma nada, pedido del
@@ -1104,6 +1168,10 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   lista más larga del mixer (`FitListH`, `MixerLayout.FxLists` / `SendLists`) y otro doble clic vuelve al alto por
   defecto. Clic derecho en el botón de la cabecera: "Ajustar a la lista más larga" o "Alto por defecto" (muestra la
   sección si estaba oculta). Solo cambian alturas de filas (`ApplyMixerHeights`), nada se rearma. Paneo y M S ● quedan fijos.
+  **Proporción** (#277, los tres puntos del mixer de FL Studio): sobre cada fader, una manija de tres puntos
+  (`ProportionGrip`, `MainWindow.MixerProportion.cs`) agranda o achica todas las listas que se ven a la vez, en
+  proporción, y el fader toma el resto; con los mismos topes (`ListRoom`, `ListMinH`, `ListMaxH`: nunca agranda el
+  mixer). Escribe los mismos altos ("mixer.fxH" / "mixer.sendsH"); doble clic vuelve a los de fábrica. Sin listas a la vista, no aparece.
   Las manijas nunca agrandan el mixer (pedido del usuario, 2026-11-04): la lista crece hasta lo que entra en su alto,
   dejando lugar al fader (`ListRoom`, `ListCap`); si el mixer se achica, las listas se achican con él (`ShownLists`,
   hasta `ListMinH`) y recuperan el alto elegido al agrandarlo. `MixerMinH` no depende del alto de las listas.
@@ -1153,25 +1221,59 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   (`SectionSwitch`, pedido del usuario): muestran u ocultan esas secciones en todas las tiras
   (`mixerFx`, `mixerSends`, guardados en `config.json` "mixer.fx" / "mixer.sends"). **Conexiones** (`RopesSwitch`,
   `MainWindow.MixerRopes.cs`, #264, "mixer.ropes", apagado por defecto) muestra una franja debajo de las tiras, del
-  ancho de lo que se desplaza: los envíos activos (prendidos, con nivel) del canal elegido (pista, carpeta o bus)
+  ancho de lo que se desplaza: los envíos prendidos del canal elegido (pista, carpeta o bus)
   como sogas que cuelgan de su tira hasta cada bus, con una flecha al llegar; con un bus elegido, también los
   que le llegan, más tenues. Cada soga termina en una perilla que cambia ahí mismo el nivel del envío, con el nivel
   (y PRE) al lado: en un envío, bajo el bus al que llega; en uno que entra, bajo el canal que lo manda. Las sogas que
   se cruzan cuelgan a distintas alturas (las más cortas más arriba). La franja se agranda arrastrando su borde de
-  arriba ("mixer.ropesH") y las perillas crecen con ella (`Controls/SendRopes.cs`; una soga llevada a 0 sigue hasta
-  soltar la perilla). En la tira elegida las sogas salen de **OUT** (a la derecha del centro) y llegan a **IN** (a la
+  arriba ("mixer.ropesH") y las perillas crecen con ella (`Controls/SendRopes.cs`; un envío en 0 % sigue con su soga,
+  finita, y su perilla: sigue conectado, #292). Las perillas se achican para no pisarse con tiras angostas y el nivel va al lado solo si entra (si no, en el tooltip); una soga a un canal fuera de la vista de su dock termina en el borde, sin perilla (#290). En la tira elegida las sogas salen de **OUT** (a la derecha del centro) y llegan a **IN** (a la
   izquierda), cada punta con su etiqueta; en la otra punta, bajo la perilla, también: IN donde llega un envío, OUT
   donde sale uno que entra. Cada soga baja recta, corre por su altura y sube recta a su punta, con esquinas
   redondeadas y un borde del color del panel para que se lean los cruces; las que comparten puerto se abren en abanico
   para no cruzarse al bajar. La flecha entra derecho hacia arriba, y la soga lleva siempre el color del bus de destino. Bajo
   cada bus al que el canal elegido puede mandar y todavía no manda (sin cerrar un bucle), **Enviar** (una pastilla con
   un + en acento) crea el envío al instante: prendido, en la lista de envíos, con el nivel que tenía
-  o 25 % (`QuickSendLevel`). El tick del mixer (`TickRopes`) compara sin asignar el canal, sus envíos y dónde están
+  o 25 % (`QuickSendLevel`). Solo lo lleva un bus que se ve en su dock, y queda dentro de ese dock; si los buses
+  quedan más juntos que la pastilla, todos muestran solo el +, y uno que igual tocaría al anterior no se muestra: nunca
+  se pisan (#275). La **salida** del canal también es una soga (#301), aparte de los envíos: neutra (el color del
+  texto), más gruesa, sólida, sin perilla ni nivel y debajo de las demás, hasta su carpeta (una pista en una), su bus o
+  el Master; por eso la franja llega también debajo de la tira del Master y se ve aunque no haya buses. Un bus o una
+  carpeta elegidos muestran además las salidas que les llegan; sin nada elegido la franja no dibuja nada (#301:
+  era demasiado). El tick del mixer (`TickRopes`) compara sin asignar el canal, sus envíos y dónde están
   las tiras (`MixerLayout.Cards`) y solo rearma las sogas si algo cambió (selección, nivel, scroll, zoom, orden). A la derecha, antes de los M / S
   que limpian mutes y solos, **FX** (`FxBypassButton`, pedido del usuario): pone en bypass todos los efectos de pistas
   y buses, o los vuelve a activar. Solo lo que se oye, como MONO (`PlaybackEngine.FxBypass`, no se guarda): los slots
   van al motor apagados por el mismo camino que su ⏻ (`ChannelDsp.Specs(..., bypass)`), sin tocar el proyecto ni la
   exportación. Prendido se pinta ámbar, como un mute, y las listas de efectos de las tiras se atenúan.
+- **Qué se ve** (`MainWindow.MixerFilter.cs`, pedido del usuario, #270): en la cabecera, un segmentado con **Audio**,
+  **MIDI**, **Carpetas**, **Buses**, **Separadores** y **Vacías** (pistas sin clips), cada uno prendido o apagado por
+  su lado ("mixer.show.*" en `config.json`, todos prendidos por defecto). Solo filtra qué tiras se arman (la clave de
+  `RefreshMixer` lo lleva); nada cambia en el proyecto ni en lo que suena. Sin carpetas, las pistas que el filtro deja
+  van juntas en el lugar de su carpeta (`FolderBlock`), sin arrastrarse de a una; ocultando todo, el mixer lo dice
+  ("mixer.filtered"). Entre los lados va una línea como la del master (`PinLineW` en `Faint`), si los dos tienen algo.
+- **Vistas** (`MainWindow.MixerViews.cs`, pedido del usuario, #277, por los layouts del mixer de FL Studio): el
+  título de la cabecera ("Mixer · XTreme ▾": el título es un `SelectButton`, `AsTitle`, pedido del usuario) elige la
+  disposición. Son disposiciones, no presets (pedido del usuario): nada se marca como cambiado y no se guardan vistas
+  propias. **XTreme** (el nombre lo eligió el usuario) es la libre y la única con zoom: ancho, Efectos y Envíos y sus
+  altos, nombre arriba o abajo y el inspector los elige el usuario. Las demás son las de FL Studio, fijas (sin zoom y
+  con Efectos / Envíos deshabilitados, `MixerLayoutFixed`): **Compacta** (64 px) y **Amplia** (112) dejan las tiras con
+  paneo, fader y medidor y pasan efectos, envíos y entrada / salida al inspector, prendido; **Compacta alt** y **Amplia
+  alt**, lo mismo con el nombre al pie; **Consola** (el "Extra large" de FL Studio, 150) le da a cada tira su cadena y
+  apaga el inspector. Al dejar XTreme se guarda cómo estaba ("mixer.xtreme" en `config.json`) y al volver se repone,
+  así lo que pone una fija no la toca; la elegida va en "mixer.view". El filtro "Qué se ve" y Conexiones no son de
+  ninguna disposición. Aplicar una (`SetMixerView`) usa los caminos de siempre: anchos y altos en el lugar, y un solo
+  rearmado si cambia el lugar del nombre.
+- **Inspector del canal** (`MainWindow.MixerInspector.cs`, #277, como el Track inspector de FL Studio): **Inspector**
+  en la cabecera ("mixer.inspector", apagado por defecto; Compacta y Amplia lo prenden) muestra un panel de todo el
+  alto, a la derecha del master o antes de las tiras (clic derecho en el panel: "Inspector a la izquierda / a la
+  derecha", "mixer.inspSide"; columna 0 o 3 de la grilla de las tiras), con el canal
+  elegido (pista, carpeta o bus; el master no se elige en el mixer): badge, nombre (doble clic renombra) y tipo,
+  Entrada (pistas), Salida (`OutputSelect`; un bus siempre al Master), la lista entera de efectos (`SlotList`: agregar,
+  arrastrar, ⏻, abrir), los envíos (`CompactSends`: nivel, PRE, ⏻ y su menú) y el paneo. Sin canal elegido lo dice en
+  una línea. Se arma con las mismas piezas de las tiras en un `MixerLayout` propio, solo cuando cambia la selección o
+  la clave de las tiras, y se refresca con el mixer; los carriles mueven sus controles como en las tiras. Su borde
+  que da a las tiras cambia el ancho (200–480, "mixer.inspectorW"; doble clic, 260).
 - El **fader** (`Controls/Fader.cs`) tiene la tapa de una consola (pedido del usuario: grande y fácil de agarrar, 30 × 40; 18 × 40 en las tiras más angostas):
   cuerpo gris sombreado, ranuras, una línea blanca sobre una banda oscura en el nivel (blanco solo no se lee sobre el gris) y una sombra abajo; la ranura oscura, con su contorno, se ilumina en
   acento pleno hasta el nivel. La escala en dB va en el medidor. El volumen del encabezado de pista es el mismo fader acostado (`DrawVolume`, `Fader.DrawSideCap`).
@@ -1276,18 +1378,42 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
 - No se mide nada: cada banda sigue su propio nivel mientras suena (`MasterBandComp`) y comprime lo que pasa de ahí,
   así una perilla se escucha en el momento, con cualquier mezcla y a cualquier volumen. Sin limitador, la exportación
   con destino de LUFS frena la ganancia donde el pico real toca el Techo.
-- **Lados y orden** (`MainWindow.MixerOrder.cs`, pedido del usuario): el mixer tiene dos lados, izquierdo (`MixerOrder.Left`,
-  columna 0) y derecho (`Right`, columna 2, pegado al master fijo), con el espacio libre en el medio. Por defecto pistas y
-  carpetas van a la izquierda y los buses a la derecha (`MixerSides`); cualquier tira se arrastra desde su tarjeta
+- **Docks y orden** (`MainWindow.MixerOrder.cs`, pedido del usuario; #277, como los docks de FL Studio; #303: solo
+  izquierda y derecha, el dock izquierdo de #277 se sacó): el mixer tiene dos lados (`MixerOrder.Sides`, por índice de
+  `MixerSides`): el izquierdo (columna 0) y el dock derecho (columna 2, pegado al master fijo). Cada uno tiene su
+  propio scroll y la línea entre los dos es un divisor
+  (`MainWindow.MixerSplit.cs`, pedido del usuario, #275): arrastrada, le da más ancho a uno que al otro (la proporción
+  va en `config.json`, "mixerSplit"), pero el dock derecho nunca pasa del ancho de todas sus tiras (`MixerRightFullW`,
+  #285: el divisor frena ahí y el lado izquierdo se queda con el resto). Cuando llega una tira al dock derecho (nueva o movida) y
+  no se ven todas, el divisor se corre solo hasta mostrarlas, dejándole al lado izquierdo al menos 80 px (`GrowMixerRight`,
+  #285; #303: espera a que el dock esté medido, porque una segunda reconstrucción antes de que corra lo dejaba sin abrir); con doble clic vuelve a la de fábrica, donde el dock derecho toma lo que necesita
+  hasta la mitad. Uno solo ocupa todo el ancho. Las líneas que separan los lados y el master fijo (también el medidor de
+  Mastering) son una ranura (`Controls/Groove.cs`, #275): el fondo más oscuro entre dos líneas `Line`; la del divisor
+  lleva una manija al medio que se prende en acento con el mouse encima o al arrastrar. **Dock**, en el menú de una tira en el mixer (pista de la raíz, carpeta,
+  separador o bus), la pasa a "Fijar a la izquierda" / "Fijar a la derecha" (`DockMenu`, `MoveToDock`,
+  un paso de deshacer; un bus queda después de los canales de su dock, y los buses que seguían a una pista quedan en su
+  dock de antes). En el proyecto: `MixerSide` null o "left" / "right" ("leftDock", el dock izquierdo de #277, abre a la izquierda).
+  Reemplazó al "Fijar lado" del divisor. La ruedita, el zoom y el arrastre de una tira
+  junto al borde mueven el lado que está bajo el mouse; si uno muestra su barra, el otro y el master dejan el mismo
+  alto al pie. Por defecto pistas y
+  carpetas van a la izquierda y los buses al dock derecho (`MixerSides`; #301: ese lado de los buses se elige en
+  Configuración → Apariencia → Mixer, `MixerOptions.BusDock`, "mixer.busDock": izquierda o derecha, y mueve los buses que no se sacaron de
+  su lugar por defecto: un bus guarda null en ese dock y su dock si está en otro); cualquier tira se arrastra desde su tarjeta
   (`MixerDraggable`: un clic sigue siendo un clic, esté seleccionada o no, y el arrastre arranca a los 6 px) a otro lugar,
   a una carpeta abierta o al otro lado, deslizándose como todo lo que se reordena (`SlotDrag.SlideEase`, pedido del
-  usuario): la tira sigue al mouse, las demás se corren para hacerle lugar (a la derecha en el lado izquierdo, a la
+  usuario): la tira sigue al mouse (una imagen suya en una capa sobre los dos lados, `LiftMixerGhost`, #280: cada lado
+  scrollea aparte y recortaría la tira al pasar a otro), las demás se corren para hacerle lugar (a la derecha en el lado izquierdo, a la
   izquierda en el derecho, que está pegado al master) y al soltar se acomoda antes de cambiar el orden (`MixerDropAt`,
   `MakeMixerRoom`, `FinishMixerDrag`); el mixer scrollea cerca de los bordes. Apretar en el fondo vacío del mixer
   deselecciona todo. Pistas, carpetas y separadores se mueven en el mismo orden del timeline (`TrackFolders`, un
-  `EditTimeline` con su deshacer), así que el timeline lo sigue y al revés; los buses se ordenan entre los buses de
-  cualquiera de los dos lados. Los **separadores** se ven como una tira angosta (`SeparatorStrip`, `SeparatorW`; la línea con el mismo brillo que en el timeline) con su
-  nombre escrito hacia arriba y un ojo arriba que los muestra u oculta en el timeline; un clic abre su menú y un doble clic,
+  `EditTimeline` con su deshacer), así que el timeline lo sigue y al revés. Los buses van a cualquier hueco, también
+  entre los canales (#270): cada uno sigue a la tira que tiene a su izquierda (`Bus.MixerAfter`: el id de una pista,
+  carpeta o separador de arriba, `MixerSides.First` para el principio de su lado, o null y un id que ya no está para
+  después de los canales de su lado, como antes); su orden entre buses es el de `ProjectSettings.Buses`. Una tira que se
+  mueve deja a sus buses donde estaban (pasan a seguir a la de antes), y los buses que había entre el hueco y la tira
+  siguiente pasan a seguir a la que llega (`MixerSlot.Trailing`, `Reanchor`); igual una pista, carpeta, separador o bus
+  nuevos del clic derecho, que van al hueco del clic (`NewBusAt`). Una tira oculta por el filtro deja a sus buses en su lugar. Los **separadores** se ven como una tira angosta (`SeparatorStrip`, `SeparatorW`; la misma doble línea que en el timeline) con su
+  nombre chico y en mayúsculas escrito hacia arriba y un ojo arriba que los muestra u oculta en el timeline; un clic abre su menú y un doble clic,
   directo su color, o sobre el nombre, renombrar (#194: por eso el menú del clic izquierdo espera `SeparatorClickWait`). Uno nuevo va donde se pide
   (`NewMixerSeparator`, #194): "Nuevo separador" del clic derecho en el fondo, en el hueco más cercano al clic;
   "Separador" en la cabecera (`AddSeparatorButton`), justo después del canal o la carpeta elegidos, de su lado; sin
@@ -1310,13 +1436,15 @@ salida, mute/solo y Transponer quedan. Un paso de deshacer; los compresores se v
   bucle (`ProjectBuses.CanFeed`). **Se automatiza como una carpeta** (#267: `Bus` es `IAutomated`): clic derecho en su
   fader, paneo, M, un envío o una perilla de sus efectos (en la tira del mixer y en el inspector) ofrece su carril. Sus
   carriles van en las **filas de bus al final del timeline** (decisión del usuario, como los canales FX de Cubase o los
-  aux de Logic; `TimelineView.Buses.cs`): una fila por bus, después de todas las pistas y carpetas, sin clips, con su
+  aux de Logic; `TimelineView.Buses.cs`): una fila por bus **con automatización** (#288: un bus sin carriles no tiene
+  fila; el primero sale de los controles de arriba o de "Automatización" en el clic derecho de su tira, `BusMenu`),
+  después de todas las pistas y carpetas, sin clips, con su
   badge, nombre, "BUS" y M, y sus carriles debajo (se editan como los de una carpeta). Un clic la selecciona como en el
   mixer (`BusRowSelected` → `SelectBus`); su chevron pliega los carriles; clic derecho: Automatización, Ver la
   automatización y "Mostrar buses en el timeline". Se ven por defecto, también en proyectos viejos, y se ocultan todas
-  juntas con esa opción (también en el menú del espacio vacío del timeline): `ProjectSettings.BusRowsHidden`, del
+  juntas con esa opción (también en el menú del espacio vacío del timeline, si algún bus tiene carriles): `ProjectSettings.BusRowsHidden`, del
   proyecto, sin deshacer; ocultas, sus carriles siguen sonando. No hay columna "+ Bus" (pedido del usuario): clic derecho en el mixer, también
-  en su fondo vacío (`InitMixerMenu`) → "Nuevo bus / canal FX" agrega uno vacío (`ProjectBuses.Add`), y el efecto se
+  en su fondo vacío (`InitMixerMenu`) → "Nuevo bus / canal FX" agrega uno vacío en el hueco del clic (`ProjectBuses.Add`, `NewBusAt`), y el efecto se
   le suma con "+"; el mismo menú tiene "Nuevo separador" y, arriba, las pistas nuevas del + del timeline (audio, MIDI,
   con instrumento, carpeta, plantilla, importar: `NewTrackItems`; pedido del usuario, #196), que van, como el separador, al hueco más cercano al clic
   (`mixerNewAt`: lo que crea la próxima edición se mueve ahí con `MoveToSlot`, en el mismo paso de deshacer). Un slot apagado deja pasar lo que le llega. Los selectores de

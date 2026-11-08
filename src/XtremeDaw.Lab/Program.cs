@@ -58,6 +58,7 @@ static class Program
                 "midi" => MidiCommands.Run(a),
                 "vst" => VstCommands.Run(a),
                 "proyectos" => LibraryCommands.Run(a),
+                "colaborar" => LiveChecks.Run(a),
                 _ => Help(),
             };
         }
@@ -224,6 +225,10 @@ static class Program
                                            quién hizo qué y cuándo con un ítem (sin número, lo último de todos)
               lista comprobar              comprueba la lista sobre un archivo temporal
               atajos comprobar             ninguna distribución de otro DAW repite una tecla
+              colaborar comprobar          la edición en vivo entre copias (#291): diferencias, código de invitación y una
+                                           sesión real por 127.0.0.1 (cambios en los dos sentidos, audio, deshacer, versión)
+              colaborar anfitrion carpeta [--nombre N] | unirse código carpeta [--nombre N]
+                                           una sesión a mano: invita a un proyecto o se une y crea su copia en la carpeta
               proyecto abrir    carpeta    abre un proyecto nativo y muestra pistas, avisos e historial
               proyecto versiones carpeta   lista las versiones guardadas, de más nueva a más vieja
               proyecto volver   carpeta n  restaura la versión n y conserva el estado actual en el historial (tomas y exportaciones quedan)
@@ -260,7 +265,7 @@ static class Program
               proyecto editar carpeta carpeta id [--nombre X] [--plegar] [--ocultar]   renombra y pliega una carpeta (--ocultar: un
                                            separador se oculta o se muestra en el timeline)
               proyecto editar carpeta nuevo-separador [nombre] [--en n] [--visible]   un separador con nombre en ese lugar de la secuencia (oculto en el timeline salvo --visible)
-              proyecto editar carpeta lado id izquierda|derecha   de qué lado del mixer va la tira (pista, carpeta, separador o bus)
+              proyecto editar carpeta lado id izquierda|derecha              de qué lado del mixer va la tira (pista, carpeta, separador o bus)
               proyecto editar carpeta tempo bpm    cambia el tempo con todo en su compás y deja los clips estirados en cache/
               proyecto editar carpeta tempo-mapa [tiempo:bpm,…] [--compas compás:n/d,…]   la pista de tempo: cada punto
                                            en tiempos (negras desde 0), con ~ al final es una rampa hasta el siguiente

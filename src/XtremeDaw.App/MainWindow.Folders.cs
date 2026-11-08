@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
@@ -109,7 +109,7 @@ public partial class MainWindow
 
     double? Scale(double? h) => h is { } px && Math.Abs(px - Timeline.TrackHeight) >= 1 ? px / Timeline.TrackHeight : null;
 
-    /// <summary>Every track and folder back to its usual height.</summary>
+    /// <summary>Every track, folder and automation lane (buses' included) back to its usual height.</summary>
     void ResetRowHeights()
     {
         if (store == null || store.ReadOnly || restoring) return;
@@ -124,6 +124,9 @@ public partial class MainWindow
             f.HeightScale = null;
             foreach (var l in f.Automation ?? []) l.HeightScale = null;
         }
+        // the bus rows' lanes too (#282: one made taller stayed at its own height, deaf to the vertical zoom)
+        foreach (var b in store.Project.Settings.Buses)
+            foreach (var l in b.Automation ?? []) l.HeightScale = null;
         RowHeightsChanged();
     }
 
@@ -136,7 +139,8 @@ public partial class MainWindow
 
     /// <summary>The reset button is on only while some row has a height of its own.</summary>
     void UpdateResetHeights() => ResetHeightsButton.IsEnabled = store is { ReadOnly: false } st
-        && (st.Project.Tracks.Any(t => t.HeightScale != null || t.Automation?.Exists(l => l.HeightScale != null) == true) || st.Project.Folders.Any(f => f.Height != null || f.HeightScale != null || f.Automation?.Exists(l => l.HeightScale != null) == true));
+        && (st.Project.Tracks.Any(t => t.HeightScale != null || t.Automation?.Exists(l => l.HeightScale != null) == true) || st.Project.Folders.Any(f => f.Height != null || f.HeightScale != null || f.Automation?.Exists(l => l.HeightScale != null) == true)
+            || st.Project.Settings.Buses.Any(b => b.Automation?.Exists(l => l.HeightScale != null) == true));
 
     /// <summary>The folder selected in the timeline (or the mixer), or null; then no track is selected.</summary>
     Folder? SelectedFolder => Timeline.SelectedFolderId is { } id ? FolderById(id) : null;
@@ -457,7 +461,7 @@ public partial class MainWindow
         if (!folder.MixerCollapsed)
         {
             mx.Order.FolderStrips[id] = own;
-            foreach (var t in tracks.Where(t => t.Track.FolderId == id).ToList())
+            foreach (var t in tracks.Where(t => t.Track.FolderId == id && MixerShows(t)).ToList())
             {
                 var card = Strip(t, stripW);
                 MixerDraggable(card, t.Track);
@@ -511,6 +515,19 @@ public partial class MainWindow
     }
 
     /// <summary>
+    /// A folder's tracks without its strip, when the mixer's filter hides folders (#270): the ones the filter shows, side
+    /// by side in the folder's place, folded or not. They don't drag from here. Null when none shows.
+    /// </summary>
+    Control? FolderBlock(Folder folder, double stripW)
+    {
+        var shown = tracks.Where(t => t.Track.FolderId == folder.Id && MixerShows(t)).ToList();
+        if (shown.Count == 0) return null;
+        var strips = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var t in shown) strips.Children.Add(Strip(t, stripW));
+        return strips;
+    }
+
+    /// <summary>
     /// The folder's own strip, a channel like a bus's (#134): its effects as a list, its sends as bars, the pan bar and
     /// M S over its fader, its meter after them (what goes to its output) and its dB at the foot. Its head has the folder
     /// glyph, "CARPETA" and its output selector (a track's strip has no output there: a folder's goes to the master or a
@@ -532,7 +549,11 @@ public partial class MainWindow
             if (e.Handled || e.InitialPressMouseButton != MouseButton.Right || store == null || restoring) return;
             e.Handled = true;
             Timeline.SelectFolder(id);
-            OpenAnchoredMenu(Popup(FolderMenu(F(), box, null), 240), box);
+            // in the mixer it also goes to a dock (#277)
+            var items = FolderMenu(F(), box, null);
+            items.Add(new Separator());
+            items.Add(DockMenu(F()));
+            OpenAnchoredMenu(Popup(items, 240), box);
         };
         var fader = new Fader();
         fader.Changed += v => FolderChannelEdit(id, x => x.Volume = v, "volume");
@@ -571,7 +592,7 @@ public partial class MainWindow
             StripToggle("S", Loc.T("folder.solo"), 26, () => F().Solo, false, () => FolderChannelEdit(id, x => x.Solo = !x.Solo, "solo")));
         mx.NodeMeters.Add((id, meter, gr));
         var content = new Grid();
-        var layout = StripLayout(head, controls, faders, db);
+        var layout = StripLayout(head, controls, faders, db, "folder");
         NarrowParts(layout, faders, fader, meter, db);
         content.Children.Add(layout);
         content.Children.Add(top);

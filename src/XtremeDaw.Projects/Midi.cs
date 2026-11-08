@@ -468,6 +468,16 @@ public static class MidiEditing
     }
 
     /// <summary>
+    /// Removes several clips at once (a box selection, the eraser). An id already gone is skipped: a loop's passes go
+    /// with their source, so a selection holding both would otherwise fail on the first pass after it (#281).
+    /// </summary>
+    public static void RemoveMany(Project p, IEnumerable<string> clipIds)
+    {
+        foreach (string id in clipIds)
+            if (TryFind(p, id) != null || p.Tracks.Exists(t => t.Clips.Exists(c => c.Id == id))) RemoveAny(p, id);
+    }
+
+    /// <summary>
     /// Duplicates takes' clips and MIDI clips together: every copy goes the same time later, right after the block they
     /// all make, each on its own track. A pattern's clip brings the other instruments that start with it. Returns the
     /// copies' ids in the order of <paramref name="ids"/>, those instruments' after them. With the magnet on
@@ -480,8 +490,10 @@ public static class MidiEditing
             if (TryFind(p, id) is { } picked)
                 foreach (var c in MidiPatterns.Together(p.Tracks, picked))
                     if (!unique.Contains(c.Id)) unique.Add(c.Id);
+        // automation blocks boxed with the clips (#281) go in the same block, each copy in its own lane
+        var blocks = unique.Where(id => Automations.FindBlock(p, id) != null).ToList();
         var midi = unique.Where(id => TryFind(p, id) != null).ToList();
-        var takes = unique.Where(id => !midi.Contains(id)).ToList();
+        var takes = unique.Where(id => !midi.Contains(id) && !blocks.Contains(id)).ToList();
         double start = double.MaxValue, end = double.MinValue;
         if (takes.Count > 0) (start, end) = ClipEditing.Span(p, takes.Select(id => ClipEditing.Find(p, id).Clip), lengthOf);
         foreach (var id in midi)
@@ -489,6 +501,12 @@ public static class MidiEditing
             var c = TryFind(p, id)!;
             start = Math.Min(start, c.AtSec);
             end = Math.Max(end, c.EndSec(p.Settings.TempoMap));
+        }
+        foreach (var id in blocks)
+        {
+            var b = Automations.FindBlock(p, id)!.Value.Block;
+            start = Math.Min(start, b.AtSec);
+            end = Math.Max(end, b.EndSec);
         }
         if (start > end) return [];
         double shift = ClipEditing.DuplicateShift(end - start, step);
@@ -503,16 +521,27 @@ public static class MidiEditing
             t.MidiClips!.Insert(t.MidiClips.IndexOf(c) + 1, copy);
             copies[id] = copy.Id;
         }
+        foreach (var id in blocks)
+        {
+            var (lane, b) = Automations.FindBlock(p, id)!.Value;
+            var copy = b.Copy(b.AtSec + shift);
+            lane.Blocks.Insert(lane.Blocks.IndexOf(b) + 1, copy);
+            lane.Touch();
+            copies[id] = copy.Id;
+        }
         return [.. unique.Where(copies.ContainsKey).Select(id => copies[id])];
     }
 
     /// <summary>
     /// Shift+drag on the timeline: leaves a copy of each clip, take or MIDI, exactly where it is, under it, so the clip
-    /// that the gesture then moves is the one that keeps its selection.
+    /// that the gesture then moves is the one that keeps its selection. A looped take leaves its whole loop (#281): the
+    /// copy gets copies of all its repeats, carried or not, since the moved source remakes its own.
     /// </summary>
     public static void LeaveCopies(Project p, IEnumerable<string> ids)
     {
-        foreach (var id in ids)
+        var list = ids.ToList();
+        var given = list.ToHashSet();
+        foreach (var id in list)
             if (TryFind(p, id) != null)
             {
                 var (t, c) = Find(p, id);
@@ -521,9 +550,19 @@ public static class MidiEditing
             else
             {
                 var (t, c) = ClipEditing.Find(p, id);
+                // a repeat whose source stays too is copied with that source's loop
+                if (c.LoopOf is { } source && given.Contains(source) && t.Clips.Exists(o => o.Id == source)) continue;
                 var copy = ClipEditing.Copy(c);
                 copy.Id = Ids.New("clp");
                 t.Clips.Insert(t.Clips.IndexOf(c), copy);
+                if (c.LoopOf != null) continue;
+                foreach (var r in ClipLoops.Repeats(t, c.Id).ToList())
+                {
+                    var rc = ClipEditing.Copy(r);
+                    rc.Id = Ids.New("clp");
+                    rc.LoopOf = copy.Id;
+                    t.Clips.Insert(t.Clips.IndexOf(r), rc);
+                }
             }
     }
 

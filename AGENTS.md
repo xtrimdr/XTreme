@@ -235,7 +235,7 @@ La cadena por pista, la automatización en el motor y los slots están en la [gu
    archivo tuyo: soltalo apenas termines con él (`tools\bloqueos.ps1 -SueltaArchivo <ruta>`). Si estás en cola y lo
    necesitás, `-PideArchivo <ruta>`; para avisar algo que afecta a otro, `-Avisa <#ticket|sesión|todos> -Texto "…"`
    (corto; `-Atencion` solo si el otro tiene que parar). `-Buzon` lee los sin leer. Cada aviso queda además un día en
-   `.claude\bloqueos\avisos.jsonl`, que el Banco muestra en su vista **Agentes** (#269); desde ahí el usuario también te
+   `.claude\bloqueos\avisos.jsonl`. La ventana **Agentes** del Banco (#269, #273: un mapa de quién tiene qué y dónde se traban) no muestra esa conversación (#300), solo la consola de cada sesión; desde ahí el usuario también te
    escribe o te pide un archivo (llega como aviso del usuario).
 10. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.
 11. Las skills de este proyecto (`.claude/skills`) llevan el prefijo `xt_`, en la carpeta y en su `name`

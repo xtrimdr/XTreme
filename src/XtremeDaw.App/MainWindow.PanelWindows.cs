@@ -72,10 +72,13 @@ public partial class MainWindow
     {
         StageBar.Children.Add(FloatButton(FloatStage, chip: true));
         // every button sits in its panel's top right corner (asked by the user): the timeline's over the ruler's end
-        var timeline = FloatButton(FloatTimeline, chip: true);
-        timeline.HorizontalAlignment = HorizontalAlignment.Right;
-        timeline.VerticalAlignment = VerticalAlignment.Top;
-        timeline.Margin = new Thickness(0, 3, 8, 0);
+        // on an opaque base: the chip is transparent and the ruler's numbers showed through it (#274)
+        var timeline = new Border
+        {
+            Child = FloatButton(FloatTimeline, chip: true), Background = Palette.Panel, CornerRadius = new CornerRadius(6),
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 3, 8, 0), ZIndex = 1,
+        };
         ((Panel)TimelineToolbar.Parent!).Children.Add(timeline);
         masteringFloat = FloatButton(FloatMastering, chip: true);
         // they aren't owned by the main window: they close with it (and the program wouldn't end while one is open)

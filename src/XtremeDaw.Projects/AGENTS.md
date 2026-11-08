@@ -17,7 +17,7 @@ guardado. Cómo lo lee el motor está en [XtremeDaw.Audio/AGENTS.md](../XtremeDa
   el mismo cálculo en vivo, en la exportación y en el timeline); su mute calla su nodo. Tiene carriles como una pista (#136): `Track`, `Folder` y `Bus` son
   `IAutomated`, y `Automations` trabaja sobre cualquiera (el nodo los lee como `TrackDspChain`). Lo que la versión 2 guardaba con esos nombres vuelve como era. Un **separador** es una `Folder` con `Separator`: va en
   el mismo orden, nunca toma pistas ni rutea ni tiene canal, y se puede ocultar del timeline (`HiddenInTimeline`). Pistas de la raíz,
-  carpetas y buses tienen su lado del mixer (`MixerSide`, `MixerSides`: null = el de siempre).
+  carpetas y buses tienen su lado del mixer (`MixerSide`, `MixerSides`, #277 y #303: "left" o "right"; null = el de siempre; "leftDock", el dock izquierdo que se sacó, se lee como "left"; el de siempre de un bus es `MixerSides.BusDefault`, que la ventana toma de Configuración, #301, así que un bus guarda "right" si está ahí y no es el de siempre); un bus, además, la tira que sigue en el mixer (`MixerAfter`, #270).
 - **Buses y ruteo**: un solo concepto para "bus" y "FX" (`ProjectSettings.Buses`, `Bus`: nombre, fader, paneo, mute,
   slots, salida y envíos; una reverb o un delay son un slot más, `InsertSlot.Reverb` / `Delay`). Un proyecto nuevo vacío
   arranca sin buses (sin envíos); las plantillas traen los suyos o "Reverb" y "Delay" (`ProjectBuses.Defaults`). Pista (`Channel`), carpeta y bus son `IRouted`: `Output` (null = Master,
@@ -25,7 +25,8 @@ guardado. Cómo lo lee el motor está en [XtremeDaw.Audio/AGENTS.md](../XtremeDa
   pasan por `ProjectBuses`. **La salida de un bus va solo al Master** (decisión del usuario, 2026-10-26: las cadenas
   entre buses no se entendían; `CanOutput`), pero **un bus manda a otros buses** como una pista (pedido del usuario,
   #264): `CanFeed` rechaza el envío a sí mismo o uno que cerraría un bucle (un envío sacado de la lista, `Hidden`, no
-  cuenta), y `Normalize` le borra la salida, los envíos a sí mismo y el que cierre un bucle, además de sacar lo que
+  cuenta) y el envío al bus al que ya sale (#301: sacar la salida a un bus saca de la lista el envío a ese bus, y
+  `Normalize` lo mismo), y `Normalize` le borra la salida, los envíos a sí mismo y el que cierre un bucle, además de sacar lo que
   apunta a buses que no existen. El motor corre cada bus después de los que lo alimentan (`Order`). Un bus tiene carriles como una carpeta (#267: `Bus` es `IAutomated`; fader, paneo, mute, envíos y slots), en su fila al final del timeline; `ProjectSettings.BusRowsHidden` oculta esas filas (vista, sin deshacer) y el A/B de la mezcla no guarda sus carriles. Cada pista (y carpeta) elige a qué buses manda (pedido del usuario): un envío con `Hidden` está sacado
   de su lista (apagado, con su nivel guardado) y un bus sin envío tampoco está: una pista o un bus nuevos no traen
   ninguno, el usuario los suma (pedido del usuario, 2026-10-29; `ProjectBuses.Shown`, `ShowSend`); el timeline, el mixer y el inspector muestran solo esos. La versión 3 trajo esto: los campos de la 2

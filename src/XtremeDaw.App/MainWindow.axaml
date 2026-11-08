@@ -213,7 +213,7 @@
           </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="1" x:Name="ProjectRow" ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="12,0,12,8">
+        <Grid Grid.Row="1" x:Name="ProjectRow" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="12,0,12,8">
           <!-- the project's mode (native only): video, or solo audio without stage, camera or MP4; first in the row so
                the kind of project is the first thing read -->
           <Border Classes="mode" VerticalAlignment="Center">
@@ -267,7 +267,18 @@
             <StackPanel x:Name="ToolStrip" Orientation="Horizontal" Spacing="2" />
           </Border>
 
-          <Button Grid.Column="4" x:Name="ExportButton" Classes="accent" ToolTip.Tip="{loc:T export.mp4}">
+          <!-- the live session (#291): create one or join one; while on, a beating dot and how many are in -->
+          <Button Grid.Column="4" x:Name="LiveButton" Classes="live" Margin="0,0,8,0" ToolTip.Tip="{loc:T live.button.tip}" AutomationProperties.Name="{loc:T live.session}">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <Grid VerticalAlignment="Center">
+                <TextBlock x:Name="LiveButtonIcon" Classes="icon" Text="&#xE716;" FontSize="13" Foreground="{StaticResource Accent}" />
+                <Ellipse x:Name="LiveDot" Classes="livedot" Width="7" Height="7" Fill="{StaticResource Accent}" IsVisible="False" />
+              </Grid>
+              <TextBlock x:Name="LiveButtonText" Text="{loc:T live.button}" />
+            </StackPanel>
+          </Button>
+
+          <Button Grid.Column="5" x:Name="ExportButton" Classes="accent" ToolTip.Tip="{loc:T export.mp4}">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <!-- a download arrow: the file lands in exports/ -->
                 <TextBlock Classes="icon" Text="&#xE896;" FontSize="13" />
@@ -523,6 +534,10 @@
               <ToggleButton x:Name="LoopToggle" Classes="tbtn" IsChecked="True" ToolTip.Tip="{loc:T transport.loop.tip}">
                 <TextBlock Classes="icon" Text="&#xE8EE;" FontSize="16" />
               </ToggleButton>
+              <!-- return to the play start on stop (#271; MainWindow.Transport.cs, PlaybackEngine.ReturnOnStop) -->
+              <ToggleButton x:Name="ReturnToggle" Classes="tbtn" ToolTip.Tip="{loc:T transport.return.tip}">
+                <TextBlock Classes="icon" Text="&#xE7A7;" FontSize="15" />
+              </ToggleButton>
             </StackPanel>
             <Border Classes="vsep" />
             <!-- metronome (Studio One style, asked by the user instead of the web's separate chips) -->
@@ -596,6 +611,7 @@
     <d:NewsDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="News" IsVisible="False" />
     <d:UnsavedDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Unsaved" IsVisible="False" />
     <d:TempoDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="TempoAsk" IsVisible="False" />
+    <d:LiveDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="LiveAsk" IsVisible="False" />
     <d:MidiImportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="MidiAsk" IsVisible="False" />
     <d:ImportDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="ImportAsk" IsVisible="False" />
     <d:FeedbackDialog Grid.RowSpan="6" Grid.ColumnSpan="2" x:Name="Feedback" IsVisible="False" />

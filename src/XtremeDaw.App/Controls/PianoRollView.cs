@@ -199,6 +199,10 @@ public sealed partial class PianoRollView : Control
     public event Action<string, List<MidiNote>>? NotesCommitted;
     /// <summary>A note to hear on its own: pitch, velocity.</summary>
     public event Action<int, int>? NoteAuditioned;
+    /// <summary>A note that sounds while the mouse holds it (a key, a note clicked or dragged; #276): pitch, velocity.</summary>
+    public event Action<int, int>? NoteHeld;
+    /// <summary>A note of <see cref="NoteHeld"/> let go: its pitch.</summary>
+    public event Action<int>? NoteReleased;
     /// <summary>A click on the ruler: the timeline time to move the playhead to.</summary>
     public event Action<double>? SeekRequested;
     /// <summary>A drag on the ruler started (true) or ended (false): the window holds playback meanwhile, as the timeline's.</summary>
@@ -1133,6 +1137,28 @@ public sealed partial class PianoRollView : Control
     int shownVel = -1;
     double velFrom;
     int heardPitch = -1;
+    /// <summary>The pitches the gesture holds sounding (<see cref="NoteHeld"/>), let go when it ends or moves to another.</summary>
+    readonly List<int> sounding = [];
+
+    /// <summary>One more note sounding while the gesture lasts.</summary>
+    void HoldMore(int pitch, int velocity)
+    {
+        sounding.Add(pitch);
+        NoteHeld?.Invoke(pitch, velocity);
+    }
+
+    /// <summary>The gesture moved to another note: what sounded ends and this one starts.</summary>
+    void HoldOnly(int pitch, int velocity)
+    {
+        LetGo();
+        HoldMore(pitch, velocity);
+    }
+
+    void LetGo()
+    {
+        foreach (int p in sounding) NoteReleased?.Invoke(p);
+        sounding.Clear();
+    }
     double downScrollX, downScrollY;
     readonly DispatcherTimer edgeScroll;
     bool scrubHeld;
@@ -1261,7 +1287,7 @@ public sealed partial class PianoRollView : Control
         if (p.X < KeyW)
         {
             heardPitch = PitchAt(p.Y);
-            NoteAuditioned?.Invoke(heardPitch, lastVelocity);
+            HoldOnly(heardPitch, lastVelocity);
             Start("keys", e);
             InvalidateVisual();
             return;
@@ -1325,7 +1351,8 @@ public sealed partial class PianoRollView : Control
                 notes.AddRange(added);
                 selected.UnionWith(added);
                 hit = added[0];
-                foreach (var n in added.Skip(1)) NoteAuditioned?.Invoke(n.Pitch, n.Velocity);
+                LetGo();
+                foreach (var n in added.Skip(1)) HoldMore(n.Pitch, n.Velocity);
             }
             else
             {
@@ -1351,7 +1378,9 @@ public sealed partial class PianoRollView : Control
         from.Clear();
         foreach (var n in selected) from[n] = (n.Pitch, n.Beat, n.Beats);
         heardPitch = hit.Pitch;
-        NoteAuditioned?.Invoke(hit.Pitch, hit.Velocity);
+        // the chord's other notes already sound: this one joins them
+        if (sounding.Count == 0) HoldOnly(hit.Pitch, hit.Velocity);
+        else HoldMore(hit.Pitch, hit.Velocity);
         bool copy = (modifiers & KeyModifiers.Shift) != 0 && !changed;
         Start(copy ? "copy" : OnEdge(hit, p) && !changed ? "resize" : OnStartEdge(hit, p) && !changed ? "resizeStart" : "move", e);
         InvalidateVisual();
@@ -1455,7 +1484,7 @@ public sealed partial class PianoRollView : Control
                 break;
             case "keys":
                 int k = PitchAt(lastPointer.Y);
-                if (k != heardPitch) { heardPitch = k; NoteAuditioned?.Invoke(k, lastVelocity); }
+                if (k != heardPitch) { heardPitch = k; HoldOnly(k, lastVelocity); }
                 break;
         }
         InvalidateVisual();
@@ -1493,7 +1522,7 @@ public sealed partial class PianoRollView : Control
             }
         }
         changed |= held.Pitch != p0 || db != 0;
-        if (held.Pitch != before) { heardPitch = held.Pitch; NoteAuditioned?.Invoke(held.Pitch, held.Velocity); }
+        if (held.Pitch != before) { heardPitch = held.Pitch; HoldOnly(held.Pitch, held.Velocity); }
     }
 
     void DragResize()
@@ -1682,6 +1711,7 @@ public sealed partial class PianoRollView : Control
         velBase.Clear();
         shownVel = -1;
         heardPitch = -1;
+        LetGo();
         from.Clear();
         lasso.Clear();
         pointer?.Capture(null);
@@ -1709,6 +1739,7 @@ public sealed partial class PianoRollView : Control
         velBase.Clear();
         shownVel = -1;
         heardPitch = -1;
+        LetGo();
         from.Clear();
         changed = false;
         InvalidateVisual();

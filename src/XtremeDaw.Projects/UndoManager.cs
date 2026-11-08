@@ -56,6 +56,7 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
         lastKey = key;
         lastAt = now;
         if (merge) return;
+        FlushRemote();
         undo.Add(new(Capture(project), clock.GetUtcNow().UtcDateTime, label));
         if (undo.Count > Capacity)
         {
@@ -72,6 +73,7 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
     bool Move(Project project, List<Entry> from, List<Entry> to)
     {
         if (from.Count == 0) return false;
+        FlushRemote();
         var e = from[^1];
         to.Add(e with { Json = Capture(project) });
         from.RemoveAt(from.Count - 1);
@@ -87,6 +89,7 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
     {
         int n = undo.Count, m = n + redo.Count;
         if (position < 0 || position > m || position == n) return false;
+        FlushRemote();
         var (states, steps) = Timeline(project);
         undo.Clear();
         redo.Clear();
@@ -119,6 +122,7 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
     /// <param name="mediaName">A take's name by its media id, for the clips' lines.</param>
     public List<Step> Steps(Project project, Func<string, string?> mediaName)
     {
+        FlushRemote();
         var (states, steps) = Timeline(project);
         var known = labels;
         labels = new(ReferenceEqualityComparer.Instance);
@@ -139,6 +143,15 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
     }
 
     void Apply(Project project, string json)
+    {
+        FlushRemote();
+        ApplyState(project, json);
+        lastKey = "";
+        Version++;
+    }
+
+    /// <summary>Puts an undo state (<see cref="Capture"/>) back into the project: what an undo, a redo or a shared session's change does.</summary>
+    internal static void ApplyState(Project project, string json)
     {
         var state = JsonSerializer.Deserialize<Editable>(json, ProjectStore.Json)!;
         project.Tracks = state.Tracks;
@@ -171,16 +184,44 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
                 if (media.TryGetValue(at.Id, out var m)) (m.Audio, m.Video, m.AudioBytes, m.VideoBytes) = (at.Audio, at.Video, at.AudioBytes, at.VideoBytes);
         }
         project.Normalize();
-        lastKey = "";
-        Version++;
     }
 
-    static string Capture(Project p) => JsonSerializer.Serialize(new Editable(p.Tracks, p.Settings.Layout,
+    internal static string Capture(Project p) => JsonSerializer.Serialize(new Editable(p.Tracks, p.Settings.Layout,
         p.Settings.Aspect, p.Settings.Color, p.Settings.VideoFx, p.Settings.Mode, p.Folders, p.Markers, p.Settings.Buses, p.Settings.Compare, p.ChordMarkers, p.Settings.TimeScale, p.Settings.TempoScale, p.Settings.TempoMap,
         [.. p.Media.Select(m => new Place(m.Id, m.Audio, m.Video, m.AudioBytes, m.VideoBytes))]), ProjectStore.Json);
 
+    /// <summary>Someone else's changes in a shared session, not yet carried into the kept states (<see cref="Rebase"/>).</summary>
+    readonly List<System.Text.Json.Nodes.JsonObject> remote = [];
+
+    /// <summary>
+    /// A change that came from someone else in a shared session (#291): it goes into every kept state too, so an undo
+    /// takes back only this user's own steps, not what the others did since. Applied when the states are next read.
+    /// </summary>
+    public void Rebase(System.Text.Json.Nodes.JsonObject patch)
+    {
+        if (undo.Count + redo.Count == 0) return;
+        remote.Add(patch);
+    }
+
+    void FlushRemote()
+    {
+        if (remote.Count == 0) return;
+        for (int l = 0; l < 2; l++)
+        {
+            var list = l == 0 ? undo : redo;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var node = System.Text.Json.Nodes.JsonNode.Parse(list[i].Json)!.AsObject();
+                foreach (var p in remote) LiveDiff.Apply(node, p);
+                list[i] = list[i] with { Json = node.ToJsonString(ProjectStore.Json) };
+            }
+        }
+        remote.Clear();
+    }
+
     public void Clear()
     {
+        remote.Clear();
         undo.Clear();
         redo.Clear();
         labels.Clear();

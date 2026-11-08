@@ -57,6 +57,22 @@ public static partial class TrackIcons
     static readonly Geometry KindAudio = Geometry.Parse("M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2"),
         KindMidi = Geometry.Parse("M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M9 13v6 M15 13v6 M7.5 5v8h3V5 M13.5 5v8h3V5"),
         KindVideo = Geometry.Parse("M16 13l5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5 M4 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z");
+    /// <summary>The other channel kinds on lucide's grid, for the mixer strips' foot (#277): "git-merge" for a bus,
+    /// "folder", "volume-2" for the master.</summary>
+    static readonly Geometry KindBus = Geometry.Parse("M18 15a3 3 0 1 0 0 6a3 3 0 1 0 0-6z M6 3a3 3 0 1 0 0 6a3 3 0 1 0 0-6z M6 21V9a9 9 0 0 0 9 9"),
+        KindFolder = Geometry.Parse("M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"),
+        KindMaster = Geometry.Parse("M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z M16 9a5 5 0 0 1 0 6 M19.364 18.364a9 9 0 0 0 0-12.728");
+
+    /// <summary>A channel kind's stroked icon on lucide's 24×24 grid: "audio", "midi", "bus", "folder" or "master".</summary>
+    public static Geometry KindIcon(string kind) => kind switch
+    {
+        "midi" => KindMidi,
+        "bus" => KindBus,
+        "folder" => KindFolder,
+        "master" => KindMaster,
+        _ => KindAudio,
+    };
+
     /// <summary>How much of the badge the kind icon takes, and its margin from the top left corner: the number goes in
     /// the corner left free.</summary>
     const double KindFill = 0.52, KindInset = 0.1;

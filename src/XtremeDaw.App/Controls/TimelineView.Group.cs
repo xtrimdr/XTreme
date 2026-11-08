@@ -9,14 +9,16 @@ namespace XtremeDaw.App.Controls;
 /// the user, as in any DAW): the grabbed one follows the pointer with the grid, and each of the others moves the same
 /// edge by the same time, so they keep their offsets. Takes and MIDI clips go together: a MIDI clip's right edge is a
 /// take's end, its left edge a take's start (a pattern's clip has none) and fades are only for takes. A locked clip
-/// keeps its length but its fades still change, as on its own. The release hands everything to the window in one
-/// event (<see cref="ClipsEdited"/>), so the whole gesture is one undo step.
+/// keeps its length but its fades still change, as on its own. Boxed automation blocks go too (#281): their right edge
+/// or loop with a clip's end or loop, their left edge with a clip's start (fades are only for takes), and a boxed
+/// block's edge grabbed in its lane edits the boxed clips the same way. The release hands everything to the window in
+/// one event (<see cref="ClipsEdited"/>), so the whole gesture is one undo step.
 /// </summary>
 public sealed partial class TimelineView
 {
     /// <summary>A group edit ended: each take as it ends (the grabbed one too), each take's loop (its source and where
-    /// it ends now) and each MIDI clip's change.</summary>
-    public event Action<IReadOnlyList<Clip>, IReadOnlyList<(string Source, double End)>, IReadOnlyList<MidiGroupEdit>>? ClipsEdited;
+    /// it ends now), each MIDI clip's change and each automation block as it ends (same id, #281).</summary>
+    public event Action<IReadOnlyList<Clip>, IReadOnlyList<(string Source, double End)>, IReadOnlyList<MidiGroupEdit>, IReadOnlyList<AutomationBlock>>? ClipsEdited;
 
     public enum MidiEditKind { Resize, Trim, Loop }
 
@@ -27,6 +29,10 @@ public sealed partial class TimelineView
     ClipEditMode? groupMode;
     /// <summary>The other boxed MIDI clips a group edit changes: where each started and its length, and where it is now.</summary>
     readonly Dictionary<MidiClip, (double FromSec, double FromBeats, double AtSec, double Beats)> midiGroup = [];
+    /// <summary>The boxed automation blocks a group edit changes (#281): each one as it is now (a copy, same id) and whether its lane steps.</summary>
+    readonly Dictionary<AutomationBlock, (AutomationBlock Now, bool Stepped)> autoGroup = [];
+    /// <summary>The group edit started on a block's edge (<see cref="autoBlock"/>), not on a clip's.</summary>
+    bool autoGrouped;
 
     /// <summary>Whether a press on an edge, fade or loop corner of the boxed clip <paramref name="id"/> edits all the boxed ones.</summary>
     bool GroupEdits(string id) => boxed.Count > 1 && boxed.Contains(id);
@@ -70,6 +76,14 @@ public sealed partial class TimelineView
                 midiGroup[c] = (c.AtSec, c.LengthBeats, c.AtSec, c.LengthBeats);
             }
         }
+        autoGroup.Clear();
+        if (fade) return;
+        foreach (var (owner, l) in AllOwnedLanes())
+        {
+            bool stepped = Automations.Stepped(owner, l.Target);
+            foreach (var b in l.Blocks)
+                if (b != autoBlock && boxed.Contains(b.Id)) autoGroup[b] = (Automate(b), stepped);
+        }
     }
 
     /// <summary>The group's edit as a MIDI clip's: its right edge, its left edge or its loop.</summary>
@@ -86,6 +100,8 @@ public sealed partial class TimelineView
     /// </summary>
     double GroupShift()
     {
+        if (autoGrouped && autoBlock is { } held0 && autoDraft is { } now0)
+            return groupMode is ClipEditMode.TrimStart ? now0.AtSec - held0.AtSec : now0.EndSec - held0.EndSec;
         if (dragged != null && original != null && preview != null)
         {
             if (groupMode == ClipEditMode.Loop) return loopRuns.Count > 0 ? loopRuns[0].End - loopRuns[0].From : 0;
@@ -125,13 +141,46 @@ public sealed partial class TimelineView
             }
             else midiGroup[c] = g with { Beats = Math.Clamp(BeatsBetween(g.FromSec, SecPlus(g.FromSec, g.FromBeats) + d), MidiClip.MinBeats, MidiClip.MaxBeats) };
         }
+        foreach (var b in autoGroup.Keys.ToList()) autoGroup[b] = (GroupBlock(b, mode, d, autoGroup[b].Stepped), autoGroup[b].Stepped);
+    }
+
+    /// <summary>A boxed block with the group's edge moved by <paramref name="d"/>, as its own edge would (<see cref="DragAuto"/>).</summary>
+    static AutomationBlock GroupBlock(AutomationBlock b, ClipEditMode mode, double d, bool stepped)
+    {
+        var now = Automate(b);
+        switch (mode)
+        {
+            case ClipEditMode.TrimStart or ClipEditMode.StretchStart:
+            {
+                double at = Math.Clamp(b.AtSec + d, 0, b.EndSec - AutomationBlock.MinSec);
+                var trimmed = b.Cut(at - b.AtSec, b.LengthSec, stepped);
+                (now.AtSec, now.LengthSec, now.Points, now.LoopSec) = (trimmed.AtSec, trimmed.LengthSec, trimmed.Points, trimmed.LoopSec);
+                break;
+            }
+            case ClipEditMode.Loop:
+                now.LoopSec = b.LoopSec ?? b.LengthSec;
+                now.LengthSec = Math.Max(AutomationBlock.MinSec, b.LengthSec + d);
+                if (now.LengthSec <= now.LoopSec + 1e-9) now.LoopSec = null;
+                break;
+            case ClipEditMode.FadeIn or ClipEditMode.FadeOut:
+                break;
+            default:
+                now.LengthSec = Math.Max(AutomationBlock.MinSec, b.LengthSec + d);
+                if (now.LoopSec is { } pass && now.LengthSec <= pass + 1e-9) now.LoopSec = null;
+                break;
+        }
+        return now;
     }
 
     /// <summary>What the group edit ends in, the grabbed clip included (taken before the gesture is cleared): null when
     /// there was none.</summary>
-    (List<Clip> Takes, List<(string Source, double End)> Loops, List<MidiGroupEdit> Midi)? TakeGroup()
+    (List<Clip> Takes, List<(string Source, double End)> Loops, List<MidiGroupEdit> Midi, List<AutomationBlock> Blocks)? TakeGroup()
     {
         if (groupMode == null) return null;
+        List<AutomationBlock> blocks = [];
+        if (autoGrouped && autoDraft != null) blocks.Add(autoDraft);
+        foreach (var (b, g) in autoGroup)
+            if (g.Now.AtSec != b.AtSec || g.Now.LengthSec != b.LengthSec || g.Now.LoopSec != b.LoopSec) blocks.Add(g.Now);
         List<Clip> takes = [];
         List<(string, double)> loops = [];
         List<MidiGroupEdit> midi = [];
@@ -149,17 +198,19 @@ public sealed partial class TimelineView
         foreach (var (c, g) in midiGroup)
             if (g.AtSec != c.AtSec || g.Beats != c.LengthBeats)
                 midi.Add(new(c.Id, g.AtSec, g.Beats, c.PatternId != null && kind == MidiEditKind.Loop ? MidiEditKind.Resize : kind));
-        return (takes, loops, midi);
+        return (takes, loops, midi, blocks);
     }
 
     void ClearGroup()
     {
         groupMode = null;
         midiGroup.Clear();
+        autoGroup.Clear();
+        autoGrouped = false;
     }
 
-    void RaiseClipsEdited(List<Clip> takes, List<(string Source, double End)> loops, List<MidiGroupEdit> midi)
+    void RaiseClipsEdited(List<Clip> takes, List<(string Source, double End)> loops, List<MidiGroupEdit> midi, List<AutomationBlock> blocks)
     {
-        if (takes.Count > 0 || loops.Count > 0 || midi.Count > 0) ClipsEdited?.Invoke(takes, loops, midi);
+        if (takes.Count > 0 || loops.Count > 0 || midi.Count > 0 || blocks.Count > 0) ClipsEdited?.Invoke(takes, loops, midi, blocks);
     }
 }

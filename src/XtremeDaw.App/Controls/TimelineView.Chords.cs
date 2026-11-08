@@ -288,7 +288,8 @@ public sealed partial class TimelineView
         {
             var c = chords[i];
             var box = ChordRect(c);
-            if (box.Right < HeaderW || box.X > W || c.Id == editingNameId || stripErasing.Contains(c.Id)) continue;
+            if (box.Right < HeaderW || box.X > W || c.Id == editingNameId) continue;
+            using var dim = ctx.PushOpacity(stripErasing.Contains(c.Id) ? ErasingOpacity : 1);
             bool marked = chordMarks.Contains(c.Id);
             ctx.DrawRectangle(marked ? Palette.AccentSoft : Palette.Raised, marked ? Palette.Pen(Palette.Accent) : null, box, 3, 3);
             var label = Palette.Text(NoteNames.Chord(c.Name), 11, marked ? Palette.Fg : Palette.Dim, Palette.Ui);

@@ -116,6 +116,60 @@ static class ClipLoopChecks
         Automations.Split(lane, block.Id, 4, false);
         Check("dividirlo suena igual", lane.Blocks.Count == 2 && Near(Automations.PositionAt(lane, false, 3.5), 0.25) && Near(Automations.PositionAt(lane, false, 4.5), 0.75));
 
+        // #281: a loop copied with Shift+drag, D or paste stays a loop (a pass of 3 s from 3 s, looped to 12 s)
+        var lm = new Media { Name = "loop", Audio = "media/loop.wav", DurationSec = 4 };
+        var ls = new Clip { MediaId = lm.Id, AtSec = 2, TrimStartSec = 1 };
+        var lt = new Track { Name = "Loop", Clips = [ls] };
+        var lp = new Project { Media = [lm], Tracks = [lt] };
+        ClipLoops.LoopTo(lp, ls.Id, 12);
+        int Loops() => lt.Clips.Count(c => ClipLoops.IsLooped(lt, c));
+        bool Whole(Clip s, double end) => ClipLoops.Repeats(lt, s.Id).Count() == 2 && Near(ClipLoops.EndSec(lp, lt, s), end);
+        // ClipEditing.Replace swaps the clip object: the source is read again each time
+        Clip Src() => lt.Clips.Find(c => c.Id == ls.Id)!;
+
+        // Shift+drag of the whole loop (source and repeats boxed) 20 s later
+        var snap = ClipLoops.Take(lp);
+        List<string> carried = [ls.Id, .. ClipLoops.Repeats(lt, ls.Id).Select(r => r.Id)];
+        MidiEditing.LeaveCopies(lp, carried);
+        foreach (var id in carried)
+        {
+            var c = ClipEditing.Copy(lt.Clips.Find(x => x.Id == id)!);
+            c.AtSec += 20;
+            ClipEditing.Replace(lp, c);
+        }
+        ClipLoops.Keep(lp, snap);
+        var left = lt.Clips.Find(c => c.Id != ls.Id && c.LoopOf == null && Near(c.AtSec, 2));
+        Check($"Shift+arrastrar un bucle entero deja la copia en bucle ({Loops()} bucles)",
+            Loops() == 2 && left != null && Whole(left, 12) && Whole(Src(), 32) && lt.Clips.Count == 6);
+        // the window keeps the moved clips selected by id: the repeats made again keep theirs, or the next Supr fails
+        Check("las repeticiones rehechas conservan su id (la selección sigue valiendo)",
+            carried.All(id => lt.Clips.Exists(c => c.Id == id && (id == ls.Id || c.LoopOf == ls.Id))));
+
+        // Shift+drag of the source alone: its copy keeps the repeats it had
+        snap = ClipLoops.Take(lp);
+        MidiEditing.LeaveCopies(lp, [ls.Id]);
+        var back20 = ClipEditing.Copy(Src());
+        back20.AtSec += 20;
+        ClipEditing.Replace(lp, back20);
+        ClipLoops.Keep(lp, snap);
+        var left2 = lt.Clips.Find(c => c.Id != ls.Id && c.LoopOf == null && Near(c.AtSec, 22));
+        Check($"Shift+arrastrar solo el original deja la copia con su bucle ({Loops()} bucles)",
+            Loops() == 3 && left2 != null && Whole(left2, 32) && Whole(Src(), 52) && lt.Clips.Count == 9);
+
+        // D on a whole loop
+        List<string> whole = [ls.Id, .. ClipLoops.Repeats(lt, ls.Id).Select(r => r.Id)];
+        var dup = ClipEditing.DuplicateMany(lp, whole);
+        var dupSource = lt.Clips.Find(c => c.Id == dup[0])!;
+        Check("D sobre un bucle entero lo copia en bucle",
+            Loops() == 4 && dupSource.LoopOf == null && Whole(dupSource, 52 + dupSource.AtSec - Src().AtSec));
+
+        // Ctrl+C / Ctrl+V of a whole loop
+        var board = ClipClipboard.Take(lp, whole)!;
+        var pasted = board.Paste(lp, lt.Id, 100);
+        var pastedSource = lt.Clips.Find(c => pasted.Contains(c.Id) && c.LoopOf == null)!;
+        Check("copiar y pegar un bucle entero lo pega en bucle",
+            Loops() == 5 && pastedSource != null && Whole(pastedSource, 52 + pastedSource.AtSec - Src().AtSec));
+
         Console.WriteLine(failed == 0 ? "Bucles: todo bien." : $"Bucles: {failed} fallas.");
         return failed == 0 ? 0 : 1;
     }

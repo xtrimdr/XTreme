@@ -524,7 +524,9 @@ public static class ClipEditing
                 clip.FadeInSec = clip.VideoFadeInSec = 0;
             }
         }
-        return changed + MidiEditing.DeleteRange(p, track, startSec, endSec);
+        // the track's lanes lose the same stretch (#281); a frozen or locked track keeps them as its clips
+        int lanes = track.EditLocked ? 0 : Automations.ClearRange(track, startSec, endSec);
+        return changed + lanes + MidiEditing.DeleteRange(p, track, startSec, endSec);
     }
 
     /// <summary>
@@ -608,17 +610,17 @@ public static class ClipEditing
         if (picked.Count == 0) return [];
         var (start, end) = Span(p, picked.Select(x => x.Clip), lengthOf);
         shift ??= DuplicateShift(end - start, step);
-        List<string> copies = [];
+        Dictionary<string, Clip> copies = [];
         foreach (var (track, clip) in picked)
         {
             var copy = Copy(clip);
             copy.Id = Ids.New("clp");
-            copy.LoopOf = null;
             copy.AtSec = ToSample(clip.AtSec + shift.Value);
             track.Clips.Insert(track.Clips.IndexOf(clip) + 1, copy);
-            copies.Add(copy.Id);
+            copies[clip.Id] = copy;
         }
-        return copies;
+        ClipLoops.Relink(copies);
+        return [.. picked.Select(x => copies[x.Clip.Id].Id)];
     }
 
     /// <summary>

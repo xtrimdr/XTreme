@@ -110,6 +110,7 @@ public sealed partial class SettingsDialog : UserControl
         Shortcuts.Changed += BuildShortcuts;
         AddHandler(PointerWheelChangedEvent, OnCaptureWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         InitFloating();
+        InitSearch();
 
         // --- Entradas y salidas
         var refresh = Act("", Loc.T("set.refresh"), () => Refresh());
@@ -294,8 +295,9 @@ public sealed partial class SettingsDialog : UserControl
     {
         IsVisible = true;
         if (!placed) Center();
+        if (!string.IsNullOrEmpty(SearchBox.Text)) SearchBox.Text = "";
         ShowTab(startTab);
-        Focus();
+        SearchBox.Focus();
     }
 
     public void HideDialog()
@@ -412,6 +414,7 @@ public sealed partial class SettingsDialog : UserControl
             e.Handled = true;
             return true;
         }
+        if (HandleSearchKey(e)) return true;
         // the other keys reach the focused control (the search, IP and alias boxes need Backspace, arrows and
         // Enter), but never the window's shortcuts
         if (e.Key == Key.Escape)
@@ -424,6 +427,7 @@ public sealed partial class SettingsDialog : UserControl
 
     void ShowTab(string id)
     {
+        tab = id;
         AudioTab.Classes.Set("active", id == "audio");
         CameraTab.Classes.Set("active", id == "camera");
         SyncTab.Classes.Set("active", id == "sync");
@@ -882,10 +886,18 @@ public sealed partial class SettingsDialog : UserControl
         associationButton.IsEnabled = state != FileAssociation.State.This;
     }
 
-    /// <summary>"Apariencia" (native only): the knobs' look, each shown as a sample (<see cref="KnobLooks"/>), and which
-    /// effect knobs the timeline's track headers show (<see cref="TrackKnobs"/>); all applied at once.</summary>
+    /// <summary>"Apariencia" (native only): the knobs' look, each shown as a sample (<see cref="KnobLooks"/>), the other
+    /// looks, and which effect knobs the timeline's track headers show (<see cref="TrackKnobs"/>); all applied at once.
+    /// The cards go in groups by zone that fold (asked by the user, #293: there were too many in one list), each
+    /// remembered open or folded (<see cref="ViewGroup"/>).</summary>
     void BuildView()
     {
+        var general = ViewGroup("general");
+        var controls = ViewGroup("controls");
+        var timeline = ViewGroup("timeline");
+        var inspector = ViewGroup("inspector");
+        var mixer = ViewGroup("mixer");
+        var separators = ViewGroup("separators");
         var looks = Section(Loc.T("set.look.knobs"));
         looks.Children.Add(Help(Loc.T("set.look.knobs.help")));
         var grid = new UniformGrid { Columns = 5 };
@@ -906,32 +918,32 @@ public sealed partial class SettingsDialog : UserControl
         }
         void SyncKnobs() { foreach (var o in lookButtons) o.IsChecked = (string)o.Tag! == KnobLooks.Current; }
         looks.Children.Add(grid);
-        viewPage.Children.Add(Card(looks));
+        controls.Children.Add(Card(looks));
         Resettable(looks, () => KnobLooks.Current == KnobLooks.Default, () => KnobLooks.Set(KnobLooks.Default),
             h => KnobLooks.Changed += h, h => KnobLooks.Changed -= h, SyncKnobs);
 
         // the rest of the looks build their own pickers (samples drawn by the same code, applied live)
-        viewPage.Children.Add(LookCard("panels", PanelLooks.Picker(), () => PanelLooks.Current == PanelLooks.Default,
+        general.Children.Add(LookCard("panels", PanelLooks.Picker(), () => PanelLooks.Current == PanelLooks.Default,
             () => PanelLooks.Set(PanelLooks.Default), h => PanelLooks.Changed += h, h => PanelLooks.Changed -= h));
-        viewPage.Children.Add(LookCard("faders", FaderLooks.Picker(), () => FaderLooks.Current == FaderLooks.Default,
+        controls.Children.Add(LookCard("faders", FaderLooks.Picker(), () => FaderLooks.Current == FaderLooks.Default,
             () => FaderLooks.Set(FaderLooks.Default), h => FaderLooks.Changed += h, h => FaderLooks.Changed -= h));
-        viewPage.Children.Add(LookCard("meters", MeterLooks.Picker(), () => MeterLooks.Current == MeterLooks.Default,
+        controls.Children.Add(LookCard("meters", MeterLooks.Picker(), () => MeterLooks.Current == MeterLooks.Default,
             () => MeterLooks.Set(MeterLooks.Default), h => MeterLooks.Changed += h, h => MeterLooks.Changed -= h));
-        viewPage.Children.Add(LookCard("meterColors", MeterColors.Editor(), () => !MeterColors.Custom,
+        controls.Children.Add(LookCard("meterColors", MeterColors.Editor(), () => !MeterColors.Custom,
             () => MeterColors.SetCustom(false), h => MeterColors.Changed += h, h => MeterColors.Changed -= h));
-        viewPage.Children.Add(LookCard("waves", WaveLooks.Picker(), () => WaveLooks.Current == WaveLooks.Default,
+        timeline.Children.Add(LookCard("waves", WaveLooks.Picker(), () => WaveLooks.Current == WaveLooks.Default,
             () => WaveLooks.Set(WaveLooks.Default), h => WaveLooks.Changed += h, h => WaveLooks.Changed -= h));
-        viewPage.Children.Add(LookCard("trackColor", TrackColorLooks.Picker(), () => TrackColorLooks.IsDefault,
+        timeline.Children.Add(LookCard("trackColor", TrackColorLooks.Picker(), () => TrackColorLooks.IsDefault,
             TrackColorLooks.Reset, h => TrackColorLooks.Changed += h, h => TrackColorLooks.Changed -= h));
-        viewPage.Children.Add(LookCard("trackColorInspector", TrackColorLooks.InspectorPicker(), () => TrackColorLooks.InspectorIsDefault,
+        inspector.Children.Add(LookCard("trackColorInspector", TrackColorLooks.InspectorPicker(), () => TrackColorLooks.InspectorIsDefault,
             TrackColorLooks.ResetInspector, h => TrackColorLooks.Changed += h, h => TrackColorLooks.Changed -= h));
-        viewPage.Children.Add(LookCard("mixerStrips", MixerLooks.Picker(), () => MixerLooks.IsDefault,
+        mixer.Children.Add(LookCard("mixerStrips", MixerLooks.Picker(), () => MixerLooks.IsDefault,
             MixerLooks.Reset, h => MixerLooks.Changed += h, h => MixerLooks.Changed -= h));
-        viewPage.Children.Add(LookCard("font", UiFonts.FontPicker(), () => UiFonts.FontIsDefault,
+        general.Children.Add(LookCard("font", UiFonts.FontPicker(), () => UiFonts.FontIsDefault,
             () => UiFonts.SetFont(UiFonts.Default), h => UiFonts.Changed += h, h => UiFonts.Changed -= h));
-        viewPage.Children.Add(LookCard("numbers", UiFonts.NumberPicker(), () => UiFonts.NumbersAreDefault,
+        general.Children.Add(LookCard("numbers", UiFonts.NumberPicker(), () => UiFonts.NumbersAreDefault,
             () => UiFonts.SetNumberFont(UiFonts.DefaultNumbers), h => UiFonts.Changed += h, h => UiFonts.Changed -= h));
-        viewPage.Children.Add(LookCard("scale", UiFonts.ScalePicker(), () => UiFonts.ScaleIsDefault,
+        general.Children.Add(LookCard("scale", UiFonts.ScalePicker(), () => UiFonts.ScaleIsDefault,
             () => UiFonts.SetScale(1), h => UiFonts.Changed += h, h => UiFonts.Changed -= h));
 
         var s = Section(Loc.T("set.view.knobs"));
@@ -951,7 +963,7 @@ public sealed partial class SettingsDialog : UserControl
             list.Children.Add(box);
         }
         s.Children.Add(list);
-        viewPage.Children.Add(Card(s));
+        timeline.Children.Add(Card(s));
         Resettable(s, () => TrackKnobs.All.All(TrackKnobs.Shows), () => { foreach (string k in TrackKnobs.All) TrackKnobs.Set(k, true); },
             h => TrackKnobs.Changed += h, h => TrackKnobs.Changed -= h, () => { foreach (var (k, b) in boxes) b.IsChecked = TrackKnobs.Shows(k); });
 
@@ -961,10 +973,82 @@ public sealed partial class SettingsDialog : UserControl
         var ab = new CheckBox { IsChecked = MixerOptions.ShowAb, FontSize = 12, Content = Loc.T("set.view.mixer.ab") };
         ab.IsCheckedChanged += (_, _) => MixerOptions.SetShowAb(ab.IsChecked == true);
         mx.Children.Add(ab);
-        viewPage.Children.Add(Card(mx));
-        Resettable(mx, () => !MixerOptions.ShowAb, () => MixerOptions.SetShowAb(false),
-            h => MixerOptions.Changed += h, h => MixerOptions.Changed -= h, () => ab.IsChecked = MixerOptions.ShowAb);
+        // where the strips' names go (#277, FL Studio's "Alt" layouts): on top, or at the foot under the fader
+        var foot = new CheckBox { IsChecked = MixerOptions.NameAtFoot, FontSize = 12, Content = Loc.T("set.view.mixer.nameFoot") };
+        foot.IsCheckedChanged += (_, _) => MixerOptions.SetNameAtFoot(foot.IsChecked == true);
+        mx.Children.Add(foot);
+        // the side the buses go to unless moved (#301): the right dock by default; left or right only (#303)
+        var busDock = new SelectButton { Width = 160, HorizontalAlignment = HorizontalAlignment.Left };
+        busDock.SetItems([Loc.T("set.view.mixer.busDock.left"), Loc.T("set.view.mixer.busDock.right")]);
+        busDock.SelectedIndex = MixerOptions.BusDock;
+        busDock.Selected += MixerOptions.SetBusDock;
+        var busRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 4, 0, 0) };
+        busRow.Children.Add(new TextBlock { Text = Loc.T("set.view.mixer.busDock"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+        busRow.Children.Add(busDock);
+        mx.Children.Add(busRow);
+        mixer.Children.Add(Card(mx));
+        Resettable(mx, () => !MixerOptions.ShowAb && !MixerOptions.NameAtFoot && MixerOptions.BusDock == MixerSides.RightSide,
+            () => { MixerOptions.SetShowAb(false); MixerOptions.SetNameAtFoot(false); MixerOptions.SetBusDock(MixerSides.RightSide); },
+            h => MixerOptions.Changed += h, h => MixerOptions.Changed -= h,
+            () => { ab.IsChecked = MixerOptions.ShowAb; foot.IsChecked = MixerOptions.NameAtFoot; busDock.SelectedIndex = MixerOptions.BusDock; });
+    
+        // the separators' look, the same in the timeline and the mixer (#293)
+        separators.Children.Add(LookCard("separators", SeparatorLooks.Picker(), () => SeparatorLooks.Current == SeparatorLooks.Default,
+            () => SeparatorLooks.Set(SeparatorLooks.Default), h => SeparatorLooks.Changed += h, h => SeparatorLooks.Changed -= h));
     }
+
+    /// <summary>The Apariencia groups open, by key, kept in config.json ("lookGroupsOpen", comma-separated); none the first time.</summary>
+    const string OpenLookGroupsKey = "lookGroupsOpen";
+
+    /// <summary>
+    /// A foldable group of Apariencia (#293): a row with a chevron and its title ("set.look.group.&lt;key&gt;") that opens
+    /// or folds the cards under it, added to the page; returns the panel the cards go in. Open or folded is remembered.
+    /// </summary>
+    StackPanel ViewGroup(string key)
+    {
+        var open = OpenLookGroups();
+        var body = new StackPanel { IsVisible = open.Contains(key) };
+        var chevron = new TextBlock { Classes = { "icon" }, FontSize = 11, Foreground = Palette.Dim, VerticalAlignment = VerticalAlignment.Center };
+        var title = new TextBlock { Text = Loc.T("set.look.group." + key), FontSize = 12.5, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        void Sync() => chevron.Text = body.IsVisible ? "" : "";
+        Sync();
+        var head = new Button
+        {
+            Classes = { "rowmain" }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = Brushes.Transparent, BorderThickness = new Thickness(0, 0, 0, 1), BorderBrush = Palette.Line, CornerRadius = default,
+            Padding = new Thickness(16, 12), Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { chevron, title } },
+        };
+        AutomationProperties.SetName(head, title.Text);
+        head.Click += (_, _) =>
+        {
+            body.IsVisible = !body.IsVisible;
+            Sync();
+            var now = OpenLookGroups();
+            if (body.IsVisible) now.Add(key); else now.Remove(key);
+            string value = string.Join(",", now);
+            _ = Task.Run(() =>
+            {
+                try { AppConfig.Set(OpenLookGroupsKey, value); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* keep this session's state */ }
+            });
+        };
+        viewPage.Children.Add(head);
+        viewPage.Children.Add(body);
+        foldBodies[body] = (title.Text!, () => { if (!body.IsVisible) head.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); });
+        return body;
+    }
+
+    /// <summary>The groups open this session (read once from config.json, then kept here so the writes off the UI
+    /// thread can't race each other).</summary>
+    HashSet<string> OpenLookGroups()
+    {
+        if (openLookGroups != null) return openLookGroups;
+        try { openLookGroups = [.. (AppConfig.Get(OpenLookGroupsKey) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)]; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { openLookGroups = []; }
+        return openLookGroups;
+    }
+
+    HashSet<string>? openLookGroups;
 
     /// <summary>A card of Apariencia: its title and help ("set.look.&lt;key&gt;", ".help") over the picker, with its
     /// "Restablecer".</summary>
@@ -1082,7 +1166,7 @@ public sealed partial class SettingsDialog : UserControl
         var s = new StackPanel { Spacing = 6 };
         var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         head.Children.Add(new TextBlock { Classes = { "icon" }, Text = open ? "" : "", FontSize = 10, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
-        head.Children.Add(new TextBlock { Text = title.ToUpperInvariant(), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center });
+        head.Children.Add(new TextBlock { Text = title.ToUpperInvariant(), Tag = title, Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center });
         head.Children.Add(new TextBlock { Text = count.ToString(), Classes = { "dim", "mono" }, FontSize = 11, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
         var b = new Button { Classes = { "link" }, Content = head, MinHeight = 20, Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
         b.Click += (_, _) =>
@@ -1138,7 +1222,7 @@ public sealed partial class SettingsDialog : UserControl
     {
         var s = new StackPanel { Spacing = 14 };
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), MinHeight = 20 };
-        head.Children.Add(new TextBlock { Text = title.ToUpperInvariant(), Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center });
+        head.Children.Add(new TextBlock { Text = title.ToUpperInvariant(), Tag = title, Classes = { "label" }, VerticalAlignment = VerticalAlignment.Center });
         if (action != null)
         {
             Grid.SetColumn(action, 1);
@@ -1148,7 +1232,7 @@ public sealed partial class SettingsDialog : UserControl
         return s;
     }
 
-    static Border Card(Control c) => new() { Padding = new Thickness(16), BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = c };
+    static Border Card(Control c) => new() { Classes = { SearchCard }, Padding = new Thickness(16), BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = c };
 
     static Control Field(string label, Control control)
     {

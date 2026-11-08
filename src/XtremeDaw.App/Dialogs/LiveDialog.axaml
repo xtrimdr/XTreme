@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:XtremeDaw.App"
+             x:Class="XtremeDaw.App.Dialogs.LiveDialog"
+             AutomationProperties.Name="{loc:T live.session}"
+             Background="{StaticResource Scrim}" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
+
+  <!-- the live session (#291), from its button next to Exportar: create one or join one; in one, the code, the link and
+       the address to pass on, who is in, and ending it -->
+  <Border Classes="dialog" Width="512" HorizontalAlignment="Center" VerticalAlignment="Center"
+          Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" ClipToBounds="True">
+    <StackPanel Margin="24,22,24,20" Spacing="14">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <TextBlock Classes="icon" Text="&#xE716;" FontSize="20" Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+          <TextBlock Classes="dialog-title" Text="{loc:T live.session}" />
+        </StackPanel>
+        <Border Grid.Column="2" x:Name="OnBadge" IsVisible="False" Background="{StaticResource AccentSoft}" CornerRadius="5" Padding="8,3" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Classes="livedot on" Width="7" Height="7" Fill="{StaticResource Accent}" VerticalAlignment="Center" />
+            <TextBlock x:Name="OnText" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- no session: pick one of two -->
+      <StackPanel x:Name="ChoosePanel" Spacing="12">
+        <TextBlock Classes="dim" TextWrapping="Wrap" LineHeight="18" Text="{loc:T live.intro}" />
+        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto">
+          <TextBlock Classes="label" Text="{loc:T live.name}" VerticalAlignment="Center" Margin="0,0,12,0" />
+          <TextBox Grid.Column="1" x:Name="NameBox" Classes="field" MaxLength="40" />
+        </Grid>
+        <Grid ColumnDefinitions="*,12,*">
+          <Button x:Name="CreateButton" Classes="livepick" HorizontalAlignment="Stretch" ToolTip.Tip="{loc:T live.create.tip}">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="icon" Text="&#xE710;" FontSize="22" Foreground="{StaticResource Accent}" />
+              <TextBlock Text="{loc:T live.create}" FontSize="12.5" FontWeight="SemiBold" />
+              <TextBlock Classes="dim" Text="{loc:T live.create.sub}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+          <Button Grid.Column="2" x:Name="JoinChoice" Classes="livepick" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="icon" Text="&#xE71B;" FontSize="22" Foreground="{StaticResource Accent}" />
+              <TextBlock Text="{loc:T live.join}" FontSize="12.5" FontWeight="SemiBold" />
+              <TextBlock Classes="dim" Text="{loc:T live.join.sub}" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+        </Grid>
+      </StackPanel>
+
+      <!-- joining: the code or link -->
+      <StackPanel x:Name="JoinPanel" Spacing="10" IsVisible="False">
+        <TextBlock Classes="label" Text="{loc:T live.codeHint}" />
+        <TextBox x:Name="CodeBox" Classes="field" FontFamily="{DynamicResource Mono}" Watermark="{loc:T live.codeWatermark}" />
+      </StackPanel>
+
+      <!-- in a session -->
+      <StackPanel x:Name="ActivePanel" Spacing="10" IsVisible="False">
+        <StackPanel x:Name="InvitePanel" Spacing="8">
+          <TextBlock Classes="dim" TextWrapping="Wrap" Text="{loc:T live.passOn}" />
+          <TextBlock Classes="label" Text="{loc:T live.code}" />
+          <TextBox x:Name="InviteBox" Classes="field" IsReadOnly="True" FontFamily="{DynamicResource Mono}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="CopyCodeButton" Classes="btn sm" Content="{loc:T live.copyCode}" />
+            <Button x:Name="CopyLinkButton" Classes="btn sm" Content="{loc:T live.copyLink}" />
+            <Button x:Name="CopyIpButton" Classes="btn sm" Content="{loc:T live.copyIp}" />
+          </StackPanel>
+          <TextBlock x:Name="AddressText" Classes="dim mono" TextWrapping="Wrap" />
+        </StackPanel>
+        <TextBlock Classes="label" Text="{loc:T live.people}" Margin="0,4,0,0" />
+        <TextBlock x:Name="PeopleText" TextWrapping="Wrap" />
+        <TextBlock x:Name="StateText" Classes="dim" TextWrapping="Wrap" />
+      </StackPanel>
+
+      <Border x:Name="NoticeBox" Classes="notice" IsVisible="False">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Classes="icon notice" Text="&#xE7BA;" VerticalAlignment="Top" />
+          <TextBlock x:Name="NoticeText" Classes="notice" TextWrapping="Wrap" MaxWidth="420" />
+        </StackPanel>
+      </Border>
+
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <Button Grid.Column="0" x:Name="LeaveButton" Classes="btn danger" Content="{loc:T live.end}" IsVisible="False" />
+        <Button Grid.Column="2" x:Name="CancelButton" Classes="btn" Margin="8,0,0,0" Content="{loc:T common.cancel}" />
+        <Button Grid.Column="3" x:Name="JoinButton" Classes="btn primary" Margin="8,0,0,0" Padding="16,0" Content="{loc:T live.joinButton}" IsVisible="False" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

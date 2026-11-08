@@ -51,6 +51,9 @@ public partial class MainWindow
     /// <summary>Rows every strip shares (takes, returns and master), so all faders and meters start and end at the same
     /// height: head, controls, fader, foot.</summary>
     const double StripHeadH = 38, StripFootH = 22;
+    /// <summary>The row under everything with the channel's kind (#277: icon and name, at the strip's foot, whatever the
+    /// view), the same on every strip so they stay level (px).</summary>
+    const double StripKindH = 18;
     /// <summary>Space (px) over a strip's head, inside its card.</summary>
     const double StripLayoutTop = 8;
     /// <summary>The compact strip's fixed rows (px): a list's title, the pan bar and M S ●.</summary>
@@ -81,7 +84,7 @@ public partial class MainWindow
 
     /// <summary>What a strip takes besides its fader and its lists (px): card margin and border, the grid's margin, head,
     /// the lists' titles, pan, M S ●, the fader's margin and the foot.</summary>
-    double StripBaseH => StripGap * 2 + 2 + 14 + StripHeadH + StripHeadsH + PanRowH + TogglesRowH + 6 + StripFootH;
+    double StripBaseH => StripGap * 2 + 2 + 14 + StripHeadH + StripHeadsH + PanRowH + TogglesRowH + 6 + StripFootH + StripKindH;
 
     /// <summary>
     /// The room the lists have in the mixer's height as it is now (px), leaving <see cref="FaderRoomH"/> to the fader;
@@ -92,7 +95,7 @@ public partial class MainWindow
         get
         {
             double h = mixerScroll.Viewport.Height;
-            return h > 0 ? h - StripBaseH - FaderRoomH : double.PositiveInfinity;
+            return h > 0 ? h - mixerBarH - StripBaseH - FaderRoomH : double.PositiveInfinity;
         }
     }
 
@@ -122,8 +125,6 @@ public partial class MainWindow
     bool SendsRow => mixerSends && Buses.Count > 0;
     /// <summary>Space between strip cards.</summary>
     const double StripGap = 6;
-    /// <summary>The line that sets the pinned master apart (px).</summary>
-    const double PinLineW = 2;
     /// <summary>The extra room (px) a folder keeps from a channel or separator beside it.</summary>
     const double FolderGap = 6;
     /// <summary>Below this width an effect panel drops its ON/OFF text and icon, and puts its knob over its other controls.</summary>
@@ -170,7 +171,7 @@ public partial class MainWindow
     void MeasureMixerChrome()
     {
         if (!MixerShown || maxPanel != MaxPanel.None || MixerOut || mixerScroll.Viewport.Height <= 0) return;
-        double chrome = MixerHost.Bounds.Height + MixerHost.Margin.Top + MixerHost.Margin.Bottom - mixerScroll.Viewport.Height;
+        double chrome = MixerHost.Bounds.Height + MixerHost.Margin.Top + MixerHost.Margin.Bottom - (mixerScroll.Viewport.Height - mixerBarH);
         if (chrome <= 0 || chrome > MixerChromeMax || Math.Abs(chrome - mixerChromeH) <= 0.5) return;
         mixerChromeH = chrome;
         ApplyMixerMinHeight();
@@ -206,6 +207,8 @@ public partial class MainWindow
         public readonly List<(string Id, MixerMeter Meter, Action<double>? Gr)> NodeMeters = [];
         /// <summary>What a strip changes with its width (the zoom) without being rebuilt.</summary>
         public readonly List<Action<double>> Resize = [];
+        /// <summary>The grips over the faders that trade the lists' height for the fader's (<see cref="ProportionGrip"/>), shown while a list is.</summary>
+        public readonly List<Control> Grips = [];
         public MixerMeter? Master;
         public TextBlock? Lim;
         /// <summary>The master's correlation readout and the hundredth it shows (so the text changes only with it).</summary>
@@ -224,7 +227,8 @@ public partial class MainWindow
     readonly Panel mixerStrips = new();
     /// <summary>The views that share the mixer's place and their pinned columns; the piano roll and Mastering leave them for their own windows.</summary>
     readonly Panel mixerViews = new(), mixerPins = new();
-    readonly ScrollViewer mixerScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    /// <summary>The strips' place: it doesn't scroll itself, each side scrolls on its own (MainWindow.MixerSplit.cs, #275).</summary>
+    readonly ScrollViewer mixerScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly MiniTimeline miniTimeline = new();
     /// <summary>The mini timeline's own ruler switch (asked by the user), the same mode as the timeline's (<see cref="SetRulerMode"/>).</summary>
     readonly Button miniBarsButton = RulerButton("", "ruler.bars.tip"), miniTimeButton = RulerButton("", "ruler.time.tip");
@@ -267,9 +271,9 @@ public partial class MainWindow
     Control? mixerHeader;
     /// <summary>The master strip, pinned to the right of the scrolled strips (asked by the user: always in sight). It
     /// lives in <see cref="mixerPane"/>, which decides when the mixer shows, so the column itself is always visible.</summary>
-    readonly Border masterPin = Visible(PinnedColumn(StripGap / 2));
+    readonly GrooveBorder masterPin = Visible(PinnedColumn(StripGap / 2));
 
-    static Border Visible(Border b) { b.IsVisible = true; return b; }
+    static GrooveBorder Visible(GrooveBorder b) { b.IsVisible = true; return b; }
 
     /// <summary>Preset names and hints come from the engine in Spanish: they are looked up by id (or by name for the buses) and fall back to that text.</summary>
     static string CompPresetName(CompPresetDef p) => Loc.Or("insp.comp." + p.Id, p.Label);
@@ -305,6 +309,18 @@ public partial class MainWindow
         mixerScroll.AddHandler(PointerWheelChangedEvent, OnMixerWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         // a new strip look (#250) rebuilds the strips once
         MixerLooks.Changed += () => { mixerKey = ""; RefreshMixer(); };
+        // and so does a new separator look (#293)
+        SeparatorLooks.Changed += () => { mixerKey = ""; RefreshMixer(); };
+        // the names on top or at the foot (#277): the strips are built with it
+        int busDock = MixerOptions.BusDock;
+        MixerOptions.Changed += () =>
+        {
+            // the buses' default dock (#301) moves the buses left in their default place
+            if (mixerNameFoot == MixerOptions.NameAtFoot && busDock == MixerOptions.BusDock) return;
+            busDock = MixerOptions.BusDock;
+            mixerKey = "";
+            RefreshMixer();
+        };
         if (double.TryParse(AppConfig.Get("mixerHeight"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double h))
             mixerH = Math.Max(MixerMinH, h);
         // until it is given one, the piano roll opens as tall as the mixer did
@@ -365,6 +381,7 @@ public partial class MainWindow
         mx = mixerLayout;
         mixerStrips.Children.Add(mixerLayout.Strips);
         mixerScroll.Content = mixerStrips;
+        InitMixerSplit();
         InitMixerMenu();
         mixerScroll.SizeChanged += (_, _) =>
         {
@@ -382,12 +399,20 @@ public partial class MainWindow
         // pane, so it goes to its own window alone (asked by the user, #139): the piano roll and Mastering stay
         DockPanel.SetDock(mixerMiniRow, Dock.Top);
         DockPanel.SetDock(header, Dock.Top);
-        Grid.SetColumn(masterPin, 1);
+        // the inspector goes before the strips (column 0) or after the master (column 3), #277
+        Grid.SetColumn(mixerScroll, 1);
+        Grid.SetColumn(masterPin, 2);
+        Grid.SetColumn(ropesBand, 1);
+        // it reaches under the master too: outputs arrive there (#301)
+        Grid.SetColumnSpan(ropesBand, 2);
         mixerPane.Children.Add(mixerMiniRow);
         mixerPane.Children.Add(header);
         // the connections band under the strips, as wide as what scrolls (MainWindow.MixerRopes.cs)
         Grid.SetRow(ropesBand, 1);
-        mixerPane.Children.Add(new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), RowDefinitions = new RowDefinitions("*,Auto"), Children = { mixerScroll, masterPin, ropesBand } });
+        var strips = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), RowDefinitions = new RowDefinitions("*,Auto"), Children = { mixerScroll, masterPin, ropesBand } };
+        // the selected channel's inspector, at the master's right or before the strips (#277, MainWindow.MixerInspector.cs)
+        InitMixerInspector(strips);
+        mixerPane.Children.Add(strips);
         // the DockPanel fills only its last child: the views share it, so each fills the place; Mastering keeps its
         // meter pinned at its right
         var area = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -400,7 +425,6 @@ public partial class MainWindow
         Grid.SetColumn(pins, 1);
         area.Children.Add(pins);
         MixerDock.Children.Add(area);
-        AlignPin(mixerScroll, masterPin, 0);
         AlignPin(masteringScroll, masteringPin, MasteringPad.Bottom);
         InitMastering();
         InitPiano();
@@ -514,17 +538,20 @@ public partial class MainWindow
     Control BuildMixerHeader()
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
-        // the title (asked by the user: one with some presence): the mixer's glyph in the accent and its name
-        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        // the title (asked by the user: one with some presence): the mixer's glyph in the accent and its name, and the
+        // views' select drops from it ("Mixer \u00b7 Compacta", asked by the user, #277; MainWindow.MixerViews.cs)
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
         title.Children.Add(new TextBlock { Classes = { "icon" }, Text = "\ue9e9", FontSize = 16, Foreground = Palette.Accent, VerticalAlignment = VerticalAlignment.Center });
         title.Children.Add(new TextBlock { Text = Loc.T("mixer.title.name"), FontSize = 13.5, FontWeight = FontWeight.SemiBold, Foreground = Palette.Fg, VerticalAlignment = VerticalAlignment.Center });
-        row.Children.Add(title);
+        title.Children.Add(new TextBlock { Text = "\u00b7", FontSize = 13.5, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(MixerViewTitle(title));
         row.Children.Add(new Border { Width = 1, Height = 20, Background = Palette.Line });
         row.Children.Add(panButton = BuildPanMenu());
         row.Children.Add(AddSeparatorButton());
         row.Children.Add(SectionSwitch(FxIcon.Eq, "mixer.fx", () => mixerFx, v => mixerFx = v, false));
         row.Children.Add(SectionSwitch(FxIcon.Reverb, "mixer.sends", () => mixerSends, v => mixerSends = v, true));
         row.Children.Add(RopesSwitch());
+        row.Children.Add(MixerFilterSwitch());
 
         // the strips' width, like the timeline's zoom bar (the header's own refreshers survive strip rebuilds)
         var zoom = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
@@ -568,6 +595,8 @@ public partial class MainWindow
         bar.Children.Add(clear);
         // the mix's A | B (MainWindow.MixCompare.cs)
         bar.Children.Add(BuildMixCompare());
+        // the channel's inspector (#277, MainWindow.MixerInspector.cs; the views drop from the title)
+        bar.Children.Add(MixerInspectorSwitch());
         bar.Children.Add(zoom);
         return new Border { MinHeight = 40, Background = Palette.Panel, BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = bar };
     }
@@ -656,6 +685,8 @@ public partial class MainWindow
         headerRefresh.Add(() =>
         {
             b.IsChecked = get();
+            // a fixed layout (#277) sets its own sections
+            b.IsEnabled = !MixerLayoutFixed;
             FxIcon.SetColor(icon, get() ? Palette.Accent : Palette.Faint);
             ToolTip.SetTip(b, Loc.T(get() ? key + ".hide" : key + ".show") + " · " + Loc.T("mixer.section.tip"));
         });
@@ -743,11 +774,14 @@ public partial class MainWindow
             + "|" + string.Join(",", Folders.Select(f => f.Id + ":" + f.Index + ":" + f.MixerCollapsed + ":" + f.Separator + ":" + f.MixerSide + ":" + string.Join("/", f.Sends.Where(s => !s.Hidden).Select(s => s.BusId))
                 + ":" + string.Join("/", f.Inserts.Select(s => s.Id + s.Type))))
             // a bus's routing changes which buses the others can send to: their send panels come and go
-            + "|" + string.Join(",", Buses.Select(b => b.Id + ":" + b.Name + ":" + b.MixerSide + ":" + b.Output + ":" + string.Join("/", b.Sends.Where(x => !x.Hidden).Select(x => x.BusId)) + ":" + string.Join("/", b.Inserts.Select(s => s.Id + s.Type))))
-            + "|" + string.Join("/", MasterSet.Slots.Select(s => s.Id + s.Type));
+            + "|" + string.Join(",", Buses.Select(b => b.Id + ":" + b.Name + ":" + b.MixerSide + ":" + b.MixerAfter + ":" + b.Output + ":" + string.Join("/", b.Sends.Where(x => !x.Hidden).Select(x => x.BusId)) + ":" + string.Join("/", b.Inserts.Select(s => s.Id + s.Type))))
+            + "|" + string.Join("/", MasterSet.Slots.Select(s => s.Id + s.Type))
+            // what the header's filter shows (#270)
+            + "|" + MixerFilterKey();
         if (key != mixerKey)
         {
             mixerKey = key;
+            mixerNameFoot = MixerOptions.NameAtFoot;
             BuildStrips(stripW);
         }
         mx = mixerLayout;
@@ -765,6 +799,7 @@ public partial class MainWindow
             foreach (var r in mx.Refresh) r();
         }
         finally { syncing = was; }
+        RefreshMixerInspector();
         RefreshSlotWindows();
     }
 
@@ -777,15 +812,19 @@ public partial class MainWindow
     void ZoomMixer(double w, double? atX = null)
     {
         w = Math.Round(Math.Clamp(w, MinStripW, WideMax));
-        if (w == mixerStripW || !StripsLive) return;
-        double x = atX ?? mixerScroll.Viewport.Width / 2;
+        // only the XTreme layout zooms (#277): the others are fixed
+        if (w == mixerStripW || !StripsLive || MixerLayoutFixed) return;
+        // each side scrolls on its own (#275): the one under the point keeps it; by default, the left side's middle
+        var side = MixerSideAt(atX ?? 0);
+        var content = side == mixerRightScroll ? mixerRightHost : mixerLeftHost;
+        double x = atX is { } ax ? ax - (side.TranslatePoint(default, mixerScroll) is { } so ? so.X : 0) : side.Viewport.Width / 2;
         // the strip under that point and where in it; elsewhere (a folder strip, a gap) the same share of the whole width
         int under = -1;
-        double frac = 0, share = mixerStrips.Bounds.Width > 0 ? (mixerScroll.Offset.X + x) / mixerStrips.Bounds.Width : 0;
+        double frac = 0, share = content.Bounds.Width > 0 ? (side.Offset.X + x) / content.Bounds.Width : 0;
         for (int i = 0; i < mx.Boxes.Count; i++)
         {
             var box = mx.Boxes[i];
-            if (!box.IsEffectivelyVisible || box.Bounds.Width <= 0 || box.TranslatePoint(default, mixerScroll) is not { } p) continue;
+            if (!box.IsEffectivelyVisible || box.Bounds.Width <= 0 || !side.IsVisualAncestorOf(box) || box.TranslatePoint(default, side) is not { } p) continue;
             if (x < p.X || x >= p.X + box.Bounds.Width) continue;
             under = i;
             frac = (x - p.X) / box.Bounds.Width;
@@ -796,10 +835,10 @@ public partial class MainWindow
         mixerZoomSaver.Start();
         RefreshMixer();
         mixerScroll.UpdateLayout();
-        double content = under >= 0 && under < mx.Boxes.Count && mx.Boxes[under].TranslatePoint(default, mixerStrips) is { } at
+        double to = under >= 0 && under < mx.Boxes.Count && side.IsVisualAncestorOf(mx.Boxes[under]) && mx.Boxes[under].TranslatePoint(default, content) is { } at
             ? at.X + frac * mx.Boxes[under].Bounds.Width
-            : share * mixerStrips.Bounds.Width;
-        mixerScroll.Offset = new Vector(Math.Clamp(content - x, 0, Math.Max(0, mixerScroll.Extent.Width - mixerScroll.Viewport.Width)), mixerScroll.Offset.Y);
+            : share * content.Bounds.Width;
+        side.Offset = new Vector(Math.Clamp(to - x, 0, Math.Max(0, side.Extent.Width - side.Viewport.Width)), side.Offset.Y);
     }
 
     /// <summary>
@@ -821,17 +860,15 @@ public partial class MainWindow
         }
         // some mice and drivers turn a modified wheel into a sideways delta, so take whichever axis moved
         double d = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
-        if (wheel == "wheelZoom") ZoomMixer(mixerStripW * Math.Pow(MixerZoomStep, d * Shortcuts.WheelSign(wheel)), e.GetPosition(mixerScroll).X);
-        // wheel up goes right, as in the timeline (reversed: down)
-        else if (wheel == "wheelSideways") ScrollMixerBy((e.Delta.Y + e.Delta.X) * Shortcuts.WheelSign(wheel) * 80);
+        double px = e.GetPosition(mixerScroll).X;
+        if (wheel == "wheelZoom") ZoomMixer(mixerStripW * Math.Pow(MixerZoomStep, d * Shortcuts.WheelSign(wheel)), px);
+        // wheel up goes right, as in the timeline (reversed: down); it scrolls the side under the pointer (#275)
+        else if (wheel == "wheelSideways") ScrollSideBy(MixerSideAt(px), (e.Delta.Y + e.Delta.X) * Shortcuts.WheelSign(wheel) * 80);
         // a list or an effects column that has more to show takes the plain wheel; a touchpad's sideways swipe never
-        else if (wheel == null && (!listScrolls || e.Delta.Y == 0)) ScrollMixerBy(-(e.Delta.Y * Shortcuts.WheelSign(Shortcuts.WheelScroll) + e.Delta.X) * 80);
+        else if (wheel == null && (!listScrolls || e.Delta.Y == 0)) ScrollSideBy(MixerSideAt(px), -(e.Delta.Y * Shortcuts.WheelSign(Shortcuts.WheelScroll) + e.Delta.X) * 80);
         else return;
         e.Handled = true;
     }
-
-    void ScrollMixerBy(double dx) =>
-        mixerScroll.Offset = new Vector(Math.Clamp(mixerScroll.Offset.X + dx, 0, Math.Max(0, mixerScroll.Extent.Width - mixerScroll.Viewport.Width)), mixerScroll.Offset.Y);
 
     /// <summary>Called from the window tick: meters, compressor reduction, LIM and the mini timeline's playhead.</summary>
     void TickMixer(double pos, float outL, float outR)
@@ -974,10 +1011,10 @@ public partial class MainWindow
         l.SendLists.Clear();
         l.NodeMeters.Clear();
         l.Resize.Clear();
+        l.Grips.Clear();
         l.Order.Top.Clear();
         l.Order.Inner.Clear();
         l.Order.FolderStrips.Clear();
-        l.Strips.Children.Clear();
     }
 
     void BuildStrips(double stripW)
@@ -985,54 +1022,94 @@ public partial class MainWindow
         mx = mixerLayout;
         ClearStrips(mixerLayout);
         var order = mx.Order;
-        var mixerStrips = mx.Strips;
+        mixerLeftHost.Children.Clear();
+        mixerRightHost.Children.Clear();
         // joined (#250), the strips run edge to edge and up to the master's line
-        mixerStrips.Margin = new Thickness(MixerLooks.Joined ? 0 : StripGap / 2, 0);
-        masterPin.Padding = MixerLooks.Joined ? default : new Thickness(StripGap / 2, 0, StripGap / 2, 0);
-        // the two sides (asked by the user): tracks and folders on the left by default, buses on the right, and
-        // anything can be moved to the other one; the free space between them grows with the window
-        var strips = order.Left = new StackPanel { Orientation = Orientation.Horizontal };
-        var returns = order.Right = new StackPanel { Orientation = Orientation.Horizontal };
-        mixerStrips.Children.Add(strips);
-        Grid.SetColumn(returns, 2); mixerStrips.Children.Add(returns);
-        if (tracks.Count == 0)
+        double gap = MixerLooks.Joined ? 0 : StripGap / 2;
+        mixerLeftHost.Margin = new Thickness(gap, 0);
+        mixerRightHost.Margin = new Thickness(0, 0, gap, 0);
+        masterPin.Padding = MixerLooks.Joined ? new Thickness(Groove.W, 0, 0, 0) : new Thickness(Groove.W + StripGap / 2, 0, StripGap / 2, 0);
+        // the two sides (#275; #303: left and right only): tracks and folders on the left by default, buses in the right
+        // dock, and anything can go to the other one; each scrolls, the divider shares the width (MainWindow.MixerSplit.cs)
+        var strips = order.Sides[MixerSides.LeftSide] = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
+        var returns = order.Sides[MixerSides.RightSide] = new StackPanel { Orientation = Orientation.Horizontal };
+        // the right dock never grows past its strips (#285): zoom resizes them without a rebuild
+        // and a strip that came to it opens it until all show, once laid out
+        returns.SizeChanged += (_, e) =>
         {
-            var empty = new TextBlock { Text = Loc.T("mixer.empty"), FontSize = 12, Foreground = Palette.Faint,
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(empty, 1);
-            mixerStrips.Children.Add(empty);
-        }
+            if (!e.WidthChanged) return;
+            QueueMixerSplit();
+            if (mixerRightGrow) Avalonia.Threading.Dispatcher.UIThread.Post(GrowMixerRight, Avalonia.Threading.DispatcherPriority.Background);
+        };
+        NoteMixerRightAdds();
+        mixerLeftHost.Children.Add(strips);
+        // the right side starts at a line like the master's (asked by the user, #270: the two sides read apart), the divider
+        var rightSide = new Border { Child = returns, HorizontalAlignment = HorizontalAlignment.Right };
+        mixerRightHost.Children.Add(rightSide);
+        // the header's filter (#270): which kinds of strip get built
+        bool showFolders = MixerShowsKind("folders"), showSeparators = MixerShowsKind("separators"), showBuses = MixerShowsKind("buses");
         // with folders every column gets the band their names sit in, so all faders stay level
-        bool bands = Folders.Any(f => !f.Separator);
+        bool bands = showFolders && Folders.Any(f => !f.Separator);
         Control Column(Control c) => bands ? Banded(null, c) : c;
-        void Put(Control column, object item, bool right)
+        void Put(Control column, object item, int side)
         {
-            (right ? returns : strips).Children.Add(column);
-            order.Top.Add((column, item, right));
+            order.Sides[side]!.Children.Add(column);
+            order.Top.Add((column, item, side));
         }
+        // a bus goes after the strip it follows (#270: between the channels too), first on its side, or after them all
+        var busesLeft = showBuses ? Buses.ToList() : [];
+        void BusesAfter(string anchor, int right)
+        {
+            for (int i = 0; i < busesLeft.Count; i++)
+            {
+                var b = busesLeft[i];
+                if (b.MixerAfter != anchor || anchor == MixerSides.First && MixerSides.Of(b) != right) continue;
+                busesLeft.RemoveAt(i--);
+                var card = BusStrip(b, stripW);
+                MixerDraggable(card, b);
+                Put(Column(card), b, right);
+            }
+        }
+        BusesAfter(MixerSides.First, MixerSides.LeftSide);
+        BusesAfter(MixerSides.First, MixerSides.RightSide);
         foreach (var item in store == null ? [] : TrackFolders.Sequence(tracks.Select(t => t.Track).ToList(), Folders))
+        {
+            AddStrip(item);
+            // a hidden strip (the filter) keeps the buses that follow it in its place
+            if (item is Folder af) BusesAfter(af.Id, MixerSides.Of(af));
+            else if (item is XtremeDaw.Projects.Track at)
+                BusesAfter(at.Id, at.FolderId != null && FolderById(at.FolderId) is { } of ? MixerSides.Of(of) : MixerSides.Of(at));
+        }
+        void AddStrip(object item)
         {
             if (item is Folder { Separator: true } sep)
             {
+                if (!showSeparators) return;
                 var card = SeparatorStrip(sep);
                 MixerDraggable(card, sep);
-                Put(Column(card), sep, MixerSides.IsRight(sep));
+                Put(Column(card), sep, MixerSides.Of(sep));
             }
-            else if (item is Folder f) Put(FolderGroup(f, stripW), f, MixerSides.IsRight(f));
-            else if (item is XtremeDaw.Projects.Track { FolderId: null } tr && tracks.FirstOrDefault(t => t.Track == tr) is { } lt)
+            else if (item is Folder f)
+            {
+                if (showFolders) Put(FolderGroup(f, stripW), f, MixerSides.Of(f));
+                // without folder strips its tracks stay, as one block in the folder's place: they don't drag on their
+                // own there (dropped at the top level, a track would leave its folder unseen)
+                else if (FolderBlock(f, stripW) is { } block) Put(Column(block), f, MixerSides.Of(f));
+            }
+            else if (item is XtremeDaw.Projects.Track { FolderId: null } tr && tracks.FirstOrDefault(t => t.Track == tr) is { } lt && MixerShows(lt))
             {
                 var card = Strip(lt, stripW);
                 MixerDraggable(card, tr);
-                Put(Column(card), tr, MixerSides.IsRight(tr));
+                Put(Column(card), tr, MixerSides.Of(tr));
             }
         }
 
-        // the buses, on their side after the tracks (a new one comes from the mixer's right-click menu)
-        foreach (var b in Buses)
+        // the rest of the buses, on their side after the tracks (a new one comes from the mixer's right-click menu)
+        foreach (var b in busesLeft)
         {
             var card = BusStrip(b, stripW);
             MixerDraggable(card, b);
-            Put(Column(card), b, MixerSides.IsRight(b));
+            Put(Column(card), b, MixerSides.Of(b));
         }
         // a folder keeps a little room from the column beside it (asked by the user), not from the mixer's start nor
         // the free space: on the left side, from its neighbours; on the right one, also from the master after it
@@ -1043,14 +1120,19 @@ public partial class MainWindow
                 if (order.Top.Find(x => x.Column == column).Item is Folder { Separator: false })
                     column.Margin = new Thickness(i > 0 ? FolderGap : 0, 0, right || i < side.Children.Count - 1 ? FolderGap : 0, 0);
             }
+        if (returns.Children.Count > 0 && !MixerLooks.Joined) rightSide.Padding = new Thickness(StripGap / 2, 0, 0, 0);
+        // nothing to show: no channels yet, or the filter hides them all
+        mixerEmpty.IsVisible = tracks.Count == 0 || strips.Children.Count == 0 && returns.Children.Count == 0;
+        if (mixerEmpty.IsVisible) mixerEmpty.Text = Loc.T(tracks.Count == 0 ? "mixer.empty" : "mixer.filtered");
+        ApplyMixerSplit();
         masterPin.Child = Column(Master());
     }
 
     /// <summary>The column a view pins at its right, apart from what scrolls beside it by a line heavier than any other
     /// border (asked by the user): it divides the view, it doesn't outline a card. <paramref name="right"/>: its room at the edge.</summary>
-    static Border PinnedColumn(double right = 0) => new()
+    static GrooveBorder PinnedColumn(double right = 0) => new()
     {
-        BorderBrush = Palette.Faint, BorderThickness = new Thickness(PinLineW, 0, 0, 0), Padding = new Thickness(StripGap / 2, 0, right, 0), IsVisible = false,
+        Padding = new Thickness(Groove.W + StripGap / 2, 0, right, 0), IsVisible = false,
     };
 
     /// <summary>
@@ -1076,31 +1158,60 @@ public partial class MainWindow
         };
 
     /// <summary>Puts a strip's parts on the rows every strip shares (<see cref="StripHeadH"/>…), so all faders and meters
-    /// start and end at the same height whatever the name, the strip type or its controls.</summary>
-    Grid StripLayout(Control head, Control? controls, Control faders, Control foot)
+    /// start and end at the same height whatever the name, the strip type or its controls. The head goes on top, or
+    /// under the foot with the names at the foot (<see cref="MixerOptions.NameAtFoot"/>, #277: every strip alike, so
+    /// they stay level). Over the fader, the grip that trades the lists' height for the fader's (<see cref="ProportionGrip"/>).
+    /// Under all of it, the channel's kind (<see cref="KindTag"/>).</summary>
+    Grid StripLayout(Control head, Control? controls, Control faders, Control foot, string kind)
     {
+        bool atFoot = MixerOptions.NameAtFoot;
         var g = new Grid { Margin = new Thickness(6, StripLayoutTop, 6, 6) };
-        g.RowDefinitions.Add(new RowDefinition(StripHeadH, GridUnitType.Pixel));
         var top = new RowDefinition(StripTopH, GridUnitType.Pixel);
         mx.TopRows.Add(top);
+        if (!atFoot) g.RowDefinitions.Add(new RowDefinition(StripHeadH, GridUnitType.Pixel));
         g.RowDefinitions.Add(top);
         g.RowDefinitions.Add(new RowDefinition(1, GridUnitType.Star));
         g.RowDefinitions.Add(new RowDefinition(StripFootH, GridUnitType.Pixel));
+        if (atFoot) g.RowDefinitions.Add(new RowDefinition(StripHeadH, GridUnitType.Pixel));
+        int first = atFoot ? 0 : 1;
         void Put(Control c, int row)
         {
             Grid.SetRow(c, row);
             g.Children.Add(c);
         }
-        head.VerticalAlignment = VerticalAlignment.Top;
+        head.VerticalAlignment = atFoot ? VerticalAlignment.Bottom : VerticalAlignment.Top;
         foot.VerticalAlignment = VerticalAlignment.Bottom;
         foot.HorizontalAlignment = HorizontalAlignment.Center;
-        Put(head, 0);
-        if (controls != null) { controls.VerticalAlignment = VerticalAlignment.Top; Put(controls, 1); }
+        Put(head, atFoot ? 3 : 0);
+        if (controls != null) { controls.VerticalAlignment = VerticalAlignment.Top; Put(controls, first); }
         faders.HorizontalAlignment = HorizontalAlignment.Center;
         faders.Margin = new Thickness(0, 6, 0, 0);
-        Put(faders, 2);
-        Put(foot, 3);
+        Put(faders, first + 1);
+        Put(ProportionGrip(), first + 1);
+        Put(foot, first + 2);
+        g.RowDefinitions.Add(new RowDefinition(StripKindH, GridUnitType.Pixel));
+        Put(KindTag(kind), 4);
         return g;
+    }
+
+    /// <summary>
+    /// A strip's kind at its foot (asked by the user, #277): the kind's icon (<see cref="TrackIcons.KindIcon"/>) and its
+    /// name in the strip's label scale; the name gives way under <see cref="NarrowW"/>.
+    /// </summary>
+    Control KindTag(string kind)
+    {
+        var icon = new Avalonia.Controls.Shapes.Path
+        {
+            Data = TrackIcons.KindIcon(kind), Stretch = Stretch.Uniform, Width = 11, Height = 11, Stroke = Palette.Faint,
+            StrokeThickness = 1.3, StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round, VerticalAlignment = VerticalAlignment.Center,
+        };
+        var text = new TextBlock { Text = Loc.T("mixer.kind." + kind), FontSize = 9, LetterSpacing = 0.8, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center };
+        mx.Resize.Add(w => text.IsVisible = w >= NarrowW);
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
+            IsHitTestVisible = false, Children = { icon, text },
+        };
     }
 
     Control Strip(LiveTrack t, double width)
@@ -1127,6 +1238,12 @@ public partial class MainWindow
             if (i >= 0 && sel != t) Timeline.Select(i);
             var items = new List<object> { new MenuItem { Header = t.Track.Name, IsEnabled = false, FontSize = 11 } };
             items.AddRange(TrackMenuItems(t, box, null, () => RenameTrackIn(t, name), look: true));
+            // a track at the top level goes to a dock (#277); one in a folder goes with it
+            if (t.Track.FolderId == null)
+            {
+                items.Add(new Separator());
+                items.Add(DockMenu(t.Track));
+            }
             OpenAnchoredMenu(Popup(items, 240), box);
         };
         var emptyHint = new TextBlock { Text = Loc.T("mixer.emptyTag"), FontSize = 9, LetterSpacing = 0.8, Foreground = Palette.Faint, IsVisible = empty, VerticalAlignment = VerticalAlignment.Center };
@@ -1178,7 +1295,7 @@ public partial class MainWindow
             ArmToggle(t, 26));
         mx.Meters[t.Track.Id] = (meter, gr);
         var content = new Grid();
-        var layout = StripLayout(head, controls, faders, db);
+        var layout = StripLayout(head, controls, faders, db, t.Track.IsMidi ? "midi" : "audio");
         NarrowParts(layout, faders, fader, meter, db);
         content.Children.Add(layout);
         content.Children.Add(top);
@@ -1620,7 +1737,10 @@ public partial class MainWindow
             row.Height = new GridLength(SendsRow ? head ? ListHeadH : sends : 0, GridUnitType.Pixel);
             what.IsVisible = SendsRow;
         }
+        bool lists = mixerFx || SendsRow;
+        foreach (var grip in layout.Grips) grip.IsVisible = lists;
         ApplyMixerMinHeight();
+        ShowMixerView();
     }
 
     /// <summary>What a slot is called in the compact list: the musician's word (Saturación, Comp…).</summary>
@@ -2366,6 +2486,7 @@ public partial class MainWindow
     Control Master()
     {
         var box = StripCard(MasterW);
+        ropesMasterCard = box;
         // it follows the mixer's width like every strip, never narrower than its readouts (asked by the user)
         mx.Resize.Add(w => box.Width = Math.Max(MasterW, w));
         // the head's fixed row (StripHeadH): the button, then LIM and MONO side by side
@@ -2409,7 +2530,7 @@ public partial class MainWindow
         mx.Refresh.Add(() => fxBox.Opacity = Audio.PlaybackEngine.FxBypass ? 0.4 : 1);
         ListSection(controls, mx.FxRows, ListHead(Loc.T("mix.list.fx")), fxBox);
         ListSection(controls, mx.SendRows, new Border(), new Border());
-        box.Child = StripLayout(head, controls, mx.Master, output);
+        box.Child = StripLayout(head, controls, mx.Master, output, "master");
         return box;
     }
 }

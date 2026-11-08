@@ -303,6 +303,39 @@ public partial class MainWindow
             track.Preview.Post(XtremeDaw.Audio.Dsp.NoteSynth.Audition(pitch + track.Track.Transpose, velocity, PlaybackEngine.SampleRate));
     }
 
+    /// <summary>The track of the clip open in the piano roll, if any.</summary>
+    string? PianoTrackId() =>
+        store != null && MidiEditing.TryFind(store.Project, pianoClipId) != null ? MidiEditing.Find(store.Project, pianoClipId!).Track.Id : null;
+
+    /// <summary>Where each held key of the piano roll went (#276), so its lift reaches the same instrument.</summary>
+    readonly Dictionary<int, string> auditionHeld = [];
+
+    /// <summary>
+    /// A piano roll key held with the mouse (#276: the instrument's sustain lasts while it is held): the GM instrument, the
+    /// sampler or the plugin keep it until <see cref="AuditionLift"/>; the test tone has no sustain and plays its blip.
+    /// </summary>
+    void AuditionPress(string? trackId, int pitch, int velocity)
+    {
+        AuditionLift(pitch);
+        if (trackId != null && gms.TryGetValue(trackId, out var gm)) gm.Press(pitch, velocity);
+        else if (trackId != null && samplers.TryGetValue(trackId, out var sampler)) sampler.Player.Press(pitch, velocity);
+        else if (trackId != null && instruments.TryGetValue(trackId, out var loaded)) loaded.Player.Press(pitch, velocity);
+        else
+        {
+            Audition(trackId, pitch, velocity);
+            return;
+        }
+        auditionHeld[pitch] = trackId;
+    }
+
+    void AuditionLift(int pitch)
+    {
+        if (!auditionHeld.Remove(pitch, out var trackId)) return;
+        if (gms.TryGetValue(trackId, out var gm)) gm.Lift(pitch);
+        else if (samplers.TryGetValue(trackId, out var sampler)) sampler.Player.Lift(pitch);
+        else if (instruments.TryGetValue(trackId, out var loaded)) loaded.Player.Lift(pitch);
+    }
+
     /// <summary>Looks for new or changed plugins (in the background, with a toast that says what it found).</summary>
     async Task ScanPlugins()
     {
