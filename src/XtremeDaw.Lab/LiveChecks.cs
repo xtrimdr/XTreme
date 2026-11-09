@@ -64,6 +64,7 @@ static class LiveChecks
         Invites();
         if (online) Console.WriteLine($"Por internet, con {LiveRelay.Server}");
         Session(online);
+        if (online) Limits();
         if (online && Environment.GetEnvironmentVariable("XTREME_RELAY_ADMIN") is { Length: > 0 } key) Admin(key);
         else if (online) Console.WriteLine("(sin XTREME_RELAY_ADMIN: no se prueba la administración)");
         Console.WriteLine(failed == 0 ? "Todo ok" : $"{failed} DISTINTO");
@@ -310,6 +311,8 @@ static class LiveChecks
             }
             finally { TryDelete(thirdDir); }
 
+            if (online) Cut(host, guest, hp, gp, hostDir, guestDir, PumpBoth);
+
             var other = LiveSession.Join(invite, "Otro", "otra-versión", default);
             Until(() => other.IsCompleted, PumpHost);
             Check("otra versión no entra", other.Exception?.InnerException is LiveRefusedException { Reason: "version" });
@@ -333,6 +336,56 @@ static class LiveChecks
             TryDelete(hostDir);
             TryDelete(guestDir);
         }
+    }
+
+    /// <summary>
+    /// The host's socket cut (#1): it comes back to the same room by itself, and what both sides changed meanwhile, and
+    /// a file on its way, arrive whole; nobody left.
+    /// </summary>
+    static void Cut(LiveSession host, LiveSession guest, Project hp, Project gp, string hostDir, string guestDir, Action pumpBoth)
+    {
+        var big = new byte[3_000_000];
+        new Random(7).NextBytes(big);
+        File.WriteAllBytes(Path.Combine(hostDir, "media", "corte.wav"), big);
+        hp.Media.Add(new Media { Name = "corte", Audio = "media/corte.wav", DurationSec = 5 });
+        hp.Tracks[2].Clips.Add(new Clip { MediaId = hp.Media[^1].Id, AtSec = 4 });
+        host.Publish(hp);
+        string got = Path.Combine(guestDir, "media", "corte.wav");
+        Until(() => guest.Downloading > 0 || File.Exists(got), pumpBoth);
+        host.Relay!.Cut();
+        hp.Tracks[0].Name = "Durante el corte (anfitrión)";
+        host.Publish(hp);
+        gp.Tracks[1].Name = "Durante el corte (invitado)";
+        guest.Publish(gp);
+        Check("tras un corte, el anfitrión vuelve solo a la misma sala (#1)",
+            Until(() => host.Relay.Resumes == 1 && !host.Relay.Reconnecting, pumpBoth, 30000));
+        Check("lo que cada uno cambió durante el corte le llega al otro",
+            Until(() => gp.Tracks[0].Name == "Durante el corte (anfitrión)" && hp.Tracks[1].Name == "Durante el corte (invitado)", pumpBoth, 15000));
+        Check("el archivo que estaba viajando llega entero",
+            Until(() => File.Exists(got), pumpBoth, 30000) && File.ReadAllBytes(got).AsSpan().SequenceEqual(big));
+        Check("nadie salió de la sesión", !host.Ended && !guest.Ended && host.People.Count == 2 && guest.People.Count == 2);
+    }
+
+    /// <summary>
+    /// The relay's limits (#1): one connection keeps a few rooms open at most; the next one is refused with its reason.
+    /// </summary>
+    static void Limits()
+    {
+        var open = new List<LiveSession>();
+        try
+        {
+            Exception? refused = null;
+            for (int i = 0; i < 4 && refused == null; i++)
+            {
+                try { open.Add(LiveSession.HostOnline("Martín", Version, default).GetAwaiter().GetResult()); }
+                catch (IOException e) { refused = e; }
+            }
+            Check($"una conexión no abre más de 3 salas a la vez ({open.Count} abiertas)", open.Count == 3 && refused?.Message.Contains("demasiadas") == true);
+            open[0].Dispose();
+            Thread.Sleep(500);
+            Check("al cerrar una, se puede abrir otra", LiveSession.HostOnline("Martín", Version, default).GetAwaiter().GetResult() is { } again && Dispose(again));
+        }
+        finally { foreach (var s in open) s.Dispose(); }
     }
 
     /// <summary>

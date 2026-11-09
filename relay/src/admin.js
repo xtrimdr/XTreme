@@ -1,5 +1,5 @@
-// The private page of the relay (#321): the sessions open now, closing one, and turning new ones off. It asks for the
-// admin key once (kept in this browser) and talks to /admin/api with it.
+// The private page of the relay (#321): the sessions open now, closing one, turning new ones off, and the history by
+// day (#1). It asks for the admin key once (kept in this browser) and talks to /admin/api with it.
 export const adminPage = `<!doctype html>
 <html lang="es">
 <head>
@@ -32,6 +32,10 @@ export const adminPage = `<!doctype html>
   .pill { display:inline-block; padding:2px 9px; border-radius:99px; font-size:12px; font-weight:600; }
   .pill.on { background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok); }
   .pill.off { background:color-mix(in srgb, var(--danger) 15%, transparent); color:var(--danger); }
+  .pill.wait { background:var(--soft); color:var(--accent); margin-left:6px; }
+  .stats { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:14px; }
+  .stat .n { font-size:18px; font-weight:600; }
+  @media (max-width:560px) { .stats { grid-template-columns:repeat(2, 1fr); } }
   table { width:100%; border-collapse:collapse; }
   th { text-align:left; font-weight:600; color:var(--dim); font-size:12px; padding:0 8px 8px; }
   td { padding:10px 8px; border-top:1px solid var(--line); }
@@ -71,11 +75,26 @@ export const adminPage = `<!doctype html>
         <button id="logout">Salir</button>
       </div>
       <table>
-        <thead><tr><th>Sala</th><th class="num">Personas</th><th class="num">Abierta hace</th><th class="num hide-sm">Tráfico</th><th></th></tr></thead>
+        <thead><tr><th>Sala</th><th class="hide-sm">Región</th><th class="num">Personas</th><th class="num">Abierta hace</th><th class="num hide-sm">Tráfico</th><th></th></tr></thead>
         <tbody id="rooms"></tbody>
       </table>
       <div class="empty" id="empty" hidden>No hay sesiones abiertas.</div>
       <div class="err" id="err" hidden></div>
+    </section>
+
+    <section class="card">
+      <div class="label" style="margin-bottom:10px" id="monthTitle"></div>
+      <div class="stats">
+        <div class="stat"><div class="dim">Sesiones</div><div class="n" id="mSessions"></div></div>
+        <div class="stat"><div class="dim">Horas</div><div class="n" id="mHours"></div></div>
+        <div class="stat"><div class="dim">Tráfico</div><div class="n" id="mBytes"></div></div>
+        <div class="stat"><div class="dim">Pico de invitados</div><div class="n" id="mPeak"></div></div>
+      </div>
+      <table>
+        <thead><tr><th>Día</th><th class="num">Sesiones</th><th class="num hide-sm">Horas</th><th class="num">Tráfico</th><th class="num">Pico</th></tr></thead>
+        <tbody id="days"></tbody>
+      </table>
+      <div class="empty" id="noDays" hidden>Todavía no hay historial.</div>
     </section>
   </div>
 </main>
@@ -119,6 +138,26 @@ export const adminPage = `<!doctype html>
     return (b / (1 << 30)).toFixed(2) + " GB";
   }
 
+  const REGIONS = { sam: "Sudamérica", wnam: "Norteamérica oeste", enam: "Norteamérica este", weur: "Europa oeste", eeur: "Europa este", apac: "Asia-Pacífico", oc: "Oceanía", afr: "África", me: "Medio Oriente" };
+  const hours = s => (s / 3600).toFixed(1);
+
+  function row(cells) {
+    const tr = document.createElement("tr");
+    for (const [cls, text, pill] of cells) {
+      const td = document.createElement("td");
+      td.className = cls;
+      td.textContent = text;
+      if (pill) {
+        const p = document.createElement("span");
+        p.className = "pill wait";
+        p.textContent = pill;
+        td.append(p);
+      }
+      tr.append(td);
+    }
+    return tr;
+  }
+
   function render() {
     const s = state;
     $("pausePill").textContent = s.paused ? "Apagadas" : "Permitidas";
@@ -133,19 +172,13 @@ export const adminPage = `<!doctype html>
     $("empty").hidden = s.rooms.length > 0;
     const tb = $("rooms");
     tb.replaceChildren(...s.rooms.map(r => {
-      const tr = document.createElement("tr");
-      const cells = [
-        ["mono", r.room.slice(0, 8)],
-        ["num", String(r.guests + 1)],
+      const tr = row([
+        ["mono", r.room.slice(0, 8), r.away ? "Anfitrión reconectando" : null],
+        ["hide-sm dim", REGIONS[r.region] || "—"],
+        ["num", String(r.guests + (r.away ? 0 : 1))],
         ["num", ago(s.now - r.started)],
         ["num hide-sm", size(r.bytes)],
-      ];
-      for (const [cls, text] of cells) {
-        const td = document.createElement("td");
-        td.className = cls;
-        td.textContent = text;
-        tr.append(td);
-      }
+      ]);
       const td = document.createElement("td");
       td.className = "num";
       const b = document.createElement("button");
@@ -161,6 +194,22 @@ export const adminPage = `<!doctype html>
       tr.append(td);
       return tr;
     }));
+    const m = s.month || { sessions: 0, seconds: 0, bytes: 0, peak: 0 };
+    const [y, mo] = (m.month || "").split("-");
+    $("monthTitle").textContent = "Este mes" + (mo ? " (" + mo + "/" + y + ")" : "");
+    $("mSessions").textContent = m.sessions;
+    $("mHours").textContent = hours(m.seconds);
+    $("mBytes").textContent = size(m.bytes);
+    $("mPeak").textContent = m.peak;
+    const days = s.days || [];
+    $("noDays").hidden = days.length > 0;
+    $("days").replaceChildren(...days.map(d => row([
+      ["", d.day.slice(8) + "/" + d.day.slice(5, 7)],
+      ["num", String(d.sessions)],
+      ["num hide-sm", hours(d.seconds)],
+      ["num", size(d.bytes)],
+      ["num", String(d.peak)],
+    ])));
   }
 
   function error(e) {

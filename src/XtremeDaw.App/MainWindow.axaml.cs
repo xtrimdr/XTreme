@@ -169,6 +169,7 @@ public partial class MainWindow : Window
         ClearSolosButton.Click += (_, _) => ClearAllToggles(true);
         InitTimelineEditing();
         InitTransport();
+        InitTransportShow();
         InitMarkers();
         InitTools();
         InitTempo();

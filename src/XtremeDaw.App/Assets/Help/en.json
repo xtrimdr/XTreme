@@ -80,7 +80,7 @@
           "id": "window",
           "icon": "E80A",
           "title": "Learn the window",
-          "keywords": "interface parts panels inspector timeline transport where is maximize enlarge enter",
+          "keywords": "interface parts panels inspector timeline transport where is maximize enlarge enter hide show bar",
           "intro": "What each area holds.",
           "steps": [
             "**Top**: project mode, name, save, undo, tools and **Export**.",
@@ -89,6 +89,7 @@
             "**Below the preview**: the timeline, with tracks and clips. {key:mixer} swaps it for the mixer.",
             "**Right**: project-wide things: Color, Patterns, Library and History. {key:rightPanel} folds it.",
             "**Bottom**: clock, play, record, tempo, click, tuner and the Timeline, Piano roll, Mixer and Mastering views. Pressing the active view again goes back to the timeline. Without video the timeline is always on screen and its button is hidden.",
+            "The bottom bar always fits in one row: in a narrow window, the least used controls hide by themselves. Right-click the bar to choose what it shows.",
             "**Maximize**: {key:maximize} or {icon:E740} gives the whole window to the panel you touched last (video, timeline, piano roll, mixer or mastering). Again, and everything goes back as it was."
           ],
           "see": ["look", "panel-windows", "shortcuts"]

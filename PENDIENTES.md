@@ -315,6 +315,8 @@ Cómo está hecho: `LiveSession`, `LiveDiff`, `LiveState`, `LiveLink`, `LiveInvi
 
 - [ ] El link `xtreme://unirse/…` se copia pero no abre XTreme solo: falta registrar el protocolo (instalador) y leerlo al arrancar.
 - [ ] Si el anfitrión se va, la sesión termina: pasarle el lugar a otro de los que quedan.
+- [ ] Un invitado que pierde la red queda afuera (solo el anfitrión se reconecta, #1): sumarle el mismo token y reenvío.
+- [ ] Por internet el anfitrión sube cada archivo una vez por invitado (#1): que los invitados se pasen entre ellos lo que ya bajaron.
 
 ### Separar en stems: antes de publicarlo
 

@@ -138,7 +138,9 @@ public partial class MainWindow
     void RefreshLiveDialog()
     {
         if (!LiveAsk.IsVisible) return;
-        string? state = live is { Downloading: > 0 } l ? Loc.T("live.downloading", l.Downloading) : null;
+        string? state = live is not { Downloading: > 0 } l ? null
+            : l.DownloadLeft > 0 ? Loc.T("live.downloadingLeft", l.Downloading, XtremeDaw.Audio.Mp4Exporter.FormatBytes(l.DownloadLeft))
+            : Loc.T("live.downloading", l.Downloading);
         LiveAsk.Refresh(live, CanHost, state);
     }
 

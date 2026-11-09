@@ -447,12 +447,12 @@
 
     <!-- transport bar, always at the bottom (Fender Studio Pro style, asked by the user). The clock, the
          transport and the metronome share one dark box that stays centered on the window while the sides fit
-         beside it (TransportPanel: it slides, and with no room the sides go down a row). -->
+         beside it (TransportPanel: it slides, and with no room the controls with a Fold hide, lowest first: never two rows, #36). -->
     <Border Grid.Row="4" Grid.ColumnSpan="2" x:Name="TransportBar" Margin="-2,2,-2,0" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="14,6">
-      <c:TransportPanel>
+      <c:TransportPanel x:Name="TransportRow">
         <!-- the input: its meter with the audio format under it, and software monitoring on / off, next to the transport -->
         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <StackPanel x:Name="AudioCell" Classes="bar-cell" Background="Transparent">
+          <StackPanel x:Name="AudioCell" Classes="bar-cell" Background="Transparent" c:TransportPanel.Fold="10">
             <!-- as wide as the line under it, with its dB scale -->
             <c:StereoMeter x:Name="InputMeter" ShowScale="True" Margin="0,1,0,2" />
             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -460,14 +460,14 @@
               <TextBlock x:Name="AudioStatus" Classes="metro-label mono" />
             </StackPanel>
           </StackPanel>
-          <ToggleButton x:Name="MonitorToggle" Classes="cell" CornerRadius="6" ToolTip.Tip="{loc:T transport.monitor.tip}">
+          <ToggleButton x:Name="MonitorToggle" c:TransportPanel.Fold="9" Classes="cell" CornerRadius="6" ToolTip.Tip="{loc:T transport.monitor.tip}">
             <StackPanel>
               <TextBlock Classes="icon" Text="&#xE7F6;" FontSize="15" HorizontalAlignment="Center" Margin="0,0,0,2" />
               <TextBlock Classes="metro-label" Text="{loc:T transport.monitor}" />
             </StackPanel>
           </ToggleButton>
           <!-- the tuner (native only): the cell shows the note, the panel over it the needle -->
-          <ToggleButton x:Name="TunerToggle" Classes="cell" CornerRadius="6" MinWidth="52">
+          <ToggleButton x:Name="TunerToggle" c:TransportPanel.Fold="11" Classes="cell" CornerRadius="6" MinWidth="52">
             <StackPanel>
               <TextBlock x:Name="TunerNote" Classes="mono metro-value" Text="♪" HorizontalAlignment="Center" />
               <TextBlock Classes="metro-label" Text="{loc:T transport.tuner}" />
@@ -501,7 +501,7 @@
                 <TextBlock Classes="icon" Text="&#xE73B;" FontSize="14" />
               </Button>
               <!-- the panic (asked by the user): stops and silences every tail and held note (MainWindow.Transport.cs CutAudio) -->
-              <Button x:Name="CutAudioButton" Classes="tbtn" AutomationProperties.Name="{loc:T sc.cutAudio}">
+              <Button x:Name="CutAudioButton" c:TransportPanel.Fold="6" Classes="tbtn" AutomationProperties.Name="{loc:T sc.cutAudio}">
                 <TextBlock Classes="icon" Text="&#xE74F;" FontSize="15" />
               </Button>
               <Button x:Name="PlayButton" Classes="tbtn" ToolTip.Tip="{loc:T transport.play.tip}">
@@ -536,13 +536,13 @@
                 <TextBlock Classes="icon" Text="&#xE8EE;" FontSize="16" />
               </ToggleButton>
               <!-- return to the play start on stop (#271; MainWindow.Transport.cs, PlaybackEngine.ReturnOnStop) -->
-              <ToggleButton x:Name="ReturnToggle" Classes="tbtn" ToolTip.Tip="{loc:T transport.return.tip}">
+              <ToggleButton x:Name="ReturnToggle" c:TransportPanel.Fold="8" Classes="tbtn" ToolTip.Tip="{loc:T transport.return.tip}">
                 <TextBlock Classes="icon" Text="&#xE7A7;" FontSize="15" />
               </ToggleButton>
             </StackPanel>
             <Border Classes="vsep" />
             <!-- metronome (Studio One style, asked by the user instead of the web's separate chips) -->
-            <StackPanel Classes="metro-cell" ToolTip.Tip="{loc:T transport.meter.tip}">
+            <StackPanel x:Name="MeterCell" Classes="metro-cell" c:TransportPanel.Fold="2" ToolTip.Tip="{loc:T transport.meter.tip}">
               <TextBlock Classes="mono metro-value" Text="4/4" />
               <TextBlock Classes="metro-label" Text="{loc:T transport.meter}" />
             </StackPanel>
@@ -559,7 +559,7 @@
                 <TextBlock Classes="metro-label" Text="{loc:T transport.click}" />
               </StackPanel>
             </ToggleButton>
-            <Button x:Name="ClickSoundButton" Classes="cell" Width="24" Padding="0" Margin="-4,0,0,0" ToolTip.Tip="{loc:T transport.click.sound.tip}">
+            <Button x:Name="ClickSoundButton" c:TransportPanel.Fold="1" Classes="cell" Width="24" Padding="0" Margin="-4,0,0,0" ToolTip.Tip="{loc:T transport.click.sound.tip}">
               <TextBlock Classes="icon" Text="&#xE70D;" FontSize="10" />
             </Button>
           </StackPanel>
@@ -567,7 +567,7 @@
 
         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
           <!-- the master's integrated loudness while it plays (native only); a click starts it over -->
-          <Button x:Name="LufsCell" Classes="cell" CornerRadius="6" MinWidth="56">
+          <Button x:Name="LufsCell" c:TransportPanel.Fold="7" Classes="cell" CornerRadius="6" MinWidth="56">
             <StackPanel>
               <TextBlock x:Name="LufsText" Classes="mono metro-value" Text="—" HorizontalAlignment="Center" />
               <TextBlock Classes="metro-label" Text="LUFS" HorizontalAlignment="Center" />
@@ -581,13 +581,13 @@
               <Button x:Name="MasteringViewButton" Classes="seg" Height="32" Padding="12,0" Content="{loc:T transport.view.mastering}" />
             </StackPanel>
           </Border>
-          <Button x:Name="MaxPanelButton" Classes="tbtn" Focusable="False">
+          <Button x:Name="MaxPanelButton" c:TransportPanel.Fold="5" Classes="tbtn" Focusable="False">
             <TextBlock x:Name="MaxPanelIcon" Classes="icon" Text="&#xE740;" FontSize="15" />
           </Button>
-          <ToggleButton x:Name="VirtualKeysButton" Classes="tbtn" Focusable="False">
+          <ToggleButton x:Name="VirtualKeysButton" c:TransportPanel.Fold="4" Classes="tbtn" Focusable="False">
             <TextBlock Classes="icon" Text="&#xE765;" FontSize="15" />
           </ToggleButton>
-          <Button x:Name="FitButton" Classes="tbtn" ToolTip.Tip="{loc:T transport.fit.tip}">
+          <Button x:Name="FitButton" c:TransportPanel.Fold="3" Classes="tbtn" ToolTip.Tip="{loc:T transport.fit.tip}">
             <TextBlock Classes="icon" Text="&#xE9A6;" FontSize="15" />
           </Button>
         </StackPanel>

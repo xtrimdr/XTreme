@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.9.25",
+      "items": [
+        {
+          "icon": "E790",
+          "title": "Transport bar in one row",
+          "text": "The bottom bar no longer wraps to two rows on small screens: the least used controls hide by themselves. **Right-click** the bar to choose what it shows."
+        },
+        {
+          "icon": "E895",
+          "title": "Steadier internet sessions",
+          "text": "If the host loses the internet for a few seconds, the **Live session** goes on: it reconnects by itself and nobody is left out. While the audio arrives you see how much is left."
+        }
+      ]
+    },
+    {
       "version": "0.9.24",
       "items": [
         {

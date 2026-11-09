@@ -434,7 +434,7 @@ la sesión todo suena. La exportación usa los plugins de esta PC, como siempre.
   que siguen sonando, con un fundido de 10 ms (`PlaybackEngine.CutAudio`, `LiveTrack.Silence`). Después del loop, **Volver al parar** (#271, `ReturnToggle`,
   `PlaybackEngine.ReturnOnStop`, en `config.json` "transport.returnOnStop", apagado de fábrica): prendido, parar con
   Espacio o ▶ vuelve el cabezal a donde arrancó la reproducción (o al último salto hecho tocando), que mientras suena marca una línea punteada del acento (`TimelineView.SetReturnMark`); ■ ya lo hacía
-  siempre. Queda **centrado en la ventana** mientras los costados entran al lado (`TransportPanel`): si no, se corre, y si los tres grupos no caben en una fila, la entrada y las vistas bajan a una segunda.
+  siempre. Queda **centrado en la ventana** mientras los costados entran al lado (`TransportPanel`): si no, se corre. **Nunca pasa a dos filas** (#36): si los tres grupos no caben, se esconden solos los controles con `TransportPanel.Fold`, el número más bajo primero (sonido del click, Compás, Ver todo, teclado virtual, Maximizar, Cortar audio, LUFS, Volver al parar, Monitor, la entrada, el afinador). Clic derecho en la barra elige cuáles mostrar (`MainWindow.TransportShow.cs`, `TransportPanel.Off`, en `config.json` "transport.hidden"); los apagados no vuelven con ningún ancho. Con el afinador escondido, su panel abre sobre la barra.
 - A la izquierda, pegados al recuadro: el medidor de entrada (del ancho del texto de abajo y con su escala en dB,
   `StereoMeter.ShowScale`) con "Entrada 1-2 · 48 kHz · 192 muestras (4,0 ms)" chiquito debajo (el driver va en el
   tooltip) y el botón **Monitor** (`ToggleButton.cell`, el monitoreo por software de Configuración). A la derecha, la vista:

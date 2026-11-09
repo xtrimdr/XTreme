@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.9.25",
+      "items": [
+        {
+          "icon": "E790",
+          "title": "Barra de transporte en una fila",
+          "text": "La barra de abajo ya no pasa a dos filas en pantallas chicas: lo menos usado se esconde solo. **Clic derecho** en la barra para elegir qué mostrar."
+        },
+        {
+          "icon": "E895",
+          "title": "Sesión por internet más firme",
+          "text": "Si el anfitrión pierde internet unos segundos, la **Sesión en vivo** sigue: se reconecta solo y nadie queda afuera. Mientras llega el audio se ve cuánto falta."
+        }
+      ]
+    },
+    {
       "version": "0.9.24",
       "items": [
         {

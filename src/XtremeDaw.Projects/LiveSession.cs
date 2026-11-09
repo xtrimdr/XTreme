@@ -117,6 +117,8 @@ public sealed class LiveSession : IDisposable
     readonly TcpListener? listener;
     /// <summary>The host's room on the relay, over the internet.</summary>
     RelayHost? relay;
+    /// <summary>The host's room on the relay, over the internet (null otherwise): whether it's coming back after a cut (#1).</summary>
+    public RelayHost? Relay => relay;
     /// <summary>A guest's way through the relay, over the internet.</summary>
     RelayStream? relayed;
     readonly Peer? host;
@@ -129,6 +131,8 @@ public sealed class LiveSession : IDisposable
     readonly Dictionary<string, Peer> authors = [];
     readonly Dictionary<string, List<(Peer Who, FileRequest Req)>> waiting = [];
     readonly HashSet<string> asked = [];
+    /// <summary>What came and the size of each file on its way, by <see cref="Key"/>; written by the network thread.</summary>
+    readonly ConcurrentDictionary<string, (long Got, long Total)> progress = new();
     /// <summary>Each person's color by name: the host's, kept after they leave so they get it back if they return; a guest's, as the host sent it.</summary>
     Dictionary<string, int> colors = [];
     /// <summary>Where the others are, by name; never this copy's own.</summary>
@@ -591,6 +595,20 @@ public sealed class LiveSession : IDisposable
     public int Downloading => asked.Count;
 
     /// <summary>
+    /// The bytes still to come of the files on their way (#1): each counts once its first piece came (that one says
+    /// the file's size); a file asked for that hasn't started isn't counted yet.
+    /// </summary>
+    public long DownloadLeft
+    {
+        get
+        {
+            long left = 0;
+            foreach (var (got, total) in progress.Values) left += Math.Max(0, total - got);
+            return left;
+        }
+    }
+
+    /// <summary>
     /// Sends this copy's changes since the last time: call it after edits (a guest's go to the host; the host's go to
     /// everybody with the next number). Nothing while there's no change; says whether something went.
     /// </summary>
@@ -653,8 +671,8 @@ public sealed class LiveSession : IDisposable
             if (item.Arrived != null) { arrived.Add(item.Arrived); continue; }
             if (item.Closed && item.From == null)
             {
-                EndReason ??= relay?.ClosedByAdmin == true ? AdminClosed()
-                    : Texts.T("live.relayLost", "Se cortó la conexión con el servidor de sesiones. Tu proyecto queda guardado.");
+                EndReason ??= LiveRelay.Reason(relay?.CloseCode)
+                    ?? Texts.T("live.relayLost", "Se cortó la conexión con el servidor de sesiones. Tu proyecto queda guardado.");
                 continue;
             }
             if (item.Closed)
@@ -719,6 +737,7 @@ public sealed class LiveSession : IDisposable
                     var miss = m.Body<FileRequest>();
                     string key = Key(miss.Media, miss.Kind);
                     asked.Remove(key);
+                    progress.TryRemove(key, out _);
                     if (IsHost && waiting.Remove(key, out var stuck))
                         foreach (var (who, req) in stuck) who.Send(LiveMessage.Of(LiveKind.Missing, req));
                     break;
@@ -881,8 +900,8 @@ public sealed class LiveSession : IDisposable
         peer.Link.Dispose();
         if (!IsHost)
         {
-            EndReason ??= relayed?.ClosedByAdmin == true ? AdminClosed()
-                : Texts.T("live.hostLeft", "El anfitrión cerró la sesión en vivo. Tu copia queda guardada.");
+            EndReason ??= LiveRelay.Reason(relayed?.CloseCode)
+                ?? Texts.T("live.hostLeft", "El anfitrión cerró la sesión en vivo. Tu copia queda guardada.");
             return true;
         }
         if (!peers.Remove(peer)) return false;
@@ -894,9 +913,6 @@ public sealed class LiveSession : IDisposable
         SendPeople();
         return true;
     }
-
-    static string AdminClosed() =>
-        Texts.T("live.adminClosed", "El servidor de sesiones cerró esta sesión. Tu copia queda guardada.");
 
     /// <summary>Sends a file this copy has; the host asks its author for one it lacks, and sends it on when it arrives.</summary>
     void Serve(Peer who, FileRequest req, Project project)
@@ -964,6 +980,8 @@ public sealed class LiveSession : IDisposable
                 if (m.Data != null) f.Write(m.Data);
                 if (c.Last) f.Flush(flushToDisk: true);
             }
+            if (c.Last) progress.TryRemove(Key(c.Media, c.Kind), out _);
+            else progress[Key(c.Media, c.Kind)] = (c.Offset + (m.Data?.Length ?? 0), c.Total);
             if (c.Last)
             {
                 File.Move(part, final);

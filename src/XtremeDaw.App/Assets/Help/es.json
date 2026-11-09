@@ -80,7 +80,7 @@
           "id": "window",
           "icon": "E80A",
           "title": "Conocer la ventana",
-          "keywords": "interfaz partes paneles inspector timeline transporte donde esta maximizar agrandar enter",
+          "keywords": "interfaz partes paneles inspector timeline transporte donde esta maximizar agrandar enter ocultar mostrar barra",
           "intro": "Qué hay en cada zona.",
           "steps": [
             "**Arriba**: modo del proyecto, nombre, guardar, deshacer, herramientas y **Exportar**.",
@@ -89,6 +89,7 @@
             "**Debajo de la vista previa**: el timeline, con las pistas y sus clips. {key:mixer} lo cambia por el mixer.",
             "**Derecha**: lo que es del proyecto: Color, Patrones, Biblioteca e Historial. Se pliega con {key:rightPanel}.",
             "**Abajo de todo**: reloj, reproducir, grabar, tempo, click, afinador y las vistas Timeline, Piano roll, Mixer y Mastering. Tocar de nuevo la vista activa vuelve al timeline. Sin video el timeline está siempre a la vista y su botón no se muestra.",
+            "La barra de abajo va siempre en una fila: si la ventana es angosta, lo menos usado se esconde solo. Clic derecho en la barra para elegir qué mostrar.",
             "**Maximizar**: {key:maximize} o {icon:E740} le da toda la ventana al panel que tocaste último (video, timeline, piano roll, mixer o mastering). Otra vez, vuelve todo como estaba."
           ],
           "see": ["look", "panel-windows", "shortcuts"]
