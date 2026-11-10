@@ -52,7 +52,6 @@ static class Program
                 "sistema" => SystemCommands.Run(a),
                 "version" => VersionCommands.Run(a),
                 "reporte" => IssueCommands.Run(a),
-                "lista" => TestListCommands.Run(a),
                 "atajos" => KeyLayoutCommands.Run(a),
                 "proyecto" => ProjectCommands.Run(a),
                 "midi" => MidiCommands.Run(a),
@@ -215,15 +214,6 @@ static class Program
               reporte enlace "título" [--texto t] [--idea]
                                            el enlace que abre "Enviar comentarios", sin abrir nada
               reporte comprobar            comprueba ese enlace: textos, codificación y largo
-              lista [ver | agregar "qué probar" | arreglado número [--texto t]] --archivo pruebas\lista.json [--copia nombre]
-                                           el Banco de pruebas de las copias de prueba (lo usa tools\probar.ps1)
-              lista pedir "qué cambiar" --tipo error|mejora|funcion|idea | tomar número | soltar número --archivo pruebas\lista.json
-                                           los pedidos del usuario: tomar uno lo reserva para esta sesión
-              lista ticket número | comentar número "qué decir" --archivo pruebas\lista.json
-                                           un ticket entero (su conversación), o decir algo en él sin cambiar su estado
-              lista historial [número] --archivo pruebas\lista.json
-                                           quién hizo qué y cuándo con un ítem (sin número, lo último de todos)
-              lista comprobar              comprueba la lista sobre un archivo temporal
               atajos comprobar             ninguna distribución de otro DAW repite una tecla
               colaborar comprobar [--internet]
                                            la edición en vivo entre copias (#291): diferencias, código de invitación y una

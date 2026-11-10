@@ -48,9 +48,11 @@ public sealed partial class NewsDialog : UserControl
     public bool HandleKey(KeyEventArgs e)
     {
         if (!IsVisible) return false;
-        // what asked for the focus while this opened (the components notice, below) gets no key
-        if (e.Key is Key.Tab or Key.Enter or Key.Space && e.Source is Visual v && this.IsVisualAncestorOf(v)) return false;
+        // what asked for the focus while this opened (the components notice, below) gets no key; its own buttons do,
+        // unhandled so they work, but kept from the window's shortcuts (Space would play)
+        if (e.Key is Key.Tab or Key.Enter or Key.Space && e.Source is Visual v && this.IsVisualAncestorOf(v)) return true;
         if (e.Key == Key.Escape) HideDialog();
+        else if (e.Key == Key.Enter) HideDialog();
         e.Handled = true;
         return true;
     }

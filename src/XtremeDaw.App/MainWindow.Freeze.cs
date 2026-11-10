@@ -125,6 +125,8 @@ public partial class MainWindow
         var (mix, _) = ExportDialog.BuildMix(st, tracks);
         double bpm = p.Settings.Bpm;
         string dir = st.Dir, name = track.Name;
+        // nothing locks the track while it renders: what it was is kept, to tell an edit made meanwhile
+        string rendered = System.Text.Json.JsonSerializer.Serialize(track, ProjectStore.Json);
         freezing = trackId;
         var toast = Toasts.ShowProgress(Loc.T("freeze.working", name));
         using var cts = new CancellationTokenSource();
@@ -158,7 +160,13 @@ public partial class MainWindow
             Toast(Loc.T("freeze.silent", name));
             return;
         }
-        if (store != st) return;
+        if (!await WaitEditable(st)) return;
+        // edited while it rendered: the render no longer is what the track plays, so it isn't frozen with it
+        if (st.Project.Tracks.Find(t => t.Id == trackId) is not { } now || System.Text.Json.JsonSerializer.Serialize(now, ProjectStore.Json) != rendered)
+        {
+            Toast(Loc.T("freeze.changed", name));
+            return;
+        }
         freshFreezes[freeze.File] = audio;
         await EditTimeline(q => { Freezing.Set(q, trackId, freeze); return trackId; }, "track-frozen");
     }

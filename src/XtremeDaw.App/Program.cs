@@ -8,12 +8,6 @@ static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // the Banco de pruebas is xtbench.exe now (Bench); older shortcuts and benches still start XTreme.exe --banco
-        if (Bench.In(args))
-        {
-            if (Bench.ListFrom(args) is { } list) Bench.Open(list, !Bench.Quiet(args));
-            return;
-        }
         // a .xtp opened from Windows while this XTreme is open goes to its window (ShellOpen)
         if (ShellOpen.ProjectArg(args) is { Length: > 0 } file && ShellOpen.Forward(file)) return;
         // The ASIO callback is managed code, so every blocking GC stalls it: keep full collections in the background.

@@ -43,6 +43,17 @@ public static class LiveKeys
         }
     }
 
+    /// <summary>
+    /// The engine's tracks after an edit: a track that is new gets its key, the rest stay plugged as they are (unlike
+    /// <see cref="Attach"/>, nothing is unplugged for a moment while it sounds).
+    /// </summary>
+    public static void Update(IReadOnlyList<LiveTrack> list)
+    {
+        tracks = list;
+        foreach (var t in list)
+            if (keys.TryGetValue(t.Track.Id, out var key) && t.Chain.KeyOut != key) Plug(t, key);
+    }
+
     static void Plug(LiveTrack t, SidechainKey key)
     {
         t.Chain.KeyOut = key;

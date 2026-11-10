@@ -25,10 +25,19 @@ public static class TempoFollow
     /// <summary>A stretch this close to 1 is the recording itself: going back to its tempo needs no render.</summary>
     const double Exact = 1e-6;
 
+    /// <summary>
+    /// A tempo the map can hold: every time in the project is multiplied by old/new, so one that isn't a number would
+    /// leave them all infinite or NaN, saved like that.
+    /// </summary>
+    static double Valid(double bpm) => double.IsFinite(bpm)
+        ? Math.Clamp(bpm, TempoMap.MinBpm, TempoMap.MaxBpm)
+        : throw new ArgumentException(XtremeDaw.Audio.Texts.T("err.tempo.number", "El tempo tiene que ser un número válido."));
+
     /// <summary>Puts the project at <paramref name="bpm"/> with everything on its bar: the whole map at that speed.</summary>
     public static void SetBpm(Project p, double bpm)
     {
         var s = p.Settings;
+        bpm = Valid(bpm);
         double k = bpm / s.Bpm, f = 1 / k;
         Rescale(p, f);
         s.TimeScale *= f;
@@ -41,6 +50,7 @@ public static class TempoFollow
     public static void SetGrid(Project p, double bpm)
     {
         var s = p.Settings;
+        bpm = Valid(bpm);
         double k = bpm / s.Bpm;
         Regrid(p, 1 / k);
         s.Bpm = bpm;
@@ -133,7 +143,8 @@ public static class TempoFollow
             {
                 double at = move(b.AtSec), end = move(b.AtSec + b.LengthSec);
                 if (b.LoopSec is { } loop) b.LoopSec = move(b.AtSec + loop) - at;
-                foreach (var point in b.Points) point.Sec = move(point.Sec);
+                // a point's time is relative to its block: it moves as the song time it sits at
+                foreach (var point in b.Points) point.Sec = move(b.AtSec + point.Sec) - at;
                 b.AtSec = at;
                 b.LengthSec = end - at;
             }
@@ -150,6 +161,7 @@ public static class TempoFollow
             {
                 b.AtSec *= f;
                 b.LengthSec *= f;
+                if (b.LoopSec is { } loop) b.LoopSec = loop * f;
                 foreach (var point in b.Points) point.Sec *= f;
             }
             lane.Touch();

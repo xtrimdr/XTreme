@@ -55,6 +55,8 @@ public sealed class ChorusInsert : ITrackInsert
 {
     const int Voices = 2;
     const double MaxDelayMs = 60, DepthMs = 10, VoiceSpacing = 1.33;
+    /// <summary>The shortest read, in samples: what the Hermite curve needs behind the write.</summary>
+    const double MinDelay = 2;
     /// <summary>Two voices that sum in phase would be 6 dB up: this keeps a steady tone near its own level.</summary>
     const float VoiceGain = 0.7071f;
 
@@ -119,8 +121,9 @@ public sealed class ChorusInsert : ITrackInsert
             {
                 double p = ph + v * 0.25;
                 double base0 = d * (v == 0 ? 1 : VoiceSpacing);
-                l += ModMath.Read(bufL, mask, w, base0 + c.Sweep * Math.Sin(2 * Math.PI * p));
-                r += ModMath.Read(bufR, mask, w, base0 + c.Sweep * Math.Sin(2 * Math.PI * (p + c.Offset)));
+                // never ahead of the write: a deep sweep on a short delay would read the ring's oldest audio and click
+                l += ModMath.Read(bufL, mask, w, Math.Max(MinDelay, base0 + c.Sweep * Math.Sin(2 * Math.PI * p)));
+                r += ModMath.Read(bufR, mask, w, Math.Max(MinDelay, base0 + c.Sweep * Math.Sin(2 * Math.PI * (p + c.Offset))));
             }
             left[i] = l * VoiceGain;
             right[i] = r * VoiceGain;

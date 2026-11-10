@@ -48,13 +48,15 @@ public sealed class ComponentList : StackPanel
             text.Children.Add(new TextBlock { Text = Loc.T($"component.{c.Id}.terms"), FontSize = 11, Foreground = Palette.Dim, TextWrapping = TextWrapping.Wrap });
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        ComboBox? pick = null;
+        SelectButton? pick = null;
         if (!c.Ready && !active && c.CanInstall && packages.Count > 1)
         {
-            pick = new ComboBox { MinWidth = 150 };
-            foreach (var p in packages) pick.Items.Add($"{Loc.T("component.package." + p.Id)} · {ComponentInstall.Size(p.Bytes)}");
-            pick.SelectedIndex = packages.Count - 1;
-            buttons.Children.Add(pick);
+            var select = new SelectButton { MinWidth = 150 };
+            select.SetItems([.. packages.Select(p => $"{Loc.T("component.package." + p.Id)} · {ComponentInstall.Size(p.Bytes)}")]);
+            select.SelectedIndex = packages.Count - 1;
+            // the list only reports the choice: the button shows it once it is set here
+            select.Selected += i => select.SelectedIndex = i;
+            buttons.Children.Add(pick = select);
         }
         if (!c.Ready && c.TermsPage is { } terms)
         {

@@ -755,7 +755,8 @@ public sealed class LiveSession : IDisposable
                 var m = item.Message!;
                 if (IsHost && m.Kind == LiveKind.Edit)
                 {
-                    var patch = m.Body<EditBody>().Patch;
+                    // only from someone let in (a refused peer's link is still open), and only a patch that is one
+                    if (!item.From!.Welcomed || m.Body<EditBody>()?.Patch is not { } patch) continue;
                     Publish(project);
                     added.AddRange(ApplyPatch(project, undo, patch, [], item.From!.Name));
                     foreach (var md in added)
@@ -834,7 +835,7 @@ public sealed class LiveSession : IDisposable
         }
         // its own changes go first, so the copy it gets matches the number
         Publish(project);
-        string name = hello.Name.Trim();
+        string name = (hello.Name ?? "").Trim();
         if (name.Length == 0) name = "?";
         while (people.Contains(name)) name += "'";
         peer.Name = name;
@@ -859,8 +860,9 @@ public sealed class LiveSession : IDisposable
         if (o["media"] is JsonArray media)
             foreach (var m in media.OfType<JsonObject>())
             {
-                m["audio"] = LiveState.Shared(m["audio"]?.GetValue<string>());
-                m["video"] = LiveState.Shared(m["video"]?.GetValue<string>());
+                string? id = m["id"]?.GetValue<string>();
+                m["audio"] = LiveState.Shared(m["audio"]?.GetValue<string>(), id);
+                m["video"] = LiveState.Shared(m["video"]?.GetValue<string>(), id);
                 m.Remove("audioBytes");
                 m.Remove("videoBytes");
             }
@@ -964,9 +966,15 @@ public sealed class LiveSession : IDisposable
     /// </summary>
     void ReceiveChunk(LiveMessage m)
     {
-        var c = m.Body<FileChunk>();
+        FileChunk? c;
+        // a broken piece is dropped: thrown from here it would end the read loop without closing the peer
+        try { c = m.Body<FileChunk>(); }
+        catch (JsonException) { return; }
+        if (c?.Name == null) return;
         string name = Path.GetFileName(c.Name);
         if (dir == null || name.Length == 0 || name != c.Name) return;
+        // media only: a recording journal pushed in here would be "recovered" on the next open
+        if (Path.GetExtension(name).ToLowerInvariant() is ".json" or ".notas") return;
         string media = Path.Combine(dir, ProjectStore.MediaDir);
         string final = Path.Combine(media, name), part = final + PartSuffix;
         try

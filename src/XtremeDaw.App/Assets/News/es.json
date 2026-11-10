@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.9.26",
+      "items": [
+        {
+          "icon": "E7C8",
+          "title": "Grabación más segura",
+          "text": "Un plugin o una pista que falla ya no le saca audio a lo que se está grabando. Grabar sobre un clip en bucle funciona, y **Guardar** un proyecto nuevo no pierde lo grabado mientras se copia."
+        },
+        {
+          "icon": "E90F",
+          "title": "Correcciones en todo el programa",
+          "text": "La automatización sigue bien los cambios de tempo, **Congelar** y **Separar en stems** no pierden su resultado, una edición que falla se deshace entera y pegar respeta las pistas bloqueadas."
+        },
+        {
+          "icon": "E72E",
+          "title": "Sesión en vivo más cuidada",
+          "text": "Dos archivos con el mismo nombre ya no se confunden entre participantes, y un mensaje dañado termina la sesión sin cerrar el programa."
+        }
+      ]
+    },
+    {
       "version": "0.9.25",
       "items": [
         {

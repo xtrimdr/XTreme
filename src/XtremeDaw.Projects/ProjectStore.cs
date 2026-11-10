@@ -320,7 +320,7 @@ public sealed class ProjectStore : IDisposable
         string path = Path.Combine(dir, name + ".json");
         for (int i = 2; File.Exists(path); i++) path = Path.Combine(dir, $"{name}_{i}.json");
         string tmp = path + ".tmp";
-        File.WriteAllText(tmp, json, Encoding.UTF8);
+        WriteFlushed(tmp, json);
         File.Move(tmp, path);
         lastSnapshotText = json;
         if (info != null)
@@ -413,7 +413,7 @@ public sealed class ProjectStore : IDisposable
         string dir = Path.Combine(Dir, HistoryDir);
         Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, VersionsFile), tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(all, Json), Encoding.UTF8);
+        WriteFlushed(tmp, JsonSerializer.Serialize(all, Json));
         Retry(() => File.Move(tmp, path, true));
     }
 
@@ -618,8 +618,20 @@ public sealed class ProjectStore : IDisposable
     public void BeginRecording(RecordingJournal j)
     {
         string path = JournalPath(Dir, j.MediaId);
-        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(j, Json), Encoding.UTF8);
+        WriteFlushed(path + ".tmp", JsonSerializer.Serialize(j, Json));
         File.Move(path + ".tmp", path, true);
+    }
+
+    /// <summary>
+    /// A small file written whole and forced to disk before it takes its name: renamed without that, a power cut can
+    /// leave the name on an empty file (a take's journal read as broken, and its take recovered without its place).
+    /// </summary>
+    static void WriteFlushed(string path, string text)
+    {
+        using var f = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        f.Write(Encoding.UTF8.GetPreamble());
+        f.Write(Encoding.UTF8.GetBytes(text));
+        f.Flush(true);
     }
 
     /// <summary>Call after the project with the new take is saved.</summary>
@@ -729,7 +741,7 @@ public sealed class ProjectStore : IDisposable
     public void BeginMidiTake(MidiTakeJournal j)
     {
         string path = MidiJournalPath(j.ClipId);
-        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(j, Json), Encoding.UTF8);
+        WriteFlushed(path + ".tmp", JsonSerializer.Serialize(j, Json));
         File.Move(path + ".tmp", path, true);
     }
 

@@ -209,7 +209,11 @@ static class LiveChecks
             Check("el anfitrión se entera de que entró (aviso y sonido)", hostJoined.SequenceEqual(["Ana"]));
             Check("se mide la latencia: el anfitrión la de cada invitado, el invitado la suya",
                 Until(() => host.LatencyOf("Ana") is > 0 && guest.LatencyOf(guest.Name) is > 0, PumpBoth) && host.LatencyOf("Martín") == null);
-            string got = Path.Combine(guestDir, "media", "toma1.wav");
+            // a shared file is named after its media, so two copies' "loop.wav" are never taken for the same file
+            string got = Path.Combine(guestDir, LiveState.Shared("media/toma1.wav", hp.Media[0].Id)!);
+            Check("dos archivos con el mismo nombre no se confunden", LiveState.Shared("media/loop.wav", "med_a") != LiveState.Shared("media/loop.wav", "med_b")
+                && LiveState.Shared(LiveState.Shared("media/loop.wav", "med_a"), "med_a") == LiveState.Shared("media/loop.wav", "med_a")
+                && LiveState.Shared("media/med_a.wav", "med_a") == "media/med_a.wav");
             Check("le llega el audio entero", Until(() => File.Exists(got), PumpBoth) && File.ReadAllBytes(got).AsSpan().SequenceEqual(audio));
 
             gp.Tracks[1].Channel.Volume = 0.3;
@@ -275,7 +279,7 @@ static class LiveChecks
             gp.Media.Add(m2);
             gp.Tracks[1].Clips.Add(new Clip { MediaId = m2.Id, AtSec = 4 });
             guest.Publish(gp);
-            string atHost = Path.Combine(hostDir, "media", "toma2.wav");
+            string atHost = Path.Combine(hostDir, LiveState.Shared("media/toma2.wav", m2.Id)!);
             Check("una toma nueva del invitado llega con su archivo al anfitrión",
                 Until(() => File.Exists(atHost) && hp.Tracks[1].Clips.Count == 1, PumpBoth)
                 && File.ReadAllBytes(atHost).AsSpan().SequenceEqual(take) && hp.Media.Any(m => m.Id == m2.Id));
@@ -294,7 +298,7 @@ static class LiveChecks
                 var tp = ProjectStore.Parse(w3.Project);
                 third.Start(tp, thirdDir);
                 Check("un tercero entra con otro nombre y recibe todo",
-                    Until(() => File.Exists(Path.Combine(thirdDir, "media", "toma2.wav")) && File.Exists(Path.Combine(thirdDir, "media", "toma1.wav")),
+                    Until(() => File.Exists(Path.Combine(thirdDir, LiveState.Shared("media/toma2.wav", m2.Id)!)) && File.Exists(Path.Combine(thirdDir, LiveState.Shared("media/toma1.wav", hp.Media[0].Id)!)),
                         () => { PumpBoth(); third.Pump(tp, null, true); })
                     && third.People.Contains("Ana'"));
                 Check("el tercero recibe quién trajo cada toma", tp.Media.Find(m => m.Id == m2.Id)?.AddedBy == "Ana");
@@ -350,7 +354,7 @@ static class LiveChecks
         hp.Media.Add(new Media { Name = "corte", Audio = "media/corte.wav", DurationSec = 5 });
         hp.Tracks[2].Clips.Add(new Clip { MediaId = hp.Media[^1].Id, AtSec = 4 });
         host.Publish(hp);
-        string got = Path.Combine(guestDir, "media", "corte.wav");
+        string got = Path.Combine(guestDir, LiveState.Shared("media/corte.wav", hp.Media[^1].Id)!);
         Until(() => guest.Downloading > 0 || File.Exists(got), pumpBoth);
         host.Relay!.Cut();
         hp.Tracks[0].Name = "Durante el corte (anfitrión)";

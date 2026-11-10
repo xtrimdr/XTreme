@@ -13,8 +13,9 @@ lib/
 # Manuales de otros programas, para consulta local
 referencia/
 
-# Archivos tomados por cada sesión de Claude (tools/bloqueos.ps1)
-.claude/bloqueos/
 .workbench/*
 !.workbench/config.json
 .claude/settings.local.json
+
+# Código viejo guardado aparte (el Banco de pruebas, #37)
+archivo/

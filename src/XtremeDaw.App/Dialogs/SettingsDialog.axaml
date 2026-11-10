@@ -11,7 +11,7 @@
       <Setter Property="Height" Value="36" />
       <Setter Property="Padding" Value="10,0" />
       <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontSize" Value="12.5" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -59,8 +59,8 @@
           <StackPanel Spacing="2">
             <!-- searches every page (#302): SettingsDialog.Search.cs -->
             <Panel Margin="0,0,0,6">
-              <TextBox x:Name="SearchBox" Classes="field" Height="34" FontSize="13" Watermark="{loc:T settings.search}" AutomationProperties.Name="{loc:T settings.search}" Padding="30,0,28,0" />
-              <TextBlock Classes="icon" Text="&#xE721;" FontSize="12" Foreground="{StaticResource Faint}" Margin="10,0,0,0"
+              <TextBox x:Name="SearchBox" Classes="field" Watermark="{loc:T settings.search}" AutomationProperties.Name="{loc:T settings.search}" Padding="32,0,28,0" />
+              <TextBlock Classes="icon" Text="&#xE721;" FontSize="13" Foreground="{StaticResource Faint}" Margin="11,0,0,0"
                          HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" />
               <Button x:Name="SearchClear" Classes="act" Cursor="Arrow" IsVisible="False" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,3,0"
                       ToolTip.Tip="{loc:T settings.search.clear}" AutomationProperties.Name="{loc:T settings.search.clear}">

@@ -532,6 +532,27 @@ public partial class MainWindow : Window
     /// <summary>Opens a project in place of the current one (throws, so the manager can show why not).</summary>
     async Task OpenProject(string dir, bool preserveUndo = false)
     {
+        // one at a time: two opens that overlap (two .xtp from Explorer) would leave one project's tracks on screen
+        // under the other's store. The second waits for the first and then takes its place
+        var before = opening;
+        var done = new TaskCompletionSource();
+        opening = done.Task;
+        try
+        {
+            await before;
+            await OpenProjectNow(dir, preserveUndo);
+        }
+        finally
+        {
+            done.SetResult();
+        }
+    }
+
+    /// <summary>The open in course, if any (never fails: it only tells when it ended).</summary>
+    Task opening = Task.CompletedTask;
+
+    async Task OpenProjectNow(string dir, bool preserveUndo)
+    {
         LiveBeforeOpen();
         await FlushProjectOperation();
         if (PluginStatesDue && store is { ReadOnly: false }) await SavePluginStates();
@@ -807,8 +828,10 @@ public partial class MainWindow : Window
                 SetChordTool(!pianoRoll.ChordTool);
                 break;
             case "quantize":
+                // handled before the await, or the key also reaches the focused control
+                e.Handled = true;
                 await Quantize();
-                break;
+                return;
             case "renameClip":
                 e.Handled = true;
                 RenameShortcut();
@@ -1023,6 +1046,7 @@ public partial class MainWindow : Window
         InputMeter.Push(m.InL, m.InR);
         Live.Meter.Push(m.InL, m.InR);
         TickCamera();
+        TickAudioError();
         TickAudioDriver();
         TickTopBar();
         TickInspectorSpectrum();

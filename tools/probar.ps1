@@ -1,31 +1,15 @@
 ﻿# The one way to try a change: builds the solution, runs xtlab's DSP checks, copies the app to its own folder
 # and opens that copy. The app never runs from bin\, so an open XTreme never blocks the next build, and every
 # copy carries a prueba.txt mark (commit, uncommitted changes, time) that the app shows in its title bar.
-#   tools\probar.ps1 "qué probar"            -> build, check, copy, add that to the list to try and open
-#   tools\probar.ps1 "qué probar" -Proyecto D:\...\MiTema   -> same, opening that project directly
-#   tools\probar.ps1 -Abrir                  -> open the newest finished copy without building
-#   tools\probar.ps1 -Abrir -Acceso          -> same, from the desktop shortcut: it has no console, so a failure shows a window
-#   tools\probar.ps1 -Abrir -Probar 12       -> same, showing ticket 12's toast (what to try): the bench's Probar
-#   tools\probar.ps1 -Banco                  -> XT-WorkBench, the Banco de pruebas (xtbench.exe, from pruebas\banco\); an open one comes
-#                                               forward, or, if it's older than the newest build, closes and the newest opens
-#   -Tema banco (or -Arregla on Banco tickets) -> a change to the Banco alone (asked by the user, 2026-11-05): builds only
-#                                               xtbench, puts it in pruebas\banco\ and ties the ticket to it; no XTreme copy
-#   tools\probar.ps1 -SinComprobar           -> skip xtlab comprobar-dsp (UI-only changes in a hurry)
-#   tools\probar.ps1 -NoAbrir "qué probar"   -> build, check, copy and add to the list (what the agent runs after each change)
-#   tools\probar.ps1 -NoAbrir -Arregla 12    -> same, for a fix: item 12 goes back to be tried on this copy
-#   tools\probar.ps1 -NoAbrir -Arregla 12,14 -> several fixes on one build and one copy
-#   tools\probar.ps1 -Lista                  -> the user's requests, what is left to try and what the user marked as failing
-#   tools\probar.ps1 -Toma 12,14             -> takes those items for this session (exit 2 if another one has any of them)
-#   tools\probar.ps1 -Suelta 12,14           -> gives them back without doing them
-#   tools\probar.ps1 -Pide "qué" -Tipo error -> a request that came by chat goes on the list too (error|mejora|funcion|idea)
-#   -Tema mixer                              -> with -Pide, "qué probar" or -Arregla: the ticket's topic (the list: xtlab lista temas)
-#   tools\probar.ps1 -Clasifica 12,14 -Tema mixer -> gives those tickets that topic (-Tema ninguno takes it off)
-#   tools\probar.ps1 -Clasifica 12 -Tipo mejora -> gives that request its kind (the bench doesn't ask for it: the agent that takes it does)
-#   tools\probar.ps1 -Historial 12           -> who did what to item 12 and when (-Historial 0: the latest changes of all)
-#   tools\probar.ps1 -Ticket 12              -> ticket 12 whole: its subject, state and conversation
-#   tools\probar.ps1 -Comenta 12 "texto"     -> says something in ticket 12 without changing its state (a question, where it went)
-#   tools\probar.ps1 -Titula 12 "título"     -> gives ticket 12 its short title (the agent names every ticket it takes)
-#   tools\probar.ps1 -SoloCompilar           -> build only, in its turn and below normal priority
+# The tickets live in ClaudeWorkBench (wb); this script only builds, checks, copies and opens.
+#   tools\probar.ps1                        -> build, check, copy and open
+#   tools\probar.ps1 -Proyecto D:\...\MiTema -> same, opening that project directly
+#   tools\probar.ps1 -NoAbrir               -> build, check and copy, without opening
+#   tools\probar.ps1 -Abrir                 -> open the newest finished copy without building
+#   tools\probar.ps1 -Abrir -Acceso         -> same, from the desktop shortcut: it has no console, so a failure shows a window
+#   tools\probar.ps1 -Abrir -Probar 12      -> same, from ClaudeWorkBench's Probar (the ticket number is only logged)
+#   tools\probar.ps1 -SinComprobar          -> skip xtlab comprobar-dsp (UI-only changes in a hurry)
+#   tools\probar.ps1 -SoloCompilar          -> build only, in its turn and below normal priority
 # Several sessions share this folder, so building, checking and copying go one at a time: the script holds the turn that
 # xtlab (HeavyTurn.cs) and dotnet build (turno.targets) also take until the copy is done, and runs below normal priority
 # so the machine stays usable.
@@ -35,29 +19,15 @@
 # Exit codes: 0 opened (or built, with -NoAbrir), 1 it failed, 2 the user cancelled, 3 nobody answered the question,
 # 4 another session kept the turn for too long.
 param(
+    # what to try: only shown (the ticket in ClaudeWorkBench says it)
     [Parameter(Position = 0)][string]$Que = '',
     [string]$Proyecto = '',
     [switch]$Abrir,
-    [switch]$Banco,
     [switch]$Acceso,
     [int]$Probar = 0,
     [switch]$SinComprobar,
     [switch]$NoAbrir,
-    [switch]$SoloCompilar,
-    [int[]]$Arregla = @(),
-    [int[]]$Toma = @(),
-    [int[]]$Suelta = @(),
-    [string]$Pide = '',
-    [ValidateSet('error', 'mejora', 'funcion', 'idea', 'ninguno')][string]$Tipo = 'error',
-    # TestListCommands.TopicNames
-    [ValidateSet('', 'timeline', 'mixer', 'inspector', 'pianoroll', 'instrumentos', 'efectos', 'mastering', 'automatizacion', 'plugins',
-        'audio', 'video', 'exportar', 'analisis', 'proyecto', 'interfaz', 'banco', 'ninguno')][string]$Tema = '',
-    [int[]]$Clasifica = @(),
-    [switch]$Lista,
-    [int]$Historial = -1,
-    [int]$Ticket = 0,
-    [int]$Comenta = 0,
-    [int]$Titula = 0
+    [switch]$SoloCompilar
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -65,14 +35,7 @@ $bin = Join-Path $root 'src\XtremeDaw.App\bin\Debug\net10.0-windows'
 # Not under AppData: run from an MSIX-packaged tool (the Claude desktop app), Windows redirects AppData writes into
 # the package's own LocalCache and the desktop shortcut would never find the copies
 $copies = Join-Path $root 'pruebas'
-# The list of changes to try: it stays here so it outlives the copies (TestList.cs)
-$listFile = Join-Path $copies 'lista.json'
 $xtlab = Join-Path $root 'src\XtremeDaw.Lab\bin\Debug\net10.0-windows\xtlab.exe'
-# XT-WorkBench is a program of its own (#142): its builds live apart from the copies, one folder per build that changed,
-# so neither a build nor the copies' clean-up ever closes an open one
-$benchBin = Join-Path $root 'src\XtremeDaw.Bench\bin\Debug\net10.0-windows'
-$benches = Join-Path $copies 'banco'
-$BenchKeep = 3
 # How many copies stay around; older ones are deleted (unless one is still open)
 $Keep = 5
 
@@ -115,12 +78,9 @@ $TurnWaitSec = 540
 # The app's process, and its name before the rename (a test copy from then may still be open)
 $AppProcesses = 'XTreme'
 
-# The open XTremes, leaving out a Banco de pruebas from before #142 (XTreme.exe --banco; now it is xtbench.exe): it
-# saves nothing, holds no audio interface and lives on its own, so opening a copy never asks to close it
+# The open XTremes
 function AppRunning {
-    $bench = @(Get-CimInstance Win32_Process -Filter "Name = 'XTreme.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -match '(^|\s)--banco(\s|$)' } | ForEach-Object { $_.ProcessId })
-    @(Get-Process $AppProcesses -ErrorAction SilentlyContinue | Where-Object { $bench -notcontains $_.Id })
+    @(Get-Process $AppProcesses -ErrorAction SilentlyContinue)
 }
 
 # Closes one XTreme through its window, so the project is saved and a take in progress is kept. The window may stay
@@ -229,25 +189,6 @@ function TakeTurn {
     }
 }
 
-# Puts what to try on the list, tied to that copy. It never stops a test: the copy is already made.
-function AddToList([string]$copy) {
-    if (-not $Que -and -not $Arregla.Count) { return }
-    # through the environment: Windows PowerShell breaks quotes inside an argument
-    $env:XTREME_PROBAR_TEXTO = if ($Que) { $Que } else { $null }
-    if ($Arregla.Count) {
-        foreach ($n in $Arregla) {
-            & $xtlab lista arreglado $n --archivo $listFile --copia $copy
-            if ($LASTEXITCODE -ne 0) { Write-Host "No se pudo volver a anotar el $n en la lista de pruebas." -ForegroundColor Yellow }
-            elseif ($Tema) { & $xtlab lista tema $n $Tema --archivo $listFile | Out-Null }
-        }
-    } else {
-        $topic = if ($Tema -and $Tema -ne 'ninguno') { @('--tema', $Tema) } else { @() }
-        & $xtlab lista agregar --archivo $listFile --copia $copy @topic
-        if ($LASTEXITCODE -ne 0) { Write-Host 'No se pudo anotar en la lista de pruebas.' -ForegroundColor Yellow }
-    }
-    $env:XTREME_PROBAR_TEXTO = $null
-}
-
 function Launch([string]$dir) {
     $running = AppRunning
     foreach ($p in $running) { if ($p.MainWindowHandle -eq 0) { CloseApp $p } }
@@ -264,9 +205,8 @@ function Launch([string]$dir) {
     }
     $a = @()
     if ($Proyecto) { $a += $Proyecto }
-    if ($Probar -gt 0) { $a += '--probar'; $a += [string]$Probar }
     $exe = Join-Path $dir 'XTreme.exe'
-    SessionLog "probar.ps1 abre $exe"
+    SessionLog "probar.ps1 abre $exe$(if ($Probar -gt 0) { " (Probar #$Probar)" })"
     # Opened through Explorer, so it runs as the user's own app even when this script runs inside a packaged tool
     # (otherwise it would read and write a redirected copy of %APPDATA%\XTreme, not the user's settings)
     $lnk = Join-Path $dir 'abrir.lnk'
@@ -294,81 +234,6 @@ function Launch([string]$dir) {
     Write-Host "Abierto: $exe" -ForegroundColor Green
 }
 
-if ($Toma.Count -or $Suelta.Count -or $Pide -or $Clasifica.Count) {
-    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    if ($Clasifica.Count) {
-        $kind = $PSBoundParameters.ContainsKey('Tipo')
-        if (-not $Tema -and -not $kind) { Fail 'falta el tema o el tipo: tools\probar.ps1 -Clasifica 12 -Tema mixer -Tipo mejora (los temas: xtlab lista temas)' }
-        $worst = 0
-        foreach ($n in $Clasifica) {
-            if ($Tema) { & $xtlab lista tema $n $Tema --archivo $listFile; if ($LASTEXITCODE -gt $worst) { $worst = $LASTEXITCODE } }
-            if ($kind) { & $xtlab lista tipo $n $Tipo --archivo $listFile; if ($LASTEXITCODE -gt $worst) { $worst = $LASTEXITCODE } }
-        }
-        exit $worst
-    }
-    if ($Pide) {
-        if ($Tipo -eq 'ninguno') { Fail 'un pedido anotado por un agente lleva su tipo: -Tipo error|mejora|funcion|idea' }
-        # through the environment: Windows PowerShell breaks quotes inside an argument
-        $env:XTREME_PROBAR_TEXTO = $Pide
-        $topic = if ($Tema -and $Tema -ne 'ninguno') { @('--tema', $Tema) } else { @() }
-        & $xtlab lista pedir --tipo $Tipo --archivo $listFile @topic
-        $code = $LASTEXITCODE
-        $env:XTREME_PROBAR_TEXTO = $null
-        exit $code
-    }
-    # one at a time, all of them: one held by another session doesn't stop the rest; the worst code wins
-    $worst = 0
-    foreach ($n in $Toma) { & $xtlab lista tomar $n --archivo $listFile; if ($LASTEXITCODE -gt $worst) { $worst = $LASTEXITCODE } }
-    foreach ($n in $Suelta) { & $xtlab lista soltar $n --archivo $listFile; if ($LASTEXITCODE -gt $worst) { $worst = $LASTEXITCODE } }
-    exit $worst
-}
-
-if ($Lista) {
-    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    & $xtlab lista ver --archivo $listFile
-    exit $LASTEXITCODE
-}
-
-if ($Ticket -gt 0) {
-    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    & $xtlab lista ticket $Ticket --archivo $listFile
-    exit $LASTEXITCODE
-}
-
-if ($Comenta -gt 0) {
-    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
-    if (-not $Que) { Fail 'falta qué decir: tools\probar.ps1 -Comenta 12 "texto"' }
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    # through the environment: Windows PowerShell breaks quotes inside an argument
-    $env:XTREME_PROBAR_TEXTO = $Que
-    & $xtlab lista comentar $Comenta --archivo $listFile
-    $code = $LASTEXITCODE
-    $env:XTREME_PROBAR_TEXTO = $null
-    exit $code
-}
-
-if ($Titula -gt 0) {
-    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
-    if (-not $Que) { Fail 'falta el título: tools\probar.ps1 -Titula 12 "título"' }
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    # through the environment: Windows PowerShell breaks quotes inside an argument
-    $env:XTREME_PROBAR_TEXTO = $Que
-    & $xtlab lista titulo $Titula --archivo $listFile
-    $code = $LASTEXITCODE
-    $env:XTREME_PROBAR_TEXTO = $null
-    exit $code
-}
-
-if ($Historial -ge 0) {
-    if (-not (Test-Path $xtlab)) { Fail 'falta xtlab: compilá una vez.' }
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    if ($Historial -gt 0) { & $xtlab lista historial $Historial --archivo $listFile } else { & $xtlab lista historial --archivo $listFile }
-    exit $LASTEXITCODE
-}
-
 # prueba.txt is written last: a folder without it is a copy still being made (or one that died halfway)
 function NewestCopy {
     Get-ChildItem $copies -Directory -ErrorAction SilentlyContinue |
@@ -376,110 +241,9 @@ function NewestCopy {
         Sort-Object Name -Descending | Select-Object -First 1
 }
 
-# firma.txt is written last: a folder without it is a bench still being copied
-function NewestBench {
-    Get-ChildItem $benches -Directory -ErrorAction SilentlyContinue |
-        Where-Object { (Test-Path (Join-Path $_.FullName 'firma.txt')) -and (Test-Path (Join-Path $_.FullName 'xtbench.exe')) } |
-        Sort-Object Name -Descending | Select-Object -First 1
-}
-
-# What the bench's build is: every file's hash. The build is deterministic, so it only changes with its code (the
-# window, its styles and texts, Projects).
-function BenchSignature([string]$dir) {
-    $lines = Get-ChildItem $dir -Recurse -File | Sort-Object FullName | ForEach-Object {
-        "$($_.FullName.Substring($dir.Length)) $((Get-FileHash $_.FullName -Algorithm SHA256).Hash)"
-    }
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    try { return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '') } finally { $sha.Dispose() }
-}
-
-# Puts the bench's build in a folder of its own, only if it changed. The open bench is never touched: it keeps its
-# folder until it closes, and the next start takes the newest.
-function DeployBench([string]$stamp) {
-    if (-not (Test-Path (Join-Path $benchBin 'xtbench.exe'))) {
-        Write-Host 'Falta xtbench.exe: XT-WorkBench no se actualizó.' -ForegroundColor Yellow
-        return
-    }
-    $sign = BenchSignature $benchBin
-    $last = NewestBench
-    if ($last -and ((Get-Content (Join-Path $last.FullName 'firma.txt') -Raw).Trim() -eq $sign)) { return }
-    $dest = Join-Path $benches $stamp
-    New-Item -ItemType Directory -Force $dest | Out-Null
-    Get-ChildItem $benchBin | Copy-Item -Destination $dest -Recurse -Force
-    Set-Content -Path (Join-Path $dest 'firma.txt') -Value $sign -Encoding ascii
-    Write-Host "XT-WorkBench nuevo: $dest (Probar en un ticket del Banco lo abre)" -ForegroundColor DarkGray
-    Get-ChildItem $benches -Directory | Sort-Object Name -Descending | Select-Object -Skip $BenchKeep | ForEach-Object {
-        try { Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop } catch { } # still open: next time
-    }
-}
-
-# The open xtbench processes, with the folder (build) each runs from
-function BenchesRunning {
-    @(Get-Process xtbench -ErrorAction SilentlyContinue | Where-Object { $_.Path })
-}
-
-# Opens the newest bench. One already open from an older build closes first (it keeps nothing: the list is on disk), so a
-# change to the bench is tried in the bench, not after the next start; one open from the newest comes forward (Bench.cs).
-function LaunchBench {
-    $last = NewestBench
-    if (-not $last) { Fail 'XT-WorkBench todavía no está armado. Corré tools\probar.ps1 una vez.' }
-    foreach ($p in BenchesRunning) {
-        if ((Split-Path -Leaf (Split-Path -Parent $p.Path)) -ge $last.Name) { continue }
-        SessionLog "probar.ps1 cierra el Banco viejo (pid $($p.Id)) para abrir $($last.Name)"
-        $p.Refresh()
-        if ($p.MainWindowHandle -ne 0) { [void]$p.CloseMainWindow() }
-        if (-not $p.WaitForExit(10000)) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; [void]$p.WaitForExit(5000) }
-    }
-    # through Explorer, like Launch: run from a packaged tool it would read a redirected %APPDATA%
-    $lnk = Join-Path $last.FullName 'banco.lnk'
-    $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-    $s.TargetPath = Join-Path $last.FullName 'xtbench.exe'
-    $s.WorkingDirectory = $last.FullName
-    $s.Arguments = "--lista `"$listFile`""
-    $s.Save()
-    explorer.exe $lnk
-    Write-Host "XT-WorkBench: $($last.Name)" -ForegroundColor Green
-}
-
-if ($Banco) {
-    LaunchBench
-    exit 0
-}
-
-# A change to the Banco alone: said with -Tema banco, or every ticket in -Arregla is a Banco one (read only: the list
-# is written by TestList alone)
-$benchOnly = $Tema -eq 'banco'
-if (-not $benchOnly -and $Arregla.Count -and (Test-Path $listFile)) {
-    try {
-        $items = @((Get-Content $listFile -Raw -Encoding UTF8 | ConvertFrom-Json).items)
-        $benchOnly = @($Arregla | Where-Object { $n = $_; -not ($items | Where-Object { $_.id -eq $n -and $_.topic -eq 'bench' }) }).Count -eq 0
-    } catch { $benchOnly = $false }
-}
-if ($benchOnly -and -not $Abrir -and -not $SoloCompilar) {
-    $turn = TakeTurn
-    $env:XTREME_TURNO = '1'
-    (Get-Process -Id $PID).PriorityClass = 'BelowNormal'
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    # xtlab too: the Banco's topic also covers it (and the tickets go through it)
-    Write-Host 'Compilando el Banco y xtlab (sin XTreme: el cambio es del Banco)...' -ForegroundColor Cyan
-    foreach ($proj in 'src\XtremeDaw.Bench\XtremeDaw.Bench.csproj', 'src\XtremeDaw.Lab\XtremeDaw.Lab.csproj') {
-        dotnet build (Join-Path $root $proj) -c Debug -nologo -v:minimal -clp:ErrorsOnly
-        if ($LASTEXITCODE -ne 0) { Fail 'la compilación falló (arriba están los errores).' }
-    }
-    DeployBench $stamp
-    $last = NewestBench
-    if (-not $last) { Fail 'no quedó ningún XT-WorkBench armado.' }
-    AddToList $last.Name
-    $turn.Dispose()
-    if (-not $NoAbrir) { LaunchBench }
-    exit 0
-}
-
 if ($Abrir) {
     $last = NewestCopy
     if (-not $last) { Fail 'todavía no hay ninguna copia de prueba. Corré tools\probar.ps1 una vez.' }
-    if (Test-Path $xtlab) { AddToList $last.Name }
     Launch $last.FullName
     exit 0
 }
@@ -532,9 +296,8 @@ Get-ChildItem $copies -Directory | Where-Object { Test-Path (Join-Path $_.FullNa
 }
 
 Write-Host "Copia: $dest" -ForegroundColor DarkGray
-DeployBench $stamp
 # Every copy leaves the desktop shortcut right, even if this folder moved: that is how the old one ended up pointing nowhere
 try { [void](& (Join-Path $PSScriptRoot 'make-shortcut.ps1')) } catch { Write-Host "No se pudo actualizar el acceso directo: $_" -ForegroundColor Yellow }
-AddToList (Split-Path -Leaf $dest)
+if ($Que) { Write-Host "Para probar: $Que" -ForegroundColor DarkGray }
 $turn.Dispose()
 if (-not $NoAbrir) { Launch $dest }

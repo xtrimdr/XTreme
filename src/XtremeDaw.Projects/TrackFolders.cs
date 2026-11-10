@@ -214,7 +214,12 @@ public static class TrackFolders
     public static void Remove(Project p, string folderId, bool withTracks = false)
     {
         if (withTracks)
-            foreach (var id in p.Tracks.Where(t => t.FolderId == folderId).Select(t => t.Id).ToList()) ClipEditing.RemoveTrack(p, id);
+        {
+            var inside = p.Tracks.Where(t => t.FolderId == folderId).ToList();
+            // a locked one refuses before any other goes: all of them or none
+            if (inside.Find(ClipEditing.HasLock) is { } locked) ClipEditing.RemoveTrack(p, locked.Id);
+            foreach (var t in inside) ClipEditing.RemoveTrack(p, t.Id);
+        }
         var seq = Sequence(p);
         foreach (var t in p.Tracks) if (t.FolderId == folderId) t.FolderId = null;
         seq.RemoveAll(x => x is Folder f && f.Id == folderId);

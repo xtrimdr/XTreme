@@ -24,7 +24,7 @@
                 held.Write(text, 0, text.Length);
                 held.Flush();
                 BuildEngine4.RegisterTaskObject("XTreme.Turno", held, RegisteredTaskObjectLifetime.Build, false);
-                return true;
+                break; // the task factory adds the return after this fragment: returning here leaves it unreachable (CS0162)
             }
             catch (IOException)
             {

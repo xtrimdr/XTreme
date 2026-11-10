@@ -244,7 +244,7 @@ public partial class MainWindow
         string glyph = s.Name != null ? "" : s.Export != null ? "" : s.Before != null ? "" : "";
         grid.Children.Add(HistoryIcon(glyph, 12, s.Name != null ? Palette.Accent : Palette.Faint));
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock { Text = VersionTitle(s), FontSize = 13, Foreground = s.Kept ? Palette.Fg : Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis });
+        text.Children.Add(new TextBlock { Text = VersionTitle(s), FontSize = 12.5, Foreground = s.Kept ? Palette.Fg : Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock { Classes = { "mono" }, FontSize = 10, Foreground = Palette.Faint, Text = VersionTime(s.Time) });
         ToolTip.SetTip(text, s.Time.ToString("dd/MM/yyyy HH:mm:ss"));
         Grid.SetColumn(text, 1); grid.Children.Add(text);

@@ -236,7 +236,8 @@ public sealed partial class StemsDialog : UserControl
         if (!IsVisible) return false;
         if (e.Key == Key.Escape) Answer(null);
         else if (e.Key is Key.Enter && SeparateButton.IsEnabled) Go();
-        else if (e.Key is Key.Tab or Key.Space) return false;
+        // Tab moves the focus and Space presses the focused button: kept from the window's shortcuts (Space would play)
+        else if (e.Key is Key.Tab or Key.Space) return true;
         e.Handled = true;
         return true;
     }

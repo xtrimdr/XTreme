@@ -95,7 +95,7 @@ public sealed partial class SettingsDialog
         ToolTip.SetTip(light, Loc.T("set.midi.light.tip"));
         var alias = new TextBox
         {
-            Classes = { "field" }, Height = 30, FontSize = 13, Text = s.Alias ?? "", Watermark = port.Device.Name,
+            Classes = { "field" }, Height = 30, FontSize = 12.5, Text = s.Alias ?? "", Watermark = port.Device.Name,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         ToolTip.SetTip(alias, Loc.T("set.midi.alias.tip"));
@@ -216,7 +216,7 @@ public sealed partial class SettingsDialog
     /// <summary>A device that isn't plugged in: its name, "desconectado", and a button to forget it.</summary>
     Control MidiGoneRow(MidiInputSettings s)
     {
-        var name = new TextBlock { Text = s.Shown, FontSize = 13, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        var name = new TextBlock { Text = s.Shown, FontSize = 12.5, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         right.Children.Add(new TextBlock { Text = Loc.T("set.midi.unplugged"), FontSize = 11, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center });
         right.Children.Add(Act("", Loc.T("set.midi.forget"), () => MidiSetup.Forget(s.Name)));

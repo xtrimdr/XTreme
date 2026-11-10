@@ -101,11 +101,14 @@ public sealed class PreviewView : Control
         e.Handled = true;
     }
 
+    // made once: a cursor per pointer move is garbage while the audio runs
+    static readonly Cursor HandCursor = new(StandardCursorType.Hand), ArrowCursor = new(StandardCursorType.Arrow);
+
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
         var p = e.GetPosition(this);
-        Cursor = new Cursor(Hit(p) != null ? StandardCursorType.Hand : StandardCursorType.Arrow);
+        Cursor = Hit(p) != null ? HandCursor : ArrowCursor;
         if (dragged == null) return;
         var (x, y) = InspectorEditing.Pan(panX, panY, p.X - down.X, p.Y - down.Y);
         FramingRequested?.Invoke(dragged, null, x, y);
@@ -181,15 +184,13 @@ public sealed class PreviewView : Control
         }
     }
 
-    static readonly Typeface MonoBold = new("Cascadia Mono, Consolas", FontStyle.Normal, FontWeight.SemiBold);
-
     /// <summary>SplitScreenCanvas.tsx's countdown overlay: black at 60 % over the stage, the beat at 120 px and four dots.</summary>
     void DrawCountdown(DrawingContext ctx, int beat)
     {
         var b = Bounds;
-        ctx.FillRectangle(new SolidColorBrush(Color.FromArgb(153, 0, 0, 0)), new Rect(0, 0, b.Width, b.Height));
+        ctx.FillRectangle(Palette.Alpha(Colors.Black, 0.6), new Rect(0, 0, b.Width, b.Height));
         const double size = 120, gap = 12, dot = 10, dotGap = 8;
-        var num = Palette.Text(beat.ToString(), size, Palette.Fg, MonoBold);
+        var num = Palette.Text(beat.ToString(), size, Palette.Fg, Palette.MonoBold);
         double top = (b.Height - size - gap - dot) / 2;
         // leading-none: the digit's box is the font size, centered in the text's line height
         ctx.DrawText(num, new Point((b.Width - num.Width) / 2, top - (num.Height - size) / 2));
@@ -256,7 +257,7 @@ public sealed class PreviewView : Control
             {
                 // 3 px of the web's 720-high canvas
                 double bw = Math.Max(1.5, 4.5 * k);
-                ctx.DrawRectangle(new Pen(Palette.Accent, bw), dest.Deflate(bw / 2));
+                ctx.DrawRectangle(Palette.Pen(Palette.Accent, bw), dest.Deflate(bw / 2));
             }
             var label = Palette.Text(t.Track.Name, 10.5, Palette.Fg, Palette.UiBold);
             var lr = new Rect(dest.X + 8, dest.Bottom - label.Height - 14, label.Width + 12, label.Height + 6);

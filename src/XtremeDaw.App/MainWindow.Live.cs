@@ -92,7 +92,14 @@ public partial class MainWindow
         // while a take runs nothing is read: a newcomer's copy or a file asked for would carry the take half done
         if (restoring || RecordingBusy || Projects.IsVisible || st.ReadOnly) { liveRetryTimer!.Start(); return; }
         liveRetryTimer!.Stop();
-        var r = s.Pump(st.Project, undo, applyEdits: false);
+        LiveSession.PumpResult r;
+        // a message that can't be read (another build, a broken peer) ends the session, not the app
+        try { r = s.Pump(st.Project, undo, applyEdits: false); }
+        catch (Exception e) when (e is System.Text.Json.JsonException or NullReferenceException or InvalidOperationException or ArgumentException or KeyNotFoundException)
+        {
+            EndLive(e.Message);
+            return;
+        }
         Announce(r);
         if (r.Ended) { EndLive(s.EndReason); return; }
         if (r.PresenceChanged || r.PeopleChanged) ApplyPresence();

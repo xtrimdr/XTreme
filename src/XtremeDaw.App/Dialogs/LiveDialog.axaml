@@ -82,7 +82,7 @@
           <TextBlock Classes="label" Text="{loc:T live.code}" />
           <TextBox x:Name="InviteBox" Classes="field" IsReadOnly="True" FontFamily="{DynamicResource Mono}" TextWrapping="Wrap" />
           <!-- over the internet the code is short enough to read out: big, and nothing else to pass on -->
-          <TextBlock x:Name="RoomText" IsVisible="False" FontFamily="{DynamicResource Mono}" FontSize="26" FontWeight="SemiBold"
+          <TextBlock x:Name="RoomText" IsVisible="False" FontFamily="{DynamicResource Mono}" FontSize="19" FontWeight="SemiBold"
                      Foreground="{StaticResource Accent}" HorizontalAlignment="Left" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button x:Name="CopyCodeButton" Classes="btn sm" Content="{loc:T live.copyCode}" />

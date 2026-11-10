@@ -87,10 +87,12 @@ static class ClipChecks
             var nt = q.Tracks[^1];
             Check(q.Tracks.Count == 2 && nt.Id == made && !nt.IsMidi && !nt.Video && nt.Clips.Count == 1 && nt.Clips[0].Id == take.Id && Near(take.AtSec, 3)
                 && q.Tracks[0].Clips.Count == 0 && nt.Channel.Pan == 0, "un clip soltado bajo la última pista va a una pista de audio nueva, sin sus ajustes");
-            var synth = q.Tracks.Find(t => t.Id == MidiEditing.AddTrack(q, "Piano"))!;
+            // made outside the predicate: adding a track on every comparison never ends
+            string synthId = MidiEditing.AddTrack(q, "Piano");
+            var synth = q.Tracks.Find(t => t.Id == synthId)!;
             synth.Gm = new GmSettings { Program = 5 };
             var mc = new MidiClip { AtSec = 2, LengthBeats = 4 };
-            synth.MidiClips!.Add(mc);
+            (synth.MidiClips ??= []).Add(mc);
             string madeMidi = TrackCopies.MoveToNew(q, mc.Id);
             var nm = q.Tracks[^1];
             Check(nm.Id == madeMidi && nm.IsMidi && nm.Gm?.Program == 5 && !ReferenceEquals(nm.Gm, synth.Gm) && nm.MidiClips!.Count == 1 && synth.MidiClips.Count == 0,

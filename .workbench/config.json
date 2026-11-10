@@ -1,0 +1,24 @@
+{
+  "categorias": [
+    "Audio y transporte",
+    "Automatización",
+    "Banco",
+    "Efectos",
+    "General",
+    "Instrumentos",
+    "Interfaz",
+    "Mastering",
+    "Mixer",
+    "Piano roll y MIDI",
+    "Plugins",
+    "Proyecto y archivos",
+    "Sesiones en vivo",
+    "Timeline"
+  ],
+  "verificacion": null,
+  "compartidos": [],
+  "maxAgentes": 4,
+  "probar": {
+    "abrir": "powershell -NoProfile -ExecutionPolicy Bypass -File tools\\probar.ps1 -Abrir -Probar {ticket}"
+  }
+}

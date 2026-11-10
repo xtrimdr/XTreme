@@ -24,44 +24,17 @@ public sealed class ThemePicker : Panel
     readonly Button button;
     readonly Popup popup;
 
-    /// <summary>The whole themes' tile (XTreme sets it: <c>TronLegacy.Tile</c>; the bench, which hasn't those looks, doesn't),
-    /// shown only in Configuración → Apariencia (#317: not in the popover).</summary>
+    /// <summary>The whole themes' tile (XTreme sets it: <c>TronLegacy.Tile</c>), shown only in Configuración →
+    /// Apariencia (#317: not in the popover).</summary>
     public static Func<Control>? Presets { get; set; }
 
-    public ThemePicker() : this(null) { }
-
-    /// <summary>
-    /// With <paramref name="language"/>, the popover also lists the languages above the colors and calls it with the
-    /// code picked (the bench's own, asked by the user, #151; XTreme's language stays in Configuración).
-    /// </summary>
-    public ThemePicker(Action<string>? language)
+    public ThemePicker()
     {
         button = new Button { Classes = { "ghost" }, Content = new TextBlock { Classes = { "icon" }, Text = "" } };
-        string tip = Loc.T(language == null ? "theme.title" : "test.list.look");
+        string tip = Loc.T("theme.title");
         ToolTip.SetTip(button, tip);
         Avalonia.Automation.AutomationProperties.SetName(button, tip);
         var body = new StackPanel { Spacing = 12 };
-        if (language != null)
-        {
-            var row = new UniformGrid { Rows = 1 };
-            foreach (var (code, name) in Loc.Languages)
-            {
-                var b = new ToggleButton
-                {
-                    Classes = { "seg" }, Content = name, IsChecked = code == Loc.Language,
-                    HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
-                };
-                b.Click += (_, _) =>
-                {
-                    b.IsChecked = true;
-                    if (code == Loc.Language) return;
-                    popup!.IsOpen = false;
-                    language(code);
-                };
-                row.Children.Add(b);
-            }
-            body.Children.Add(ThemeEditor.Group(Loc.T("test.list.language"), new Border { Classes = { "seg" }, Margin = new Thickness(4), Child = row }));
-        }
         var editor = new ThemeEditor(presets: false);
         body.Children.Add(editor);
         var reset = new Button
@@ -196,7 +169,6 @@ public sealed class ThemeEditor : StackPanel
         adjust.Children.Add(Adjuster("saturation", t => t.Saturation, (t, v) => t with { Saturation = v }));
         adjust.Children.Add(Adjuster("warmth", t => t.Warmth, (t, v) => t with { Warmth = v }));
         Children.Add(Group(Loc.T("theme.adjust"), adjust));
-        // the bench has no whole themes (they change XTreme's looks too)
         if (presets && ThemePicker.Presets != null) Children.Add(Group(Loc.T("theme.presets"), this.presets));
         AttachedToVisualTree += (_, _) => { UiTheme.Changed += Build; Build(); };
         DetachedFromVisualTree += (_, _) =>

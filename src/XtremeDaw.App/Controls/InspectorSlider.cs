@@ -116,6 +116,13 @@ public sealed class InspectorSlider : StackPanel
             e.Pointer.Capture(null);
             Commit();
         };
+        // capture taken away (Alt+Tab, a popup): the drag ends there, or hovering would keep moving the value
+        b.PointerCaptureLost += (_, _) =>
+        {
+            if (!dragging) return;
+            dragging = false;
+            Commit();
+        };
         b.PointerWheelChanged += (_, e) =>
         {
             if (b.Child is TextBox) return;

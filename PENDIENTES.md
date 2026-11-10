@@ -3,12 +3,19 @@
 Ideas y cosas para implementar en la versión nativa. Cada ítem: qué es, por qué, y notas si hay.
 Al terminar uno, pasarlo a [HECHO.md](HECHO.md) con la fecha (y sacarlo de acá).
 
+## Orden de trabajo (decidido 2026-11-09, ticket #2)
+
+1. Sesiones en vivo: que un invitado que pierde la red vuelva solo (#38).
+2. Grabar con efectos: monitorear a través de la cadena (#39) y amp sim con cargador de IR (#31).
+3. Grabación en loop y comping (#26), con regrabar un rango (#34).
+4. Bounce en el lugar (#12) y automatización Touch / Latch (#30).
+5. Pista de arreglo (#4).
+
 ## Ideas nuevas (solo nativa)
 
 _Ideas y mejoras para la nativa._
 
-> **Foco:** la app sigue siendo para hacer videos de guitarra. Lo de DAW tiene que servir para eso
-> y no puede complicar el camino de "grabo, mezclo y exporto el video".
+> **Foco** (decisión del usuario, 2026-11-03): un DAW completo. El video es un extra y no condiciona al resto.
 
 
 ### Pedidas
@@ -422,6 +429,12 @@ de video y normalización ya están anotados arriba; el análisis amplía su alc
   al instalarlo. Con la cuenta: proyecto `XTreme` (el slug por defecto del workflow) con el repo
   `xtrimdr/XTreme`, política `release-signing`, el secreto `SIGNPATH_API_TOKEN` y la variable
   `SIGNPATH_ORGANIZATION_ID` en GitHub; la firma se prende sola.
+- De la revisión de punta a punta (2026-11-10), lo que quedó sin hacer:
+  - [ ] Una toma de más de ~3 h 06 min pasa los 4 GB de un WAV: se sigue escribiendo, pero el encabezado dice 4 GB y lo demás no se ve ni se oye (`RecordingWriter`, `WavFile`; se lee con `AudioFileReader` de NAudio). Escribir RF64 y leerlo, o parar la toma con un aviso antes del límite.
+  - [ ] Sesiones en vivo: `ReceiveChunk` acepta un archivo que nadie pidió (solo se frenan los diarios) y `LiveLink.Receive` reserva hasta 64 MB por conexión antes de saber si tiene la clave. Aceptar solo lo pedido y achicar el primer mensaje.
+  - [ ] Mientras un proyecto abre, los atajos siguen activos sobre el anterior (entre `store = next` y `tracks = list`).
+  - [ ] Si `xtvsthost` no arranca o falla al preparar la exportación, quedan sin soltar la memoria compartida o procesos ya abiertos hasta cerrar la app (`VstBridge`, `MixRenderer`).
+  - [ ] Configuración usa cuatro `ComboBox` (driver, salida, cámara, resolución; `SettingsDialog.Combo`) contra la regla de `SelectButton`; las etiquetas de campo tienen tres estilos según el diálogo y solo `LiveDialog` usa `Border.dialog`.
 - `AudioGapLog` es un diagnóstico provisorio: sacarlo (o dejarlo detrás de una opción) cuando el audio esté confirmado.
 - Dudas de la revisión del audio en vivo (2026-11-02, leyendo el código, sin ASIO):
   - [ ] Un plugin que termina de cargar en medio de una toma sube el PDC por encima del de la toma (`recPdcFrames`, que solo sirve de piso): la mezcla se atrasa y la toma queda corrida eso. ¿Se deja cargarlo en silencio hasta el final, o se avisa?

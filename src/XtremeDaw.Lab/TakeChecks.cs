@@ -31,7 +31,7 @@ static class TakeChecks
         var j = new ProjectStore.RecordingJournal { MediaId = "med_a", Name = "Canal 4 — Base Rítmica", Audio = "media/med_a.wav", TrackId = empty1.Id, AtSec = -0.012, SyncMs = -12 };
         var t = TakeRecording.AddTake(p, j, 2.5, 48000, 2, 4);
         Check(t == empty1 && t.Clips.Count == 1 && t.Clips[0].AtSec == -0.012, "la toma cae en la pista elegida, en su corrección");
-        Check(t.Channel.Comp.On && t.Channel.Comp.Preset == "rhythm", "canal sin tocar: compresor prendido, rasgueo en la primera");
+        Check(t.Channel.Comp.On && t.Channel.Comp.Preset == Audio.Dsp.CompPresets.DefaultId, "canal sin tocar: compresor prendido, en Default");
         Check(p.FindMedia("med_a") is { Kind: "recording", DurationSec: 2.5 }, "agrega el medio");
         Check(p.Log.Last().Type == "take-recorded" && p.Log.Last().Name == j.Name, "queda en la actividad");
 
@@ -45,7 +45,7 @@ static class TakeChecks
         int before = p.Tracks.Count;
         t = TakeRecording.AddTake(p, j, 1, 48000, 2, 6);
         Check(p.Tracks.Count == before + 1 && p.Tracks[^1] == t && !t.Video, "sin pista vacía: una nueva al final, solo audio");
-        Check(t.Name == "Canal 6 — Arreglo" && t.Channel.Comp.Preset == "rhythm", "la cuarta pista es un arreglo");
+        Check(t.Name == "Canal 6 — Arreglo" && t.Channel.Comp.Preset == Audio.Dsp.CompPresets.DefaultId, "la cuarta pista es un arreglo");
 
         j = new ProjectStore.RecordingJournal { MediaId = "med_v", Name = "x", Audio = "media/med_v.wav", Video = "media/med_v.mp4", VideoOffsetMs = 120, Mirror = true };
         t = TakeRecording.AddTake(p, j, 1, 48000, 2, 7);
@@ -55,7 +55,7 @@ static class TakeChecks
         var two = new Project { Tracks = [new Track { Clips = [new Clip()] }] };
         Check(TakeRecording.TakeName(two, null) == "Canal 1 — Solo / Punteo", "la segunda pista es el solo");
         j = new ProjectStore.RecordingJournal { MediaId = "med_d", Name = "x", Audio = "media/med_d.wav" };
-        Check(TakeRecording.AddTake(two, j, 1, 48000, 2, 1).Channel.Comp.Preset == "lead", "el solo arranca con el preset de punteo");
+        Check(TakeRecording.AddTake(two, j, 1, 48000, 2, 1).Channel.Comp.Preset == Audio.Dsp.CompPresets.DefaultId, "el solo también arranca en Default");
         Check(TakeRecording.IsFirstTake(new Project { Tracks = [new Track()] }), "pistas vacías: es la primera toma");
 
         full.Channel.Pan = -0.4;
@@ -66,6 +66,24 @@ static class TakeChecks
             "armada con una toma: la nueva la reemplaza y el canal queda");
         Check(p.FindMedia(old.MediaId) is { } kept && kept.Extra?.ContainsKey("lastTimelineClip") == true,
             "la toma reemplazada queda en el historial con su clip");
+
+        // armed over a looped clip: its passes go with their source, and the take still lands
+        {
+            var lm = new Media { Id = "med_loop", Name = "bucle", DurationSec = 2 };
+            var src = new Clip { MediaId = lm.Id };
+            var looped = new Track { Name = "Bucle", Clips = [src, new Clip { MediaId = lm.Id, AtSec = 2, LoopOf = src.Id }, new Clip { MediaId = lm.Id, AtSec = 4, LoopOf = src.Id }] };
+            var lp = new Project { Tracks = [looped] };
+            lp.Media.Add(lm);
+            var lj = new ProjectStore.RecordingJournal { MediaId = "med_over", Name = "Bucle", Audio = "media/med_over.wav", TrackId = looped.Id };
+            var landed = TakeRecording.AddTake(lp, lj, 3, 48000, 2, 1);
+            Check(landed == looped && looped.Clips.Count == 1 && looped.Clips[0].MediaId == "med_over", "armada sobre un bucle: la toma reemplaza el clip y sus vueltas");
+            looped.Clips.AddRange([src, new Clip { MediaId = lm.Id, AtSec = 2, LoopOf = src.Id }]);
+            ProjectHistory.RemoveFromTimeline(lp, lm.Id);
+            Check(looped.Clips.Count == 1 && looped.Clips[0].MediaId == "med_over", "quitar del timeline un bucle saca también sus vueltas");
+            looped.Clips.AddRange([src, new Clip { MediaId = lm.Id, AtSec = 2, LoopOf = src.Id }]);
+            looped.Clips.RemoveAt(0);
+            Check(ClipEditing.DeleteRange(lp, looped.Id, 0, 10) > 0 && looped.Clips.Count == 0, "borrar un rango sobre un bucle y sus vueltas no falla");
+        }
 
         // from the playhead (punch-in): only the stretch the take covers goes
         var longMedia = new Media { Id = "med_long", Name = "larga", DurationSec = 20 };

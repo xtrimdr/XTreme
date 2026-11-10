@@ -117,7 +117,7 @@ public partial class MainWindow
             Timeline.InvalidateVisual();
         }
         // another project opened meanwhile: these stems aren't about this one
-        if (store == null || store != st || store.ReadOnly || restoring) return;
+        if (store != st || st.ReadOnly) return;
         List<AudioImport.Imported> files;
         try
         {
@@ -130,7 +130,8 @@ public partial class MainWindow
             Toast(Loc.T("stems.failed", name, e.Message.TrimEnd('.')));
             return;
         }
-        if (store != st) return;
+        // an edit in course or the manager open would drop the stems: they wait
+        if (!await WaitEditable(st)) return;
         string folder = Loc.T("stems.folder", name);
         await EditTimeline(p =>
         {

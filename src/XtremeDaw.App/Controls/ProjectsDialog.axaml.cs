@@ -129,6 +129,8 @@ public sealed partial class ProjectsDialog : UserControl
     {
         CurrentDir = currentDir;
         IsVisible = true;
+        // the window's background at 95 %, read on every open so it follows the theme (the XAML value is the default one)
+        Background = Palette.Alpha(Palette.AppColor, 0.95);
         ToolTip.SetTip(CloseButton, Loc.T(CanCancel ? "common.close" : "proj.closeEmpty.tip"));
         draft = null;
         confirmDelete = null;

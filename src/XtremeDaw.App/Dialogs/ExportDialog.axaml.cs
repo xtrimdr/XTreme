@@ -1135,7 +1135,7 @@ public sealed partial class ExportDialog : UserControl
             var label = new TextBlock
             {
                 Text = s.Label,
-                FontSize = 13,
+                FontSize = 12.5,
                 Foreground = done || active ? Res("Fg") : Res("Faint"),
                 VerticalAlignment = VerticalAlignment.Center,
             };

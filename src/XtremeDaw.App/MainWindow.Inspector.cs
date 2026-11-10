@@ -124,7 +124,7 @@ public partial class MainWindow
         InspectorBar.Child = null;
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto,Auto"), Height = 44, Margin = new Thickness(16, 0, 6, 0) };
         header.Children.Add(new TextBlock { Classes = { "icon" }, Text = "", FontSize = 14, Foreground = Palette.Faint, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
-        var title = new TextBlock { Text = Loc.T("insp.title"), FontSize = 13, FontWeight = FontWeight.Medium, VerticalAlignment = VerticalAlignment.Center };
+        var title = new TextBlock { Text = Loc.T("insp.title"), FontSize = 12.5, FontWeight = FontWeight.Medium, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(title, 1); header.Children.Add(title);
         var hide = inspectorHide = RailButton("", Loc.T("insp.hide"), () => SetInspectorCollapsed(true));
         shortcutTips.Add((hide, Loc.T("insp.hide"), "leftPanel"));

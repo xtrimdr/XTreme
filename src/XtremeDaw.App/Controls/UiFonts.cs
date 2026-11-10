@@ -292,7 +292,7 @@ public static class UiFonts
             {
                 Classes = { "chip" }, Tag = font, Margin = new Thickness(3), Padding = new Thickness(8, 10),
                 HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
-                Content = new TextBlock { Text = name, FontFamily = Family(font), FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis },
+                Content = new TextBlock { Text = name, FontFamily = Family(font), FontSize = 12.5, TextTrimming = TextTrimming.CharacterEllipsis },
             };
             Avalonia.Automation.AutomationProperties.SetName(b, name);
             b.Click += (_, _) => SetFont(font);

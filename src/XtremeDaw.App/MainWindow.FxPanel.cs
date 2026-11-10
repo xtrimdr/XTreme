@@ -586,7 +586,7 @@ public partial class MainWindow
         var window = new Window
         {
             Title = Loc.T("eq.big.title"), Width = 980, Height = 680, MinWidth = 640, MinHeight = 520, Background = Palette.App,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false,
             Content = new ScrollViewer { Content = editor, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
         };
         window.SizeChanged += (_, e) => editor.GraphHeight = Math.Max(EqEditor.BigGraphMinH, e.NewSize.Height - EqBigChrome);

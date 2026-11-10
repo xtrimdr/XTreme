@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.9.26",
+      "items": [
+        {
+          "icon": "E7C8",
+          "title": "Safer recording",
+          "text": "A plugin or a track that fails no longer costs audio to what is being recorded. Recording over a looped clip works, and **Save** on a new project keeps what was recorded while it copies."
+        },
+        {
+          "icon": "E90F",
+          "title": "Fixes across the app",
+          "text": "Automation follows tempo changes, **Freeze** and **Split into stems** no longer lose their result, an edit that fails is undone whole and paste respects locked tracks."
+        },
+        {
+          "icon": "E72E",
+          "title": "Tidier live sessions",
+          "text": "Two files with the same name are no longer mixed up between participants, and a damaged message ends the session without closing the app."
+        }
+      ]
+    },
+    {
       "version": "0.9.25",
       "items": [
         {

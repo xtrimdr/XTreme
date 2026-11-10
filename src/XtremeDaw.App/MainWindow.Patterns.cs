@@ -58,7 +58,7 @@ public partial class MainWindow
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto"), ColumnSpacing = 4, RowSpacing = 4 };
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock { Text = x.Name, FontSize = 13, Foreground = Palette.Fg, TextTrimming = TextTrimming.CharacterEllipsis });
+        text.Children.Add(new TextBlock { Text = x.Name, FontSize = 12.5, Foreground = Palette.Fg, TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock
         {
             Classes = { "mono" }, FontSize = 10, Foreground = Palette.Faint, TextTrimming = TextTrimming.CharacterEllipsis,

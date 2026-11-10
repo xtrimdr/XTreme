@@ -81,6 +81,8 @@ public static partial class TrackCopies
             copy.MidiClips = copy.IsMidi ? [] : null;
             copy.Automation = null;
             copy.Locked = false;
+            // the original's render is its content too: an empty copy still frozen would stay locked on it
+            copy.Freeze = null;
             return copy;
         }
         var clipIds = new Dictionary<string, string>();

@@ -496,6 +496,8 @@ public static class ClipEditing
         int changed = 0;
         foreach (var clip in track.Clips.ToList())
         {
+            // a loop's pass that went with its source, removed a moment ago
+            if (!track.Clips.Contains(clip)) continue;
             var w = Window(clip, p.FindMedia(clip.MediaId), lengthOf?.Invoke(clip));
             if (endSec <= w.Start || startSec >= w.End || IsLocked(track, clip)) continue;
             changed++;

@@ -11,7 +11,7 @@
       <Setter Property="MinHeight" Value="34" />
       <Setter Property="Padding" Value="10,6" />
       <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontSize" Value="12.5" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="VerticalContentAlignment" Value="Center" />

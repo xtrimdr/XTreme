@@ -36,6 +36,10 @@
     <SolidColorBrush x:Key="Accent70" Color="#B322d3ee" />
     <SolidColorBrush x:Key="Rec" Color="{StaticResource RecColor}" />
     <SolidColorBrush x:Key="RecSoft" Color="#24ef4444" />
+    <SolidColorBrush x:Key="Rec40" Color="#66ef4444" />
+    <!-- behind the video frame (Palette.Composition), and the bar over it -->
+    <SolidColorBrush x:Key="Composition" Color="#09090b" />
+    <SolidColorBrush x:Key="Composition80" Color="#CC09090b" />
     <!-- the tuner's "in tune": the mixer meters' green (Palette.MeterGreen / Palette.InTune) -->
     <SolidColorBrush x:Key="InTune" Color="#22c55e" />
     <!-- mute on, and the meters' -6..0 dB zone (Palette.Mute) -->
@@ -182,7 +186,7 @@
     <!-- armed = the first click asked for confirmation: it stays red until the second click or the timeout -->
     <Style Selector="Button.chip.discard:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.discard:pressed /template/ ContentPresenter#PART_ContentPresenter, Button.chip.discard.armed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource RecSoft}" />
-      <Setter Property="BorderBrush" Value="#66ef4444" />
+      <Setter Property="BorderBrush" Value="{StaticResource Rec40}" />
       <Setter Property="Foreground" Value="{StaticResource Rec}" />
     </Style>
     <Style Selector="Button.chip.count:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.count:pressed /template/ ContentPresenter#PART_ContentPresenter">
@@ -545,7 +549,7 @@
     <!-- "Borrar no usados": a plain chip, in the same color as "Desvincular no usados" beside it, that turns red on hover -->
     <Style Selector="Button.chip.purge:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.chip.purge:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource RecSoft}" />
-      <Setter Property="BorderBrush" Value="#66ef4444" />
+      <Setter Property="BorderBrush" Value="{StaticResource Rec40}" />
       <Setter Property="Foreground" Value="{StaticResource Rec}" />
     </Style>
 

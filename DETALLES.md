@@ -33,26 +33,22 @@ Requisitos, cómo compilar, atajos de teclado, cómo está hecho y `xtlab`. Lo g
 ## Compilar y ejecutar
 
 ```
-tools\probar.ps1 "qué probar"
+tools\probar.ps1
 ```
 
 Compila, corre `xtlab comprobar-dsp`, copia la app a `pruebas\<fecha>-<commit>` (fuera de git; quedan las
 últimas 5) y la abre desde ahí, con la marca "PRUEBA <commit>" en la barra de título. Como nunca corre desde `bin\`,
-la app abierta no traba la próxima compilación. `-Abrir` abre la última copia sin compilar (con `-Probar 12`, con el aviso de qué probar en el #12), `-NoAbrir` solo compila y
+la app abierta no traba la próxima compilación. `-Abrir` abre la última copia sin compilar (`-Probar 12` es lo que corre el botón Probar de un ticket), `-NoAbrir` solo compila y
 copia, `-SinComprobar` salta `xtlab`, `-Proyecto carpeta` abre ese proyecto. Si ya hay un XTreme abierto, antes de abrir
 pregunta en un cuadro si lo cierra (guarda el proyecto antes), así la copia nueva no abre el mismo proyecto en solo
 lectura. Si algo falla, dice "NO SE PUEDE PROBAR" y no abre nada (desde el acceso directo, que no muestra la consola, lo avisa en un
 cuadro; queda anotado en `%APPDATA%\XTreme\sesiones.log`, junto con cada inicio y cierre de la app y sus errores). `-SoloCompilar` solo compila, y `dotnet build` también sirve.
 
-El texto queda en el **Banco de pruebas** (`pruebas\lista.json`, sobrevive a las copias). Lo muestra el Banco, un programa aparte (`xtbench.exe [--lista archivo]`, en `pruebas/banco/`, uno solo a la vez; compilar XTreme no lo cierra y uno nuevo entra la próxima vez que se abre), que una copia de prueba abre sola si hay algo pendiente y desde el botón junto a "PRUEBA", y que también abre `-Banco` o el acceso directo "XT-WorkBench": cada ítem se marca Anda o No anda, con una nota de qué falló. Un ítem de una copia más nueva que la abierta avisa que falta en esta. Sus botones **Revisar** abren Claude en `/xt_revisar-workbench` (un ítem, un estado o la pestaña), y el menú **Claude** de la barra de título las demás skills del proyecto; ahí mismo se elige, una vez, si abren en la app de escritorio (el mensaje queda escrito y se confirma la carpeta) o en una consola (Windows Terminal, donde arranca solo; sin la app, siempre la consola). `-Lista` lo muestra con las pestañas del Banco (Pedidos, A arreglar, Para probar y Resuelto); `-Arregla 12` (con `-NoAbrir` o no) devuelve ese ítem a Para probar en la copia nueva y cuenta un intento más, salvo que el usuario ya lo haya marcado Anda (código 2: no se reabre). Cada ítem es un **ticket** con su conversación (el pedido o qué probar, cada arreglo, cada veredicto con su nota y los comentarios): `-Ticket 12` lo muestra entero y `-Comenta 12 "texto"` dice algo en él sin cambiar su estado; `-Titula 12 "título"` le pone el título corto que el agente le da al tomarlo (el Banco lo muestra arriba y el ticket como una línea de tiempo, cada entrada de Usuario o de Agente); el `"qué probar"` de `-Arregla` queda como el mensaje del arreglo. Cada cambio queda además en `pruebas\lista.historial.jsonl`, con quién lo hizo (el usuario o la sesión de Claude): `-Historial 12` muestra el de un ítem y `-Historial 0` lo último de todos. Lo que anota o devuelve un agente llega al Banco como **Nuevo** hasta que el usuario lo ve.
-
-En la pestaña **Pedidos** del panel el usuario carga lo que quiere que se haga, numerado como el resto y con su tipo (**Error**, **Mejora**, **Función nueva** o **Idea**); de ahí sacan el trabajo los agentes. `-Toma 12` reserva un pedido, o algo marcado No anda, Anda mal o A mejorar, para una sesión (código 2 si ya lo tiene otra, y dice cuál; la misma sesión lo puede volver a tomar; a las 6 horas vence, y al cerrarse la sesión que lo tomó queda libre), `-Suelta 12` lo devuelve y `-Arregla 12` lo vuelve a Para probar cuando está hecho. Los tres aceptan varios números (`-Arregla 12,14`: una sola compilación y copia). `-Pide "qué" -Tipo error|mejora|funcion|idea` anota uno desde la consola.
-
-Cada ticket tiene un **tema**, de una lista fija (la parte de la app: Timeline, Mixer, Inspector, Piano roll y MIDI, Instrumentos, Efectos, Mastering, Automatización, Plugins, Audio y transporte, Video, Exportación, Análisis, Proyecto y archivos, Interfaz, Banco y herramientas; `xtlab lista temas` dice qué va en cada uno). El Banco lo muestra como un badge, filtra por tema arriba de la lista y se elige al cargar un pedido o desde el ticket. `-Tema mixer` le pone el tema a lo que se anota (`-Pide`, `"qué probar"`, `-Arregla`) y `-Clasifica 12,14 -Tema mixer` a tickets que ya están (`-Tema ninguno` lo saca).
+Los pedidos y lo que hay que probar son tickets de **ClaudeWorkBench** (`wb`, su base en `.workbench\`): el botón Probar de un ticket corre `tools\probar.ps1 -Abrir -Probar 12` (`.workbench\config.json`). El Banco de pruebas viejo (XT-WorkBench, `xtbench.exe`) se sacó en #37: su código quedó en `archivo\banco-viejo.zip` y sus datos en `pruebas\archivo-banco\`, fuera de git.
 
 Si hay varias sesiones trabajando en esta carpeta, compilar, comprobar y copiar van de a una: `dotnet build` en Debug (`tools\turno.targets`), `probar.ps1` y los comandos pesados de `xtlab` (`comprobar-dsp`, `exportar`, `separar`…) esperan su turno (`turno.lock`, junto a `xtlab.exe`). `probar.ps1` y `xtlab` corren con prioridad baja para que la máquina siga respondiendo. Si en 9 minutos no les toca, salen con error diciendo quién lo tiene (`probar.ps1` y `xtlab`, código 4). `XtremeDaw.Audio` se compila optimizado también en Debug: así la copia de prueba y `xtlab` miden el DSP como el instalador.
 
-Los archivos también van de a una sesión: un hook de Claude Code (`tools\bloqueos.ps1`, registrado en `.claude\settings.json`) le da cada archivo editado, o cambiado por un comando, a la sesión que lo tocó hasta que termina su turno; otra sesión que quiera cambiarlo espera (hasta 9 minutos) y, si un comando pisó un archivo ajeno, se le avisa. Bloquea `git restore`, `stash`, `clean`, `reset --hard` y `checkout --`. `tools\bloqueos.ps1 -Lista` muestra quién tiene qué y `-Limpiar` suelta todo (por si una sesión murió; igual vencen solos a los 30 minutos sin uso). Las sesiones se mandan avisos (#263): el hook avisa solo cuando se libera un archivo que esperabas, cuando otra sesión toma uno que cambiaste, cuando un comando ajeno cambió uno tuyo y cuando una compilación falla en un archivo tuyo; a mano, `-Avisa <#ticket|sesión|todos> -Texto "…"` (`-Atencion` para que pare), `-PideArchivo <ruta>` (se lo pide a quien lo tiene), `-SueltaArchivo <ruta>` (lo suelta antes de terminar el turno) y `-Buzon` (los avisos sin leer). Le llegan al agente en su próxima edición o comando, antes de terminar su turno o con el próximo mensaje, y el Banco los muestra al llegar.
+Los archivos también van de a una sesión: los hooks de ClaudeWorkBench le dan cada archivo editado a la sesión que lo tocó; otra que quiera cambiarlo espera o recibe EN COLA / BLOQUEADO. También bloquean los comandos de git que descartan cambios sin commitear.
 
 La app arranca en el gestor de **Proyectos** (lista, buscador, plantillas, renombrar, duplicar, Papelera).
 Con una carpeta de proyecto como argumento, la abre directo. `tools\make-shortcut.ps1` crea en el escritorio el acceso
@@ -147,7 +143,6 @@ src/
   XtremeDaw.Projects   modelo del proyecto, guardado atómico, historial, gestor de proyectos
   XtremeDaw.App        la ventana (Avalonia 11.3)
   XtremeDaw.Lab        xtlab.exe: consola para probar audio, DSP y proyectos sin la ventana
-  XtremeDaw.Bench      xtbench.exe: XT-WorkBench, el Banco de pruebas (un programa aparte: compilar XTreme no lo cierra)
   XtremeDaw.VstHost    xtvsthost.exe y xtvsthost32.exe (C++): abren un plugin VST3 o VST2 en su propio proceso
 tools/                 ícono, acceso directo y utilidades de verificación
 ```
@@ -181,7 +176,6 @@ la consola, sin abrir la ventana.
 | `sistema [--segundos 5] [--instalar-ffmpeg]` | CPU, GPU y RAM, si FFmpeg está en el PATH y con qué placa de video exporta; `--instalar-ffmpeg` lo instala antes con winget, como el aviso de la ventana |
 | `version` | esta versión contra la última release de GitHub (lo que avisa la ventana y muestra "Acerca de") |
 | `reporte enlace "título" [--texto t] [--idea]` / `reporte comprobar` | el enlace al issue nuevo que abre "Enviar comentarios", sin abrir nada; `comprobar` prueba textos, codificación y largo |
-| `lista [ver \| agregar "qué probar" \| arreglado número [--texto t]] --archivo x [--copia nombre]` / `lista comprobar` | el Banco de pruebas de las copias de prueba (la usa `tools\probar.ps1`); `comprobar` la prueba sobre un archivo temporal |
 | `lista pedir "qué" --tipo error\|mejora\|funcion\|idea \| tomar número \| soltar número --archivo x` | los pedidos del usuario: anotar uno, reservarlo para una sesión o devolverlo |
 | `lista tema número tema\|ninguno \| temas --archivo x` (y `--tema t` en `agregar` y `pedir`) | el tema de un ticket, de la lista fija; `temas` la muestra con qué va en cada uno |
 | `lista ticket número \| comentar número "qué" \| titulo número "título" --archivo x` | un ticket entero, con su conversación; decir algo en él sin cambiar su estado; ponerle título (vacío lo saca) |

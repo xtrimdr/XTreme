@@ -59,9 +59,8 @@ src/
   XtremeDaw.Projects   modelo del proyecto, guardado atómico, historial. Sin UI.
   XtremeDaw.App        la ventana (Avalonia 11.3). Depende de Audio y Projects.
   XtremeDaw.Lab        xtlab.exe: consola para probar audio, DSP y proyectos sin la ventana.
-  XtremeDaw.Bench      xtbench.exe, XT-WorkBench (el Banco de pruebas): enlaza su ventana y estilos de App, sin depender de XTreme.dll.
   XtremeDaw.VstHost    xtvsthost.exe (C++, SDK de VST3): abre un plugin en su propio proceso. Lo compila el build de Audio.
-tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que dibuja tools/icon/Vinilo.cs píxel a píxel, cada tamaño a su resolución; no necesita nada instalado; hasta 96 px, una versión plana; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-gm.ps1 (baja el banco General MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador), bloqueos.ps1 (hook: un archivo, una sesión a la vez)
+tools/                 probar.ps1 (compila, comprueba y abre una copia de prueba), make-icon.ps1 (ícono: un vinilo con la X en la etiqueta que dibuja tools/icon/Vinilo.cs píxel a píxel, cada tamaño a su resolución; no necesita nada instalado; hasta 96 px, una versión plana; redondo y con transparencia en todos los tamaños), make-shortcut.ps1 (acceso directo), make-track-icons.py (íconos de pista), get-vst3sdk.ps1 (baja el SDK de VST3), get-basic-pitch.ps1 (baja el modelo de Extraer MIDI), get-gm.ps1 (baja el banco General MIDI), get-demucs.ps1 y make-demucs-onnx.py (arman los modelos de Separar en stems), get-ffmpeg.ps1 (baja los DLL de la preview), make-installer.ps1 (instalador)
 relay/                 el servidor de las sesiones en vivo por internet (#320): un Worker de Cloudflare con un Durable Object por sala (`npx wrangler deploy` desde ahí; `npx wrangler dev` para probarlo local con `XTREME_RELAY`), publicado en `https://xtreme-live.martinperez86.workers.dev`, con su página privada `/admin` (#321: ver las sesiones abiertas, cerrar una, apagar las nuevas; la clave está en `relay/.admin-key`, fuera de git)
 .github/workflows/instalador.yml   arma el instalador en GitHub Actions (un tag vX.Y.Z → release en borrador; firma con SignPath)
 ```
@@ -132,76 +131,24 @@ La cadena por pista, la automatización en el motor y los slots están en la [gu
    lo que se prueba es lo que está acá. Probá el motor y el proyecto con `xtlab`. Compilar, comprobar y copiar van de a
    una sesión por vez: `dotnet build` (`tools\turno.targets`), `probar.ps1` y los comandos pesados de `xtlab`
    (`HeavyTurn`) esperan su turno solos y dicen a quién esperan, así que correlos con un timeout de 10 minutos, sin
-   reintentar ni matar nada mientras esperan (código 4 = el turno no llegó). **Al terminar cada cambio corré
-   `tools\probar.ps1 -NoAbrir "qué probar"`** (un cambio que es solo del Banco, de xtlab o de las herramientas va con
-   `-Tema banco`: compila el Banco y xtlab, sin copia de XTreme, y su Probar abre el Banco; pedido del usuario,
-   2026-11-05) (compila, corre `xtlab comprobar-dsp`, deja una copia en
-   `pruebas\`, fuera de AppData a propósito: desde la app de Claude, que es MSIX, lo escrito en AppData queda dentro
-   del paquete y el acceso directo no lo ve, y anota el texto, corto y concreto, en el **Banco de pruebas**,
-   `pruebas\lista.json`, que el usuario marca desde la copia; varias sesiones pueden anotar a la vez). **No preguntes si
-   abrirlo**: queda en la lista y el usuario prueba todo junto después (pedido del usuario, 2026-11-03: con varios
-   agentes trabajando). Abrí la copia solo si el usuario lo pide: `tools\probar.ps1 -Abrir` abre la última con la lista a
-   la vista (`-Proyecto carpeta` la abre en ese proyecto). `tools\probar.ps1 -Lista` muestra lo pendiente y lo que el usuario
-   marcó como que no anda, con su nota: miralo antes de seguir con algo ya entregado. Si arreglaste un ítem, corré
-   `tools\probar.ps1 -NoAbrir -Arregla 12` (con su número): vuelve a Pendiente en lugar de duplicarse. Si el script dice
-   "NO SE PUEDE PROBAR", contale por qué y no abras nada. Nunca abras el exe de `bin\` ni lo mandes a probar desde
-   ahí: bloquea los DLL y el próximo build falla. Si hay un XTreme abierto, el script le pregunta al usuario en un
-   cuadro si lo cierra (guarda antes); nunca lo cierres ni lo mates por otro lado. Si eligió cancelar (código 2), no
-   insistas; si nadie contestó en 100 s (código 3), avisale y que te diga cuándo. La copia muestra en la barra de título "PRUEBA" + el commit (+ cambios), así el usuario sabe qué
-   está probando.
-3. **El trabajo sale de los Pedidos del Banco de pruebas** (pedido del usuario, 2026-11-04): el usuario carga ahí,
-   numerados y con su tipo, los cambios, mejoras y correcciones que quiere, y los agentes los toman de ahí.
-   `tools\probar.ps1 -Lista` los muestra primero. Antes de empezar uno (un pedido o algo marcado No anda, Anda mal o A
-   mejorar), `tools\probar.ps1 -Toma 12`: lo reserva para tu sesión (código 2 = lo tiene otra: elegí otro); si lo dejás
-   sin hacer, `-Suelta 12`. Al terminarlo, `tools\probar.ps1 -NoAbrir -Arregla 12` (con `"qué probar"` si hace falta
-   decir cómo probarlo): pasa a Para probar para que el usuario lo pruebe. Los tres aceptan varios números (`-Arregla
-   12,14`: una sola compilación y copia). Qué hacer según el tipo: **Error**, arreglarlo; **Mejora**, ajustarlo; **Función nueva**, hacerla, y antes
-   preguntar lo que sea una decisión de diseño; **Idea**, no se programa de entrada: proponé cómo sería o llevala a
-   PENDIENTES, y que el usuario decida. Si un pedido llega por el chat, anotalo primero (`tools\probar.ps1 -Pide "qué"
-   -Tipo error|mejora|funcion|idea`), tomalo y seguí igual: así todo queda numerado en un solo lugar.
-
-   **Cómo se mantiene sincronizado el Banco** (pedido del usuario, 2026-11-04: es uno de sus pilares para desarrollar;
-   vale para toda sesión y todo subagente):
-   - El Banco (tickets) se toca **solo** con `tools\probar.ps1` (o `xtlab lista`). Nunca edites, reescribas ni borres
-     `pruebas\lista.json`, `lista.historial.jsonl` ni `lista.lock` a mano, con un script ni con git: varias sesiones y
-     el usuario escriben a la vez, y `TestList` es lo único que lo hace con bloqueo y cambio atómico.
-   - **Cada ítem es un ticket** (pedido del usuario, 2026-11-04) con su conversación en orden: el pedido o qué probar,
-     cada arreglo, cada veredicto con su nota y los comentarios de los dos lados. Nada se pisa. Antes de trabajar uno,
-     leelo entero: `tools\probar.ps1 -Ticket 12` (lo último que dijo el usuario manda, no solo el texto del principio).
-   - Para decir algo sin mandar un arreglo (una pregunta, "lo llevé a PENDIENTES", "depende del #80"):
-     `tools\probar.ps1 -Comenta 12 "texto"`. Le llega al usuario como **Nuevo**; él contesta en el mismo ticket.
-     Una pregunta que bloquea el trabajo va también en el chat, si estás en uno.
-   - **Cada ticket lleva su tema** (pedido del usuario, 2026-11-04: una lista fija, `TestItem.Topics`; `xtlab lista
-     temas` dice qué va en cada uno). Lo que anotás va con el suyo (`-Tema mixer` junto a `-Pide`, `"qué probar"` o
-     `-Arregla`), y un ticket que tomás sin tema se lo ponés (`tools\probar.ps1 -Clasifica 12 -Tema mixer`). La lista no
-     se agranda sin preguntar: una parte nueva de la app entra en el tema donde la buscaría un músico.
-   - **El tipo de un pedido también lo pone el agente** (pedido del usuario, #129: el Banco no lo pregunta): al tomar
-     uno sin tipo, `tools\probar.ps1 -Clasifica 12 -Tipo mejora` (error | mejora | funcion | idea).
-   - El `"qué probar"` de `-Arregla` es tu mensaje en el ticket ("Arreglo: …"): decí qué cambió y cómo probarlo. El
-     texto del principio del ticket no cambia.
-   - Cada cambio queda además en el historial con quién lo hizo (tu sesión sale de `CLAUDE_CODE_SESSION_ID`), también
-     lo que se sacó de la lista. Si algo no cuadra (volvió, desapareció), mirá `tools\probar.ps1 -Historial 12`
-     (`-Historial 0`: lo último de todo) y contale al usuario lo que dice.
-   - **Cada ticket lleva un título** (pedido del usuario, 2026-11-04): al tomar uno sin título, ponéselo
-     (`tools\probar.ps1 -Titula 12 "Fader del bus no guarda el valor"`): corto, de qué se trata, en el tono de la
-     app. Es lo que el usuario ve en la lista; el pedido queda como primera entrada de la línea de tiempo del ticket.
-   - `-Toma` antes de empezar, siempre; tu sesión lo puede volver a tomar sin problema. Un mensaje que empieza con
-     `/xt_revisar-workbench` y números ya los toma solo al enviarse (hook `pedido` de `tools\bloqueos.ps1`, #173): así el
-     Banco los muestra en curso mientras su Claude está abierto, aunque se reinicie. Código 2 dice qué sesión lo
-     tiene: no lo trabajes. Lo que tome un subagente lo toma la sesión que lo lanzó (comparten la sesión).
-   - `-Arregla` solo números que trabajaste vos en esta sesión y que están en un estado abierto. Si el usuario ya lo
-     marcó **Anda**, `-Arregla` no lo reabre (código 2): si hiciste otro cambio, anotalo como ítem nuevo (`-NoAbrir "qué
-     probar"`). No uses `-Arregla` para "recordarle" al usuario un ítem que sigue en Para probar.
-   - **Al terminar bien, la sesión se cierra** (pedido del usuario, #143): si estás seguro de que todo salió bien (lo
-     tuyo fue con `-Arregla` o `-Comenta` sin error y no queda nada que preguntar), lo que ibas a decir en el chat va en
-     el ticket, y tu último paso es `tools\cerrar-sesion.ps1`: cierra la consola que abrió el Banco (fuera de ella no
-     hace nada). Con una pregunta o algo a medias, no: el usuario te tiene que leer. No haberlo visto en la app (no
-     podés hacer clics ni capturar la ventana) no es algo a medias: lo prueba el usuario desde el Banco, así que decilo
-     en el ticket y cerrá igual (#313: quedaban consolas abiertas que ya no esperaban nada). Un subagente nunca lo corre.
-   - Lo que anotás, devolvés o comentás llega al Banco como **Nuevo** y se anuncia: es lo que el usuario lee primero,
-     así que va corto, concreto y dice cómo probarlo.
-   - El usuario saca ítems y limpia los que andan desde el Banco: que un número ya no esté no es un error; el historial
-     dice quién lo sacó. No lo vuelvas a anotar sin preguntar.
+   reintentar ni matar nada mientras esperan (código 4 = el turno no llegó). `tools\probar.ps1 -NoAbrir` compila, corre
+   `xtlab comprobar-dsp` y deja una copia en `pruebas\` (fuera de AppData a propósito: desde la app de Claude, que es
+   MSIX, lo escrito en AppData queda dentro del paquete y el acceso directo no lo ve). **No preguntes si abrirla**: el
+   usuario prueba desde el ticket (pedido del usuario, 2026-11-03: con varios agentes trabajando), con el botón Probar
+   de ClaudeWorkBench (`tools\probar.ps1 -Abrir -Probar 12`). Abrí la copia solo si el usuario lo pide:
+   `tools\probar.ps1 -Abrir` abre la última (`-Proyecto carpeta` la abre en ese proyecto). Si el script dice "NO SE
+   PUEDE PROBAR", contale por qué y no abras nada. Nunca abras el exe de `bin\` ni lo mandes a probar desde ahí:
+   bloquea los DLL y el próximo build falla. Si hay un XTreme abierto, el script le pregunta al usuario en un cuadro si
+   lo cierra (guarda antes); nunca lo cierres ni lo mates por otro lado. Si eligió cancelar (código 2), no insistas; si
+   nadie contestó en 100 s (código 3), avisale y que te diga cuándo. La copia muestra en la barra de título "PRUEBA" +
+   el commit (+ cambios), así el usuario sabe qué está probando.
+3. **El trabajo sale de los tickets de ClaudeWorkBench** (`wb`, su base en `.workbench\`; reemplazó al Banco de
+   pruebas viejo, #37): el usuario carga ahí los pedidos y marca lo que probó, y los agentes los trabajan con
+   `/workbench:revisar` (cómo se toman, titulan, clasifican, comentan y mandan a probar está en esa skill). Los tickets
+   se tocan **solo** con `wb`: nunca edites `.workbench\` a mano. Qué hacer según el tipo: **Error**, arreglarlo;
+   **Mejora**, ajustarlo; **Función nueva**, hacerla, y antes preguntar lo que sea una decisión de diseño; **Idea**, no
+   se programa de entrada: proponé cómo sería o llevala a PENDIENTES, y que el usuario decida. El código y los datos del
+   Banco viejo (XT-WorkBench) quedaron en `archivo\banco-viejo.zip` y `pruebas\archivo-banco\`, fuera de git.
 4. Para probar de verdad hacen falta una interfaz ASIO y un proyecto con tomas: si no los tenés, decí qué no probaste.
 5. En capturas de GDI los píxeles negros tienen alfa 0 y algunos visores los pintan blancos: mirá el RGB.
 6. Al terminar un ítem de PENDIENTES, sacalo de ahí y agregalo arriba de todo en HECHO con la fecha (AAAA-MM-DD) y una
@@ -212,39 +159,12 @@ La cadena por pista, la automatización en el motor y los slots están en la [gu
    lleva su tema. Lo que el usuario va a notar suma una línea en la versión más nueva de `Assets/News` (todos los idiomas,
    ver "Novedades" en docs/interfaz.md), que puede ser la próxima, aún sin publicar. Al publicar, esa versión tiene que ser
    la de `Directory.Build.props`.
-9. **Un archivo, una sesión a la vez** (regla estricta del usuario, 2026-11-03: se perdieron cambios). Un hook
-   (`tools\bloqueos.ps1`, en `.claude\settings.json`) le da cada archivo que tocás a tu sesión hasta que termina el
-   turno: otra sesión que quiera editarlo, o correr un comando que lo nombre, hace cola (el primero que llegó lo
-   toma primero, pedido del usuario, 2026-11-05). Si en 90 s no le llega, el hook dice **EN COLA** y el puesto ("2° de
-   3"): el lugar se guarda 5 min; seguí con otra parte si la hay, volvé a intentar la misma acción y contale al usuario
-   en qué puesto estás. Lo de una sesión que se cerró sin terminar su turno (`tools\cerrar-sesion.ps1`, una consola
-   cerrada, un cuelgue) queda libre al instante: cada bloqueo guarda su proceso de Claude. Una sesión y sus subagentes no se esperan entre sí (los subagentes hermanos, sí). Lo que cambie
-   un comando o un script también queda tomado, salvo lo que otra sesión cambió mientras corría, y si pisó algo de
-   otra sesión el hook avisa. Si te dice BLOQUEADO (una cola que vuelve a un archivo tuyo: nadie avanzaría) o ATENCIÓN: no lo
-   esquives (ni con shell, ni Write, ni git, ni otro script), no deshagas nada, terminá el turno y avisale al usuario
-   qué quedó sin hacer. **El Banco de pruebas y XTreme son dos programas aparte** (pedido del usuario, 2026-11-05): una
-   sesión que editó archivos de uno no espera, no toma ni avisa por los del otro que cambien o nombren sus comandos
-   (la lista de archivos del Banco es `$BenchFiles` en `tools\bloqueos.ps1`; lo que XTreme le presta, como `Loc.cs` o
-   `App.axaml`, es de XTreme). Editar un archivo del otro sigue haciendo cola. Los textos del Banco (`test.*`) van en
-   `Assets/Lang/Bench/`, aparte de los de la app. `git restore`, `stash`, `clean`, `reset --hard` y `checkout --`
-   están bloqueados: tiran cambios sin commitear que pueden ser de otro; si hacen falta, los corre el usuario.
-   `tools\bloqueos.ps1 -Lista` muestra quién tiene qué y quién hace cola; antes de un script que reescribe muchos archivos, miralo.
-   El hook deja además el estado de cada sesión (en cola, bloqueada, atención) en `.claude\bloqueos\t-*.json`, y el Banco
-   lo muestra como un semáforo en el "en curso" del ticket que tomó (#167).
-   **Avisos entre sesiones** (pedido del usuario, #263): el hook te agrega al contexto, en tu próxima edición o comando,
-   los "Avisos de otras sesiones" (se liberó lo que esperabas, otra sesión tomó un archivo que cambiaste, un comando
-   ajeno cambió uno tuyo, una compilación falla en uno tuyo, un mensaje o un pedido). Tenelos en cuenta y seguí: si un
-   archivo tuyo cambió, volvé a leerlo; solo una **ATENCIÓN** te hace parar y avisarle al usuario. Un PEDIDO de un
-   archivo tuyo: soltalo apenas termines con él (`tools\bloqueos.ps1 -SueltaArchivo <ruta>`). Si estás en cola y lo
-   necesitás, `-PideArchivo <ruta>`; para avisar algo que afecta a otro, `-Avisa <#ticket|sesión|todos> -Texto "…"`
-   (corto; `-Atencion` solo si el otro tiene que parar). `-Buzon` lee los sin leer. Cada aviso queda además un día en
-   `.claude\bloqueos\avisos.jsonl`. La ventana **Agentes** del Banco (#269, #273: un mapa de quién tiene qué y dónde se traban) no muestra esa conversación (#300), solo la consola de cada sesión; desde ahí el usuario también te
-   escribe o te pide un archivo (llega como aviso del usuario).
+9. **Un archivo, una sesión a la vez** (regla estricta del usuario, 2026-11-03: se perdieron cambios). Los hooks de
+   ClaudeWorkBench le dan cada archivo que editás a tu sesión: si otra lo tiene, la edición espera o el hook dice
+   **EN COLA** (seguí con otra parte y volvé a intentar) o **BLOQUEADO** (no lo esquives, ni con shell, ni Write, ni
+   git, ni otro script; terminá el turno y avisale al usuario qué quedó sin hacer). Los comandos de git que descartan
+   cambios sin commitear (restore, stash, clean, reset --hard) están bloqueados: pueden ser de otro; si hacen falta,
+   los corre el usuario.
 10. No subas WAV ni binarios. No hagas commit ni push si el usuario no lo pide.
 11. Las skills de este proyecto (`.claude/skills`) llevan el prefijo `xt_`, en la carpeta y en su `name`
-   (`xt_revisar-workbench`; decisión del usuario, 2026-11-03). El mod `xt-panel` (`.claude/plugins/xt-panel`, del
-   catálogo local `xtreme`, activado en `.claude/settings.json`) abre un panel al costado del chat con un botón por
-   acción de esas skills (no la barra de arriba del prompt: es una sola y la usa show-tokens). Una skill `xt_` nueva
-   aparece sola, en una tarjeta con su `description` y, si tiene `argument-hint`, un campo; las que tienen botones
-   propios están en `SECTIONS` y `COVERED`. El panel también pide skills nuevas (campo «Nueva skill»). Cambios al mod
-   se recargan con `/reload-plugins`.
+   (`xt_launch`; decisión del usuario, 2026-11-03).

@@ -16,8 +16,6 @@ static class ShellOpen
 {
     /// <summary>How long a new process waits for an open window to answer before opening on its own.</summary>
     const int ConnectTimeoutMs = 400;
-    /// <summary>The bench's Probar (<c>--probar 12</c>), whose number is not the project.</summary>
-    public const string TryArg = "--probar";
 
     static string PipeName
     {
@@ -28,14 +26,11 @@ static class ShellOpen
         }
     }
 
-    /// <summary>The project on the command line: the first argument that is not an option (nor <see cref="TryArg"/>'s number).</summary>
+    /// <summary>The project on the command line: the first argument that is not an option.</summary>
     public static string? ProjectArg(string[] args)
     {
-        for (int i = 0; i < args.Length; i++)
-        {
-            if (args[i] == TryArg) i++;
-            else if (!args[i].StartsWith("--", StringComparison.Ordinal) && args[i].Length > 0) return args[i];
-        }
+        foreach (var a in args)
+            if (!a.StartsWith("--", StringComparison.Ordinal) && a.Length > 0) return a;
         return null;
     }
 

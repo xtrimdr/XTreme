@@ -104,6 +104,10 @@ public sealed class ClipClipboard
             throw new ArgumentException(Texts.T("err.midi.noAudio", "El audio no va en pistas MIDI."));
         if (MidiItems.Any(i => !p.Tracks[at + i.Lane].IsMidi))
             throw new ArgumentException(Texts.T("err.midi.pasteNotMidi", "Los clips MIDI se pegan en pistas MIDI."));
+        // a locked or frozen track takes nothing new (a frozen one's render wouldn't have it), checked before any goes in
+        foreach (int lane in Items.Select(i => i.Lane).Concat(MidiItems.Select(i => i.Lane)).Distinct())
+            if (p.Tracks[at + lane] is { EditLocked: true } locked)
+                throw new ArgumentException(Texts.T("err.clip.trackLocked", "La pista «{0}» está bloqueada.", locked.Name));
         Dictionary<string, Clip> copies = [];
         foreach (var item in Items)
         {

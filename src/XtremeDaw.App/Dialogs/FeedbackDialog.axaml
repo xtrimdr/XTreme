@@ -24,7 +24,7 @@
 
       <TextBox x:Name="TitleBox" Classes="field" MaxLength="120" />
       <TextBox x:Name="DescriptionBox" Classes="field" Height="130" Padding="12,8" AcceptsReturn="True" TextWrapping="Wrap"
-               VerticalContentAlignment="Top" FontSize="13" />
+               VerticalContentAlignment="Top" FontSize="12.5" />
 
       <StackPanel Spacing="4">
         <CheckBox x:Name="FactsBox" Content="{loc:T feedback.facts}" FontSize="12" IsChecked="True" />

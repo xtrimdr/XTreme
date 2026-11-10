@@ -602,12 +602,9 @@ public sealed class ReverbBus
             Array.Clear(blockIn);
             Array.Clear(tailOut);
             Array.Clear(overlap);
+            // the flags are the reset: a slot is read only while its flag is set and written whole before it is set, so
+            // the megabytes of spectra behind them need no clearing (this runs in the audio callback, at every Play)
             Array.Clear(fdlActive);
-            for (int p = 0; p < parts; p++)
-            {
-                Array.Clear(fdlRe[p]);
-                Array.Clear(fdlIm[p]);
-            }
             Array.Clear(sumReVec);
             Array.Clear(sumImVec);
             dcSum = nyquistSum = 0;

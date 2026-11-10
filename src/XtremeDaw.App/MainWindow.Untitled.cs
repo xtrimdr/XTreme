@@ -53,6 +53,17 @@ public partial class MainWindow
         {
             if (await SaveProjectCopy(old, st.Project.Name, saveAs: true) is not { } dir) return false;
             if (store != st) return false; // another project opened while it copied: the copy stays, as with "Guardar una copia"
+            // the window kept working while it copied: a take recorded meanwhile, an import or a freeze render is only
+            // in the old folder, which goes below. It comes along first, and a take still running is waited for
+            while (true)
+            {
+                while (RecordingBusy && store == st) await Task.Delay(200);
+                if (store != st) return false;
+                if (await Task.Run(() => ProjectLibrary.BringMissing(old, dir)) == 0 && !RecordingBusy) break;
+            }
+            if (store != st) return false;
+            // once more here, with nothing able to run in between (it finds nothing: only the listing)
+            ProjectLibrary.BringMissing(old, dir);
             MoveUntitled(st, dir);
             Toast(Loc.T("proj.saveAs.done", st.Project.Name, dir));
         }

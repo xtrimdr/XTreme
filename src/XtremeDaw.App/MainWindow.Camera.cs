@@ -30,4 +30,18 @@ public partial class MainWindow
         cameraErrorShown = err;
         if (err != null) Toast(err);
     }
+
+    Exception? audioErrorShown;
+
+    /// <summary>
+    /// The audio callback failed (a sample format the driver gives that isn't read, something in the mix that threw):
+    /// those blocks go out silent, so it is told once, when it first happens, instead of leaving a driver that looks fine.
+    /// </summary>
+    void TickAudioError()
+    {
+        var e = engine.CallbackError;
+        if (ReferenceEquals(e, audioErrorShown)) return;
+        audioErrorShown = e;
+        if (e != null) Toast(Loc.T("engine.callbackFail", e.Message.TrimEnd('.')), sticky: true);
+    }
 }

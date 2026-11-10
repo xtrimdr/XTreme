@@ -66,7 +66,9 @@ public sealed partial class LiveDialog : UserControl
     async void Copy(string? text)
     {
         if (text == null || TopLevel.GetTopLevel(this)?.Clipboard is not { } clip) return;
-        await clip.SetTextAsync(text);
+        // another program can hold the clipboard: copying again works, crashing the session does not
+        try { await clip.SetTextAsync(text); }
+        catch (Exception e) when (e is System.Runtime.InteropServices.COMException or InvalidOperationException) { }
     }
 
     /// <summary>Opens it on what there is: the session, or the two choices.</summary>

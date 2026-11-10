@@ -268,7 +268,7 @@
         <Border BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="20,14">
           <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
             <Button x:Name="SetupCancelButton" Classes="btn" Content="{loc:T common.cancel}" />
-            <Button x:Name="SetupStartButton" Classes="btn primary">
+            <Button x:Name="SetupStartButton" Classes="btn primary" Padding="16,0">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Classes="icon" Text="&#xE896;" FontSize="13" Foreground="{StaticResource AccentFg}" />
                 <TextBlock x:Name="SetupStartText" Text="{loc:T exp.start}" />
@@ -329,7 +329,7 @@
             <Border x:Name="ErrorDetailsBox" Background="{StaticResource App}" BorderBrush="{StaticResource Line}"
                     BorderThickness="1" CornerRadius="6" Padding="12" MaxHeight="224" IsVisible="False">
               <ScrollViewer>
-                <SelectableTextBlock x:Name="ErrorDetailsText" Classes="mono" FontSize="10" Foreground="{StaticResource Dim}" TextWrapping="Wrap" />
+                <SelectableTextBlock x:Name="ErrorDetailsText" Classes="mono" FontSize="11" Foreground="{StaticResource Dim}" TextWrapping="Wrap" />
               </ScrollViewer>
             </Border>
           </StackPanel>
@@ -339,7 +339,7 @@
         <Border BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="20,14">
           <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
             <Button x:Name="ErrorCloseButton" Classes="btn" Content="{loc:T common.close}" />
-            <Button x:Name="ErrorRetryButton" Classes="btn primary" Content="{loc:T exp.retry}" />
+            <Button x:Name="ErrorRetryButton" Classes="btn primary" Padding="16,0" Content="{loc:T exp.retry}" />
           </StackPanel>
         </Border>
       </StackPanel>
@@ -356,7 +356,7 @@
             <TextBlock x:Name="AudioDoneInfo" Classes="mono" FontSize="11" Foreground="{StaticResource Faint}" />
           </StackPanel>
         </Grid>
-        <Border x:Name="DoneStage" Background="Black" MinHeight="220">
+        <Border x:Name="DoneStage" Background="{StaticResource Composition}" MinHeight="220">
           <Panel>
             <TextBlock x:Name="MissingVideoText"
                        Text="{loc:T exp.fileGone}"
@@ -365,7 +365,7 @@
                        TextWrapping="Wrap" IsVisible="False" />
             <Grid x:Name="VideoPreviewContainer" RowDefinitions="*,Auto">
               <Image x:Name="DoneVideoImage" MaxHeight="440" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Border Grid.Row="1" Background="#CC09090b" Padding="12,6">
+              <Border Grid.Row="1" Background="{StaticResource Composition80}" Padding="12,6">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                   <Button x:Name="DonePlayPauseButton" Classes="act" Width="28" Height="28" ToolTip.Tip="{loc:T exp.preview.tip}">
                     <TextBlock x:Name="DonePlayPauseIcon" Classes="icon" Text="&#xE768;" FontSize="12" />
@@ -383,7 +383,7 @@
           <Grid ColumnDefinitions="*,Auto,Auto">
             <TextBlock x:Name="DoneMetaText" Classes="mono" FontSize="11" Foreground="{StaticResource Faint}" VerticalAlignment="Center" />
             <Button Grid.Column="1" x:Name="DoneCloseButton" Classes="btn" Content="{loc:T common.close}" />
-            <Button Grid.Column="2" x:Name="DoneRevealButton" Classes="btn primary" Margin="8,0,0,0">
+            <Button Grid.Column="2" x:Name="DoneRevealButton" Classes="btn primary" Margin="8,0,0,0" Padding="16,0">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Classes="icon" Text="&#xE8DA;" FontSize="14" Foreground="{StaticResource AccentFg}" />
                 <TextBlock Text="{loc:T exp.showFolder}" />

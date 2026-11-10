@@ -605,7 +605,12 @@ public partial class MainWindow
             items.Add(MenuAction(Loc.T(samples.IsFavorite(f) ? "smp.menu.unfavorite" : "smp.menu.favorite"), () => { ToggleSampleFavorite(f); return Task.CompletedTask; }, icon: ""));
             items.Add(new Separator());
             items.Add(MenuAction(Loc.T("hist.reveal"), () => { RevealInExplorer(null, f.Path); return Task.CompletedTask; }, icon: ""));
-            items.Add(MenuAction(Loc.T("smp.menu.copyPath"), async () => { if (Clipboard is { } c) await c.SetTextAsync(f.Path); }, icon: ""));
+            items.Add(MenuAction(Loc.T("smp.menu.copyPath"), async () =>
+            {
+                // another program can hold the clipboard
+                try { if (Clipboard is { } c) await c.SetTextAsync(f.Path); }
+                catch (Exception e) when (e is System.Runtime.InteropServices.COMException or InvalidOperationException) { }
+            }, icon: ""));
         }
         else if (row.Folder is { } n)
         {

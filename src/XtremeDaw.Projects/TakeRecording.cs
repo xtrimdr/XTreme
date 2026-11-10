@@ -71,7 +71,11 @@ public static class TakeRecording
         if (target != null && j.StartSec > 0)
             ClipEditing.DeleteRange(p, target.Id, j.AtSec, j.AtSec + durationSec);
         else if (target != null)
-            foreach (var c in target.Clips.ToList()) ClipEditing.RemoveClip(p, c.Id);
+            foreach (var c in target.Clips.ToList())
+            {
+                // a loop's passes already went with their source: asking for them again would throw and lose the take's place
+                if (target.Clips.Contains(c)) ClipEditing.RemoveClip(p, c.Id);
+            }
         int slot = Slot(p, target);
         var media = new Media
         {

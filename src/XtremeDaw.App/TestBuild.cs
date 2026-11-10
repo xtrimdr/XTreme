@@ -18,9 +18,6 @@ static class TestBuild
     /// <summary>This copy's folder name (date first, so names sort by age), or null outside a test copy.</summary>
     public static readonly string? CopyName;
 
-    /// <summary>The list of changes to try, shared by every copy, or null outside a test copy.</summary>
-    public static readonly string? ListPath;
-
     static TestBuild()
     {
         try
@@ -31,7 +28,6 @@ static class TestBuild
             if (lines.Length < 3) return;
             var dir = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
             CopyName = Path.GetFileName(dir);
-            ListPath = Path.Combine(Path.GetDirectoryName(dir)!, "lista.json");
             bool dirty = lines[1].Trim() == "dirty";
             string commit = lines[0].Trim();
             string when = DateTime.TryParse(lines[2].Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var t)

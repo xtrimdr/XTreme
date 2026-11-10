@@ -279,7 +279,7 @@ public partial class MainWindow
         grid.Children.Add(play);
 
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock { Text = m.Name, FontSize = 13, Foreground = inTimeline ? Palette.Fg : Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis });
+        text.Children.Add(new TextBlock { Text = m.Name, FontSize = 12.5, Foreground = inTimeline ? Palette.Fg : Palette.Dim, TextTrimming = TextTrimming.CharacterEllipsis });
         // the tags go in their own boxes under the name, lit while the take is in the timeline (asked by the user: the
         // list has to read at a glance); an offline file never lights up
         // a badge that doesn't fit whole drops to the next line (the info trims first): with the hover buttons shown they ran under "Usar"
@@ -496,7 +496,7 @@ public partial class MainWindow
         var body = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 12 };
         body.Children.Add(HistoryIcon(audioFile ? "\uE8D6" : "\uE8B2", 14, Palette.Faint));
         var text = new StackPanel();
-        var title = new TextBlock { Text = name, FontSize = 13, Foreground = Palette.Fg, TextTrimming = TextTrimming.CharacterEllipsis };
+        var title = new TextBlock { Text = name, FontSize = 12.5, Foreground = Palette.Fg, TextTrimming = TextTrimming.CharacterEllipsis };
         ToolTip.SetTip(title, e.File);
         text.Children.Add(title);
         var meta = new List<string> { ProjectHistory.FormatAgo(e.CreatedAt) };

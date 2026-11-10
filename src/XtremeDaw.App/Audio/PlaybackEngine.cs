@@ -233,6 +233,12 @@ public sealed class PlaybackEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// What made the audio callback fail, if it did (the driver gives samples in a format that isn't read, or something
+    /// in the mix threw): the block went out silent. The window tells it once; it stays until the driver reopens.
+    /// </summary>
+    public Exception? CallbackError => io?.Error;
+
     /// <summary>Human-readable message for <see cref="RecordingDiskError"/>, or <c>null</c> if none.</summary>
     public string? RecordingError => RecordingDiskError?.Message;
 
@@ -693,7 +699,10 @@ public sealed class PlaybackEngine : IDisposable
     /// </summary>
     public void UpdateTracks(IReadOnlyList<LiveTrack> list)
     {
-        tracks = list.ToArray();
+        var arr = list.ToArray();
+        tracks = arr;
+        // a track added by this edit can be a sidechain source: its key has to find it
+        LiveKeys.Update(arr);
         RefreshClipTiming();
     }
 
@@ -1270,6 +1279,20 @@ public sealed class PlaybackEngine : IDisposable
                 var subMl = ml.Slice(playOffset, playCount);
                 var subMr = mr.Slice(playOffset, playCount);
 
+                // the take first: it needs nothing from the mix, and a track, slot or plugin that fails further down
+                // must not cost it this block
+                if (isRec)
+                {
+                    // the block's samples were captured over the n/SR seconds before this callback
+                    if (Interlocked.Read(ref recStartTimestamp) == 0)
+                        Interlocked.Exchange(ref recStartTimestamp, Math.Max(1, t0 - (long)((n - playOffset) * (double)Stopwatch.Frequency / SampleRate)));
+                    recUsedClick |= ClickOn;
+                    for (int i = 0; i < curTaps.Length; i++)
+                        curTaps[i].Recorder?.WriteFromCallback(
+                            curTaps[i].BlockL.Slice(playOffset, playCount),
+                            curTaps[i].BlockR.Slice(playOffset, playCount));
+                }
+
                 var list = tracks;
                 bool anySolo = false;
                 for (int i = 0; i < list.Length; i++)
@@ -1291,18 +1314,6 @@ public sealed class PlaybackEngine : IDisposable
                 {
                     xfFrom += playCount;
                     if (xfLevel >= 1) xfFrom = -1;
-                }
-
-                if (isRec)
-                {
-                    // the block's samples were captured over the n/SR seconds before this callback
-                    if (Interlocked.Read(ref recStartTimestamp) == 0)
-                        Interlocked.Exchange(ref recStartTimestamp, Math.Max(1, t0 - (long)((n - playOffset) * (double)Stopwatch.Frequency / SampleRate)));
-                    recUsedClick |= ClickOn;
-                    for (int i = 0; i < curTaps.Length; i++)
-                        curTaps[i].Recorder?.WriteFromCallback(
-                            curTaps[i].BlockL.Slice(playOffset, playCount),
-                            curTaps[i].BlockR.Slice(playOffset, playCount));
                 }
             }
             else
@@ -1383,10 +1394,11 @@ public sealed class PlaybackEngine : IDisposable
                 }
 
                 float c = 0;
-                if (click != null)
+                // read once: starting or stopping a take clears the field from the UI thread in the middle of a click
+                if (click is { } ck)
                 {
-                    c = click[clickPos];
-                    if (++clickPos >= click.Length) click = null;
+                    if (clickPos < ck.Length) c = ck[clickPos];
+                    if (++clickPos >= ck.Length) click = null;
                 }
 
                 output[0][i] = ml[i] + c;
@@ -1494,10 +1506,11 @@ public sealed class PlaybackEngine : IDisposable
             for (int i = 0; i < n; i++)
             {
                 float c = 0;
-                if (click != null)
+                // read once: starting or stopping a take clears the field from the UI thread in the middle of a click
+                if (click is { } ck)
                 {
-                    c = click[clickPos];
-                    if (++clickPos >= click.Length) click = null;
+                    if (clickPos < ck.Length) c = ck[clickPos];
+                    if (++clickPos >= ck.Length) click = null;
                 }
                 float l = ml[i] + c;
                 float r = mr[i] + c;

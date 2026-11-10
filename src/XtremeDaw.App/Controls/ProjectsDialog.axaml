@@ -101,22 +101,22 @@
           </StackPanel>
         </StackPanel>
         <Button Grid.Column="1" x:Name="NewsButton" Classes="act close" Margin="0,-4,0,0" VerticalAlignment="Top"
-                Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T news.title}" AutomationProperties.Name="{loc:T news.title}">
-          <TextBlock Classes="icon" Text="&#xE789;" FontSize="14" />
+                ToolTip.Tip="{loc:T news.title}" AutomationProperties.Name="{loc:T news.title}">
+          <TextBlock Classes="icon" Text="&#xE789;" FontSize="13" />
         </Button>
         <Button Grid.Column="2" x:Name="HelpButton" Classes="act close" Margin="0,-4,0,0" VerticalAlignment="Top"
-                Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T help.title}" AutomationProperties.Name="{loc:T help.title}">
-          <TextBlock Classes="icon" Text="&#xE897;" FontSize="14" />
+                ToolTip.Tip="{loc:T help.title}" AutomationProperties.Name="{loc:T help.title}">
+          <TextBlock Classes="icon" Text="&#xE897;" FontSize="13" />
         </Button>
         <Button Grid.Column="3" x:Name="CloseButton" Classes="act close" Margin="0,-4,-8,0" VerticalAlignment="Top"
-                Foreground="{StaticResource Faint}" ToolTip.Tip="{loc:T common.close}">
-          <TextBlock Classes="icon" Text="&#xE711;" FontSize="14" />
+                ToolTip.Tip="{loc:T common.close}" AutomationProperties.Name="{loc:T common.close}">
+          <TextBlock Classes="icon" Text="&#xE711;" FontSize="13" />
         </Button>
       </Grid>
 
       <!-- toolbar -->
       <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*" Margin="24,0">
-        <Button x:Name="NewButton" Classes="btn primary" Padding="14,0">
+        <Button x:Name="NewButton" Classes="btn primary" Padding="16,0">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <TextBlock Classes="icon" Text="&#xE710;" FontSize="13" FontWeight="Bold" />
             <TextBlock Text="{loc:T proj.new}" />
@@ -152,7 +152,7 @@
               BorderThickness="1" BorderBrush="{StaticResource Accent40}" Background="{StaticResource AccentTint}">
         <StackPanel Spacing="8">
           <StackPanel Spacing="6">
-            <TextBlock Text="{loc:T proj.newName}" FontSize="12" Foreground="{StaticResource Dim}" />
+            <TextBlock Classes="dim" Text="{loc:T proj.newName}" />
             <Grid ColumnDefinitions="*,Auto,Auto">
               <TextBox x:Name="NewName" Classes="field" MaxLength="120" />
               <Button Grid.Column="1" x:Name="NewCancel" Classes="btn" Margin="8,0,0,0" Content="{loc:T common.cancel}" />
@@ -168,10 +168,10 @@
             <TextBlock x:Name="NewPath" Classes="mono" FontSize="11" Foreground="{StaticResource Faint}" TextWrapping="Wrap" VerticalAlignment="Center" />
             <Button Grid.Column="1" x:Name="NewWhere" Classes="btn sm outline" Margin="8,0,0,0" Content="{loc:T proj.where}" ToolTip.Tip="{loc:T proj.where.tip}" />
           </Grid>
-          <TextBlock x:Name="NewTaken" FontSize="11" Foreground="{StaticResource Accent}" TextWrapping="Wrap" IsVisible="False" />
+          <TextBlock x:Name="NewTaken" Classes="notice" TextWrapping="Wrap" IsVisible="False" />
           <!-- native only: video or solo audio, the same switch the title bar has once it is open -->
           <StackPanel Spacing="6" Margin="0,4,0,0">
-            <TextBlock Text="{loc:T proj.type}" FontSize="12" Foreground="{StaticResource Dim}" />
+            <TextBlock Classes="dim" Text="{loc:T proj.type}" />
             <StackPanel Orientation="Horizontal" Spacing="10">
               <Border Classes="seg">
                 <StackPanel Orientation="Horizontal">
@@ -193,9 +193,9 @@
             </StackPanel>
           </StackPanel>
           <StackPanel Spacing="6" Margin="0,4,0,0">
-            <TextBlock Text="{loc:T proj.template}" FontSize="12" Foreground="{StaticResource Dim}" />
-            <ScrollViewer MaxHeight="208" Padding="0,0,2,0">
-              <UniformGrid x:Name="TemplateGrid" Columns="2" />
+            <TextBlock Classes="dim" Text="{loc:T proj.template}" />
+            <ScrollViewer MaxHeight="208">
+              <UniformGrid x:Name="TemplateGrid" Columns="2" Margin="0,0,2,0" />
             </ScrollViewer>
           </StackPanel>
         </StackPanel>

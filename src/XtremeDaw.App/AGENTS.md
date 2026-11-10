@@ -27,8 +27,7 @@ sigue la [guía del motor](../XtremeDaw.Audio/AGENTS.md); el modelo que edita la
 
 Los textos salen de `Loc` (`Loc.T("clave")`, o `{loc:T clave}` en XAML) y viven en `Assets/Lang/<código>.json`;
 **es.json es la referencia** (lo que falta en otro idioma cae al español). Texto nuevo → clave nueva en todos los
-idiomas. Los del Banco de pruebas (`test.*`) van aparte, en `Assets/Lang/Bench/<código>.json`: `Loc` lee los dos
-archivos de cada idioma. Los nombres que vienen del motor en español (estilos del compresor, presets de EQ, reverb y delay,
+idiomas. Los nombres que vienen del motor en español (estilos del compresor, presets de EQ, reverb y delay,
 divisiones) se traducen al mostrarlos con `Loc.Or(clave, texto del motor)`. Los títulos de sección del inspector,
 de Color y de Historial son ids estables en español (`SectionTitle` y `bar.section.*` los traducen al mostrarlos),
 porque con ellos se recuerda qué secciones están plegadas. El idioma se elige en Configuración, se guarda en
@@ -55,8 +54,8 @@ acento), `AccentHover`, `AccentTint`, `Accent25/40/50/70`. Valores del tema por 
 | `Accent` | `#22d3ee` | **el** color: activo, seleccionado, play, playhead, ondas, medidores (hover `#4fdcf1`) |
 | `AccentSoft` | `#2422d3ee` | fondo de chips activados |
 | `Rec` | `#ef4444` | grabar y clip/saturación de nivel. Nada más |
-| `RecSoft` | `#24ef4444` | fondo suave asociado a grabación |
-| `Composition` | `#09090b` | fondo del cuadro del video |
+| `RecSoft` | `#24ef4444` | fondo suave asociado a grabación (`Rec40`: el borde al 40 %) |
+| `Composition` | `#09090b` | fondo del cuadro del video (`Composition80`: al 80 %, la barra sobre el video) |
 | `Mute` | `#f59e0b` | mute activo, zona de −6 a 0 dB en medidores, lo que se pasa de algo (un largo de red social, una nota desafinada). Con un acento cálido (Fuego a Oro) pasa a azul `#60a5fa` (`UiTheme.StateColors`, decisión del usuario, 2026-11-03) |
 | gris offline | `#71717a` | clips cuyo archivo falta |
 | `InTune` | `#22c55e` | "afinado" en el afinador (el verde de los medidores del mixer, `Palette.MeterGreen`); con un acento verde (Lima a Esmeralda), cyan `#22d3ee` |

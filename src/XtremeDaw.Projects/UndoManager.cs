@@ -69,6 +69,21 @@ public sealed class UndoManager(TimeProvider? timeProvider = null)
         Version++;
     }
 
+    /// <summary>
+    /// Takes back the last <see cref="Checkpoint"/> as if it never was: the project goes back to it and the step is
+    /// dropped, with nothing left to redo. For an edit that failed halfway.
+    /// </summary>
+    public bool Revert(Project project)
+    {
+        if (undo.Count == 0) return false;
+        var e = undo[^1];
+        undo.RemoveAt(undo.Count - 1);
+        Apply(project, e.Json);
+        lastKey = "";
+        Version++;
+        return true;
+    }
+
     public bool Undo(Project project) => Move(project, undo, redo);
     public bool Redo(Project project) => Move(project, redo, undo);
 

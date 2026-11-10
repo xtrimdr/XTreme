@@ -357,6 +357,20 @@ public static partial class ProjectLibrary
         var (dir, name) = UniqueProject(root, $"{source.Name} (copia)");
         // Publish the project only after all its media has been copied. A crash leaves the source intact.
         string staging = Path.Combine(root, $".duplicando-{Guid.NewGuid():N}");
+        try
+        {
+            return DuplicateInto(src, source, staging, dir, name);
+        }
+        catch
+        {
+            // a full disk or a copy that failed: the half-made folder would stay hidden in the projects folder forever
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
+    }
+
+    static string DuplicateInto(string src, Project source, string staging, string dir, string name)
+    {
         Directory.CreateDirectory(Path.Combine(staging, ProjectStore.MediaDir));
         var copy = Clone(source);
         var copied = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -494,6 +508,38 @@ public static partial class ProjectLibrary
         progress?.Report(1);
         RecentProjects.Touch(dir, name);
         return dir;
+    }
+
+    /// <summary>
+    /// After <see cref="SaveAs"/>, when the window moves into the copy and the old folder goes: brings what was added
+    /// to <paramref name="src"/> since the copy started (a take recorded meanwhile, an import, a freeze render), so
+    /// deleting the old folder never takes a file the project uses. Only media/ and freeze/, by name; what is already
+    /// there stays. Each file goes through a temporary name, forced to disk. Returns how many it brought.
+    /// </summary>
+    public static int BringMissing(string src, string dir)
+    {
+        int brought = 0;
+        foreach (string sub in new[] { ProjectStore.MediaDir, Freezing.Dir })
+        {
+            string from = Path.Combine(src, sub);
+            if (!Directory.Exists(from)) continue;
+            foreach (string file in Directory.EnumerateFiles(from))
+            {
+                string to = Path.Combine(dir, sub, Path.GetFileName(file));
+                if (File.Exists(to)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                string tmp = to + ".trayendo";
+                using (var a = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var b = new FileStream(tmp, FileMode.Create, FileAccess.Write))
+                {
+                    a.CopyTo(b, 1 << 20);
+                    b.Flush(true);
+                }
+                File.Move(tmp, to);
+                brought++;
+            }
+        }
+        return brought;
     }
 
     /// <summary>Sends a project folder to the Recycle Bin. Only folders that hold a project.</summary>

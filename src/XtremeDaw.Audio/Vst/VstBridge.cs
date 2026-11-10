@@ -473,8 +473,10 @@ public sealed unsafe class VstBridge : IDisposable
                 var r = SlotSpan(slot, SlotOut, 1, n);
                 for (int i = 0; i < n; i++)
                 {
-                    outL[i] += l[i];
-                    outR[i] += r[i];
+                    // a plugin's NaN or infinity would stay in every filter after it until the chain is reset
+                    float a = l[i], b = r[i];
+                    if (float.IsFinite(a)) outL[i] += a;
+                    if (float.IsFinite(b)) outR[i] += b;
                 }
             }
         }
@@ -513,8 +515,17 @@ public sealed unsafe class VstBridge : IDisposable
         int n = Math.Min(Math.Min(*(int*)(mem + OffSlots + slot * SlotSize + SlotFrames), outL.Length), outR.Length);
         SlotSpan(slot, SlotOut, 0, n).CopyTo(outL);
         SlotSpan(slot, SlotOut, 1, n).CopyTo(outR);
+        // a plugin's NaN or infinity would stay in every filter after it until the chain is reset
+        for (int i = 0; i < n; i++)
+        {
+            if (!float.IsFinite(outL[i])) outL[i] = 0;
+            if (!float.IsFinite(outR[i])) outR[i] = 0;
+        }
         return n;
     }
+
+    /// <summary>How long the export waits for one block before taking the plugin for hung (a block is a fraction of a second of audio).</summary>
+    const double RenderTimeoutSec = 120;
 
     /// <summary>The export: sends a block and waits for it, writing its output to <paramref name="outL"/> / <paramref name="outR"/>.</summary>
     public void Render(ReadOnlySpan<VstNote> notes, int frames, long timeSamples, double tempo, int flags, Span<float> outL, Span<float> outR,
@@ -523,9 +534,13 @@ public sealed unsafe class VstBridge : IDisposable
         frames = Math.Clamp(frames, 1, MaxBlock);
         seq++;
         WriteRequest(seq, notes, frames, timeSamples, tempo, flags, inL, inR);
+        long asked = System.Diagnostics.Stopwatch.GetTimestamp();
         while (Volatile.Read(ref *(long*)(mem + OffDone)) < seq)
         {
             if (Broken) throw new InvalidOperationException(Texts.T("err.vst.crashed", "El plugin {0} se cerró en medio de la exportación.", Name));
+            // hung without dying: waiting forever would leave the export uncancellable and its host processes alive
+            if (System.Diagnostics.Stopwatch.GetElapsedTime(asked).TotalSeconds > RenderTimeoutSec)
+                throw new InvalidOperationException(Texts.T("err.vst.hung", "El plugin {0} dejó de responder en medio de la exportación.", Name));
             done.WaitOne(1000);
         }
         int slot = (int)(seq & 1);
@@ -536,8 +551,9 @@ public sealed unsafe class VstBridge : IDisposable
     public void Dispose()
     {
         if (disposed) return;
-        disposed = true;
+        // before the flag: Send does nothing once it is set, and the host would only leave when its input closes
         Send("quit");
+        disposed = true;
         lock (inputGate)
         {
             try { process.StandardInput.Close(); } catch (IOException) { }

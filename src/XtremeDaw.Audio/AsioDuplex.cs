@@ -77,11 +77,20 @@ public sealed class AsioDuplex : IDisposable
             asio.Dispose();
             throw new InvalidOperationException($"El driver \"{driver}\" no acepta {sampleRate} Hz.");
         }
-        if (inputChannels <= 0) inputChannels = Math.Max(1, asio.DriverInputChannelCount - inputOffset);
-        InputChannels = inputChannels;
-        asio.InputChannelOffset = inputOffset;
-        asio.ChannelOffset = outputOffset;
-        asio.InitRecordAndPlayback(new SilenceProvider(WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, 2)), inputChannels, sampleRate);
+        try
+        {
+            if (inputChannels <= 0) inputChannels = Math.Max(1, asio.DriverInputChannelCount - inputOffset);
+            InputChannels = inputChannels;
+            asio.InputChannelOffset = inputOffset;
+            asio.ChannelOffset = outputOffset;
+            asio.InitRecordAndPlayback(new SilenceProvider(WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, 2)), inputChannels, sampleRate);
+        }
+        catch
+        {
+            // nobody else holds it yet: left open, the driver stays taken and the next try fails too
+            asio.Dispose();
+            throw;
+        }
         asio.AudioAvailable += OnAudio;
         asio.DriverResetRequest += OnResetRequest;
     }
@@ -206,7 +215,7 @@ public sealed class AsioDuplex : IDisposable
     {
         asio.AudioAvailable -= OnAudio;
         asio.DriverResetRequest -= OnResetRequest;
-        asio.Stop();
-        asio.Dispose();
+        try { asio.Stop(); }
+        finally { asio.Dispose(); }
     }
 }

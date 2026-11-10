@@ -1,7 +1,6 @@
-﻿# Creates (or updates) the desktop shortcuts "XTreme Prueba" and "XT-WorkBench". The first opens the newest
-# finished test copy made by tools\probar.ps1 (probar.ps1 -Abrir -Acceso), never the exe in bin\: an app running from
-# bin\ locks the DLLs and the next build fails without anyone noticing. The second opens the Banco de pruebas on its own
-# (probar.ps1 -Banco -Acceso, xtbench.exe in pruebas\banco\). They need nothing else running, and probar.ps1 calls this after every copy.
+﻿# Creates (or updates) the desktop shortcut "XTreme Prueba": it opens the newest finished test copy made by
+# tools\probar.ps1 (probar.ps1 -Abrir -Acceso), never the exe in bin\: an app running from bin\ locks the DLLs and the
+# next build fails without anyone noticing. It needs nothing else running, and probar.ps1 calls this after every copy.
 #   tools\make-shortcut.ps1
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -20,15 +19,7 @@ $s.Description = "XTreme (la $([char]0xFA)ltima copia de prueba)"
 $s.Save()
 "Listo: $lnk"
 
-$bench = Join-Path $desktop 'XT-WorkBench.lnk'
-# its name until 2026-11-04
-Remove-Item (Join-Path $desktop 'XTreme Banco de pruebas.lnk') -ErrorAction SilentlyContinue
-$s = (New-Object -ComObject WScript.Shell).CreateShortcut($bench)
-$s.TargetPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$s.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -Banco -Acceso"
-$s.WorkingDirectory = $root
-$s.IconLocation = "$icon,0"
-$s.WindowStyle = 7
-$s.Description = 'XT-WorkBench: el Banco de pruebas de XTreme'
-$s.Save()
-"Listo: $bench"
+# the old Banco de pruebas' shortcuts (XT-WorkBench, taken out in #37: the tickets live in ClaudeWorkBench now)
+foreach ($old in 'XT-WorkBench.lnk', 'XTreme Banco de pruebas.lnk') {
+    Remove-Item (Join-Path $desktop $old) -ErrorAction SilentlyContinue
+}

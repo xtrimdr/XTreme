@@ -59,7 +59,8 @@ public static class ProjectHistory
         foreach (var t in p.Tracks.Where(t => t.Clips.Any(c => c.MediaId == mediaId)).ToList())
         {
             if (t.Clips.All(c => c.MediaId == mediaId)) ClipEditing.RemoveTrack(p, t.Id);
-            else foreach (var c in t.Clips.Where(c => c.MediaId == mediaId).ToList()) ClipEditing.RemoveClip(p, c.Id);
+            else foreach (var c in t.Clips.Where(c => c.MediaId == mediaId).ToList())
+                if (t.Clips.Contains(c)) ClipEditing.RemoveClip(p, c.Id); // a loop's passes already went with their source
         }
     }
 

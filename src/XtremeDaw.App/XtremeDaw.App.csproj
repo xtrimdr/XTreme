@@ -39,7 +39,6 @@
     <AvaloniaResource Include="Assets\XTreme-64.png" />
     <AvaloniaResource Include="Assets\XTreme-512.png" />
     <AvaloniaResource Include="Assets\Lang\*.json" />
-    <AvaloniaResource Include="Assets\Lang\Bench\*.json" />
     <AvaloniaResource Include="Assets\Help\*.json" />
     <AvaloniaResource Include="Assets\News\*.json" />
     <!-- the bundled number fonts (DSEG and Orbitron, SIL OFL 1.1: their licenses travel with the exe) -->

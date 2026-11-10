@@ -366,6 +366,17 @@ public partial class MainWindow
     /// nothing on screen is rebuilt, like the web, where editing a lane is just a state change. <paramref name="step"/>
     /// names the step in Historial → Pasos when the change alone can't tell what it was (a recording).
     /// </summary>
+    /// <summary>
+    /// For a long background job about to land its result with <see cref="EditTimeline"/>, which does nothing while
+    /// another edit runs or the manager is open: waits for that to pass, so minutes of work aren't dropped in silence.
+    /// False when the project is no longer <paramref name="st"/> or can't be edited.
+    /// </summary>
+    async Task<bool> WaitEditable(ProjectStore st)
+    {
+        while (store == st && !st.ReadOnly && (restoring || Projects.IsVisible)) await Task.Delay(100);
+        return store == st && !st.ReadOnly;
+    }
+
     async Task EditTimeline(Func<Project, string?> edit, string? activity, string? clipId = null, EditSteps.Label? step = null)
     {
         if (restoring || store == null || store.ReadOnly || Projects.IsVisible) return;
@@ -378,7 +389,20 @@ public partial class MainWindow
             // the loops' repeats follow their source, whatever the edit did to it (ClipLoops)
             var lengths = LiveLengths();
             var loops = ClipLoops.Take(st.Project, lengths);
-            string? selected = edit(st.Project);
+            string? selected;
+            try
+            {
+                selected = edit(st.Project);
+            }
+            catch (Exception e)
+            {
+                // it refused or failed with part of it done (some clips gone, others not): the project goes back to
+                // how it was, with no step left for it, instead of saving the half
+                undo.Revert(st.Project);
+                await ApplyTracks(st);
+                Toast(Loc.T("timeline.editError", e.Message));
+                return;
+            }
             // channels made from the mixer's menu go where it was clicked (#196)
             PlaceNewInMixer(st.Project);
             ClipLoops.Keep(st.Project, loops, lengths);
@@ -677,7 +701,7 @@ public partial class MainWindow
     /// </summary>
     async Task PasteClips()
     {
-        if (store == null) return;
+        if (store is not { } st) return;
         if (clipboard is not { } board) { Toast(Loc.T("clipboard.empty", Shortcuts.Label("copy"))); return; }
         double at = engine.PositionSec;
         string? target = sel?.Track.Id;
@@ -689,7 +713,8 @@ public partial class MainWindow
             if (pasted.Count == 0 || Automations.FindBlock(p, pasted[0]) != null) return target;
             return MidiEditing.TryFind(p, pasted[0]) != null ? MidiEditing.Find(p, pasted[0]).Track.Id : ClipEditing.Find(p, pasted[0]).Track.Id;
         }, board.Count > 1 ? "clips-pasted" : "clip-pasted");
-        if (pasted.Count == 0) return;
+        // the edit waits for audio and video: the project can have closed or changed meanwhile
+        if (pasted.Count == 0 || store != st) return;
         if (MidiEditing.TryFind(store.Project, pasted[0]) != null) Timeline.SelectMidiClip(Timeline.Selected, pasted[0]);
         else if (Automations.FindBlock(store.Project, pasted[0]) == null) Timeline.SelectClip(Timeline.Selected, pasted[0]);
         Timeline.BoxClips(pasted);
